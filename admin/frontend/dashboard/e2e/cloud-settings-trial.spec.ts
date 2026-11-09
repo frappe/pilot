@@ -54,32 +54,35 @@ async function open(page: Page, { onTrial, panels }: { onTrial: boolean; panels:
 
 const sidebar = (page: Page) => page.locator('.cloud-settings-sidebar')
 
-test('a trial site does not get the site config editor', async ({ page }) => {
+test('a trial site gets neither the site config editor nor backups', async ({ page }) => {
   await open(page, { onTrial: true, panels: ['backups', 'site-config', 'advanced'] })
 
-  await expect(sidebar(page)).toContainText('Backups')
+  await expect(sidebar(page)).toContainText('Advanced')
   await expect(sidebar(page)).not.toContainText('Site config')
+  await expect(sidebar(page)).not.toContainText('Backups')
 })
 
-test('a paid site keeps the site config editor', async ({ page }) => {
+test('a paid site keeps the site config editor and backups', async ({ page }) => {
   await open(page, { onTrial: false, panels: ['backups', 'site-config', 'advanced'] })
 
   await expect(sidebar(page)).toContainText('Site config')
+  await expect(sidebar(page)).toContainText('Backups')
 })
 
-test('a trial site cannot open its server', async ({ page }) => {
+test('a trial site cannot open its server and has nothing to cancel', async ({ page }) => {
   await open(page, { onTrial: true, panels: ['advanced'] })
 
-  await expect(page.getByText(LOCKED)).toBeVisible()
+  await expect(page.getByText('Server access comes with a paid plan. Upgrade to use it.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open server' })).toBeDisabled()
+  await expect(page.getByText('End subscription')).toHaveCount(0)
 })
 
-test('a trial site downloads its backup files but not its config', async ({ page }) => {
-  await open(page, { onTrial: true, panels: ['backups'] })
+test('a paid site downloads every backup file', async ({ page }) => {
+  await open(page, { onTrial: false, panels: ['backups'] })
 
   await page.getByRole('button', { name: /Actions for/ }).click()
   await expect(page.getByText('Download Database')).toBeVisible()
-  await expect(page.getByText('Download Config')).toHaveCount(0)
+  await expect(page.getByText('Download Config')).toBeVisible()
 })
 
 test('a trial that hides every allowed panel says why', async ({ page }) => {

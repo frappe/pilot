@@ -3,12 +3,13 @@ import {
   getAccountUrl,
   getBilling,
   getDomains,
+  getInvoices,
   getMarketplaceApps,
   getTask,
   isNotConnectedToCentral,
 } from '@frappe/cloud-sdk/api'
 import { reactive } from 'vue'
-import type { AccountLinks, BillingSummary, CloudContext, Domains, Marketplace, CloudSettingsTranslator, TaskStatus } from '@frappe/cloud-sdk'
+import type { AccountLinks, BillingSummary, CloudContext, Domains, Invoice, Marketplace, CloudSettingsTranslator, TaskStatus } from '@frappe/cloud-sdk'
 import { translate, useTranslation } from './translation'
 import { toast } from 'frappe-ui'
 
@@ -171,6 +172,8 @@ export const createStore =(context?: CloudContext, translator: CloudSettingsTran
     billing: null as BillingSummary | null,
     billingError: '',
     isNotConnectedToCentral: false,
+    invoices: null as Invoice[] | null,
+    invoicesError: '',
     marketplace: null as Marketplace | null,
     marketplaceError: '',
     domains: null as Domains | null,
@@ -199,6 +202,16 @@ export const createStore =(context?: CloudContext, translator: CloudSettingsTran
     } catch (exception) {
       state.isNotConnectedToCentral = isNotConnectedToCentral(exception)
       state.billingError = getErrorMessage(exception, undefined, translator)
+    }
+  }
+
+  const loadInvoices = async () => {
+    state.invoicesError = ''
+
+    try {
+      state.invoices = await getInvoices()
+    } catch (exception) {
+      state.invoicesError = getErrorMessage(exception, undefined, translator)
     }
   }
 
@@ -233,6 +246,7 @@ export const createStore =(context?: CloudContext, translator: CloudSettingsTran
     isOnTrial,
     loadAccountLinks,
     loadBilling,
+    loadInvoices,
     loadMarketplace,
     loadDomains,
   }

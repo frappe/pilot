@@ -70,6 +70,7 @@ await openCloudSettings({
 | `onClose` | Run a callback after the dialog closes. |
 | `context` | Supply a `CloudContext`. Without it, the SDK reads the current site's context. |
 | `target` | Render the panels inside this element instead of a dialog. See [Mount inline](#mount-inline). |
+| `app` | Name the app that serves this page, such as `crm`. When the user uninstalls that app from the Marketplace panel, the page no longer exists, so Cloud Settings sends the user to `/desk`. Omit it in Desk. |
 
 Panel names: `billing`, `marketplace`, `analytics`, `domains`, `backups`, `usage`, `site-config`, `maintenance`, and `advanced`.
 
@@ -116,7 +117,7 @@ Build your own UI on the read calls, for example a plan badge or a banner. For c
 | Area | Read calls | Action calls |
 | --- | --- | --- |
 | Site | `getContext`, `getAccountUrl`, `getTask` | None |
-| Billing | `getBilling`, `getPlanOptions`, `getBillingProfile`, `getPaymentGateways` | Change plan, save profile, set up or remove a payment method, reconcile setup |
+| Billing | `getBilling`, `getPlanOptions`, `getBillingProfile`, `getPaymentGateways`, `getInvoices`, `getInvoicePdf` | Change plan, save profile, set up or remove a payment method, reconcile setup, pay an invoice (`createInvoiceCheckout`, then `getCheckoutStatus`) |
 | Apps | `getMarketplaceApps` | Install, uninstall, update |
 | Domains | `getDomains` | Read DNS records, add, remove, set primary |
 | Backups | `getBackups`, `getBackupDownloadLinks` | Create, delete |
@@ -125,6 +126,8 @@ Build your own UI on the read calls, for example a plan badge or a banner. For c
 | Maintenance | None | Clear cache, migrate |
 
 Requests use the current origin and session. They time out after 30 seconds. The SDK does not retry write calls.
+
+`getBilling` returns `next_bill`: this site's server's share of the team's next bill, with `amount`, `subtotal`, `tax`, `tax_type`, `charge_on`, `days_left`, the `lines` behind it, and `blockers`, the reasons the team's charge would fail. Show a warning only for a blocker. `getInvoices` returns this server's share of each team invoice, newest first. `has_pdf` and `can_pay` are true only when the invoice covers this server alone, because the invoice PDF and its payment cover the whole team. `getInvoicePdf(invoice)` returns `{ filename, content }`, with the PDF as base64.
 
 `changePlan(plan)` returns `{ queued, resized, progress_url }`. A new size stops the site for a few minutes. When `progress_url` is set, open it: the page lives on Central and brings the user back when the site is ready. During a free trial, the call resizes nothing: Central keeps the plan, and the site moves to it when a payment method converts the trial. `getPlanOptions` then lists the paid plans the trial may move to, with `selected` set to the plan it moves to. `getBilling` returns `plan_change.progress_url` while a plan change runs, such as that move.
 
@@ -172,7 +175,7 @@ npm trusts the workflow through trusted publishing, so the repository holds no n
 
 Run `npm test` and `npm run build` in this package. Run `npm run build` in `admin/frontend/in-app-embed` to build both Pilot outputs into `admin/backend/static/in-app-embed/cloud-settings/`. That build also checks that the ES runtime exports its methods, contains its styles, and loads panels on demand.
 
-To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package and the in-app embed. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check that the SDK loads the UI from Pilot and loads a panel only when it is shown, dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial notice and its states, the billing details and payment steps during a trial, the country and Indian state lists, a card that fails verification, the plan list, the move to the progress page, and the refusal, spending limit and retry states. CI runs these tests in the MariaDB browser job.
+To run browser regression tests, install the dependencies in `admin/frontend/dashboard` and `admin/frontend/in-app-embed`, then build this package and the in-app embed. Run `npx playwright install chromium` and `npx playwright test --config cloud-settings.config.ts` from `admin/frontend/dashboard`. The tests check that the SDK loads the UI from Pilot and loads a panel only when it is shown, dialog cleanup, custom feedback translations, task cancellation and resume, and the phone layout. `cloud-settings-billing.spec.ts` checks the billing tab: the trial notice and its states, the billing details and payment steps during a trial, the country and Indian state lists, a card that fails verification, the plan list, the move to the progress page, and the refusal, spending limit and retry states. `cloud-settings-marketplace.spec.ts` checks that a trial keeps the app it is for, the backup offer before an uninstall, the move to Desk after the host app is removed, the logo and position of a task card, and that app details wait for the pointer to move. CI runs these tests in the MariaDB browser job.
 
 To test all panels with sample data, build this package and the in-app embed. Run `python3 -m http.server 8123` from the repository root. Open `http://localhost:8123/admin/frontend/cloud-sdk/tests/embed.html`. No real payment or site action runs in this fixture.
 
@@ -182,4 +185,4 @@ To test billing without host metadata, run this from the Pilot repository:
 .venv/bin/python -m scripts.cloud_settings_simulator --bench-root /path/to/local/bench
 ```
 
-Use a local development site that has the server APIs and a button to open the dialog. Set that site's `pilot_endpoint` to `http://127.0.0.1:8003`, then clear its cache. Keep its existing site token. Sign in as a System Manager and open Billing. The simulation controls are at `http://127.0.0.1:8124`. Save the sample profile, complete the local checkout, then click Check status. To test the trial flow, choose **Start a free trial** on the controls page: Billing then shows an open trial, and a completed checkout converts it. You can reset the data or simulate an API failure. State stays in memory. Billing makes no real charges. Other Pilot operations still use the real local bench. Stop the simulator and restore the original endpoint when finished.
+Use a local development site that has the server APIs and a button to open the dialog. Set that site's `pilot_endpoint` to `http://127.0.0.1:8003`, then clear its cache. Keep its existing site token. Sign in as a System Manager and open Billing. The simulation controls are at `http://127.0.0.1:8124`. Save the sample profile, complete the local checkout, then click Check status. To test the trial flow, choose **Start a free trial** on the controls page: Billing then shows an open trial with no invoices, and a completed checkout converts it. **End the free trial** shows a trial that ended without converting. When the trial converts to a bigger plan, Billing shows the move, then sends the browser to a simulated progress page, which returns to the site when the move ends. Start the simulator with `--trial-app <app>` to name the app the trial is for, as Central does. The Marketplace panel then keeps that app installed until the trial converts. The simulation answers as Central does: the country and GST state lists come from the bench's Frappe and Central apps, an address in India bills in INR through Razorpay and every other country in USD through Stripe, and a trial offers only the paid plans. Razorpay Checkout needs real Razorpay keys, so the simulation stops at that step. You can reset the data or simulate an API failure. State stays in memory. Billing makes no real charges. Other Pilot operations still use the real local bench. Stop the simulator and restore the original endpoint when finished.

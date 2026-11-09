@@ -3,10 +3,10 @@ import { useTranslation } from '../translation'
 import { installApp, isMigrationConflict, uninstallApp, updateApps } from '@frappe/cloud-sdk/api'
 import type { MarketplaceApp, TaskSubmission } from '@frappe/cloud-sdk'
 import { Button, ErrorMessage, Select, TextInput, toast } from 'frappe-ui'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import ActionableError from '../components/ActionableError.vue'
 import AppRow from '../components/AppRow.vue'
-import AppTaskCard from '../components/AppTaskCard.vue'
+import AppTaskList from '../components/AppTaskList.vue'
 import Panel from '../components/Panel.vue'
 import UninstallAppDialog from '../components/UninstallAppDialog.vue'
 import UpdateAppsDialog from '../components/UpdateAppsDialog.vue'
@@ -31,6 +31,7 @@ interface Props {
 const props = defineProps<Props>()
 const store = props.store
 const site = store.state.context.site_name || window.location.host
+const hostApp = inject('hostApp', '')
 
 const ACTION = {
   install: {
@@ -80,6 +81,20 @@ const marketplace = computed(() => store.state.marketplace)
 const appTitles = computed(() =>
   Object.fromEntries((marketplace.value?.apps || []).map((app) => [app.name, app.title])),
 )
+const appLogos = computed(() =>
+  Object.fromEntries((marketplace.value?.apps || []).map((app) => [app.name, app.logo_url])),
+)
+
+const listFormat = new Intl.ListFormat(undefined, { type: 'conjunction' })
+
+// The site exists to try its trial app, so that app stays until the trial converts, and so do the apps it needs.
+const getUninstallBlockedReason = (app: MarketplaceApp) => {
+  if (app.name === store.state.billing?.trial?.app) return __('Your trial is for {0}. Upgrade to remove it.', [app.title])
+
+  const dependents = (app.required_by || []).map((name) => appTitles.value[name] || name)
+  return dependents.length ? __('Needed by {0}.', [listFormat.format(dependents)]) : ''
+}
+
 const error = computed(() => store.state.marketplaceError)
 const loadFailed = computed(() => Boolean(error.value) && !marketplace.value)
 const updateCount = computed(() => marketplace.value?.update_count || 0)
@@ -149,9 +164,20 @@ const cardTasks = computed(() =>
       verb: entry.verb as 'install' | 'uninstall',
       name,
       title: appTitles.value[name] || name,
+      logoUrl: appLogos.value[name] || '',
     })),
 )
-const runningTask = computed(() => cardTasks.value.find((item) => item.task?.status === 'running'))
+
+const content = ref<HTMLElement>()
+const scrolledAt = ref(0)
+provide('marketplaceScrolledAt', scrolledAt)
+
+const onScroll = () => (scrolledAt.value = performance.now())
+// The panel scrolls inside a shadow root, which a scroll event does not leave.
+const getScrollRoot = () => content.value?.getRootNode() as Document | ShadowRoot | undefined
+
+onMounted(() => getScrollRoot()?.addEventListener('scroll', onScroll, { capture: true, passive: true }))
+onBeforeUnmount(() => getScrollRoot()?.removeEventListener('scroll', onScroll, { capture: true }))
 
 const retryTask = (item: { name: string; title: string; verb: string }) =>
   item.verb === 'uninstall' ? uninstall(item, 'uninstall') : install(item)
@@ -277,6 +303,12 @@ const runAction = async (app: Pick<MarketplaceApp, 'name' | 'title'>, verb: keyo
       )
     }
 
+    // This page belongs to the app that was just removed, so it no longer exists.
+    if ((verb === 'uninstall' || verb === 'disable') && app.name === hostApp) {
+      window.location.assign('/desk')
+      return
+    }
+
     if (!isJoined) toastDone(app.title, verb)
   } catch (exception) {
     finished = true
@@ -335,6 +367,7 @@ const settle = async (wait: Promise<TaskOutcome> | undefined, action: { verb: st
 
 <template>
   <Panel
+    skeleton="apps"
     :title="__('Marketplace')"
     :description="__('Install apps and keep them up to date.')"
     :loading="!marketplace && !error"
@@ -353,7 +386,7 @@ const settle = async (wait: Promise<TaskOutcome> | undefined, action: { verb: st
       />
     </template>
 
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div ref="content" class="flex flex-col gap-2 sm:flex-row sm:items-center">
       <TextInput v-model="query" class="flex-1" :aria-label="__('Search apps')" :placeholder="__('Search apps')">
         <template #prefix><span class="lucide-search size-4 text-ink-gray-5" /></template>
       </TextInput>
@@ -375,25 +408,7 @@ const settle = async (wait: Promise<TaskOutcome> | undefined, action: { verb: st
       :action-url="blocker.actionUrl"
     />
 
-    <template v-if="cardTasks.length">
-      <h3 class="mb-3 mt-6 text-base-semibold text-ink-gray-8">{{ __("In progress") }}</h3>
-
-      <div class="flex flex-col gap-2">
-        <AppTaskCard
-          v-for="item in cardTasks"
-          :key="item.taskId"
-          :title="item.title"
-          :verb="item.verb"
-          :task-id="item.taskId"
-          :task="item.task"
-          :is-unreachable="item.isUnreachable"
-          :log-url="getTaskUrl(item.taskId)"
-          :waiting-for="runningTask?.title"
-          @retry="retryTask(item)"
-          @dismiss="dismissTask(item.name)"
-        />
-      </div>
-    </template>
+    <AppTaskList :items="cardTasks" :get-task-url="getTaskUrl" @retry="retryTask" @dismiss="dismissTask" />
 
     <p v-if="!filteredApps.length" class="py-12 text-center text-p-sm text-ink-gray-5">
       {{ __("No apps match your search.") }}
@@ -414,6 +429,7 @@ const settle = async (wait: Promise<TaskOutcome> | undefined, action: { verb: st
           :app-titles="appTitles"
           :pending="pending[app.name] || ''"
           :error="errors[app.name] || ''"
+          :uninstall-blocked-reason="getUninstallBlockedReason(app)"
           @install="install"
           @uninstall="askUninstall"
           @update="updateOne"

@@ -4,11 +4,13 @@ import { Alert, Button, Progress, toast } from 'frappe-ui'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { openExternal } from '../external'
 import { useTranslation } from '../translation'
+import AppLogo from './AppLogo.vue'
 
 const __ = useTranslation()
 
 interface Props {
   title: string
+  logoUrl?: string
   verb: 'install' | 'uninstall'
   taskId: string
   task?: TaskStatus
@@ -75,6 +77,8 @@ const copyDetails = async () => {
 <template>
   <section class="rounded-6 border p-4" :class="isFailed ? 'border-outline-red-2' : 'border-outline-gray-2'">
     <div class="flex items-start gap-3" role="status" aria-live="polite">
+      <AppLogo class="mt-px" :title="title" :url="logoUrl" />
+
       <div class="min-w-0 flex-1">
         <p class="text-base-semibold text-ink-gray-8">{{ headline }}</p>
         <p class="mt-0.5 text-p-sm" :class="isFailed ? 'text-ink-red-6' : 'text-ink-gray-5'">{{ subline }}</p>
