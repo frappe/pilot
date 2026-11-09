@@ -40,7 +40,7 @@ class Bootstrap(TypedDict):
     central: NotRequired[bool]
     central_url: NotRequired[str]
     central_audience: NotRequired[str]
-    developer_mode: NotRequired[bool]
+    code_editor: NotRequired[bool]
     task_worker: NotRequired[TaskWorkerActivity]
 
 
@@ -100,7 +100,7 @@ def bootstrap():
                 "central": config.central.enabled,
                 "central_url": config.admin.central_url if config.central.enabled else "",
                 "central_audience": config.admin.jwks_audience if config.central.enabled else "",
-                "developer_mode": config.allow_developer_mode,
+                "code_editor": config.enable_code_editor,
                 "task_worker": TaskActivityReader(bench_root).read().public_dict,
             },
         )

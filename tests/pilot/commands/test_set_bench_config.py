@@ -51,9 +51,9 @@ def test_set_bench_config_rejects_unknown_keys(tmp_path: Path) -> None:
 def test_set_bench_config_skips_the_runtime_rebuild_before_init(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
 
-    _run(bench, "allow_developer_mode", "true")
+    _run(bench, "enable_code_editor", "false")
 
-    assert _read(bench)["bench"]["allow_developer_mode"] is True
+    assert _read(bench)["bench"]["enable_code_editor"] is False
     assert not (bench.path / "sites").exists()
 
 
@@ -64,7 +64,7 @@ def test_set_bench_config_rebuilds_runtime_configs_once_initialized(tmp_path: Pa
     (bench.path / "env" / "bin").mkdir(parents=True)
     (bench.path / "env" / "bin" / "python").touch()
 
-    _run(bench, "allow_developer_mode", "true")
+    _run(bench, "enable_code_editor", "false")
 
-    assert _read(bench)["bench"]["allow_developer_mode"] is True
+    assert _read(bench)["bench"]["enable_code_editor"] is False
     assert (bench.path / "sites" / "common_site_config.json").exists()

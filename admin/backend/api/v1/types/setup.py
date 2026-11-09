@@ -20,7 +20,7 @@ class SetupConfiguration(TypedDict):
     reload_python: bool
     watch_admin_js: bool
     db_type: str
-    allow_developer_mode: bool
+    enable_code_editor: bool
     mariadb_admin_user: str
     mariadb_socket_path: str
     mariadb_host: str
