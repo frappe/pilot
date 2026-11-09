@@ -31,7 +31,7 @@ export const sidebarSections: SidebarSection[] = [
     label: 'Dev tools',
     items: [
       { label: 'DB analyzer', icon: 'lucide-database', to: '/database/analyzer' },
-      { label: 'SQL playground', icon: 'lucide-terminal', to: '/database/sql-playground' },
+      { label: 'System console', icon: 'lucide-square-terminal', to: '/console' },
       { label: 'Code editor', icon: 'lucide-code', to: '/editor', flag: 'developerMode' },
     ],
   },

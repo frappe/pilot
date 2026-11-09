@@ -24,6 +24,11 @@ ADMIN_VENV_IMPORTS = {
     "pilot/core/database/engines/postgres.py": {"psycopg2"},
     "pilot/managers/database/mariadb.py": {"pymysql"},
 }
+# Scripts that pilot runs with the bench's Python and never imports.
+BENCH_PYTHON_IMPORTS = {
+    "pilot/core/site/console/jedi_helper.py": {"jedi"},
+}
+NON_CLI_IMPORTS = {**ADMIN_VENV_IMPORTS, **BENCH_PYTHON_IMPORTS}
 FIRST_PARTY = {"pilot", "admin"}
 
 
@@ -55,7 +60,7 @@ def test_pilot_imports_only_the_standard_library() -> None:
     violations = []
     for path in pilot_sources():
         relative = path.relative_to(ROOT).as_posix()
-        allowed = allowed_everywhere | ADMIN_VENV_IMPORTS.get(relative, set())
+        allowed = allowed_everywhere | NON_CLI_IMPORTS.get(relative, set())
         extra = imported_packages(ast.parse(path.read_text())) - allowed
         violations.extend(f"{relative}: {package}" for package in sorted(extra))
 
@@ -64,11 +69,11 @@ def test_pilot_imports_only_the_standard_library() -> None:
 
 def test_cli_modules_import_without_site_packages() -> None:
     """`python -S` drops site-packages, as on a host where only the system Python exists."""
-    admin_venv_modules = {path.removesuffix(".py").replace("/", ".") for path in ADMIN_VENV_IMPORTS}
+    skipped_modules = {path.removesuffix(".py").replace("/", ".") for path in NON_CLI_IMPORTS}
     modules = sorted(admin_modules_used_by_pilot())
     for path in pilot_sources():
         module = ".".join(path.relative_to(ROOT).with_suffix("").parts).removesuffix(".__init__")
-        if path.name != "__main__.py" and module not in admin_venv_modules:
+        if path.name != "__main__.py" and module not in skipped_modules:
             modules.append(module)
 
     script = (

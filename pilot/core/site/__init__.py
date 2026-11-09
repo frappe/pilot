@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
+    from pilot.core.site.console.completions import ConsoleCompletions
+    from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
     from pilot.core.site.migration_backup import SiteMigrationBackup
@@ -39,6 +41,12 @@ class Site:
         from pilot.core.site.backups import SiteBackups
 
         return SiteBackups(self)
+
+    @cached_property
+    def console_completions(self) -> "ConsoleCompletions":
+        from pilot.core.site.console.completions import ConsoleCompletions
+
+        return ConsoleCompletions(self)
 
     @cached_property
     def domains(self) -> "SiteDomains":
@@ -240,6 +248,12 @@ class Site:
         from pilot.core.site.commands import SiteCommands
 
         return SiteCommands(self).has_pending_background_jobs()
+
+    def script(self, code: str, commit: bool = False) -> "SiteScript":
+        """A Python script for this site; iterate `run()` to execute it."""
+        from pilot.core.site.console.script import SiteScript
+
+        return SiteScript(self, code, commit)
 
     def clear_cache(self) -> None:
         from pilot.core.site.commands import SiteCommands
