@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useTranslation } from '../translation'
-import { Button, SettingsBody, SettingsHeader, Skeleton } from 'frappe-ui'
+import { Button, SettingsBody, SettingsHeader } from 'frappe-ui'
+import PanelSkeleton, { type SkeletonKind } from './PanelSkeleton.vue'
 
 const __ = useTranslation()
 
@@ -10,6 +11,7 @@ interface Props {
   loading?: boolean
   error?: string
   errorTitle?: string
+  skeleton?: SkeletonKind
 }
 
 withDefaults(defineProps<Props>(), {
@@ -32,9 +34,7 @@ defineEmits(['retry'])
   </SettingsHeader>
 
   <SettingsBody viewport-class="px-4 pt-1 pb-10 sm:px-10 sm:pb-16">
-    <div v-if="loading" class="space-y-3" role="status" :aria-label="__('Loading')">
-      <Skeleton v-for="n in 3" :key="n" class="h-24 rounded-6" />
-    </div>
+    <PanelSkeleton v-if="loading" :kind="skeleton" />
 
     <div
       v-else-if="error"

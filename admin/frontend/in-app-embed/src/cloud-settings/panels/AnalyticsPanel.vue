@@ -161,6 +161,7 @@ const formatTime = (time: number) =>
 
 <template>
   <Panel
+    skeleton="tiles"
     :title="__('Analytics')"
     :description="__('How your site has been doing.')"
     :loading="!analytics && !error"

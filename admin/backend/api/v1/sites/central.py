@@ -19,8 +19,10 @@ NOT_CONNECTED_MESSAGE = "This server is not connected to Frappe Cloud."
 class CentralAccountLink(TypedDict):
     url: str
     billing: str
+    invoices: str
     change_plan: str
     server: str
+    end_subscription: str
 
 
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
@@ -67,7 +69,8 @@ def central_proxy(name: str, method_path: str):
 def account_url(name: str):
     """Central dashboard links for this site, safe for the site's browser to open.
 
-    Central finds this server by its Pilot audience, as the admin dashboard's own links do."""
+    Central finds this server by its Pilot audience, as the admin dashboard's own links do. Each link
+    opens one task for this server, so an app user never starts at Central's server list."""
     from urllib.parse import urlencode
 
     from pilot.integrations.central import InstanceMetadata
@@ -81,7 +84,10 @@ def account_url(name: str):
     link: CentralAccountLink = {
         "url": url,
         "billing": f"{url}/dashboard/billing",
+        "invoices": f"{url}/dashboard/billing/invoices",
         "change_plan": f"{url}/dashboard/servers?{urlencode({'pilot': audience, 'action': 'resize'})}",
         "server": f"{url}/api/method/central.api.sso.open_bench?{urlencode({'pilot': audience})}",
+        # Central opens this server's terminate dialog, or its overview before it knows the action.
+        "end_subscription": f"{url}/dashboard/servers?{urlencode({'pilot': audience, 'action': 'terminate'})}",
     }
     return jsonify(link)

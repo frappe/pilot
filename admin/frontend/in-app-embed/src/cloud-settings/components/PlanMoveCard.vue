@@ -53,27 +53,23 @@ onBeforeUnmount(stop)
 
 <template>
   <section class="rounded-6 border border-outline-gray-1.5 p-5" role="status" aria-live="polite">
-    <p class="flex items-center gap-2 text-base-semibold text-ink-gray-8">
-      <span class="lucide-circle-check size-4 text-ink-green-3" aria-hidden="true" />
+    <p class="text-base-semibold text-ink-gray-8">
       {{ plan ? __("Upgrading to {0}", [plan]) : __("Upgrading your plan") }}
     </p>
-    <p class="mt-1 text-p-sm text-ink-gray-6">
-      {{ __("Billing has started, and full server access is on. Your site restarts in a few minutes while it moves to the new plan.") }}
-    </p>
 
-    <p v-if="isWaiting" class="mt-4 flex items-center gap-2 text-p-sm text-ink-gray-5">
+    <p v-if="isWaiting" class="mt-3 flex items-center gap-2 text-p-sm text-ink-gray-5">
       <LoadingIndicator class="size-4" />
       {{ __("Starting the move…") }}
     </p>
     <Button
       v-else-if="progressUrl"
-      class="mt-4"
+      class="mt-3"
       variant="solid"
       icon-right="lucide-arrow-up-right"
       :label="__('Follow progress')"
       @click="openProgress"
     />
-    <p v-else class="mt-4 text-p-sm text-ink-gray-5">
+    <p v-else class="mt-3 text-p-sm text-ink-gray-5">
       {{ __("The move starts shortly. Your site comes back on its own when it is ready.") }}
     </p>
   </section>

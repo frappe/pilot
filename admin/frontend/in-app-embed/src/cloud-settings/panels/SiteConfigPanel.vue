@@ -121,6 +121,7 @@ const menuOptions = (row: { key: string; value: string }) => [
 
 <template>
   <Panel
+    skeleton="table"
     :title="__('Site config')"
     :description="__('Settings your site reads from site_config.json.')"
     :loading="!config && !error"
