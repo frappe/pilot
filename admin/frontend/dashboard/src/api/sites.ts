@@ -9,6 +9,7 @@ import type {
   FrappeCloudConnection,
   RemoteBackupList,
 } from '@/types/siteBackups'
+import type { ConsoleDocType } from '@/types/siteConsole'
 import type { DnsRecords, SiteDomains } from '@/types/siteDomains'
 import type { SiteAnalytics, SiteUptime } from '@/types/siteMonitoring'
 import type { SiteStorageReport } from '@/types/siteStorage'
@@ -29,6 +30,24 @@ export const sitesApi = {
   list: (): Promise<SiteResource[]> => request.get('sites').json(),
 
   storage: (): Promise<SiteStorageReport> => request.get('sites/storage').json(),
+
+  consoleDoctypes: (name: string): Promise<string[]> =>
+    unwrap(request.get(`sites/${encodeURIComponent(name)}/console/doctypes`).json()),
+
+  consoleDoctype: (name: string, doctype: string): Promise<ConsoleDocType> =>
+    unwrap(
+      request
+        .get(`sites/${encodeURIComponent(name)}/console/doctypes/${encodeURIComponent(doctype)}`)
+        .json(),
+    ),
+
+  /** Streams `ConsoleOutputEvent`, then `ConsoleExitEvent` or `ConsoleErrorEvent`. */
+  runConsoleScript: (name: string, code: string, commit: boolean, signal: AbortSignal) =>
+    request.post(`sites/${encodeURIComponent(name)}/console`, {
+      json: { code, commit },
+      timeout: false,
+      signal,
+    }),
 
   refreshStorage: (name: string): Promise<TaskPayload> =>
     request.post(`sites/${encodeURIComponent(name)}/actions/refresh-storage`).json(),

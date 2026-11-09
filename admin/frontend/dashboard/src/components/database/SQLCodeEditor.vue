@@ -20,6 +20,7 @@ import { Compartment, Prec } from '@codemirror/state'
 import { syntaxHighlighting } from '@codemirror/language'
 
 import { codeEditorHighlightStyle, codeEditorTheme } from '@/components/common/codeEditorTheme'
+import { fillLinesOnResize } from '@/components/common/fillLinesOnResize'
 import type { TableColumn, TableSchema } from '@/types/database'
 
 interface Props {
@@ -104,6 +105,7 @@ const runKeymap = Prec.highest(
 
 const extensions = [
   codeEditorTheme,
+  fillLinesOnResize,
   Prec.highest(syntaxHighlighting(codeEditorHighlightStyle)),
   lineNumbers(),
   drawSelection(),

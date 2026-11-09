@@ -1,31 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
 import { Alert, Button, Dialog, Select, TabButtons } from 'frappe-ui'
 
-import EmptyState from '@/components/common/EmptyState.vue'
+import ResizableEditor from '@/components/console/ResizableEditor.vue'
 import SQLCodeEditor from '@/components/database/SQLCodeEditor.vue'
 import SQLSchemaDialog from '@/components/database/SQLSchemaDialog.vue'
 import Table from '@/components/common/Table.vue'
 
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { databaseApi } from '@/api/database'
-import type { DatabaseSite, ExecutedQuery, TableSchema } from '@/types/database'
+import type { ExecutedQuery, TableSchema } from '@/types/database'
 import { errorMessage } from '@/utils/error'
 
 interface QueryResult extends ExecutedQuery {
   query: string
 }
 
+const props = defineProps<{ site: string; dbType: string }>()
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const route = useRoute()
-const router = useRouter()
-
-const routeSite = route.query.site
-
-const sites = ref<DatabaseSite[]>([])
-const selectedSite = ref(typeof routeSite === 'string' ? routeSite : '')
 const query = ref('')
 const modeStr = ref('readonly')
 const readOnly = computed(() => modeStr.value === 'readonly')
@@ -36,15 +30,6 @@ const error = ref('')
 const showSchema = ref(false)
 const schema = ref<TableSchema[]>([])
 const editorRef = ref<InstanceType<typeof SQLCodeEditor> | null>(null)
-
-const siteOptions = computed(() => [
-  { label: 'Select site', value: '' },
-  ...sites.value.map((s) => ({ label: s.name, value: s.name })),
-])
-
-const selectedSiteDbType = computed(
-  () => sites.value.find((s) => s.name === selectedSite.value)?.db_type || 'mariadb',
-)
 
 const modeOptions = [
   { label: 'Read-only', value: 'readonly' },
@@ -127,12 +112,12 @@ const quoteIdentifier = (name: string, dbType: string) => {
 
 const previewTable = (tableName: string) => {
   modeStr.value = 'readonly'
-  query.value = `SELECT * FROM ${quoteIdentifier(tableName, selectedSiteDbType.value)} LIMIT 100;`
+  query.value = `SELECT * FROM ${quoteIdentifier(tableName, props.dbType)} LIMIT 100;`
   executeQuery(query.value)
 }
 
 const executeQuery = async (raw: string) => {
-  if (!selectedSite.value || !raw?.trim()) return
+  if (!raw?.trim()) return
   const statements = raw
     .split(';')
     .map((s) => s.trim())
@@ -148,7 +133,7 @@ const executeQuery = async (raw: string) => {
   try {
     const executed: QueryResult[] = []
     for (const stmt of statements) {
-      const data = await databaseApi.execute(selectedSite.value, stmt, readOnly.value)
+      const data = await databaseApi.execute(props.site, stmt, readOnly.value)
       if (hasApiError(data)) throw new Error(apiErrorMessage(data, 'Query failed.'))
       executed.push({ ...data, query: stmt })
     }
@@ -174,7 +159,7 @@ const exportCsv = () => {
   const csv = [columns.join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n')
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
-    download: `${selectedSite.value}-query.csv`,
+    download: `${props.site}-query.csv`,
   })
   a.click()
   URL.revokeObjectURL(a.href)
@@ -183,9 +168,8 @@ const exportCsv = () => {
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 const refreshSchema = async () => {
-  if (!selectedSite.value) return
   try {
-    const data = await databaseApi.schema(selectedSite.value)
+    const data = await databaseApi.schema(props.site)
     if (!hasApiError(data)) schema.value = data
   } catch {
     // keep last known schema on failure
@@ -195,23 +179,19 @@ const refreshSchema = async () => {
 // ── Watchers ──────────────────────────────────────────────────────────────────
 
 watch(
-  selectedSite,
+  () => props.site,
   (site) => {
-    if ((route.query.site || '') !== site) {
-      router.replace({ path: route.path, query: site ? { site } : {} })
-    }
-    query.value = site ? localStorage.getItem(`last_sql_query_${site}`) || '' : ''
+    query.value = localStorage.getItem(`last_sql_query_${site}`) || ''
     results.value = []
     error.value = ''
     schema.value = []
-    if (!site) return
     refreshSchema()
   },
   { immediate: true },
 )
 
 watch(query, (value) => {
-  if (selectedSite.value) localStorage.setItem(`last_sql_query_${selectedSite.value}`, value)
+  localStorage.setItem(`last_sql_query_${props.site}`, value)
 })
 
 watch(activeTab, () => {
@@ -220,81 +200,52 @@ watch(activeTab, () => {
 watch(perPage, () => {
   page.value = 1
 })
-
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
-
-onMounted(async () => {
-  try {
-    sites.value = await databaseApi.sites()
-    if (!selectedSite.value && sites.value.length === 1) selectedSite.value = sites.value[0].name
-  } catch {}
-})
 </script>
 
 <template>
-  <Teleport v-if="selectedSite" defer to="#header-actions">
-    <Select
-      side="bottom"
-      v-model="selectedSite"
-      :options="siteOptions"
-      class="w-28 sm:w-44 max-w-[140px] sm:max-w-[180px]"
-    />
-  </Teleport>
-
-  <EmptyState
-    v-if="!selectedSite"
-    class="justify-center h-[calc(100dvh-6.5rem)] md:h-[calc(100dvh-3rem)]"
-    icon="lucide-database"
-    title="Select a site to get started"
-    description="Queries run against that site's database."
-    :bordered="false"
-  >
-    <Select side="bottom" v-model="selectedSite" :options="siteOptions" class="w-56" />
-  </EmptyState>
-
-  <main v-else class="p-3 md:p-4 flex flex-col gap-3">
+  <main class="p-3 md:p-4 flex flex-col gap-3">
     <!-- editor -->
-    <div class="border rounded-4 border-outline-gray-2 overflow-hidden transition-colors">
-      <div class="h-44 sm:h-[220px]">
-        <SQLCodeEditor
-          ref="editorRef"
-          v-model="query"
-          :schema="schema"
-          :db-type="selectedSiteDbType"
-          @run="runQuery"
-        />
-      </div>
+    <ResizableEditor storage-key="console_sql_editor_height">
+      <SQLCodeEditor
+        ref="editorRef"
+        v-model="query"
+        :schema="schema"
+        :db-type="dbType"
+        @run="runQuery"
+      />
 
-      <!-- actions toolbar footer -->
-      <div
-        class="flex flex-wrap items-center gap-2 bg-surface-base px-2 py-2 border-t border-outline-gray-2"
-      >
-        <TabButtons v-model="modeStr" :options="modeOptions" />
-
-        <Button
-          variant="outline"
-          iconLeft="lucide-table"
-          :disabled="!schema.length"
-          @click="showSchema = true"
+      <template #footer>
+        <!-- actions toolbar footer -->
+        <div
+          class="flex flex-wrap items-center gap-2 bg-surface-base px-2 py-2 border-t border-outline-gray-2"
         >
-          Tables
-          <template v-if="schema.length" #suffix>
-            <span class="text-ink-gray-4 text-xs">{{ schema.length }}</span>
-          </template>
-        </Button>
+          <TabButtons v-model="modeStr" :options="modeOptions" />
 
-        <Button
-          class="md:ml-auto"
-          variant="solid"
-          iconLeft="lucide-play"
-          :loading="running"
-          :disabled="!selectedSite || !query.trim()"
-          @click="runQuery"
-        >
-          Execute
-        </Button>
-      </div>
-    </div>
+          <Button
+            variant="outline"
+            iconLeft="lucide-table"
+            :disabled="!schema.length"
+            @click="showSchema = true"
+          >
+            Tables
+            <template v-if="schema.length" #suffix>
+              <span class="text-ink-gray-4 text-xs">{{ schema.length }}</span>
+            </template>
+          </Button>
+
+          <Button
+            class="md:ml-auto"
+            variant="solid"
+            iconLeft="lucide-play"
+            :loading="running"
+            :disabled="!query.trim()"
+            @click="runQuery"
+          >
+            Execute
+          </Button>
+        </div>
+      </template>
+    </ResizableEditor>
 
     <Alert
       v-if="error"
