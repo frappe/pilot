@@ -91,6 +91,7 @@ class SiteScript:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        assert process.stdin is not None
         # A bootstrap that dies early closes the pipe; its output explains why.
         with contextlib.suppress(BrokenPipeError):
             process.stdin.write(self.code.encode())
@@ -99,6 +100,7 @@ class SiteScript:
         return process
 
     def _read(self, process: subprocess.Popen, should_stop: Callable[[], bool]) -> Iterator[bytes | None]:
+        assert process.stdout is not None
         deadline = time.monotonic() + TIMEOUT_SECONDS
         last_yield = time.monotonic()
         while not should_stop():
@@ -121,5 +123,6 @@ def _kill_process_group(process: subprocess.Popen) -> int:
     """Kill the script and anything it started; return its exit code."""
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
+    assert process.stdout is not None
     process.stdout.close()
     return process.wait()

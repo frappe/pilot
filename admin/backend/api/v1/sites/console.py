@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import codecs
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from typing import TypedDict
 
 from flask import Response, current_app, jsonify, request, stream_with_context
@@ -106,8 +106,9 @@ def _stream_script_events(script: SiteScript) -> Iterator[str]:
         return
     if tail := decoder.decode(b"", final=True):
         yield _format_event(ConsoleOutputEvent(output=tail))
+    assert script.exit_code is not None
     yield _format_event(ConsoleExitEvent(exit_code=script.exit_code, timed_out=script.is_timed_out))
 
 
-def _format_event(payload: dict) -> str:
+def _format_event(payload: Mapping[str, object]) -> str:
     return f"data: {json.dumps(payload)}\n\n"

@@ -48,17 +48,19 @@ class PythonCompleter:
         with self._lock:
             if not self.is_running:
                 self._start()
+            process = self._process
+            assert process is not None and process.stdin is not None and process.stdout is not None
             try:
-                self._process.stdin.write(json.dumps(request) + "\n")
-                self._process.stdin.flush()
+                process.stdin.write(json.dumps(request) + "\n")
+                process.stdin.flush()
             # The helper may have just exited on its idle timeout; the next request starts a new one.
             except BrokenPipeError:
                 self._stop()
                 return None
-            if not select.select([self._process.stdout], [], [], REPLY_SECONDS)[0]:
+            if not select.select([process.stdout], [], [], REPLY_SECONDS)[0]:
                 self._stop()
                 return None
-            reply = self._process.stdout.readline()
+            reply = process.stdout.readline()
             return json.loads(reply) if reply else None
 
     def _start(self) -> None:
