@@ -51,7 +51,14 @@ def git_commit(ws):
     body = json_body()
     if not (body.get("message") or "").strip():
         return error_response("bad_request", "Commit message is required.", 400)
-    return _git_result(*ws.git.commit(body["message"], bool(body.get("all"))))
+    stage_all = bool(body.get("all"))
+    if blockers := ws.get_commit_blockers(stage_all):
+        return _git_result(
+            False,
+            f"The editor cannot commit dot files or files outside this app: {', '.join(blockers)}. "
+            "Commit them from a terminal.",
+        )
+    return _git_result(*ws.git.commit(body["message"], stage_all))
 
 
 @editor_bp.get("/git/log")
@@ -120,7 +127,7 @@ def _git_path_op(ws, op):
     path = json_body().get("path") or ""
     if isinstance(path, str) and not path.strip():
         return error_response("bad_request", "Path is required.", 400)
-    return _git_result(*op(ws.relative(path)))
+    return _git_result(*op(ws.changeable(path)))
 
 
 def _git_result(ok: bool, message: str):

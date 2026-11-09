@@ -427,3 +427,58 @@ def test_dot_files_stay_listed_but_out_of_quick_open_and_search(tmp_path: Path) 
     search = client.get("/api/v1/editor/search", query_string={**app, "q": "hi"})
     if search.status_code == 200:
         assert [result["file"] for result in search.get_json()] == ["hello.py"]
+
+
+def _commit(client, all_changes: bool):
+    return client.post(
+        "/api/v1/editor/git/commit",
+        query_string={"app": "widgets"},
+        json={"message": "editor commit", "all": all_changes},
+    )
+
+
+def test_commit_all_refuses_dot_file_changes(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    app_dir = bench_root / "apps" / "widgets"
+    (app_dir / ".env").write_text("SECRET=1\n")
+    _commit_all(app_dir)
+    head = _git(app_dir, "rev-parse", "HEAD")
+    (app_dir / ".env").write_text("SECRET=2\n")
+    (app_dir / "hello.py").write_text("print('changed')\n")
+
+    response = _commit(_client(bench_root), all_changes=True)
+
+    assert response.status_code == 409
+    assert ".env" in response.get_json()["message"]
+    assert _git(app_dir, "rev-parse", "HEAD") == head
+
+
+def test_commit_all_takes_only_the_app_folder(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    apps = bench_root / "apps"
+    (apps / "top.txt").write_text("top\n")
+    _commit_all(apps)
+    (apps / "top.txt").write_text("top, changed\n")
+    (apps / "widgets" / "hello.py").write_text("print('changed')\n")
+
+    response = _commit(_client(bench_root), all_changes=True)
+
+    assert response.status_code == 200
+    assert _git(apps, "show", "--name-only", "--format=", "HEAD").split() == ["widgets/hello.py"]
+    assert "top.txt" in _git(apps, "status", "--porcelain")
+
+
+def test_commit_refuses_files_staged_outside_the_app(tmp_path: Path) -> None:
+    bench_root = _bench(tmp_path)
+    apps = bench_root / "apps"
+    (apps / "top.txt").write_text("top\n")
+    _commit_all(apps)
+    head = _git(apps, "rev-parse", "HEAD")
+    (apps / "top.txt").write_text("top, changed\n")
+    _git(apps, "add", "top.txt")
+
+    response = _commit(_client(bench_root), all_changes=False)
+
+    assert response.status_code == 409
+    assert "top.txt" in response.get_json()["message"]
+    assert _git(apps, "rev-parse", "HEAD") == head

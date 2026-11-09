@@ -34,7 +34,13 @@ class EditorWorkspace:
         """Resolve a client path against the root, rejecting traversal, symlink escapes and dot files."""
         clean = _clean_relative(rel)
         target = self.root / clean if clean else self.root
-        resolved = target.resolve()
+        try:
+            resolved = target.resolve(strict=True)
+        except FileNotFoundError:
+            resolved = target.resolve()
+        # A symlink loop, or a file used as a folder.
+        except (OSError, RuntimeError) as error:
+            raise EditorPathError(rel) from error
         if resolved != self.root_real and self.root_real not in resolved.parents:
             raise EditorPathError(rel)
         if _is_hidden(clean) or _is_hidden(resolved.relative_to(self.root_real).as_posix()):
@@ -45,10 +51,30 @@ class EditorWorkspace:
         """Validated in-app path, as git and the API expect to see it."""
         return self.rel(self.safe(rel))
 
+    def changeable(self, rel: str) -> str:
+        """Validated in-app path whose whole tree a git command may change: no dot file inside."""
+        target = self.safe(rel)
+        _refuse_hidden_inside(target)
+        return self.rel(target)
+
     def rel(self, abs_path: Path) -> str:
         if abs_path == self.root:
             return "."
         return abs_path.relative_to(self.root).as_posix()
+
+    def get_commit_blockers(self, stage_all: bool) -> list[str]:
+        """Repository paths a commit would take that the editor may not change: dot files or files
+        outside the app. Commit all stages only the app folder, so outside changes block only when staged."""
+        prefix = self.git.prefix
+        blockers = []
+        for code, path in self.git.get_changes():
+            is_staged = code[0] not in " ?"
+            is_inside = path.startswith(prefix)
+            if not is_staged and not (stage_all and is_inside):
+                continue
+            if not is_inside or _is_hidden(path[len(prefix) :]):
+                blockers.append(path)
+        return blockers
 
     def tree(self, rel: str) -> list[dict]:
         base = self.safe(rel)
@@ -116,6 +142,8 @@ class EditorWorkspace:
         source = self.safe(frm)
         destination = self.safe(to)
         _refuse_hidden_inside(source)
+        if source.resolve() in [destination.resolve(), *destination.resolve().parents]:
+            raise EditorPathError(to)
         if destination.exists():
             raise FileExistsError(to)
         destination.parent.mkdir(parents=True, exist_ok=True)

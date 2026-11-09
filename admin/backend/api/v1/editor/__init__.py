@@ -85,6 +85,14 @@ def _missing_error(_):
     return error_response("not_found", "File not found.", 404)
 
 
+@editor_bp.errorhandler(IsADirectoryError)
+@editor_bp.errorhandler(NotADirectoryError)
+def _kind_error(_):
+    return error_response(
+        "wrong_kind", "Path is a folder where a file is needed, or the other way round.", 400
+    )
+
+
 @editor_bp.errorhandler(FileExistsError)
 def _exists_error(_):
     return error_response("already_exists", "Path already exists.", 409)
