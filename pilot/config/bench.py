@@ -75,6 +75,7 @@ FLAT_KEYS = {
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
     "admin_tls": "admin.tls",
+    "admin_allow_site_to_pilot_communication": "admin.allow_site_to_pilot_communication",
     "admin_jwks_url": "admin.jwks_url",
     "admin_jwks_audience": "admin.jwks_audience",
     "admin_allow_bench_management": "admin.allow_bench_management",
@@ -645,6 +646,7 @@ class BenchConfig:
             "password": self.admin.password,
             "domain": self.admin.domain,
             "tls": self.admin.tls,
+            "allow_site_to_pilot_communication": self.admin.allow_site_to_pilot_communication,
             "allow_bench_management": self.admin.allow_bench_management,
         }
         if self.admin.route:
