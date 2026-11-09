@@ -52,6 +52,14 @@ who want a source checkout that compiles the admin UI locally can pass `--dev`:
 curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | bash -s -- --dev
 ```
 
+CI jobs that bring their own database in a container (set `mariadb.existing`
+on the bench) can pass `--ci` to skip the database servers, production traffic
+serving, and headless browsers:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | bash -s -- --ci
+```
+
 ## Basic Usage
 
 Create a bench and launch the setup wizard:
