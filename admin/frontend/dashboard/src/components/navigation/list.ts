@@ -2,7 +2,7 @@ interface SidebarNavItem {
   label: string
   icon: string
   to: string
-  flag?: 'allowBenchManagement' | 'centralEnabled' | 'developerMode'
+  flag?: 'allowBenchManagement' | 'centralEnabled' | 'codeEditor'
 }
 
 interface SidebarSection {
@@ -32,7 +32,7 @@ export const sidebarSections: SidebarSection[] = [
     items: [
       { label: 'DB analyzer', icon: 'lucide-database', to: '/database/analyzer' },
       { label: 'System console', icon: 'lucide-square-terminal', to: '/console' },
-      { label: 'Code editor', icon: 'lucide-code', to: '/editor', flag: 'developerMode' },
+      { label: 'Code editor', icon: 'lucide-code', to: '/editor', flag: 'codeEditor' },
     ],
   },
 ]

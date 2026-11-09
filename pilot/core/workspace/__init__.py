@@ -199,7 +199,6 @@ class Workspace:
 
         def configure(config: BenchConfig) -> None:
             config.admin.enabled = False
-            config.allow_developer_mode = True
             config.watch_apps_js = self.has_desk_bundles
             config.apps.append(AppConfig(name=self.app_name, repo="", branch="", path=str(self.root)))
 

@@ -82,8 +82,8 @@ class ConfigPatcher:
             self.config.socketio_port = int(bench["socketio_port"])
         if "default_branch" in bench:
             self.config.default_branch = str(bench["default_branch"]).strip()
-        if "allow_developer_mode" in bench:
-            self.config.allow_developer_mode = bool(bench["allow_developer_mode"])
+        if "enable_code_editor" in bench:
+            self.config.enable_code_editor = bool(bench["enable_code_editor"])
         if "onboarding" in bench:
             if bench["onboarding"] not in ONBOARDING_STATES:
                 return f"bench.onboarding must be one of: {', '.join(repr(state) for state in ONBOARDING_STATES)}"

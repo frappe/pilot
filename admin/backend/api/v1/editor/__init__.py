@@ -25,8 +25,8 @@ def with_workspace(view):
     def wrapper(*args, **kwargs):
         bench_root = Path(current_app.config["BENCH_ROOT"])
         config = _read_config(bench_root)
-        if config is None or not config.allow_developer_mode:
-            return error_response("editor_disabled", "Code editor is disabled. Enable Developer Mode in Settings.", 403)
+        if config is None or not config.enable_code_editor:
+            return error_response("editor_disabled", "Code editor is turned off. Turn it on in Settings.", 403)
         name = (request.args.get("app") or "").strip()
         if validate_app_name(name) is not None:
             return error_response("editor_app_not_found", "Unknown or missing app.", 404)
@@ -39,9 +39,9 @@ def with_workspace(view):
     return wrapper
 
 
-def is_developer_mode_enabled(bench_root: Path) -> bool:
+def is_code_editor_enabled(bench_root: Path) -> bool:
     config = _read_config(bench_root)
-    return bool(config and config.allow_developer_mode)
+    return bool(config and config.enable_code_editor)
 
 
 def _read_config(bench_root: Path):

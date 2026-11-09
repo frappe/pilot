@@ -47,7 +47,7 @@ The `[bench]` table supports:
 | `socketio_backend` | `node` or `python`. |
 | `db_type` | `mariadb` or `postgres`. |
 | `default_branch` | Default branch for new apps. |
-| `allow_developer_mode` | Allows per-site developer mode changes. |
+| `enable_code_editor` | Turns on the Admin code editor for app files. The default is `true`. |
 | `watch_apps_js`, `watch_admin_js`, `reload_python` | Development reload settings. |
 | `install_dev_extra` | Install apps' `dev` extras on a non-production bench. Defaults to true; `pilot init --no-dev` sets it to false. |
 | `onboarding` | State of the onboarding dialog: empty shows it, `minimized` shows in sidebar card only, `dismissed` hides both |

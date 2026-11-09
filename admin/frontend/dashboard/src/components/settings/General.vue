@@ -13,22 +13,22 @@ const { session } = useSession()
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
-const allowDeveloperMode = ref(false)
+const codeEditor = ref(true)
 const liteMode = ref(false)
 const liteModeSupported = ref(false)
 const hasBucket = ref(false)
 const bucketBackups = ref(true)
 
-const toggleAllowDeveloperMode = async (value: boolean) => {
+const toggleCodeEditor = async (value: boolean) => {
   saving.value = true
   error.value = ''
   try {
-    await settingsApi.update({ bench: { allow_developer_mode: value } })
-    allowDeveloperMode.value = value
-    session.developerMode = value
-    toast.success(`Developer mode ${value ? 'allowed' : 'disallowed'}`)
+    await settingsApi.update({ bench: { enable_code_editor: value } })
+    codeEditor.value = value
+    session.codeEditor = value
+    toast.success(`Code editor ${value ? 'turned on' : 'turned off'}`)
   } catch (e) {
-    error.value = errorMessage(e, 'Could not update developer mode setting.')
+    error.value = errorMessage(e, 'Could not update the code editor setting.')
   } finally {
     saving.value = false
   }
@@ -65,7 +65,7 @@ const toggleBucketBackups = async (value: boolean) => {
 onMounted(async () => {
   try {
     const data = await settingsApi.get()
-    allowDeveloperMode.value = Boolean(data?.bench?.allow_developer_mode)
+    codeEditor.value = data?.bench?.enable_code_editor ?? true
     liteMode.value = Boolean(data?.lite_mode?.enabled)
     liteModeSupported.value = Boolean(data?.lite_mode?.supported)
     hasBucket.value = Boolean(data?.s3?.bucket)
@@ -88,20 +88,6 @@ onMounted(async () => {
 
     <div class="-mx-3 -mt-3.5 inset-dividers">
       <SettingsRow
-        label="Allow developer mode"
-        description="Enables per-site developer mode and code editor."
-        interactive
-        @click="!saving && toggleAllowDeveloperMode(!allowDeveloperMode)"
-      >
-        <Switch
-          :model-value="allowDeveloperMode"
-          :disabled="saving"
-          @click.stop
-          @update:model-value="toggleAllowDeveloperMode"
-        />
-      </SettingsRow>
-
-      <SettingsRow
         v-if="liteModeSupported"
         label="Lite mode"
         description="One process for web, realtime and jobs. Less memory, best for small sites."
@@ -113,6 +99,20 @@ onMounted(async () => {
           :disabled="saving"
           @click.stop
           @update:model-value="toggleLiteMode"
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        label="Code editor"
+        description="Browse and edit the files of installed apps."
+        interactive
+        @click="!saving && toggleCodeEditor(!codeEditor)"
+      >
+        <Switch
+          :model-value="codeEditor"
+          :disabled="saving"
+          @click.stop
+          @update:model-value="toggleCodeEditor"
         />
       </SettingsRow>
 
