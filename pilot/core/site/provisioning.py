@@ -114,6 +114,9 @@ class SiteProvisioner:
         from admin.backend.internal.session import Session
         from pilot.utils import write_private_text
 
+        if not self.bench.config.admin.allow_site_to_pilot_communication:
+            # Dev sites stay unmarked so Frappe treats them as self-hosted.
+            return
         config_path = site.path / "site_config.json"
         if not config_path.exists():
             return
