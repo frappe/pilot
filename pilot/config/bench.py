@@ -893,12 +893,23 @@ def _set_path(config: BenchConfig, path: str, value) -> None:
         obj = getattr(obj, part)
     current = getattr(obj, leaf)
     if isinstance(current, bool):
-        value = bool(value)
+        value = _sbool(value)
     elif isinstance(current, int):
         value = int(value)
     elif isinstance(current, str):
         value = str(value)
     setattr(obj, leaf, value)
+
+
+def _sbool(value):
+    """Frappe sbool: "true"/"1" become True, "false"/"0" become False."""
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in ("true", "1"):
+            return True
+        if lowered in ("false", "0"):
+            return False
+    return value
 
 
 def _workers_to_groups(value) -> list[WorkerGroup]:
