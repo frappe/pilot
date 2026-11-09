@@ -23,6 +23,11 @@ SUDO_PASS="${SUDO_PASS:-}"
 # The default install pulls a prebuilt release tarball; --dev clones develop and
 # compiles the admin frontend from source.
 DEV_MODE="${PILOT_DEV:-}"
+# --ci skips everything a test bench with an external database does not need:
+# the database servers (use a container instead), production traffic serving,
+# and headless browsers. CI still gets clients, dev headers, redis, uv and the
+# admin environment.
+CI_MODE="${PILOT_CI:-}"
 # A release tag such as v0.0.87 installs that release instead of the latest.
 PILOT_VERSION="${PILOT_VERSION:-}"
 
@@ -37,6 +42,7 @@ while [ $# -gt 0 ]; do
         --user) BENCH_USER="$2"; shift 2 ;;
         --user=*) BENCH_USER="${1#*=}"; shift ;;
         --dev) DEV_MODE=1; shift ;;
+    --ci) CI_MODE=1; shift ;;
         --version) PILOT_VERSION="$2"; shift 2 ;;
         --version=*) PILOT_VERSION="${1#*=}"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -230,17 +236,34 @@ bootstrap_packages() {
         macos)
             printf '%s\n' git python3 ;;
         debian)
-            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
-                libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
+            else
+                # Headless browsers for E2E; backend CI jobs bring their own or none.
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                    libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
+            fi ;;
         ubuntu)
-            printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
-                libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file
+            else
+                printf '%s\n' git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file \
+                    libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64
+            fi ;;
         fedora)
-            printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file \
-                nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file
+            else
+                printf '%s\n' git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file \
+                    nss atk at-spi2-atk libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib
+            fi ;;
         arch)
-            printf '%s\n' git curl bash sudo python base-devel tzdata cronie file \
-                nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib ;;
+            if [ -n "$CI_MODE" ]; then
+                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file
+            else
+                printf '%s\n' git curl bash sudo python base-devel tzdata cronie file \
+                    nss atk at-spi2-atk libxcomposite libxdamage libxfixes libxrandr mesa alsa-lib
+            fi ;;
     esac
 }
 
@@ -255,6 +278,8 @@ enable_cron() {
 # Debian/Ubuntu ship an older MariaDB than we want, so add the official repo
 # before the single pkg_update below refreshes both it and the base indices.
 add_distro_repos() {
+    # CI benches bring their own database in a container and need no vendor repos.
+    [ -z "$CI_MODE" ] || return 0
     case "$DISTRO" in
         debian|ubuntu)
             fetch_and_run_as_root "$MARIADB_REPO_SETUP_URL" \
@@ -291,20 +316,41 @@ add_fluent_bit_repo() {
 database_packages() {
     case "$DISTRO" in
         macos)
-            missing_packages "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
+            if [ -n "$CI_MODE" ]; then
+                missing_packages redis
+            else
+                missing_packages "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis
+            fi ;;
         debian|ubuntu)
-            missing_packages mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server ;;
+            if [ -n "$CI_MODE" ]; then
+                # CI benches use an external database, so the servers stay out.
+                # Clients and headers stay: the CLI shells out to them and the
+                # virtualenv compiles client libraries against the headers.
+                missing_packages mariadb-client libmariadb-dev postgresql-client libpq-dev pkg-config redis-server
+            else
+                missing_packages mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config redis-server
+            fi ;;
         fedora)
             # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
-            missing_packages mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
+            if [ -n "$CI_MODE" ]; then
+                missing_packages mariadb mariadb-connector-c-devel postgresql libpq-devel pkgconf-pkg-config valkey
+            else
+                missing_packages mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey
+            fi ;;
         arch)
-            missing_packages mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
+            if [ -n "$CI_MODE" ]; then
+                missing_packages mariadb-clients mariadb-libs postgresql-libs pkgconf redis
+            else
+                missing_packages mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis
+            fi ;;
     esac
 }
 
 # What `pilot setup production` needs. Installing the WAF module up front keeps
 # enabling the WAF later a non-root operation too.
 production_packages() {
+    # CI benches never serve production traffic.
+    [ -z "$CI_MODE" ] || return 0
     case "$DISTRO" in
         macos)  printf '%s\n' nginx certbot ;;
         debian|ubuntu|fedora)
