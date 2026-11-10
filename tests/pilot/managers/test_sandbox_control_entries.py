@@ -19,8 +19,9 @@ from tests.pilot.commands.test_commands import make_bench
 ROOT = Path(__file__).parents[3]
 # Names under config/ that Pilot's own code uses. Each one the admin trusts must be protected.
 CONFIG_NAME = re.compile(r'config_path\s*/\s*"([^"]+)"|"config"\s*/\s*"([^"]+)"')
-# Files in config/ that a workload may create, besides the lock files Frappe writes there.
-WRITABLE_BY_WORKLOAD = {"socketio.sock"}
+# Names in config/ that need no protection: files a workload may create (besides the lock files Frappe
+# writes there), and `console`, a lock that only the admin takes and nothing is loaded from.
+WRITABLE_BY_WORKLOAD = {"socketio.sock", "console"}
 
 
 def get_config_names() -> set[str]:
