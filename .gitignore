@@ -95,6 +95,9 @@ registry-cache*
 .agents
 skills-lock.json
 
+# Benchmark output (regenerate with scripts/benchmark/run.py)
+scripts/benchmark/results/
+
 # Local planning docs, never commit
 plan_*.md
 
