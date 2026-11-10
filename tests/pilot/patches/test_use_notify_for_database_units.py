@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from pilot.managers.database import MariaDBManager, PostgresManager
-from pilot.managers.database.base import NOTIFY_SERVICE_LINES
 from pilot.patches.use_notify_for_database_units import run
 
 _TOML = """[bench]
@@ -41,7 +40,7 @@ def test_an_existing_database_unit_reports_ready(tmp_path: Path, monkeypatch, re
 
     run(tmp_path / "benches")
 
-    assert unit.read_text() == f"[Service]\n{NOTIFY_SERVICE_LINES}ExecStart=/bin/db\n"
+    assert unit.read_text() == "[Service]\nType=notify\nTimeoutStartSec=15min\nExecStart=/bin/db\n"
     assert len(reloads) == 1
 
 
@@ -53,7 +52,7 @@ def test_a_postgres_unit_is_rewritten_too(tmp_path: Path, monkeypatch, reloads) 
 
     run(tmp_path / "benches")
 
-    assert "Type=notify" in unit.read_text()
+    assert "Type=notify\nTimeoutStartSec=infinity\n" in unit.read_text()
 
 
 def test_the_patch_runs_once_and_skips_a_unit_that_already_reports_ready(

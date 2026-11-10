@@ -32,7 +32,7 @@ from pilot.internal.atomic_file import (
     atomic_write_private_text,
     exclusive_file_lock,
 )
-from pilot.managers.database.base import NOTIFY_SERVICE_LINES, UserOwnedDBManager
+from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.database.memory import MariaDBMemory
 from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
@@ -65,6 +65,8 @@ class MariaDBManager(UserOwnedDBManager):
     _SYSTEM_PACKAGE = "mariadb-server"
     _BREW_FORMULA_BASE = "mariadb"
     _DEFAULT_VERSION = "11.8"
+    # The value in MariaDB's own unit. mariadbd extends it while it recovers from a crash.
+    _START_TIMEOUT = "15min"
 
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
@@ -960,7 +962,7 @@ class MariaDBManager(UserOwnedDBManager):
             "After=pilot-mariadb-sizing.service\n"
             "Description=MariaDB (pilot, user-owned)\n\n"
             "[Service]\n"
-            f"{NOTIFY_SERVICE_LINES}"
+            f"{self.notify_service_lines}"
             # --defaults-file must be the first argument; it makes mariadbd
             # skip every system default file instead of layering over them.
             f"ExecStart={mariadbd} --defaults-file={self.my_cnf_path}\n"

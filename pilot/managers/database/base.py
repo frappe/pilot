@@ -10,10 +10,6 @@ from pilot.managers.platform import is_macos
 from pilot.managers.systemd_user import SystemdUserMixin
 from pilot.utils import run_command
 
-# The server sends READY=1 once it accepts connections, so units ordered After= it start with it ready.
-# Crash recovery can take longer than systemd's 90 s default.
-NOTIFY_SERVICE_LINES = "Type=notify\nTimeoutStartSec=10min\n"
-
 
 class UserOwnedDBManager(SystemdUserMixin):
     """Shared service-control for per-user database servers."""
@@ -23,6 +19,7 @@ class UserOwnedDBManager(SystemdUserMixin):
     _SYSTEM_PACKAGE: str = ""
     _BREW_FORMULA_BASE: str = ""
     _DEFAULT_VERSION: str = ""
+    _START_TIMEOUT: str = ""
 
     def is_installed(self) -> bool:
         raise NotImplementedError
@@ -54,6 +51,11 @@ class UserOwnedDBManager(SystemdUserMixin):
     def unit_path(self) -> Path:
         return self.user_unit_dir / self._UNIT_NAME
 
+    @property
+    def notify_service_lines(self) -> str:
+        """The server sends READY=1 once it accepts connections, so units ordered After= it start with it ready."""
+        return f"Type=notify\nTimeoutStartSec={self._START_TIMEOUT}\n"
+
     def is_provisioned(self) -> bool:
         """A user unit means this per-user server has already been set up."""
         return self.unit_path.exists()
@@ -83,7 +85,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         if is_macos() or self.config.existing or not self.unit_path.exists():
             return
         current = self.unit_path.read_text()
-        unit = current.replace("Type=simple\n", NOTIFY_SERVICE_LINES)
+        unit = current.replace("Type=simple\n", self.notify_service_lines)
         if unit != current:
             self.unit_path.write_text(unit)
             run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
