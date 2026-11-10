@@ -26,8 +26,9 @@ from typing import (
 )
 
 from admin.backend.api import responses
-from admin.backend.api.v1 import core, logs, notifications, ssh_keys, updates
+from admin.backend.api.v1 import console, core, logs, notifications, ssh_keys, updates
 from admin.backend.api.v1.sites import central as site_central
+from admin.backend.api.v1.sites import console as site_console
 from admin.backend.api.v1.sites import monitoring as site_monitoring
 from admin.backend.api.v1.sites import uptime as site_uptime
 from admin.backend.api.v1.types import (
@@ -76,6 +77,8 @@ _TARGETS = (
     ((sites, site_central), "sites.ts"),
     ((site_apps,), "siteApps.ts"),
     ((site_backups,), "siteBackups.ts"),
+    ((site_console,), "siteConsole.ts"),
+    ((console,), "console.ts"),
     ((site_domains,), "siteDomains.ts"),
     ((site_monitoring, site_uptime), "siteMonitoring.ts"),
     ((AppInfo, apps), "apps.ts"),

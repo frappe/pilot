@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ErrorMessage, Skeleton } from 'frappe-ui'
+import PanelSkeleton from './PanelSkeleton.vue'
 import { useTranslation } from '../translation'
 
 defineProps<{ error?: Error }>()
@@ -14,9 +15,12 @@ const __ = useTranslation()
       :message="__('Could not load this panel. Check your connection, then open Cloud Settings again.')"
     />
 
-    <div v-else class="space-y-3" role="status" :aria-label="__('Loading')">
-      <Skeleton class="h-7 w-40 rounded-4" />
-      <Skeleton v-for="n in 3" :key="n" class="h-24 rounded-6" />
+    <div v-else class="space-y-6">
+      <div class="space-y-2" aria-hidden="true">
+        <Skeleton class="h-5 w-32 rounded-4" />
+        <Skeleton class="h-4 w-64 max-w-full rounded-4" />
+      </div>
+      <PanelSkeleton />
     </div>
   </div>
 </template>

@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { ErrorMessage } from 'frappe-ui'
 
 import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
 
 import { useSite } from '@/composables/sites/useSite'
 import { sitesApi } from '@/api/sites'
-import { settingsApi } from '@/api/settings'
 import { errorMessage } from '@/utils/error'
 
 interface Props {
@@ -51,20 +50,6 @@ const GeneralSettings: GeneralSetting[] = [
 
 const savingKey = ref<string | null>(null)
 const error = ref('')
-const allowDeveloperMode = ref(false)
-
-const visibleSettings = computed(() =>
-  GeneralSettings.filter((s) => s.key !== 'developer_mode' || allowDeveloperMode.value),
-)
-
-onMounted(async () => {
-  try {
-    const settings = await settingsApi.get()
-    allowDeveloperMode.value = Boolean(settings?.bench?.allow_developer_mode)
-  } catch {
-    allowDeveloperMode.value = false
-  }
-})
 
 const getValue = (s: GeneralSetting) => s.get(site.value?.site_config)
 
@@ -86,7 +71,7 @@ const toggle = async (s: GeneralSetting, value: boolean) => {
   <h2 class="mb-3 text-base-semibold text-ink-gray-8">General</h2>
 
   <SettingsSwitch
-    v-for="s in visibleSettings"
+    v-for="s in GeneralSettings"
     :key="s.key"
     class="py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
     :label="s.label"

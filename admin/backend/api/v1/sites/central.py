@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TypedDict
 
@@ -19,10 +20,14 @@ NOT_CONNECTED_MESSAGE = "This server is not connected to Frappe Cloud."
 class CentralAccountLink(TypedDict):
     url: str
     billing: str
+    invoices: str
     change_plan: str
     server: str
+    end_subscription: str
 
 
+# A dotted method name only: `/`, `?` or `#` would let a path reach another Central endpoint.
+_METHOD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+")
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset(
     {
@@ -36,6 +41,8 @@ _ALLOWED_EXACT = frozenset(
 
 
 def _is_allowed(method_path: str) -> bool:
+    if not _METHOD_NAME.fullmatch(method_path):
+        return False
     return method_path in _ALLOWED_EXACT or any(method_path.startswith(p) for p in _ALLOWED_PREFIXES)
 
 
@@ -67,7 +74,8 @@ def central_proxy(name: str, method_path: str):
 def account_url(name: str):
     """Central dashboard links for this site, safe for the site's browser to open.
 
-    Central finds this server by its Pilot audience, as the admin dashboard's own links do."""
+    Central finds this server by its Pilot audience, as the admin dashboard's own links do. Each link
+    opens one task for this server, so an app user never starts at Central's server list."""
     from urllib.parse import urlencode
 
     from pilot.integrations.central import InstanceMetadata
@@ -81,7 +89,10 @@ def account_url(name: str):
     link: CentralAccountLink = {
         "url": url,
         "billing": f"{url}/dashboard/billing",
+        "invoices": f"{url}/dashboard/billing/invoices",
         "change_plan": f"{url}/dashboard/servers?{urlencode({'pilot': audience, 'action': 'resize'})}",
         "server": f"{url}/api/method/central.api.sso.open_bench?{urlencode({'pilot': audience})}",
+        # Central opens this server's terminate dialog, or its overview before it knows the action.
+        "end_subscription": f"{url}/dashboard/servers?{urlencode({'pilot': audience, 'action': 'terminate'})}",
     }
     return jsonify(link)

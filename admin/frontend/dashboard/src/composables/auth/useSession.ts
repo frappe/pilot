@@ -10,7 +10,7 @@ const session = reactive({
   enabled: false,
   benchName: '',
   allowBenchManagement: false,
-  developerMode: false,
+  codeEditor: false,
   centralEnabled: false,
   centralUrl: '',
   centralAudience: '',
@@ -25,7 +25,7 @@ const loadSession = async () => {
     session.enabled = bootstrap.enabled === true
     session.benchName = bootstrap.name || ''
     session.allowBenchManagement = bootstrap.allow_bench_management === true
-    session.developerMode = bootstrap.developer_mode === true
+    session.codeEditor = bootstrap.code_editor === true
     session.centralEnabled = bootstrap.central === true
     session.centralUrl = bootstrap.central_url || ''
     session.centralAudience = bootstrap.central_audience || ''
@@ -36,7 +36,7 @@ const loadSession = async () => {
     session.enabled = false
     session.benchName = ''
     session.allowBenchManagement = false
-    session.developerMode = false
+    session.codeEditor = false
     session.centralEnabled = false
     session.centralUrl = ''
     session.centralAudience = ''

@@ -125,3 +125,11 @@ class DatabaseError(BenchError):
 
 class TwoFactorError(BenchError):
     """Raised when an enrollment request cannot be honoured."""
+
+
+class ScriptBusyError(BenchError):
+    """Another console script is already running on this bench."""
+
+
+class LowMemoryError(BenchError):
+    """The host has too little free memory to start a helper process."""

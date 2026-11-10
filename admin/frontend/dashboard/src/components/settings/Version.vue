@@ -173,14 +173,20 @@ const pollTask = async (taskId: string) => {
 
   <Switch
     v-if="status.current_version"
-    class="mt-5"
-    label="Automatic updates"
-    :description="isDev ? 'Unavailable for development installs.' : 'Checks daily at 12:00 AM UTC.'"
+    class="mt-5 py-2.5 border-y border-outline-alpha-gray-1"
     :model-value="!isDev && (status.auto_update ?? false)"
     :disabled="isDev || savingAutoUpdate || updating"
     :error="autoUpdateError"
     @update:model-value="toggleAutoUpdate"
-  />
+  >
+    <template #label>
+      <span class="block text-base-medium text-ink-gray-8">Automatic updates</span>
+
+      <span class="block mt-1 text-ink-gray-6 text-p-sm">
+        {{ isDev ? 'Unavailable for development installs.' : 'Checks daily at 12:00 AM UTC.' }}
+      </span>
+    </template>
+  </Switch>
 
   <Dialog
     v-model="dialogOpen"

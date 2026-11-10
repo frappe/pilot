@@ -113,7 +113,7 @@ const update = async (field: BinlogField) => {
 
 const viewLogs = () => {
   visible.value = false
-  router.push('/database/analyzer')
+  router.push('/database/analyzer/binlogs')
 }
 
 watch(visible, (value) => {

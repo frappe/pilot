@@ -47,7 +47,7 @@ The `[bench]` table supports:
 | `socketio_backend` | `node` or `python`. |
 | `db_type` | `mariadb` or `postgres`. |
 | `default_branch` | Default branch for new apps. |
-| `allow_developer_mode` | Allows per-site developer mode changes. |
+| `enable_code_editor` | Turns on the Admin code editor for app files. The default is `true`. |
 | `watch_apps_js`, `watch_admin_js`, `reload_python` | Development reload settings. |
 | `install_dev_extra` | Install apps' `dev` extras on a non-production bench. Defaults to true; `pilot init --no-dev` sets it to false. |
 | `onboarding` | State of the onboarding dialog: empty shows it, `minimized` shows in sidebar card only, `dismissed` hides both |
@@ -119,13 +119,14 @@ port = 7000
 domain = "admin.example.com"
 tls = true
 allow_bench_management = true
+allow_site_to_pilot_communication = true
 ```
 
 With `enabled = false`, `pilot start` does not run the Admin. `pilot dev setup` creates benches this way.
 
 Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. It also permits killing database processes and purging binlogs, because both affect every bench on the host. Database settings and the MariaDB restart do not need it.
 
-A production site calls Pilot at the loopback `pilot_endpoint` in its `site_config.json`, independently of DNS or `admin.domain`. The browser loads Cloud Settings assets from `cloud_settings_embed_url = "/_pilot"`; nginx serves `/_pilot/embed/cloud-settings/` on the site's origin. API calls still pass through Frappe with the server-held site token. `cloud_server_url` holds the public admin URL for dashboard links and follows admin domain changes. Development benches without nginx retain the public admin embed URL. The `serve_site_embeds_locally` upgrade patch publishes nginx routes before updating existing production site configs and clearing their caches.
+A production site calls Pilot at the loopback `pilot_endpoint` in its `site_config.json`, independently of DNS or `admin.domain`. The browser loads Cloud Settings assets from `cloud_settings_embed_url = "/_pilot"`; nginx serves `/_pilot/embed/cloud-settings/` on the site's origin. API calls still pass through Frappe with the server-held site token. `cloud_server_url` holds the public admin URL for dashboard links and follows admin domain changes. Development benches without nginx retain the public admin embed URL. The `serve_site_embeds_locally` upgrade patch publishes nginx routes before updating existing production site configs and clearing their caches. Set `allow_site_to_pilot_communication = false` to skip writing these keys into new sites, so Frappe treats them as self-hosted (its `is_v2_site` check reads `pilot_endpoint` and `pilot_auth_token`).
 
 Set the admin password with `pilot set-admin-password` or the Settings page. Pilot stores a PBKDF2-HMAC-SHA256 verifier. `jwt_secret` is local; `jwks_url` and `jwks_audience` are for a remote token issuer and are host-shared. Pilot keeps the issuer's public keys in `.jwks-cache.json` in the benches directory. A token whose key is in the cache is verified without a fetch, and a cache older than one minute is refreshed in the background. A key that is not in the cache causes a fetch, at most once every 30 seconds. A failed fetch keeps the cached keys.
 

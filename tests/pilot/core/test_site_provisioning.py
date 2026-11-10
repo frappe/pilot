@@ -191,10 +191,12 @@ def test_restore_only_enables_backups_after_the_database_and_apps_are_ready(rest
         assert provision.call_args.kwargs["schedule_backups"] is False
 
 
-@pytest.mark.parametrize("production", [True, False])
-def test_a_new_site_uses_same_origin_embeds_with_nginx(tmp_path: Path, production: bool) -> None:
+@pytest.mark.parametrize("allow_site_to_pilot_communication", [True, False])
+def test_allow_site_to_pilot_communication_controls_the_cloud_markers(
+    tmp_path: Path, allow_site_to_pilot_communication: bool
+) -> None:
     provisioner = _provisioner(tmp_path)
-    provisioner.bench.config.production.enabled = production
+    provisioner.bench.config.admin.allow_site_to_pilot_communication = allow_site_to_pilot_communication
     provisioner.bench.config.admin.domain = "admin.local"
     site = provisioner.bench.site("site1.example.com")
     site.path.mkdir(parents=True)
@@ -203,14 +205,14 @@ def test_a_new_site_uses_same_origin_embeds_with_nginx(tmp_path: Path, productio
     with patch("admin.backend.internal.session.Session.issue_pilot_token", return_value="site-token"):
         provisioner.write_pilot_communication_config(site)
 
-    assert json.loads((site.path / "site_config.json").read_text()) == {
-        "pilot_endpoint": (
-            f"http://127.0.0.1:{provisioner.bench.config.admin.internal_port}"
-            if production
-            else "http://localhost:7000"
-        ),
-        "cloud_server_url": "http://admin.local" if production else "http://localhost:7000",
-        "cloud_settings_embed_url": "/_pilot" if production else "http://localhost:7000",
+    persisted = json.loads((site.path / "site_config.json").read_text())
+    if not allow_site_to_pilot_communication:
+        assert persisted == {}
+        return
+    assert persisted == {
+        "pilot_endpoint": (f"http://127.0.0.1:{provisioner.bench.config.admin.internal_port}"),
+        "cloud_server_url": "http://admin.local",
+        "cloud_settings_embed_url": "/_pilot",
         "pilot_auth_token": "site-token",
     }
 

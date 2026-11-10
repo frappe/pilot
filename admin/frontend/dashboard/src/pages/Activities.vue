@@ -32,6 +32,7 @@ const typeMetaMap: Record<string, { icon: string; bg: string }> = {
   git: { icon: 'lucide-git-branch', bg: 'bg-surface-gray-2 text-ink-gray-7' },
   task: { icon: 'lucide-list-checks', bg: 'bg-surface-blue-2 text-ink-blue-7' },
   bypass_patch: { icon: 'lucide-wrench', bg: 'bg-surface-red-2 text-ink-red-7' },
+  console_script: { icon: 'lucide-square-terminal', bg: 'bg-surface-amber-2 text-ink-amber-7' },
 }
 const defaultTypeMeta = {
   icon: 'lucide-activity',
@@ -63,6 +64,7 @@ const typeLabels: Record<string, string> = {
   git: 'Git',
   task: 'Task',
   bypass_patch: 'Patch',
+  console_script: 'Console',
 }
 const activityTypeOptions = [
   { label: 'All types', value: '', icon: 'lucide-layout-grid' },
@@ -92,6 +94,8 @@ const activityLabel = (entry: AuditEntry) => {
       return `Queued ${commandLabel(entry.command || 'task')}`
     case 'bypass_patch':
       return `Bypassed patch${site}`
+    case 'console_script':
+      return `Ran a console script${entry.commit ? ' and committed' : ''}${site}`
     default:
       return entry.event ? `${entry.type} ${entry.event}` : entry.type
   }
