@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
@@ -26,33 +25,6 @@ _DEV_RESTART_MESSAGE = (
 class BenchRuntime:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
-
-    def get_database_address(self) -> str:
-        """`HOST:PORT` of the database Pilot runs, or "" when there is none to wait for."""
-        config = self.bench.config
-        if not config.production.enabled or config.db_type == "sqlite":
-            return ""
-        database = config.postgres if config.db_type == "postgres" else config.mariadb
-        return "" if database.existing else f"{database.host}:{database.port}"
-
-    def wait_for_database(self, timeout_seconds: float = 60) -> None:
-        from pilot.managers.database import MariaDBManager, PostgresManager
-
-        config = self.bench.config
-        if not self.get_database_address():
-            return
-        manager = (
-            PostgresManager(config.postgres)
-            if config.db_type == "postgres"
-            else MariaDBManager(config.mariadb)
-        )
-        deadline = time.monotonic() + timeout_seconds
-        while not manager.is_reachable():
-            if time.monotonic() >= deadline:
-                raise BenchError(
-                    "The database did not become ready. Check its service and restart the workload."
-                )
-            time.sleep(0.1)
 
     @property
     def is_database_ready(self) -> bool:

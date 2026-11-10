@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pilot.managers.processes import sandbox
-from pilot.managers.processes.sandbox import WAITER, PilotSandboxPaths
+from pilot.managers.processes.sandbox import PilotSandboxPaths
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -16,13 +16,12 @@ def paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PilotSandboxPaths:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("NVM_DIR", raising=False)
     monkeypatch.setattr(sandbox.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(sandbox, "cli_root", lambda: Path("/opt/pilot"))
     monkeypatch.setattr(PilotSandboxPaths, "mariadb_socket_path", "/run/mysqld/mysqld.sock")
     return PilotSandboxPaths(make_bench(tmp_path / "benches" / "b"))
 
 
 def test_only_paths_the_sandbox_masks_are_listed(paths: PilotSandboxPaths) -> None:
-    # The interpreter, node and waiter here are outside the home. The socket is under /run, which the sandbox masks too.
+    # The interpreter and node here are outside the home. The socket is under /run, which the sandbox masks too.
     assert paths.read == [str(Path.home() / ".nvm"), "/run/mysqld"]
 
 
@@ -58,19 +57,15 @@ def test_nvm_dir_overrides_the_default(paths: PilotSandboxPaths, monkeypatch: py
     assert str(Path.home() / ".nvm") not in paths.read
 
 
-def test_the_database_socket_directory_and_the_waiter_are_bound_when_in_home(
+def test_the_database_socket_directory_is_bound_when_in_home(
     paths: PilotSandboxPaths, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(sandbox, "cli_root", lambda: Path.home() / "pilot")
     monkeypatch.setattr(PilotSandboxPaths, "mariadb_socket_path", str(Path.home() / "pilot/databases/mariadb/run/mysqld.sock"))
 
     assert str(Path.home() / "pilot/databases/mariadb/run") in paths.read
-    assert str(Path.home() / "pilot" / WAITER) in paths.read
 
 
-def test_the_pilot_install_is_not_bound_as_a_whole(paths: PilotSandboxPaths, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sandbox, "cli_root", lambda: Path.home() / "pilot")
-
+def test_the_pilot_install_is_not_bound_as_a_whole(paths: PilotSandboxPaths) -> None:
     assert str(Path.home() / "pilot") not in paths.read
     assert not any("databases/mariadb/data" in path for path in paths.read)
 

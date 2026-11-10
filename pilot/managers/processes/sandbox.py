@@ -6,14 +6,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.utils import cli_root
-
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 # The sandbox masks the home directory and these roots; a path a workload needs below them is bound back.
 MASKED_ROOTS = (Path("/home"), Path("/root"), Path("/run"))
-WAITER = Path("pilot") / "internal" / "wait_for_socket.py"
 # What Pilot keeps in <bench>/config for the admin, which loads and runs it unsandboxed. A workload
 # must not change these. Everything else in config/ stays writable, because Frappe creates its
 # global lock files there. A test checks this list against every config path Pilot uses.
@@ -58,7 +55,6 @@ class PilotSandboxPaths:
             self.get_node_prefix(),
             Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm"),
             Path(self.mariadb_socket_path).parent,
-            cli_root() / WAITER,
         ]
         return [str(path) for path in candidates if self.is_masked(path)]
 

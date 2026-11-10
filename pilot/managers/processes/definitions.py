@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from pilot.core.app.node_packages import NodePackages
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
-from pilot.managers.processes.sandbox import WAITER
 from pilot.utils import cli_root
 
 if TYPE_CHECKING:
@@ -96,8 +95,6 @@ class ProcessDefinitionBuilder:
             self.redis_definition("redis_cache", "redis_cache.conf"),
             self.redis_definition("redis_queue", "redis_queue.conf"),
         ]
-        if self.bench.config.production.process_manager == "systemd":
-            self.wait_for_database_before_web(defs)
         defs.extend(self.bench.processes.get_app_definitions())
         check_unique_names(defs)
         return defs
@@ -124,20 +121,6 @@ class ProcessDefinitionBuilder:
             self.admin_definition(),
             *worker_defs,
             self.schedule_definition(),
-        ]
-
-    def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
-        from pilot.core.bench.runtime import BenchRuntime
-
-        # Given the address so the sandboxed unit never reads bench.toml.
-        address = BenchRuntime(self.bench).get_database_address()
-        if not address:
-            return
-        web = next(pd for pd in defs if pd.name == "web")
-        web.pre_run = [
-            str(self.python),
-            str(cli_root() / WAITER),
-            address,
         ]
 
     def process_definitions(self) -> list[ProcessDefinition]:
