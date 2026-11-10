@@ -33,18 +33,19 @@ def test_a_development_bench_or_an_existing_server_is_always_ready(
     is_reachable.assert_not_called()
 
 
-def test_the_address_of_a_managed_mariadb_is_its_socket(tmp_path: Path) -> None:
+def test_the_address_of_a_managed_mariadb_is_its_host_and_port(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
+    runtime.bench.config.mariadb.host, runtime.bench.config.mariadb.port = "localhost", 3310
 
-    assert runtime.get_database_address() == f"unix:{MariaDBManager(runtime.bench.config.mariadb).socket_path}"
+    assert runtime.get_database_address() == "localhost:3310"
 
 
-def test_the_address_of_a_managed_postgres_is_its_tcp_port(tmp_path: Path) -> None:
+def test_the_address_of_a_managed_postgres_is_its_host_and_port(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
     runtime.bench.config.db_type = "postgres"
     runtime.bench.config.postgres.host, runtime.bench.config.postgres.port = "localhost", 5450
 
-    assert runtime.get_database_address() == "tcp:localhost:5450"
+    assert runtime.get_database_address() == "localhost:5450"
 
 
 @pytest.mark.parametrize("production, existing, db_type", [(False, False, "mariadb"), (True, True, "mariadb"), (True, False, "sqlite")])
