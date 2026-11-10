@@ -120,6 +120,65 @@ print('\\n'.join(_leaks))
     assert leaked == "", f"discovery imported heavy layers at import time:\n{leaked}"
 
 
+def test_building_the_parser_does_not_import_heavy_layers() -> None:
+    """The parser build runs every command's defaults, so none of them may pull
+    in the admin backend or the config layer: that is CLI startup time."""
+    code = (
+        "import sys\n"
+        "import pilot.internal.cli.registry as registry\n"
+        "registry.build_parser()\n"
+        "heavy = [name for name in ('flask', 'admin.backend.internal.session',"
+        " 'pilot.config', 'pilot.core', 'pilot.managers') if name in sys.modules]\n"
+        "print('\\n'.join(heavy))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    leaked = result.stdout.strip()
+    assert leaked == "", f"parser build imported heavy layers:\n{leaked}"
+
+
+def test_parser_built_for_one_command_still_lists_every_command() -> None:
+    """A command's parser is built alone, but its usage line still names every
+    command, so an error message stays as helpful as before."""
+    usage = registry.build_parser(only="ls").format_usage()
+
+    assert "list-apps" in usage
+    assert "new-site" in usage
+    assert "wait-for-database" in usage
+
+
+def test_parser_for_an_unknown_command_keeps_every_command() -> None:
+    """An unknown name must produce the full choice list, not a parser with one
+    command in it."""
+    usage = registry.build_parser(only="nope").format_usage()
+
+    assert "list-apps" in usage
+    assert "new-site" in usage
+
+
+def test_parser_for_a_group_builds_that_group() -> None:
+    """A group keeps its own commands, so `pilot setup nginx` still parses."""
+    parser = registry.build_parser(only="setup")
+
+    args = parser.parse_args(["setup", "nginx"])
+    assert args.setup_command == "nginx"
+
+
+def test_requested_command_names_the_command_to_build() -> None:
+    assert dispatch.requested_command(["ls"]) == "ls"
+    assert dispatch.requested_command(["--verbose", "ls"]) == "ls"
+    assert dispatch.requested_command(["-y", "setup", "nginx"]) == "setup"
+    assert dispatch.requested_command(["ls", "--help"]) == "ls"
+
+
+def test_requested_command_defers_to_the_full_parser_when_asked() -> None:
+    """A help or version request needs every command's parser."""
+    assert dispatch.requested_command([]) is None
+    assert dispatch.requested_command(["--help"]) is None
+    assert dispatch.requested_command(["--help", "ls"]) is None
+    assert dispatch.requested_command(["--version"]) is None
+
+
 def test_main_dispatches_native_command(monkeypatch: pytest.MonkeyPatch) -> None:
     dispatched = []
     monkeypatch.setattr(sys, "argv", ["pilot", "--bench", "demo", "restart"])
