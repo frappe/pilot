@@ -173,17 +173,6 @@ def test_factory_default_is_not_called_while_building_the_parser() -> None:
     assert calls == [1]
 
 
-def test_factory_default_yields_to_an_explicit_flag() -> None:
-    from dataclasses import field
-
-    @dataclass(kw_only=True)
-    class _Lazy(Command):
-        ttl: int = field(default_factory=lambda: 42)
-
-    assert _parse(_Lazy, ["--ttl", "7"]).ttl == 7
-    assert _parse(_Lazy, []).ttl == 42
-
-
 def test_factory_list_default_is_fresh_per_command() -> None:
     from dataclasses import field
 

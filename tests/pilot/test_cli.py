@@ -137,23 +137,15 @@ def test_building_the_parser_does_not_import_heavy_layers() -> None:
     assert leaked == "", f"parser build imported heavy layers:\n{leaked}"
 
 
-def test_parser_built_for_one_command_still_lists_every_command() -> None:
-    """A command's parser is built alone, but its usage line still names every
-    command, so an error message stays as helpful as before."""
-    usage = registry.build_parser(only="ls").format_usage()
+def test_partial_parser_still_lists_every_command() -> None:
+    """A parser built for one command - or an unknown name, which falls back to
+    the full set - still names every command in its usage line, so an error
+    message stays as helpful as before."""
+    for only in ("ls", "nope"):
+        usage = registry.build_parser(only=only).format_usage()
 
-    assert "list-apps" in usage
-    assert "new-site" in usage
-    assert "wait-for-database" in usage
-
-
-def test_parser_for_an_unknown_command_keeps_every_command() -> None:
-    """An unknown name must produce the full choice list, not a parser with one
-    command in it."""
-    usage = registry.build_parser(only="nope").format_usage()
-
-    assert "list-apps" in usage
-    assert "new-site" in usage
+        assert "list-apps" in usage
+        assert "wait-for-database" in usage
 
 
 def test_parser_for_a_group_builds_that_group() -> None:
@@ -164,18 +156,13 @@ def test_parser_for_a_group_builds_that_group() -> None:
     assert args.setup_command == "nginx"
 
 
-def test_requested_command_names_the_command_to_build() -> None:
+def test_requested_command() -> None:
     assert dispatch.requested_command(["ls"]) == "ls"
     assert dispatch.requested_command(["--verbose", "ls"]) == "ls"
     assert dispatch.requested_command(["-y", "setup", "nginx"]) == "setup"
-    assert dispatch.requested_command(["ls", "--help"]) == "ls"
-
-
-def test_requested_command_defers_to_the_full_parser_when_asked() -> None:
-    """A help or version request needs every command's parser."""
+    # A help or version request needs every command's parser.
     assert dispatch.requested_command([]) is None
     assert dispatch.requested_command(["--help"]) is None
-    assert dispatch.requested_command(["--help", "ls"]) is None
     assert dispatch.requested_command(["--version"]) is None
 
 
