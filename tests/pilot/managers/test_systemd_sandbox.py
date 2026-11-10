@@ -11,7 +11,7 @@ from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
 from pilot.managers.processes.sandbox import CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
-from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
+from pilot.managers.processes.systemd_render import SystemdRenderer
 from tests.pilot.managers.test_managers_extra import make_bench
 
 
@@ -76,18 +76,18 @@ SANDBOX_DIRECTIVES = {
 
 
 def test_the_sandbox_directives() -> None:
-    assert set(get_sandbox_properties(BENCH, BENCHES)) == SANDBOX_DIRECTIVES
+    assert set(SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)) == SANDBOX_DIRECTIVES
 
 
 def test_home_is_masked_not_hidden_path_by_path() -> None:
-    properties = get_sandbox_properties(BENCH, BENCHES)
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
 
     assert "ProtectHome=read-only" not in properties
     assert not any(str(Path.home()) in line and "Inaccessible" in line for line in properties)
 
 
 def test_extra_paths_are_bound_next_to_the_control_files() -> None:
-    properties = get_sandbox_properties(BENCH, BENCHES, read_paths=("/home/u/app",), write_paths=("/home/u/data",))
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES, read_paths=("/home/u/app",), write_paths=("/home/u/data",))
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
     assert read_only.endswith(" -/home/u/app")
@@ -99,7 +99,7 @@ def test_extra_paths_are_bound_next_to_the_control_files() -> None:
 def test_the_real_home_is_masked_even_when_it_is_not_under_home(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Path, "home", lambda: Path("/srv/frappe"))
 
-    assert "TemporaryFileSystem=/srv/frappe:ro" in get_sandbox_properties(BENCH, BENCHES)
+    assert "TemporaryFileSystem=/srv/frappe:ro" in SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
 
 
 def test_a_process_gets_its_own_paths_on_top_of_the_shared_ones() -> None:
@@ -123,7 +123,7 @@ def test_an_unsandboxed_unit_ignores_declared_paths() -> None:
 
 
 def test_a_bench_path_with_a_space_is_quoted() -> None:
-    properties = get_sandbox_properties(Path("/srv/my benches/b"), Path("/srv/my benches"))
+    properties = SystemdRenderer.get_sandbox_properties(Path("/srv/my benches/b"), Path("/srv/my benches"))
 
     assert 'BindPaths="/srv/my benches/b/apps" ' in " ".join(properties)
     assert 'TemporaryFileSystem="/srv/my benches:ro"' in properties
@@ -251,7 +251,7 @@ def test_sandbox_paths_gather_tier_one_linked_apps_and_active_app_declarations(
 
 
 def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
-    properties = get_sandbox_properties(BENCH, BENCHES)
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
     for name in ("services", "nginx", "admin-gunicorn.conf.py", "gunicorn.conf.py"):
@@ -262,7 +262,7 @@ def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
 
 
 def test_only_the_workload_folders_of_the_bench_are_mounted() -> None:
-    mounted = " ".join(line.split("=", 1)[1] for line in get_sandbox_properties(BENCH, BENCHES)).split()
+    mounted = " ".join(line.split("=", 1)[1] for line in SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)).split()
     bench_paths = [Path(path.lstrip("-")) for path in mounted if path.lstrip("-").startswith(f"{BENCH}/")]
 
     assert str(BENCH) not in mounted
@@ -272,7 +272,7 @@ def test_only_the_workload_folders_of_the_bench_are_mounted() -> None:
 
 
 def test_config_is_not_bound_as_a_whole_so_frappe_can_create_its_lock_files() -> None:
-    properties = get_sandbox_properties(BENCH, BENCHES)
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
 
     assert f"-{BENCH}/config " not in read_only + " "
@@ -280,7 +280,7 @@ def test_config_is_not_bound_as_a_whole_so_frappe_can_create_its_lock_files() ->
 
 
 def test_host_sockets_logs_and_shared_memory_stay_outside_the_sandbox() -> None:
-    properties = get_sandbox_properties(BENCH, BENCHES)
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
 
     assert "TemporaryFileSystem=/run:ro" in properties

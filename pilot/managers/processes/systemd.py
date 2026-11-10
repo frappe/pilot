@@ -19,7 +19,7 @@ from pilot.managers.processes.base import (
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.sandbox import PilotSandboxPaths
-from pilot.managers.processes.systemd_render import SystemdRenderer, get_sandbox_properties
+from pilot.managers.processes.systemd_render import SystemdRenderer
 from pilot.managers.systemd_user import SystemdUserMixin, get_sandbox_error
 from pilot.utils import cli_root, run_command
 
@@ -126,7 +126,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         # Folders an app declares in the bench: for every unit, or for one process.
         declared = [*write_paths, *(path for pd in defs or [] for path in pd.write_paths)]
         PilotSandboxPaths.create_entries(self.bench, declared)
-        properties = get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
+        properties = SystemdRenderer.get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
         if error := get_sandbox_error(properties):
             if production.sandbox is None:
                 logging.warning(

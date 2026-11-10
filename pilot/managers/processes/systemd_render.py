@@ -54,42 +54,6 @@ def _quote(argument: str) -> str:
     return argument.replace("%", "%%").replace("$", "$$")
 
 
-def get_sandbox_properties(
-    bench_path: Path, benches_dir: Path, read_paths: tuple[str, ...] = (), write_paths: tuple[str, ...] = ()
-) -> list[str]:
-    """systemd.exec directives that confine a workload unit to its own bench.
-
-    `read_paths` and `write_paths` are what every unit gets back from the masked home."""
-    # Pilot's control files: the admin trusts them, so a workload must not change them.
-    control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
-    control.append(str(bench_path / "sites" / "common_site_config.json"))
-    folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
-    return [
-        *_SANDBOX_DIRECTIVES,
-        # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.
-        f"TemporaryFileSystem={_quote(f'{Path.home()}:ro')}",
-        # The tmpfs hides the neighbouring benches and this bench's admin files; the binds bring back
-        # the folders a workload uses.
-        f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
-        f"BindPaths={folders}",
-        f"ReadWritePaths={folders}",
-        # DNS on hosts that run systemd-resolved.
-        *get_path_properties([*control, "/run/systemd/resolve", *read_paths], write_paths),
-    ]
-
-
-def get_path_properties(read_paths: Iterable[str], write_paths: Iterable[str]) -> list[str]:
-    """Directives that bring paths back into the masked home. "-" skips a path the host lacks."""
-    properties = []
-    read_paths, write_paths = list(read_paths), list(write_paths)
-    if read_paths:
-        properties.append("BindReadOnlyPaths=" + " ".join(_quote(f"-{path}") for path in read_paths))
-    if write_paths:
-        writable = " ".join(_quote(f"-{path}") for path in write_paths)
-        properties += [f"BindPaths={writable}", f"ReadWritePaths={writable}"]
-    return properties
-
-
 def _render_env(env: dict) -> str:
     lines = []
     for key, value in env.items():
@@ -107,6 +71,42 @@ class SystemdRenderer(ServiceRenderer):
         super().__init__(bench_name)
         self.database_service = database_service
         self.sandbox_properties = sandbox_properties or []
+
+    @staticmethod
+    def get_sandbox_properties(
+        bench_path: Path, benches_dir: Path, read_paths: tuple[str, ...] = (), write_paths: tuple[str, ...] = ()
+    ) -> list[str]:
+        """systemd.exec directives that confine a workload unit to its own bench.
+
+        `read_paths` and `write_paths` are what every unit gets back from the masked home."""
+        # Pilot's control files: the admin trusts them, so a workload must not change them.
+        control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
+        control.append(str(bench_path / "sites" / "common_site_config.json"))
+        folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
+        return [
+            *_SANDBOX_DIRECTIVES,
+            # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.
+            f"TemporaryFileSystem={_quote(f'{Path.home()}:ro')}",
+            # The tmpfs hides the neighbouring benches and this bench's admin files; the binds bring back
+            # the folders a workload uses.
+            f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
+            f"BindPaths={folders}",
+            f"ReadWritePaths={folders}",
+            # DNS on hosts that run systemd-resolved.
+            *SystemdRenderer.get_path_properties([*control, "/run/systemd/resolve", *read_paths], write_paths),
+        ]
+
+    @staticmethod
+    def get_path_properties(read_paths: Iterable[str], write_paths: Iterable[str]) -> list[str]:
+        """Directives that bring paths back into the masked home. "-" skips a path the host lacks."""
+        properties = []
+        read_paths, write_paths = list(read_paths), list(write_paths)
+        if read_paths:
+            properties.append("BindReadOnlyPaths=" + " ".join(_quote(f"-{path}") for path in read_paths))
+        if write_paths:
+            writable = " ".join(_quote(f"-{path}") for path in write_paths)
+            properties += [f"BindPaths={writable}", f"ReadWritePaths={writable}"]
+        return properties
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
@@ -140,7 +140,7 @@ class SystemdRenderer(ServiceRenderer):
     def _sandbox_lines(self, pd: ProcessDefinition) -> list[str]:
         if not self.sandbox_properties:
             return []
-        return [*self.sandbox_properties, *get_path_properties(pd.read_paths, pd.write_paths)]
+        return [*self.sandbox_properties, *self.get_path_properties(pd.read_paths, pd.write_paths)]
 
     def _dependencies(self, pd: ProcessDefinition) -> str:
         # systemd stops in reverse start order; redis must outlive a lite runner draining into it.
