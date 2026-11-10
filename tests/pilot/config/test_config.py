@@ -430,10 +430,35 @@ def test_production_sandbox_round_trips() -> None:
     assert config.production.sandbox is True
 
 
-def test_production_sandbox_is_off_and_unwritten_by_default() -> None:
+def test_production_sandbox_is_unset_and_unwritten_by_default() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.production.sandbox is False
+    assert config.production.sandbox is None
     assert "sandbox" not in config.dumps()
+
+
+def test_an_explicit_false_is_written_and_kept() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "systemd", "sandbox": False}
+    written = tomllib.loads(load_from_dict(data).dumps())
+    assert written["production"]["sandbox"] is False
+    assert load_from_dict(written).production.is_sandboxed is False
+
+
+@pytest.mark.parametrize(
+    "production, expected",
+    [
+        ({"enabled": True, "process_manager": "systemd"}, True),
+        ({"enabled": True, "process_manager": "supervisor"}, False),
+        ({"enabled": False}, False),
+        ({"enabled": True, "process_manager": "systemd", "sandbox": False}, False),
+        ({"enabled": True, "process_manager": "systemd", "sandbox": True}, True),
+    ],
+)
+def test_the_sandbox_is_on_by_default_only_for_systemd(production: dict, expected: bool) -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = production
+    data["admin"] = {"domain": "admin.example.com"}
+    assert load_from_dict(data).production.is_sandboxed is expected
 
 
 def test_production_sandbox_needs_systemd() -> None:

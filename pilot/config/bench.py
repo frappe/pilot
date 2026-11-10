@@ -612,8 +612,8 @@ class BenchConfig:
         production: ConfigDict = {"enabled": self.production.enabled}
         if self.production.process_manager:
             production["process_manager"] = self.production.process_manager
-        if self.production.sandbox:
-            production["sandbox"] = True
+        if self.production.sandbox is not None:
+            production["sandbox"] = self.production.sandbox
         return production
 
     def _lite_mode_section(self) -> ConfigDict:
