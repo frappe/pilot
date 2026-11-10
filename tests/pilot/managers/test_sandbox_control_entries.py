@@ -11,7 +11,7 @@ from pilot.managers.processes.sandbox import (
     CONTROL_ENTRIES,
     CONTROL_FILES,
     WORKLOAD_DIRECTORIES,
-    create_sandbox_entries,
+    PilotSandboxPaths,
 )
 from pilot.managers.redis import RedisManager
 from tests.pilot.commands.test_commands import make_bench
@@ -55,7 +55,7 @@ def test_the_protected_folders_exist_before_the_sandbox_starts(tmp_path: Path) -
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    create_sandbox_entries(bench)
+    PilotSandboxPaths.create_entries(bench)
 
     for name in WORKLOAD_DIRECTORIES:
         assert (bench.path / name).is_dir()
@@ -70,7 +70,7 @@ def test_creating_the_protected_entries_keeps_what_is_there(tmp_path: Path) -> N
     bench.create_directories()
     (bench.config_path / "site-aliases.json").write_text('{"old": 1}')
 
-    create_sandbox_entries(bench)
+    PilotSandboxPaths.create_entries(bench)
 
     assert (bench.config_path / "site-aliases.json").read_text() == '{"old": 1}'
 
@@ -83,7 +83,7 @@ def test_frappe_lock_files_are_not_protected(name: str) -> None:
 def test_recording_a_site_alias_keeps_the_file_a_sandboxed_unit_binds(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
-    create_sandbox_entries(bench)
+    PilotSandboxPaths.create_entries(bench)
     registry = bench.site_aliases.registry_path
     inode = registry.stat().st_ino
 
@@ -113,7 +113,7 @@ def test_a_folder_an_app_declares_in_the_bench_is_created_and_kept(tmp_path: Pat
     (declared).mkdir(parents=True)
     (declared / "daemon.pid").write_text("1")
 
-    create_sandbox_entries(bench, [str(bench.path / "flow-server"), str(bench.path / "raven-data")])
+    PilotSandboxPaths.create_entries(bench, [str(bench.path / "flow-server"), str(bench.path / "raven-data")])
 
     assert (bench.path / "raven-data").is_dir()
     assert (declared / "daemon.pid").read_text() == "1"
@@ -123,6 +123,6 @@ def test_a_path_outside_the_bench_is_not_created_by_pilot(tmp_path: Path) -> Non
     bench = make_bench(tmp_path / "bench")
     outside = tmp_path / "elsewhere"
 
-    create_sandbox_entries(bench, [str(outside)])
+    PilotSandboxPaths.create_entries(bench, [str(outside)])
 
     assert not outside.exists()

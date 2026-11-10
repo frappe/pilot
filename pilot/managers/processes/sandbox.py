@@ -42,30 +42,6 @@ CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
 WORKLOAD_DIRECTORIES = ("apps", "env", "sites", "config", "logs", "pids", "chromium")
 
 
-def create_sandbox_entries(bench: Bench, declared_paths: Iterable[str] = ()) -> None:
-    """Make the workload folders, the folders the apps declare in the bench, and the protected folders
-    exist before the units start.
-
-    A workload cannot create a folder in the read-only bench root, and cannot plant a protected one first."""
-    for name in WORKLOAD_DIRECTORIES:
-        (bench.path / name).mkdir(parents=True, exist_ok=True)
-    bench_root = Path(os.path.realpath(bench.path))
-    for path in map(Path, declared_paths):
-        if path.is_relative_to(bench_root):
-            path.mkdir(parents=True, exist_ok=True)
-    for name in CONTROL_DIRECTORIES:
-        (bench.config_path / name).mkdir(parents=True, exist_ok=True)
-    aliases = bench.config_path / "site-aliases.json"
-    if not aliases.exists():
-        aliases.write_text("{}\n")
-    if not (bench.config_path / "realtime-folders.txt").exists():
-        bench.processes.save_realtime_folders()
-
-
-def get_masked_roots() -> tuple[Path, ...]:
-    return (Path.home(), *MASKED_ROOTS)
-
-
 class PilotSandboxPaths:
     """Tier 1: the paths in the masked home that Pilot's own workloads need.
 
@@ -97,10 +73,33 @@ class PilotSandboxPaths:
         return Path(os.path.realpath(self.bench.python)).parent.parent
 
     @staticmethod
+    def create_entries(bench: Bench, declared_paths: Iterable[str] = ()) -> None:
+        """Make the workload folders, the folders the apps declare in the bench, and the protected folders
+        exist before the units start.
+
+        A workload cannot create a folder in the read-only bench root, and cannot plant a protected one first."""
+        for name in WORKLOAD_DIRECTORIES:
+            (bench.path / name).mkdir(parents=True, exist_ok=True)
+        bench_root = Path(os.path.realpath(bench.path))
+        for path in map(Path, declared_paths):
+            if path.is_relative_to(bench_root):
+                path.mkdir(parents=True, exist_ok=True)
+        for name in CONTROL_DIRECTORIES:
+            (bench.config_path / name).mkdir(parents=True, exist_ok=True)
+        aliases = bench.config_path / "site-aliases.json"
+        if not aliases.exists():
+            aliases.write_text("{}\n")
+        if not (bench.config_path / "realtime-folders.txt").exists():
+            bench.processes.save_realtime_folders()
+
+    @staticmethod
     def get_node_prefix() -> Path:
         node = shutil.which("node")
         return Path(os.path.realpath(node)).parent.parent if node else Path("/nonexistent")
 
-    @staticmethod
-    def is_masked(path: Path) -> bool:
-        return any(path.is_relative_to(root) for root in get_masked_roots())
+    @property
+    def masked_roots(self) -> tuple[Path, ...]:
+        return (Path.home(), *MASKED_ROOTS)
+
+    def is_masked(self, path: Path) -> bool:
+        return any(path.is_relative_to(root) for root in self.masked_roots)

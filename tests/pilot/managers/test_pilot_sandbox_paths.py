@@ -73,3 +73,12 @@ def test_the_pilot_install_is_not_bound_as_a_whole(paths: PilotSandboxPaths, mon
 
     assert str(Path.home() / "pilot") not in paths.read
     assert not any("databases/mariadb/data" in path for path in paths.read)
+
+
+def test_the_masked_roots_are_the_home_directory_and_the_roots_the_sandbox_empties(
+    paths: PilotSandboxPaths,
+) -> None:
+    assert Path.home() in paths.masked_roots
+    assert Path("/run") in paths.masked_roots
+    assert paths.is_masked(Path("/run/mysqld/mysqld.sock"))
+    assert not paths.is_masked(Path("/opt/models"))
