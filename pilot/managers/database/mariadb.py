@@ -981,12 +981,10 @@ class MariaDBManager(UserOwnedDBManager):
             # is_running() is the only signal we have.
             return self.is_running()
         # Connect instead of asking systemd: the sandboxed web unit has no user bus.
-        with socket.socket(socket.AF_UNIX) as probe:
-            probe.settimeout(_CLIENT_TIMEOUT)
-            try:
-                probe.connect(self.socket_path)
-            except OSError:
-                return False
+        try:
+            socket.create_connection((self.config.host, self.config.port), timeout=_CLIENT_TIMEOUT).close()
+        except OSError:
+            return False
         return True
 
     def is_unsecured(self) -> bool:
