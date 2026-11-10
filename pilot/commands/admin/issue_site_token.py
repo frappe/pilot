@@ -7,8 +7,8 @@ from pilot.commands import Arg, Command
 
 
 def _default_ttl() -> int:
-    # Discovery imports every command module, so this stays lazy - pilot.core
-    # must not load just to build --help.
+    # The parser build never runs this - the dataclass runs it when the command
+    # is actually built - so importing the session module here is free.
     from admin.backend.internal.session import Session
 
     return Session.DEFAULT_TTL
