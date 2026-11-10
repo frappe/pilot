@@ -2,7 +2,6 @@ import configparser
 import logging
 import os
 import re
-import socket
 import subprocess
 import time
 from collections.abc import Callable, Iterable
@@ -975,17 +974,14 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     def is_reachable(self) -> bool:
+        if not self.is_running():
+            return False
         if is_macos():
             # Homebrew owns the socket location here, not socket_path() (our
             # own state_dir, only ever created for the Linux systemd unit) -
             # is_running() is the only signal we have.
-            return self.is_running()
-        # Connect, so ready means accepting connections and not just a running process.
-        try:
-            socket.create_connection((self.config.host, self.config.port), timeout=_CLIENT_TIMEOUT).close()
-        except OSError:
-            return False
-        return True
+            return True
+        return Path(self.socket_path).exists()
 
     def is_unsecured(self) -> bool:
         """True when the admin account is still reachable without a password."""

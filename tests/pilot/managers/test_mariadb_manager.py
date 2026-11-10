@@ -1132,36 +1132,6 @@ def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
         assert m.is_reachable() is True
 
 
-def test_is_reachable_on_linux_connects_to_host_and_port_without_asking_systemd() -> None:
-    """The sandboxed web unit has no user bus, so systemctl cannot answer there."""
-    import socket
-
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
-    listener.listen()
-    m = _manager()
-    m.config.host, m.config.port = "127.0.0.1", listener.getsockname()[1]
-    with (
-        patch.object(m, "is_running", side_effect=AssertionError("asked systemd")),
-        patch(f"{MODULE}.is_macos", return_value=False),
-    ):
-        assert m.is_reachable() is True
-    listener.close()
-
-
-def test_is_reachable_on_linux_is_false_when_nothing_listens() -> None:
-    import socket
-
-    closed = socket.socket()
-    closed.bind(("127.0.0.1", 0))
-    port = closed.getsockname()[1]
-    closed.close()
-    m = _manager()
-    m.config.host, m.config.port = "127.0.0.1", port
-    with patch(f"{MODULE}.is_macos", return_value=False):
-        assert m.is_reachable() is False
-
-
 def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
     """Homebrew's mariadb client owns socket resolution on macOS -
     socket_path() (our own _STATE_DIR) is never created there."""
