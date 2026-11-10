@@ -10,6 +10,10 @@ from pilot.managers.platform import is_macos
 from pilot.managers.systemd_user import SystemdUserMixin
 from pilot.utils import run_command
 
+# The server sends READY=1 once it accepts connections, so units ordered After= it start with it ready.
+# Crash recovery can take longer than systemd's 90 s default.
+NOTIFY_SERVICE_LINES = "Type=notify\nTimeoutStartSec=10min\n"
+
 
 class UserOwnedDBManager(SystemdUserMixin):
     """Shared service-control for per-user database servers."""
@@ -73,6 +77,16 @@ class UserOwnedDBManager(SystemdUserMixin):
 
     def stop(self) -> None:
         self._control("stop")
+
+    def use_notify_type(self) -> None:
+        """Make an existing unit report ready. Only the file changes: the running server is not restarted."""
+        if is_macos() or self.config.existing or not self.unit_path.exists():
+            return
+        current = self.unit_path.read_text()
+        unit = current.replace("Type=simple\n", NOTIFY_SERVICE_LINES)
+        if unit != current:
+            self.unit_path.write_text(unit)
+            run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def enable_and_start(self) -> None:
         """Start the user unit and enable it at boot. Safe to repeat."""

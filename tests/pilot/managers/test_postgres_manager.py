@@ -447,6 +447,7 @@ def test_install_unit_execstart_uses_resolved_postgres_binary(tmp_path) -> None:
         m._install_unit()
     content = (tmp_path / "pilot-postgres.service").read_text()
     assert "ExecStart=/usr/lib/postgresql/17/bin/postgres " in content
+    assert "Type=notify\n" in content and "Type=simple" not in content
 
 
 def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> None:

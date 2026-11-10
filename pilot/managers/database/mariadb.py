@@ -33,7 +33,7 @@ from pilot.internal.atomic_file import (
     atomic_write_private_text,
     exclusive_file_lock,
 )
-from pilot.managers.database.base import UserOwnedDBManager
+from pilot.managers.database.base import NOTIFY_SERVICE_LINES, UserOwnedDBManager
 from pilot.managers.database.memory import MariaDBMemory
 from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
@@ -961,7 +961,7 @@ class MariaDBManager(UserOwnedDBManager):
             "After=pilot-mariadb-sizing.service\n"
             "Description=MariaDB (pilot, user-owned)\n\n"
             "[Service]\n"
-            "Type=simple\n"
+            f"{NOTIFY_SERVICE_LINES}"
             # --defaults-file must be the first argument; it makes mariadbd
             # skip every system default file instead of layering over them.
             f"ExecStart={mariadbd} --defaults-file={self.my_cnf_path}\n"
@@ -980,7 +980,7 @@ class MariaDBManager(UserOwnedDBManager):
             # own state_dir, only ever created for the Linux systemd unit) -
             # is_running() is the only signal we have.
             return self.is_running()
-        # Connect instead of asking systemd: the sandboxed web unit has no user bus.
+        # Connect, so ready means accepting connections and not just a running process.
         try:
             socket.create_connection((self.config.host, self.config.port), timeout=_CLIENT_TIMEOUT).close()
         except OSError:

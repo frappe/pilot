@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pilot.config import PostgresConfig
 from pilot.exceptions import DatabaseError
-from pilot.managers.database.base import UserOwnedDBManager
+from pilot.managers.database.base import NOTIFY_SERVICE_LINES, UserOwnedDBManager
 from pilot.managers.platform import is_macos, which
 from pilot.utils import cli_root, run_command
 
@@ -141,7 +141,7 @@ class PostgresManager(UserOwnedDBManager):
             "[Unit]\n"
             "Description=PostgreSQL (pilot, user-owned)\n\n"
             "[Service]\n"
-            "Type=simple\n"
+            f"{NOTIFY_SERVICE_LINES}"
             f"ExecStart={postgres} -D {self.data_dir} "
             f"--config-file={self.config_dir / 'postgresql.conf'} -p {self.config.port} "
             f"-c listen_addresses=127.0.0.1 -c unix_socket_directories={self.socket_dir}\n"
