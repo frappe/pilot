@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -117,7 +118,8 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     def get_checked_sandbox_properties(self, defs: list | None = None) -> list[str]:
         """Sandbox directives for the workload units, once a trial unit shows this host can start them."""
-        if not self.bench.config.production.sandbox:
+        production = self.bench.config.production
+        if not production.is_sandboxed:
             return []
         # The bench's siblings are its neighbours, wherever the benches directory is.
         read_paths, write_paths = self.get_sandbox_paths()
@@ -126,6 +128,14 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         create_sandbox_entries(self.bench, declared)
         properties = get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
         if error := get_sandbox_error(properties):
+            if production.sandbox is None:
+                logging.warning(
+                    "Bench '%s' runs without the sandbox: this host cannot start sandboxed units (%s)\n"
+                    "Set sandbox = false under [production] to silence this.",
+                    self.bench.config.name,
+                    error,
+                )
+                return []
             raise BenchError(
                 f"This host cannot start sandboxed units for bench '{self.bench.config.name}': {error}\n"
                 "Set sandbox = false under [production] to run the bench without it."

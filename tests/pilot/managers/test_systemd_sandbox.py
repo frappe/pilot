@@ -168,12 +168,16 @@ def test_the_probe_needs_systemd_run(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _sandboxed_manager(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, probe_error: str, sandbox: bool = True
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_error: str,
+    sandbox: bool | None = True,
+    process_manager: str = "systemd",
 ):
     from pilot.managers.processes import systemd
 
     bench = make_bench(tmp_path / "benches" / "test-bench")
-    bench.config.production = ProductionConfig(enabled=True, process_manager="systemd", sandbox=sandbox)
+    bench.config.production = ProductionConfig(enabled=True, process_manager=process_manager, sandbox=sandbox)
     manager = systemd.SystemdProcessManager(bench)
     monkeypatch.setattr(manager, "get_sandbox_paths", lambda: ((), ()))
     manager.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
@@ -283,3 +287,44 @@ def test_host_sockets_logs_and_shared_memory_stay_outside_the_sandbox() -> None:
     assert "-/run/systemd/resolve" in read_only.split()
     assert "TemporaryFileSystem=/dev/shm" in properties
     assert "InaccessiblePaths=-/var/log/journal" in properties
+
+
+def _unit_text(manager) -> str:
+    return (manager.systemd_conf_dir / "test-bench-web.service").read_text()
+
+
+def test_a_systemd_bench_with_no_setting_is_sandboxed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="", sandbox=None)
+
+    manager.write_config()
+
+    assert "NoNewPrivileges=yes\n" in _unit_text(manager)
+
+
+def test_a_bench_set_to_false_is_not_sandboxed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="", sandbox=False)
+
+    manager.write_config()
+
+    assert "NoNewPrivileges" not in _unit_text(manager)
+
+
+def test_a_bench_with_no_setting_that_cannot_sandbox_runs_without_it_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="user namespaces are blocked", sandbox=None)
+
+    manager.write_config()
+
+    assert "NoNewPrivileges" not in _unit_text(manager)
+    assert "user namespaces are blocked" in caplog.text
+    assert "sandbox = false" in caplog.text
+
+
+def test_a_bench_set_to_true_that_cannot_sandbox_still_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="user namespaces are blocked", sandbox=True)
+
+    with pytest.raises(BenchError, match="user namespaces are blocked"):
+        manager.write_config()
