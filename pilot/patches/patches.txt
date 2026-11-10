@@ -23,3 +23,4 @@ serve_site_embeds_locally
 enable_default_alerts
 update_auto_update_schedule
 set_sandbox_off_for_existing_benches
+rewrite_database_wait_in_units
