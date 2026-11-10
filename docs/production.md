@@ -125,7 +125,7 @@ When using Central or another upstream proxy, keep the local Admin service priva
 
 ## Sandbox
 
-`sandbox = true` under `[production]` runs the bench's workload units (web, socketio, workers, redis and app processes) with `systemd.exec` sandbox directives. It needs `process_manager = "systemd"`. The admin and central bootstrap units stay unsandboxed because the admin runs the nginx and certbot sudo commands.
+The sandbox runs the bench's workload units (web, socketio, workers, redis and app processes) with `systemd.exec` sandbox directives. It needs `process_manager = "systemd"`, and a systemd bench uses it unless `sandbox = false` is set under `[production]`. A new bench has no setting, so it is sandboxed. A bench that existed before the default changed got `sandbox = false` from the `set_sandbox_off_for_existing_benches` patch; set it to `true` to opt in. A Supervisor bench is never sandboxed. The admin and central bootstrap units stay unsandboxed because the admin runs the nginx and certbot sudo commands.
 
 | Directives | Effect |
 |---|---|
@@ -146,7 +146,7 @@ When using Central or another upstream proxy, keep the local Admin service priva
 
 Apps can keep more home paths. Declare `read_paths` and `write_paths` under `[tool.pilot.sandbox]` in `pyproject.toml` for every workload unit, or on a `[tool.pilot.processes.<name>]` table for that unit only. See [App Processes](app-processes.md#sandbox-paths).
 
-Before Pilot replaces the units, it starts a trial unit with the same directives. When the host cannot start it, setup fails with the systemd error and the current units stay. Set `sandbox = false` to deploy without it.
+Before Pilot replaces the units, it starts a trial unit with the same directives. When the host cannot start it, a bench with no `sandbox` setting runs without the sandbox and logs why. A bench with `sandbox = true` fails setup with the systemd error and keeps its current units; set `sandbox = false` to deploy without the sandbox.
 
 The trial needs unprivileged user namespaces. Ubuntu 24.04 restricts them through AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`), so there the trial fails with exit code 226.
 

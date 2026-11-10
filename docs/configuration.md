@@ -92,7 +92,7 @@ enabled = true
 process_manager = "systemd" # or "supervisor"
 ```
 
-Add `sandbox = true` to `[production]` to run a systemd bench's workload units in a systemd sandbox. See [Production](production.md#sandbox).
+A systemd bench runs its workload units in a systemd sandbox unless `sandbox = false` is set under `[production]`. Benches that existed before the sandbox became the default got `sandbox = false` from a patch. See [Production](production.md#sandbox).
 
 Lite mode runs web, realtime, and jobs in one process:
 
