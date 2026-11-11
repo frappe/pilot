@@ -35,7 +35,7 @@ pilot setup letsencrypt
 
 A configured cloud site alias shows a waiting page while its target site is absent. The page refreshes every five seconds. `/api/method/ping` returns 503 until the target exists, so readiness checks do not treat the waiting page as a working site. Unknown hostnames still return 404.
 
-Pilot's MariaDB and PostgreSQL units are `Type=notify`: systemd counts them as started once the server accepts connections, and the web unit starts after that. systemd keeps the web socket open meanwhile, so early requests queue. Units from before this change are rewritten by a patch and take effect at the database's next restart. Existing external databases have no unit and keep their current startup behavior.
+Pilot's MariaDB and PostgreSQL units are `Type=notify`: systemd counts them as started once the server accepts connections, and the web unit starts after that. systemd keeps the web socket open meanwhile, so early requests queue. systemd waits 15 minutes for MariaDB, which extends that time while it recovers from a crash, and sets no time limit for PostgreSQL. A patch rewrites the database units and the bench units from before this change. The patch restarts nothing, so a database unit takes effect at the next restart of the database. Existing external databases have no unit and keep their current startup behavior.
 
 If nginx cannot reach a backend, browser GET requests receive a reconnecting page that refreshes every five seconds. API requests and form submissions retain their gateway error status.
 
