@@ -34,12 +34,13 @@ Commands and API handlers must not duplicate Frappe, systemd, nginx, database, o
 
 ## Trust Model
 
-Pilot manages benches for one host user. Every bench under a benches directory runs as that user, shares its sudo grants, and can read the neighbouring bench directories. Benches are a unit of workload, not a security boundary. `[production] sandbox = true` hides the neighbouring benches and the home directory from a systemd bench's workload units and blocks sudo there, but the shared user still lets one bench reach another through `/proc`, signals and loopback ports. See [Production](docs/production.md#sandbox).
+Pilot manages benches for one host user. Every bench under a benches directory runs as that user, shares its sudo grants, and can read the neighbouring bench directories. Benches are a unit of workload, not a security boundary. `[production] sandbox = true` hides the neighbouring benches and the home directory from a systemd bench's workload units and blocks sudo there, but the shared user still lets one bench reach another through `/proc`, signals and loopback ports. See [Sandbox](docs/sandbox.md).
 
 Assume from this:
 
 - Admin access to one bench is equivalent to shell access as the host user, and to the same access over every other bench in that directory.
 - Two workloads that must not reach each other belong on separate hosts, or under separate host users with their own benches directory.
+- An app chooses its own `read_paths` and `write_paths`. Pilot checks where a path is but cannot know what it is for, so an app can widen the sandbox on purpose. App code also runs outside the sandbox during `get-app`, `install-app` and `migrate`, so install only apps that you trust. See [Sandbox](docs/sandbox.md#what-the-sandbox-does-not-do).
 - The host user holds passwordless sudo for a fixed set of nginx and certbot commands (installed by `install.sh`) so production deploys and cert renewals need no prompt. sudo-rs (Ubuntu 26.04) rejects wildcards in arguments, so there the certbot, openssl, test and mkdir grants have no argument limits. These grants, and the bench-writable nginx config that root parses, mean the host user is effectively root-equivalent on the box; treat one bench's compromise as reaching the whole host, not just its own benches.
 - Whoever reaches the Admin port before setup finishes owns the bench, so serve the setup wizard only where you accept that.
 
