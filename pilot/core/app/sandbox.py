@@ -102,7 +102,7 @@ def _get_allowed_roots() -> set[Path]:
 
 
 class AppSandbox:
-    """The `[tool.pilot.sandbox]` table of an app's pyproject.toml."""
+    """The `[tool.pilot.sandbox]` table of an app's pyproject.toml. docs/sandbox.md explains the sandbox."""
 
     def __init__(self, app: App) -> None:
         self.app = app

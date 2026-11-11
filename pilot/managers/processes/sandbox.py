@@ -42,7 +42,8 @@ WORKLOAD_DIRECTORIES = ("apps", "env", "sites", "config", "logs", "pids", "chrom
 class PilotSandboxPaths:
     """Tier 1: the paths in the masked home that Pilot's own workloads need.
 
-    Each comes from what the bench really uses, so nothing else of the user's tools is exposed."""
+    Each comes from what the bench really uses, so nothing else of the user's tools is exposed.
+    docs/sandbox.md explains the sandbox."""
 
     def __init__(self, bench: Bench) -> None:
         self.bench = bench
