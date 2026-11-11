@@ -112,3 +112,27 @@ def test_the_patch_runs_once_for_each_bench(tmp_path: Path, actions: list[str]) 
     run(tmp_path / "benches")
 
     assert actions == ["database-reload", "units:one", "units-reload"]
+
+
+def test_development_and_supervisor_benches_keep_their_process_config(
+    tmp_path: Path, actions: list[str]
+) -> None:
+    _bench(tmp_path / "benches", "dev")
+    _bench(tmp_path / "benches", "super", manager="supervisor")
+
+    run(tmp_path / "benches")
+
+    assert actions == []
+
+
+def test_a_bench_that_is_not_set_up_in_systemd_is_marked_done_without_a_rewrite(
+    tmp_path: Path, actions: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(SystemdProcessManager, "is_configured", lambda self: False)
+    _bench(tmp_path / "benches", "one", manager="systemd")
+
+    run(tmp_path / "benches")
+    monkeypatch.setattr(SystemdProcessManager, "is_configured", lambda self: True)
+    run(tmp_path / "benches")
+
+    assert actions == []
