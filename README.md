@@ -156,6 +156,7 @@ See [Admin UI](docs/admin-ui.md) and [Admin API](docs/admin-api.md).
 - [Admin API](docs/admin-api.md)
 - [Admin UI](docs/admin-ui.md)
 - [Production](docs/production.md)
+- [Sandbox](docs/sandbox.md)
 - [Domain Provider](docs/domain-provider.md)
 
 ## Development
