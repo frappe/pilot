@@ -92,7 +92,7 @@ def test_buckets_cover_whole_window_even_with_short_history(tmp_path: Path) -> N
 
     result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
 
-    assert len(result["buckets"]) >= 45
+    assert len(result["buckets"]) >= 3600 // result["bucket_seconds"]
     assert sum(bucket["checks"] for bucket in result["buckets"]) == 5
     assert result["buckets"][0]["percent"] is None
 
@@ -101,7 +101,7 @@ def test_bucket_seconds_scales_with_window(tmp_path: Path) -> None:
     short = SiteUptimeProvider(tmp_path, "site-a.local", "30m")
     long = SiteUptimeProvider(tmp_path, "site-a.local", "1w")
 
-    assert short.bucket_seconds == 60  # floor, since 1800/45 < 60
+    assert short.bucket_seconds == 120  # floor, since 1800/45 < 120
     assert long.bucket_seconds == 604800 // 45
 
 

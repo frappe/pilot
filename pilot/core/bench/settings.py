@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -93,10 +94,14 @@ class BenchSettings:
         from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         domains = sorted({domain for site in self.bench.sites() for domain in site.config.all_domains})
+        # Each lookup can wait on an upstream resolver, so they run side by side, not one after another.
+        with ThreadPoolExecutor(max_workers=min(16, len(domains) or 1)) as pool:
+            behind = list(pool.map(is_behind_cloudflare, domains))
         return {
             "has_edge_proxy": bool(DomainRouteProvider.proxy_servers()),
             "domains": [
-                {"domain": domain, "is_behind_cloudflare": is_behind_cloudflare(domain)} for domain in domains
+                {"domain": domain, "is_behind_cloudflare": proxied}
+                for domain, proxied in zip(domains, behind, strict=True)
             ],
         }
 
@@ -184,11 +189,16 @@ def proxy_payload(config: BenchConfig) -> dict:
 
 
 def is_behind_cloudflare(domain: str) -> bool:
-    try:
-        addresses = {str(info[4][0]) for info in socket.getaddrinfo(domain, None)}
-    except OSError:
-        return False
+    addresses = resolve_addresses(domain, socket.AF_INET) or resolve_addresses(domain, socket.AF_INET6)
     return bool(addresses) and all(is_cloudflare_address(address) for address in addresses)
+
+
+def resolve_addresses(domain: str, family: socket.AddressFamily) -> set[str]:
+    """One family at a time: a resolver that fails AAAA slowly (~1 s, uncached) would hold up every A answer."""
+    try:
+        return {str(info[4][0]) for info in socket.getaddrinfo(domain, None, family)}
+    except OSError:
+        return set()
 
 
 def waf_payload(config: BenchConfig) -> dict:

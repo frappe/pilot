@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from pilot.config import MariaDBConfig
+from pilot.core.database.engines.helpers import is_local_host
 from pilot.core.database.mariadb_variables import (
     GENERIC_EDITABLE_MARIADB_VARIABLE_NAMES,
     MARIADB_VARIABLE_NAMES,
@@ -1174,16 +1175,19 @@ class MariaDBManager(UserOwnedDBManager):
         """Open an admin connection to the shared MariaDB server."""
         import pymysql
 
+        socket = self._detect_socket() or None
         return pymysql.connect(
             host=self.config.host,
             port=self.config.port,
             user=self.config.admin_user,
             password=self.config.root_password if password is None else password,
-            unix_socket=self._detect_socket() or None,
+            unix_socket=socket,
             cursorclass=cursorclass or pymysql.cursors.Cursor,
             connect_timeout=_CLIENT_TIMEOUT,
             read_timeout=_CLIENT_TIMEOUT,
             write_timeout=_CLIENT_TIMEOUT,
+            # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
+            ssl_disabled=is_local_host(self.config.host, socket),
         )
 
     def _detect_socket(self) -> str:

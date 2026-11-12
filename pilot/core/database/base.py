@@ -212,7 +212,11 @@ class Database(ABC):
         raise NotImplementedError
 
     def get_deadlocks(
-        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+        self,
+        database: str = "",
+        limit: int = 50,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> DeadlockReport:
         raise NotImplementedError
 
@@ -231,9 +235,7 @@ class Database(ABC):
         """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
-    def get_unused_indexes(
-        self, database: str = "", limit: int = 20, offset: int = 0
-    ) -> PerformanceSection:
+    def get_unused_indexes(self, database: str = "", limit: int = 20, offset: int = 0) -> PerformanceSection:
         """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 

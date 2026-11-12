@@ -75,7 +75,7 @@ def test_cloudflare_status_reports_the_edge_proxy_and_proxied_domains(tmp_path: 
     )
     addresses = {"shop.example.com": "104.21.76.133", "direct.example.com": "203.0.113.7"}
 
-    def getaddrinfo(host, port):
+    def getaddrinfo(host, port, family):
         return [(None, None, None, "", (addresses[host], 0))]
 
     with (
@@ -95,3 +95,31 @@ def test_cloudflare_status_reports_the_edge_proxy_and_proxied_domains(tmp_path: 
             {"domain": "shop.example.com", "is_behind_cloudflare": True},
         ],
     }
+
+
+def test_cloudflare_check_asks_ipv6_only_when_there_is_no_ipv4_answer() -> None:
+    import socket
+
+    from pilot.core.bench.settings import is_behind_cloudflare
+
+    answers = {
+        ("v4.example.com", socket.AF_INET): "104.21.76.133",
+        ("v6.example.com", socket.AF_INET6): "2606:4700:3030::6815:4c85",
+    }
+    asked = []
+
+    def getaddrinfo(host, port, family):
+        asked.append((host, family))
+        if (host, family) not in answers:
+            raise socket.gaierror("no answer")
+        return [(None, None, None, "", (answers[host, family], 0))]
+
+    with patch("pilot.core.bench.settings.socket.getaddrinfo", side_effect=getaddrinfo):
+        assert is_behind_cloudflare("v4.example.com")
+        assert is_behind_cloudflare("v6.example.com")
+
+    assert asked == [
+        ("v4.example.com", socket.AF_INET),
+        ("v6.example.com", socket.AF_INET),
+        ("v6.example.com", socket.AF_INET6),
+    ]

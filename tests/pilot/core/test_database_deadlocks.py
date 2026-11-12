@@ -49,8 +49,13 @@ def test_the_log_lists_newest_first_and_filters_by_database(tmp_path: Path) -> N
     log.write_text(DUMP + DUMP.replace("12:28:11", "13:00:00").replace("_b55b229d4134569a", "other"))
 
     deadlocks = DeadlockLog(log).get_deadlocks()
-    assert [deadlock.time for deadlock in deadlocks] == ["2026-11-12T07:30:00+00:00", "2026-11-12T06:58:11+00:00"]
-    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks("other")] == ["2026-11-12T07:30:00+00:00"]
+    assert [deadlock.time for deadlock in deadlocks] == [
+        "2026-11-12T07:30:00+00:00",
+        "2026-11-12T06:58:11+00:00",
+    ]
+    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks("other")] == [
+        "2026-11-12T07:30:00+00:00"
+    ]
 
 
 def test_the_log_filters_by_a_utc_range(tmp_path: Path) -> None:
@@ -58,8 +63,12 @@ def test_the_log_filters_by_a_utc_range(tmp_path: Path) -> None:
     log.write_text(DUMP + DUMP.replace("12:28:11", "13:00:00"))
     since = datetime(2026, 11, 12, 7, 0, tzinfo=UTC)
 
-    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks(since=since)] == ["2026-11-12T07:30:00+00:00"]
-    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks(until=since)] == ["2026-11-12T06:58:11+00:00"]
+    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks(since=since)] == [
+        "2026-11-12T07:30:00+00:00"
+    ]
+    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks(until=since)] == [
+        "2026-11-12T06:58:11+00:00"
+    ]
 
 
 def test_the_engine_reads_the_server_error_log(tmp_path: Path) -> None:

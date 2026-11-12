@@ -4,6 +4,7 @@ import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import SupportsFloat
 
 from pilot.core.database.base import (
     BinlogFile,
@@ -68,6 +69,8 @@ class MariaDB(Database):
             unix_socket=self._socket,
             connect_timeout=self._connect_timeout,
             cursorclass=pymysql.cursors.DictCursor,
+            # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
+            ssl_disabled=is_local_host(self._host, self._socket),
         )
 
     def quote_identifier(self, name: str) -> str:
@@ -326,14 +329,20 @@ class MariaDB(Database):
         ]
 
     def get_deadlocks(
-        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+        self,
+        database: str = "",
+        limit: int = 50,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> DeadlockReport:
         """Deadlocks InnoDB printed to the error log, which must be a file on this host."""
         print_all = str(self.get_scalar("SELECT @@innodb_print_all_deadlocks")) in ("1", "ON")
         path = self.get_error_log_path()
         if path is None:
             return DeadlockReport(log_path=None, print_all_deadlocks=print_all)
-        return DeadlockReport(str(path), print_all, DeadlockLog(path).get_deadlocks(database, limit, since, until))
+        return DeadlockReport(
+            str(path), print_all, DeadlockLog(path).get_deadlocks(database, limit, since, until)
+        )
 
     def get_error_log_path(self) -> Path | None:
         """None when errors go to stderr (the journal) or the file is out of reach."""
@@ -361,9 +370,7 @@ class MariaDB(Database):
     ) -> PerformanceSection:
         return MariaDBPerformanceReport(self._connect, database).get_full_table_scan_queries(limit, offset)
 
-    def get_unused_indexes(
-        self, database: str = "", limit: int = 20, offset: int = 0
-    ) -> PerformanceSection:
+    def get_unused_indexes(self, database: str = "", limit: int = 20, offset: int = 0) -> PerformanceSection:
         return MariaDBPerformanceReport(self._connect, database).get_unused_indexes(limit, offset)
 
     def get_redundant_indexes(
@@ -434,9 +441,7 @@ class MariaDB(Database):
         data_dir = Path(self.get_data_directory() or ".")
         return [
             StorageComponent("binlog", "binary log", self.get_binlog_status().size_bytes),
-            StorageComponent(
-                "error_log", "error log", self._variable_file_size("@@log_error", data_dir)
-            ),
+            StorageComponent("error_log", "error log", self._variable_file_size("@@log_error", data_dir)),
             StorageComponent(
                 "slow_log",
                 "slow query log",
@@ -470,7 +475,7 @@ class MariaDB(Database):
         return int(result.rows[0][1])
 
 
-def _utc_iso(epoch: object) -> str | None:
+def _utc_iso(epoch: SupportsFloat | None) -> str | None:
     """INNODB_TRX times are server-local with no zone; an epoch turned UTC reads the same everywhere."""
     if epoch is None:
         return None

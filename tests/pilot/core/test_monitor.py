@@ -668,19 +668,53 @@ def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -
     from pilot.core.site import uptime_monitoring
 
     loops: list[tuple[str, float, object]] = []
-    uptime_started = threading.Event()
+    started = {"uptime": threading.Event(), "rollups": threading.Event()}
 
     def record_loop(interval: float, job: object) -> None:
         loops.append((threading.current_thread().name, interval, job))
-        if threading.current_thread().name == "uptime":
-            uptime_started.set()
+        if threading.current_thread().name in started:
+            started[threading.current_thread().name].set()
 
     monkeypatch.setattr(monitoring, "run_every", record_loop)
 
     monitoring.main()
 
-    assert uptime_started.wait(timeout=5)
-    assert sorted(loops, key=lambda loop: loop[1]) == [
-        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
+    assert all(event.wait(timeout=5) for event in started.values())
+    assert sorted(loops, key=lambda loop: loop[0]) == [
         ("MainThread", monitoring.METRICS_INTERVAL, monitoring.collect_metrics),
+        ("rollups", monitoring.ROLLUP_INTERVAL, monitoring.update_site_rollups),
+        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
     ]
+
+
+def test_site_rollups_update_every_bench_and_survive_one_failure(tmp_path) -> None:
+    from pilot.core.server import monitoring
+
+    benches = [(tmp_path / "a", object()), (tmp_path / "b", object())]
+    updated = []
+
+    def update(self) -> None:
+        updated.append((type(self).__name__, self.bench_path))
+        if self.bench_path == tmp_path / "a":
+            raise OSError("log unreadable")
+
+    with (
+        patch.object(monitoring, "iter_sibling_benches", return_value=benches),
+        patch("pilot.core.bench.Bench", side_effect=lambda config, path: SimpleNamespace(path=path)),
+        patch.object(monitoring.UptimeRollup, "__init__", _remember_bench),
+        patch.object(monitoring.RequestRollup, "__init__", _remember_bench),
+        patch.object(monitoring.UptimeRollup, "update", update),
+        patch.object(monitoring.RequestRollup, "update", update),
+    ):
+        monitoring.update_site_rollups()
+
+    assert updated == [
+        ("UptimeRollup", tmp_path / "a"),
+        ("RequestRollup", tmp_path / "a"),
+        ("UptimeRollup", tmp_path / "b"),
+        ("RequestRollup", tmp_path / "b"),
+    ]
+
+
+def _remember_bench(self, bench) -> None:
+    self.bench_path = bench.path

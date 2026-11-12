@@ -1043,3 +1043,17 @@ def test_bench_db_returns_same_instance_on_second_access(tmp_path: Path) -> None
 
     bench = Bench(_bench_config("mariadb"), tmp_path)
     assert bench.db is bench.db
+
+
+@pytest.mark.parametrize(
+    ("host", "socket", "disabled"),
+    [("127.0.0.1", None, True), ("", "/run/m.sock", True), ("db.example.com", None, False)],
+)
+def test_mariadb_skips_tls_only_on_loopback(host: str, socket: str | None, disabled: bool) -> None:
+    from pilot.core.database.engines.mariadb import MariaDB
+
+    engine = MariaDB(host=host, port=3306, user="u", password="p", database="", socket=socket)
+    with patch("pymysql.connect") as connect:
+        engine._connect()
+
+    assert connect.call_args.kwargs["ssl_disabled"] is disabled

@@ -5,6 +5,8 @@ from pathlib import Path
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
 _MAX_BUCKETS = 45
+# Sites are pinged once a minute; a 2-minute floor keeps every bar holding at least one check.
+_MIN_BUCKET_SECONDS = 120
 
 
 class SiteUptimeProvider(WindowedLogProvider):
@@ -21,7 +23,7 @@ class SiteUptimeProvider(WindowedLogProvider):
         self._bench_root = bench_root
         self._log_path = bench_root / "logs" / "uptime.json.log"
         self._site_name = site_name
-        self.bucket_seconds = max(60, self.window_seconds // _MAX_BUCKETS)
+        self.bucket_seconds = max(_MIN_BUCKET_SECONDS, self.window_seconds // _MAX_BUCKETS)
 
     def get_uptime(self) -> dict:
         entries = list(self._entries_in_window())

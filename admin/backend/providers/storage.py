@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -101,6 +103,23 @@ def _site_backup_dirs(site_path: Path) -> tuple[Path, Path]:
     return site_path / "backups", site_path / "private" / "backups"
 
 
+def site_directories(site_path: Path) -> list[Path]:
+    backups = [path for path in _site_backup_dirs(site_path) if path.is_dir()]
+    return [site_path, site_path / "private" / "files", site_path / "public", *backups]
+
+
+def measure_in_parallel(directories: list[Path]) -> None:
+    """Each size is one `du` process; running them together fills the cache in about the time of the largest."""
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(_measure_quietly, [str(path) for path in directories]))
+
+
+def _measure_quietly(path: str) -> None:
+    # A failure is not cached, so the serial read that follows raises it where it did before.
+    with suppress(OSError, CommandError, IndexError, ValueError):
+        directory_size_bytes(path)
+
+
 def _storage_entry(path: Path) -> StorageItem:
     size = path.stat().st_size if path.is_file() else directory_size_bytes(str(path))
     return StorageItem(name=path.name, bytes=size)
@@ -144,6 +163,7 @@ class StorageProvider:
         never expires, so leaving it in place pins every directory to its first
         reading for the life of the process - including on an explicit refresh."""
         directory_size_bytes.cache_clear()
+        measure_in_parallel(self.get_bench_directories())
         return StorageBreakdown(
             disk_total=disk_total,
             disk_used=disk_used,
@@ -154,7 +174,16 @@ class StorageProvider:
     def get_site(self, name: str) -> SiteStorage:
         """One site's folder breakdown, measured fresh."""
         directory_size_bytes.cache_clear()
-        return self._site_storage(self._bench.site(name))
+        site = self._bench.site(name)
+        measure_in_parallel(site_directories(site.path))
+        return self._site_storage(site)
+
+    def get_bench_directories(self) -> list[Path]:
+        """Every directory the breakdown sizes, so they can be measured side by side first."""
+        directories = [self._bench.logs_path, *(app.path for app in self._bench.apps())]
+        for site in self._bench.sites():
+            directories.extend(site_directories(site.path))
+        return directories
 
     def _database_breakdown(self) -> DatabaseBreakdown:
         engine = self._config.db_type

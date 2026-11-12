@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from pilot.config import BenchConfig
-from pilot.exceptions import CommandError
+from pilot.exceptions import BenchError, CommandError
 from pilot.managers.platform import which
-from pilot.managers.redis import RedisManager
+from pilot.managers.redis import redis_server_binary
 from pilot.utils import run_command
 
 
@@ -21,37 +23,43 @@ class OSProvider:
         versions = {
             "Python": self._config.python_version,
             "Node": self.get_flag_version("node", ["--version"], r"v?([\d.]+)"),
-            "MariaDB": self.get_flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)") or "",
+            "MariaDB": self.get_flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)"),
             "PostgreSQL": self.get_flag_version("psql", ["--version"], r"(\d+\.\d+)"),
-            "Redis": RedisManager.installed_version() or self._config.redis.version or "",
+            "Redis": self.get_flag_version(redis_server_binary() or "", ["--version"], r"v=(\S+)")
+            or self._config.redis.version
+            or "",
             "Nginx": self.get_flag_version("nginx", ["-v"], r"nginx/([\d.]+)"),
             "Frappe": self.frappe_version,
         }
         return {label: value for label, value in versions.items() if value}
 
     def get_flag_version(self, binary: str, args: list[str], pattern: str) -> str:
-        if which(binary) is None:
+        path = which(binary) if binary else None
+        if path is None:
             return ""
-
         try:
-            result = run_command([binary, *args], timeout=5)
-        except (OSError, CommandError):
+            modified = os.stat(path).st_mtime_ns
+        except OSError:
             return ""
-
-        output = (result.stdout or result.stderr or b"").decode(errors="replace")
-        match = re.search(pattern, output)
-        return match.group(1) if match else ""
+        return _binary_version(path, modified, tuple(args), pattern)
 
     @property
     def frappe_version(self) -> str:
-        python_bin = self._bench_root / "env" / "bin" / "python"
-        if not python_bin.exists():
-            return ""
+        from pilot.core.bench import Bench
 
         try:
-            result = run_command([str(python_bin), "-c", "import frappe; print(frappe.__version__)"])
-        except CommandError:
+            return Bench(self._config, self._bench_root).app("frappe").installed_version
+        except BenchError:
             return ""
 
-        return result.stdout.decode().strip()
 
+@lru_cache(maxsize=32)
+def _binary_version(path: str, modified_ns: int, args: tuple[str, ...], pattern: str) -> str:
+    """Keyed on the binary's mtime, so an upgrade reads the new version and repeat requests spawn nothing."""
+    try:
+        result = run_command([path, *args], timeout=5)
+    except (OSError, CommandError):
+        return ""
+    output = (result.stdout or result.stderr or b"").decode(errors="replace")
+    match = re.search(pattern, output)
+    return match.group(1) if match else ""

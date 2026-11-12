@@ -20,6 +20,7 @@ from pilot.core.server.monitoring_datum import MetricShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
+from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
 from pilot.managers.fluentbit import LogsConfigurator
 from pilot.utils import cli_root, iter_sibling_benches
 
@@ -30,7 +31,8 @@ if typing.TYPE_CHECKING:
 CPU_SAMPLE_INTERVAL = 1.0
 # Seconds from the end of one tick to the start of the next.
 METRICS_INTERVAL = 10.0
-UPTIME_INTERVAL = 5.0
+UPTIME_INTERVAL = 60.0
+ROLLUP_INTERVAL = 60.0
 
 ALERT_EVENT = "resource_limit_breached"
 
@@ -429,10 +431,26 @@ def run_every(interval: float, job: typing.Callable[[], None]) -> None:
         time.sleep(interval)
 
 
+def update_site_rollups() -> None:
+    """Hourly per-site counts, so the Sites list reads a few KB instead of a week of logs."""
+    from pilot.core.bench import Bench
+
+    for bench_path, config in iter_sibling_benches(cli_root() / "benches" / ".rollup-placeholder"):
+        bench = Bench(config, bench_path)
+        for rollup in (UptimeRollup(bench), RequestRollup(bench)):
+            try:
+                rollup.update()
+            except Exception:
+                traceback.print_exc()
+
+
 def main() -> None:
     """Uptime pings get their own thread, so a slow metrics tick cannot delay them."""
     threading.Thread(
         target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.main), name="uptime", daemon=True
+    ).start()
+    threading.Thread(
+        target=run_every, args=(ROLLUP_INTERVAL, update_site_rollups), name="rollups", daemon=True
     ).start()
     run_every(METRICS_INTERVAL, collect_metrics)
 
