@@ -351,3 +351,16 @@ def test_yarn_install_key_ignores_unrelated_environment(
     monkeypatch.delenv("NODE_ENV")
     monkeypatch.setenv("YARN_REGISTRY", "https://registry.example")
     assert NodeDependencies.get_key(app) != key
+
+
+def test_yarn_install_key_survives_kernel_updates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    app = write_package(tmp_path / "app")
+    (app / "yarn.lock").write_text("lockfile")
+    key = NodeDependencies.get_key(app)
+    monkeypatch.setattr("platform.release", lambda: "99.0.0-updated")
+    monkeypatch.setattr("platform.platform", lambda *args, **kwargs: "Linux-99.0.0-updated-x86_64")
+    assert NodeDependencies.get_key(app) == key
+    monkeypatch.setattr("platform.machine", lambda: "riscv64")
+    assert NodeDependencies.get_key(app) != key

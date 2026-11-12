@@ -16,7 +16,8 @@ class NodeDependencies:
 
     @staticmethod
     def get_key(path: Path, *, include_dependencies: bool = True) -> str:
-        digest = hashlib.sha256(platform.platform().encode())
+        system = (platform.system(), platform.machine(), *platform.libc_ver())
+        digest = hashlib.sha256(json.dumps(system).encode())
         NodeDependencies.update_file_key(digest, path, include_dependencies=include_dependencies)
         for binary in (shutil.which("node"), shutil.which(YARN.bin)):
             if binary:
