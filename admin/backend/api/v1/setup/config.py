@@ -116,7 +116,7 @@ def apply_existing_local_database(bench_root: Path, data: dict) -> dict:
 
 
 def read_defaults(bench_root: Path) -> dict:
-    from pilot.managers.platform import is_linux, native_process_manager
+    from pilot.managers.platform import HostPlatform
 
     # This is a read endpoint the wizard polls before login - it must never echo
     # a DB password back, default or real, whether or not bench.toml has one set.
@@ -124,8 +124,8 @@ def read_defaults(bench_root: Path) -> dict:
 
     result = {
         "bench_name": bench_root.name,
-        "is_linux": is_linux(),
-        "native_process_manager": native_process_manager(),
+        "is_linux": HostPlatform().is_linux,
+        "native_process_manager": HostPlatform.native_process_manager,
         **defaults,
     }
     toml_path = bench_root / "bench.toml"

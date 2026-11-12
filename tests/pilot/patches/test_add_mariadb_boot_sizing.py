@@ -1,6 +1,6 @@
 import runpy
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ def test_patch_runs_when_executed_as_a_script(tmp_path: Path) -> None:
     manager = Mock()
     manager.is_provisioned.return_value = True
     with (
-        patch("pilot.managers.platform.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.core.server.Server.benches_dir", tmp_path),
         patch.object(BenchConfig, "read", return_value=BenchConfig.default("managed", benches_root=tmp_path)),
         patch("pilot.managers.database.mariadb.MariaDBManager", return_value=manager),
@@ -41,7 +41,7 @@ def test_boot_sizing_patch_is_repeatable_and_leaves_external_servers_alone(tmp_p
     manager = Mock()
     manager.is_provisioned.return_value = True
     with (
-        patch("pilot.managers.platform.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch.object(BenchConfig, "read", side_effect=lambda path: configs[path.name]),
         patch("pilot.managers.database.mariadb.MariaDBManager", return_value=manager),
     ):
@@ -60,7 +60,7 @@ def test_failed_boot_hook_installation_is_not_marked_applied(tmp_path: Path) -> 
     manager.is_provisioned.return_value = True
     manager.memory.install_existing.side_effect = DatabaseError("installation failed")
     with (
-        patch("pilot.managers.platform.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch.object(BenchConfig, "read", return_value=BenchConfig.default("managed")),
         patch("pilot.managers.database.mariadb.MariaDBManager", return_value=manager),
         pytest.raises(DatabaseError, match="installation failed"),

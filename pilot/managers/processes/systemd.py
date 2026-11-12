@@ -9,7 +9,7 @@ from pilot.internal.atomic_file import fsync_directory_files
 from pilot.internal.command import run_command
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.managers.platform import _privileged
+from pilot.managers.platform import Privileges
 from pilot.managers.processes.base import (
     ManagedProcessManager,
     UnitGroup,
@@ -214,7 +214,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             ["loginctl", "enable-linger", user],
             ["systemctl", "start", f"user@{os.getuid()}.service"],
         ):
-            subprocess.run(_privileged(command), capture_output=True, check=False)
+            subprocess.run(Privileges.get_command(command), capture_output=True, check=False)
 
     @override
     def reload_manager_config(self) -> None:

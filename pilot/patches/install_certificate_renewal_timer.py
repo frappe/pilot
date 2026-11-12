@@ -24,9 +24,9 @@ def run(benches_root: Path) -> None:
 
 
 def _is_issuing_certificates(config) -> bool:
-    from pilot.managers.platform import is_linux
+    from pilot.managers.platform import HostPlatform
 
-    return is_linux() and config.production.enabled and bool(config.letsencrypt.email)
+    return HostPlatform().is_linux and config.production.enabled and bool(config.letsencrypt.email)
 
 
 if __name__ == "__main__":

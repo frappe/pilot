@@ -22,15 +22,7 @@ from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import (
-    _privileged,
-    default_nginx_config_dir,
-    is_linux,
-    service_command,
-    service_enable_command,
-    service_running,
-    which,
-)
+from pilot.managers.platform import HostPlatform, Privileges, SystemService
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
 
@@ -117,7 +109,7 @@ def cert_files_exist(domain: str) -> bool:
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
     command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
     try:
-        run_command(_privileged(command))
+        run_command(Privileges.get_command(command))
     except CommandError:
         return False
     return True
@@ -368,7 +360,7 @@ class NginxManager:
         self._unvalidated_privileged: dict[Path, str | None] = {}
 
     def is_installed(self) -> bool:
-        return which("nginx") is not None
+        return HostPlatform().get_executable_path("nginx") is not None
 
     def install(self) -> None:
         if not self.is_installed():
@@ -379,8 +371,8 @@ class NginxManager:
         if self.has_passwordless_sudo:
             return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
-        systemctl = which("systemctl") or "/bin/systemctl"
-        nginx = which("nginx") or "/usr/sbin/nginx"
+        systemctl = HostPlatform().get_executable_path("systemctl") or "/bin/systemctl"
+        nginx = HostPlatform().get_executable_path("nginx") or "/usr/sbin/nginx"
         install_sudoers_grant(
             self.bench.config_path / "nginx",
             bench_user,
@@ -398,7 +390,7 @@ class NginxManager:
     @property
     def has_passwordless_sudo(self) -> bool:
         """Whether the nginx sudoers grant is active."""
-        nginx = which("nginx") or "/usr/sbin/nginx"
+        nginx = HostPlatform().get_executable_path("nginx") or "/usr/sbin/nginx"
         return has_passwordless_sudo_for([nginx, "-t"])
 
     def generate_config(self, ssl_ready: bool = False) -> None:
@@ -487,7 +479,7 @@ class NginxManager:
             self._write_config_file(catchall, self._renderer.generate_server_config(error_dir))
             return
 
-        catchall_conf = default_nginx_config_dir() / "00-bench-default.conf"
+        catchall_conf = HostPlatform.nginx_config_dir / "00-bench-default.conf"
         content = self._renderer.generate_server_config(_SHARED_ERROR_DIR)
         previous = catchall_conf.read_text() if catchall_conf.exists() else None
         if content != previous:
@@ -497,7 +489,7 @@ class NginxManager:
         # nginx rejects a duplicate, so drop it and let ours win.
         default_site = Path("/etc/nginx/sites-enabled/default")
         if default_site.exists() or default_site.is_symlink():
-            run_command(_privileged(["rm", "-f", str(default_site)]))
+            run_command(Privileges.get_command(["rm", "-f", str(default_site)]))
 
     def _install_privileged_default_server(
         self, catchall_conf: Path, content: str, previous: str | None
@@ -507,7 +499,7 @@ class NginxManager:
             staged = staging / f"_catchall_{code}.html"
             staged.write_text(render_error_html(code, title, message))
             run_command(
-                _privileged(
+                Privileges.get_command(
                     [
                         "install",
                         "-D",
@@ -566,7 +558,7 @@ class NginxManager:
         self._unvalidated.clear()
         for path, previous in self._unvalidated_privileged.items():
             if previous is None:
-                run_command(_privileged(["rm", "-f", str(path)]))
+                run_command(Privileges.get_command(["rm", "-f", str(path)]))
             else:
                 self._stage_and_copy(previous, path)
         self._unvalidated_privileged.clear()
@@ -576,7 +568,7 @@ class NginxManager:
         # Path("") is truthy (no __bool__ override), so `or` alone never falls
         # back here - compare explicitly against the empty-config sentinel.
         configured = self.bench.config.nginx.config_dir
-        return configured if configured != Path("") else default_nginx_config_dir()
+        return configured if configured != Path("") else HostPlatform.nginx_config_dir
 
     @property
     def include_path(self) -> Path:
@@ -600,10 +592,10 @@ class NginxManager:
         # A symlink from before the shared include would load the same vhost
         # twice, so it goes either way.
         if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(_privileged(["unlink", str(symlink_path)]))
+            run_command(Privileges.get_command(["unlink", str(symlink_path)]))
         if not self.has_shared_include:
             self._prune_dangling_symlinks(nginx_dir)
-            run_command(_privileged(["ln", "-s", str(self.include_path), str(symlink_path)]))
+            run_command(Privileges.get_command(["ln", "-s", str(self.include_path), str(symlink_path)]))
         self._set_worker_user()
         if self.bench.config.waf.enabled:
             self._ensure_modsecurity_module()
@@ -618,10 +610,10 @@ class NginxManager:
         grant carried the enable verb keeps its running nginx, and the failure
         is reported rather than ending the deploy.
         """
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return
         try:
-            run_command(service_enable_command("nginx"))
+            run_command(SystemService("nginx").get_command("enable"))
         except CommandError as error:
             logging.warning("Could not enable nginx at boot: %s", error)
 
@@ -659,7 +651,7 @@ class NginxManager:
             return
         for entry in nginx_dir.iterdir():
             if entry.is_symlink() and not entry.exists():
-                run_command(_privileged(["unlink", str(entry)]))
+                run_command(Privileges.get_command(["unlink", str(entry)]))
 
     def _reload_or_rollback(self, symlink_path: Path) -> None:
         """Reload, or unpublish this bench when no config is left for it, then re-raise."""
@@ -676,7 +668,7 @@ class NginxManager:
             if self.include_path.exists():
                 self.include_path.rename(self.include_path.with_name("include.conf.broken"))
         elif symlink_path.exists() or symlink_path.is_symlink():
-            run_command(_privileged(["unlink", str(symlink_path)]))
+            run_command(Privileges.get_command(["unlink", str(symlink_path)]))
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""
@@ -699,18 +691,18 @@ class NginxManager:
 
     def reload(self) -> None:
         try:
-            run_command(_privileged(["nginx", "-t"]), timeout=10)
+            run_command(Privileges.get_command(["nginx", "-t"]), timeout=10)
         except CommandError:
             self._restore_unvalidated()
             raise
         self._unvalidated.clear()
         self._unvalidated_privileged.clear()
-        if not is_linux():
+        if not HostPlatform().is_linux:
             run_command(["nginx", "-s", "reload"])
             return
         # reload needs a running nginx; a fresh install may not be started yet.
-        action = "reload" if service_running("nginx") else "start"
-        run_command(service_command(action, "nginx"))
+        service = SystemService("nginx")
+        run_command(service.get_command("reload" if service.is_running else "start"))
 
     def cert_path(self, site: "SiteConfig") -> Path:
         return live_cert_path(self.bench.certificate_name(site))

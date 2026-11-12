@@ -216,9 +216,9 @@ class BenchInitializer:
         # need libpq headers for psycopg. install.sh provisions them once for the
         # whole host, so pilot init only ever verifies them.
         from pilot.exceptions import BenchError
-        from pilot.managers.platform import is_linux
+        from pilot.managers.platform import HostPlatform
 
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return
         postgres = self.bench.config.db_type == "postgres"
         packages = ["build-essential", "pkg-config", "git", "python3-dev", "libmariadb-dev"]

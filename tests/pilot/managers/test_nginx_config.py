@@ -722,7 +722,7 @@ def test_production_enables_nginx_at_boot(tmp_path: Path) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
 
     with (
-        patch("pilot.managers.nginx.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.nginx.run_command") as mock_run,
     ):
         manager.enable_at_boot()
@@ -735,7 +735,7 @@ def test_an_older_sudo_grant_does_not_end_the_deploy(tmp_path: Path) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
 
     with (
-        patch("pilot.managers.nginx.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.nginx.run_command", side_effect=CommandError("a password is required")),
     ):
         manager.enable_at_boot()
@@ -789,7 +789,7 @@ def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> Non
 
 def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
-    with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):
+    with patch("pilot.managers.platform.HostPlatform.nginx_config_dir", Path("/etc/nginx/conf.d")):
         assert manager.config_dir == Path("/etc/nginx/conf.d")
 
 
@@ -1288,7 +1288,7 @@ def test_nginx_in_sbin_is_found_without_sbin_on_path(tmp_path: Path, monkeypatch
     (sbin / "nginx").write_text("#!/bin/sh\n")
     (sbin / "nginx").chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
-    monkeypatch.setattr("pilot.managers.platform._EXTRA_BIN_DIRS", (str(sbin),))
+    monkeypatch.setattr("pilot.managers.platform.HostPlatform.extra_bin_dirs", (str(sbin),))
 
     assert NginxManager(_make_bench(tmp_path, _BASE_DATA)).is_installed()
 
@@ -1501,7 +1501,7 @@ def _legacy_apply(manager: NginxManager, conf_dir: Path, nginx_test_fails: bool)
     with (
         patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
         patch.object(NginxManager, "has_shared_include", new_callable=PropertyMock, return_value=False),
-        patch("pilot.managers.nginx.default_nginx_config_dir", return_value=conf_dir),
+        patch("pilot.managers.platform.HostPlatform.nginx_config_dir", conf_dir),
         patch.object(
             manager, "_stage_and_copy", side_effect=lambda content, target: target.write_text(content)
         ),

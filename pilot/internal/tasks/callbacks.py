@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.internal.tasks.models import TaskStatus
-from pilot.managers.platform import remove_hosts_entry
+from pilot.managers.platform import HostsFile
 
 if TYPE_CHECKING:
     from pilot.internal.tasks.process_identity import TaskProcessRecord
@@ -30,9 +30,6 @@ def trigger_for_task_status(status: TaskStatus) -> str:
         TaskStatus.FAILED: "on_failure",
         TaskStatus.KILLED: "on_cancel",
     }[status]
-
-
-_HOSTS_PATH = Path("/etc/hosts")
 
 
 def _safe_site_path(bench_root: Path, site_name: str) -> Path:
@@ -63,7 +60,7 @@ def _remove_failed_site(meta: dict, args: dict) -> None:
                 f"Could not clean up partial site {site_name!r}; its files were preserved for recovery."
             )
         shutil.rmtree(site_path, ignore_errors=True)
-        _remove_from_hosts(site_name)
+        HostsFile().remove(site_name)
         owner.release(meta["task_id"])
 
 
@@ -79,19 +76,15 @@ def _drop_failed_site(bench_root: Path, site_name: str, site_path: Path) -> bool
         return True
     try:
         from pilot.core.bench import Bench
-        from pilot.managers.platform import noninteractive_privileges
+        from pilot.managers.platform import Privileges
 
         bench = Bench(bench_root)
-        with noninteractive_privileges():
+        with Privileges.without_prompts():
             bench.site(site_name).drop(no_backup=True)
         return True
     except Exception as exc:
         logging.debug("Site drop callback failed for %s: %s", site_name, exc)
         return False
-
-
-def _remove_from_hosts(site_name: str) -> None:
-    remove_hosts_entry(site_name, hosts_path=_HOSTS_PATH)
 
 
 def _disable_site_ssl(meta: dict, args: dict) -> None:

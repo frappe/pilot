@@ -22,7 +22,7 @@ from pilot.internal.tasks.process_identity import (
     TaskProcessRecord,
 )
 from pilot.internal.tasks.store import TaskStore
-from pilot.managers.platform import NONINTERACTIVE_PRIVILEGES_ENV
+from pilot.managers.platform import Privileges
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
@@ -210,7 +210,7 @@ class TaskProcess:
             _READY_FD_ENV: str(read_fd),
             _LAUNCH_ID_ENV: launch_id,
             TASK_ID_ENV: task_dir.name,
-            NONINTERACTIVE_PRIVILEGES_ENV: "1",
+            Privileges.environment_key: "1",
         }
         secret_path = task_dir / "secrets.json"
         if secret_path.exists():

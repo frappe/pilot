@@ -9,7 +9,7 @@ from pilot.config import PostgresConfig
 from pilot.exceptions import DatabaseError
 from pilot.internal.command import run_command
 from pilot.managers.database.base import UserOwnedDBManager
-from pilot.managers.platform import is_macos, which
+from pilot.managers.platform import HostPlatform
 
 _CLIENT_TIMEOUT = 5
 _DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
@@ -51,10 +51,14 @@ class PostgresManager(UserOwnedDBManager):
         return self.state_dir / "run"
 
     def is_installed(self) -> bool:
-        return bool(which("psql") or which("postgres") or which("initdb"))
+        return bool(
+            HostPlatform().get_executable_path("psql")
+            or HostPlatform().get_executable_path("postgres")
+            or HostPlatform().get_executable_path("initdb")
+        )
 
     def is_provisioned(self) -> bool:
-        if is_macos():
+        if HostPlatform().is_macos:
             return self.is_running() and not self.is_unsecured()
         return super().is_provisioned() and (self.config_dir / "postgresql.conf").exists()
 
@@ -70,7 +74,7 @@ class PostgresManager(UserOwnedDBManager):
             "-tAc",
             f"SELECT rolpassword IS NULL FROM pg_authid WHERE rolname = {role}",
         ]
-        if not is_macos():
+        if not HostPlatform().is_macos:
             cmd[1:1] = ["-h", str(self.socket_dir)]
         try:
             result = subprocess.run(
@@ -90,7 +94,7 @@ class PostgresManager(UserOwnedDBManager):
     def provision(self) -> None:
         """Install, start and secure the shared PostgreSQL server."""
         self.install()
-        if is_macos():
+        if HostPlatform().is_macos:
             if not self.is_running():
                 self.start()
         else:
@@ -233,12 +237,12 @@ class PostgresManager(UserOwnedDBManager):
             "-d",
             "postgres",
         ]
-        if not is_macos():
+        if not HostPlatform().is_macos:
             cmd[1:1] = ["-h", str(self.socket_dir)]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def is_reachable(self) -> bool:
-        ready = which("pg_isready")
+        ready = HostPlatform().get_executable_path("pg_isready")
         if ready:
             result = subprocess.run(
                 [ready, "-h", self.config.host, "-p", str(self.config.port)], capture_output=True
@@ -247,7 +251,7 @@ class PostgresManager(UserOwnedDBManager):
         return self.is_running()
 
     def _server_binary(self, name: str) -> str:
-        found = which(name)
+        found = HostPlatform().get_executable_path(name)
         if found:
             return found
         candidates = sorted(_DEBIAN_POSTGRES_ROOT.glob(f"*/bin/{name}"), key=self._debian_version_key)
@@ -267,10 +271,10 @@ class PostgresManager(UserOwnedDBManager):
         return self._client_binary("psql")
 
     def _client_binary(self, name: str) -> str | None:
-        found = which(name)
+        found = HostPlatform().get_executable_path(name)
         if found:
             return found
-        if is_macos():
+        if HostPlatform().is_macos:
             result = subprocess.run(
                 ["brew", "--prefix", self._brew_package()], capture_output=True, text=True
             )

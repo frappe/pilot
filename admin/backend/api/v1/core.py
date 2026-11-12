@@ -12,7 +12,7 @@ from admin.backend.middleware import allow_unauthenticated, is_request_authentic
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.internal.atomic_file import exclusive_file_lock
-from pilot.managers.platform import native_process_manager
+from pilot.managers.platform import HostPlatform
 from pilot.managers.task import TaskActivityReader
 
 
@@ -95,7 +95,7 @@ def bootstrap():
                 "name": config.name,
                 "db_type": config.db_type,
                 "production": config.production.enabled,
-                "native_process_manager": native_process_manager(),
+                "native_process_manager": HostPlatform.native_process_manager,
                 "allow_bench_management": config.admin.allow_bench_management,
                 "central": config.central.enabled,
                 "central_url": config.admin.central_url if config.central.enabled else "",

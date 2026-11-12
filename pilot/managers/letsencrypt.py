@@ -11,7 +11,7 @@ from pilot.exceptions import CommandError
 from pilot.internal.command import run_command
 from pilot.managers.nginx import LETSENCRYPT_LIVE
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import _privileged, which
+from pilot.managers.platform import HostPlatform, Privileges
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant
 
 if TYPE_CHECKING:
@@ -119,7 +119,7 @@ def certificate_domain_names(cert_file: Path) -> set[str]:
     import subprocess
 
     result = subprocess.run(
-        _privileged(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
+        Privileges.get_command(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
         capture_output=True,
         text=True,
         timeout=10,
@@ -141,7 +141,7 @@ def certificate_expiry(cert_file: Path) -> "datetime | None":
     import subprocess
 
     result = subprocess.run(
-        _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
+        Privileges.get_command(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
         capture_output=True,
         text=True,
         timeout=10,
@@ -204,10 +204,10 @@ class LetsEncryptManager:
         if self.has_passwordless_sudo:
             return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
-        certbot = which("certbot") or "/usr/bin/certbot"
-        openssl = which("openssl") or "/usr/bin/openssl"
-        mkdir = which("mkdir") or "/bin/mkdir"
-        test = which("test") or "/usr/bin/test"
+        certbot = HostPlatform().get_executable_path("certbot") or "/usr/bin/certbot"
+        openssl = HostPlatform().get_executable_path("openssl") or "/usr/bin/openssl"
+        mkdir = HostPlatform().get_executable_path("mkdir") or "/bin/mkdir"
+        test = HostPlatform().get_executable_path("test") or "/usr/bin/test"
         webroot_path = self.bench.config.letsencrypt.webroot_path
         hook = _nginx_reload_hook()
         # Domain/cert-name/email tokens must stay wildcarded (new sites arrive after
@@ -238,13 +238,13 @@ class LetsEncryptManager:
     @property
     def has_passwordless_sudo(self) -> bool:
         """Whether the certbot sudoers grant is active."""
-        certbot = which("certbot") or "/usr/bin/certbot"
+        certbot = HostPlatform().get_executable_path("certbot") or "/usr/bin/certbot"
         return has_passwordless_sudo_for([certbot, "renew", "--quiet"])
 
     def ensure_webroot(self) -> None:
         # /var/www is root-owned, so create the webroot with sudo. Default 0755
         # lets certbot (root) write ACME challenges and nginx read them.
-        run_command(_privileged(["mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)]))
+        run_command(Privileges.get_command(["mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)]))
 
     def obtain(self, site: "SiteConfig") -> None:
         from pilot.managers.nginx import NginxManager
@@ -375,7 +375,7 @@ class LetsEncryptManager:
         """Run certbot with sudo, waiting while another certbot run holds its lock. Its output
         goes to the task log, and a failure keeps certbot's reason."""
         for attempt in range(1, _CERTBOT_LOCK_ATTEMPTS + 1):
-            result = run_command(_privileged(argv), tee_output=True)
+            result = run_command(Privileges.get_command(argv), tee_output=True)
             if result.returncode == 0:
                 return
             if _CERTBOT_LOCKED not in result.stdout:

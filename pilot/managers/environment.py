@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from pilot.core.app.node_packages import PACKAGE_MANAGERS, YARN, get_app_packages
 from pilot.exceptions import BenchError, CommandError
 from pilot.internal.command import run_command
-from pilot.managers.platform import add_mysqlclient_flags, is_macos, which
+from pilot.managers.platform import HostPlatform
 from pilot.managers.python_assets import PythonAssetBuilder
 
 MINIMUM_NODE_MAJOR = 24
@@ -28,7 +28,7 @@ def find_uv() -> str | None:
     A service PATH rarely carries ~/.local/bin, which is exactly where the uv
     installer writes, so asking PATH alone reports a working uv as missing.
     """
-    if uv := which("uv"):
+    if uv := HostPlatform().get_executable_path("uv"):
         return uv
     installed = (Path.home() / ".local" / "bin" / "uv", Path.home() / ".cargo" / "bin" / "uv")
     return next((str(path) for path in installed if path.exists()), None)
@@ -162,7 +162,7 @@ class PythonEnvManager:
             if manager.is_installed:
                 env["PATH"] = os.pathsep.join([env.get("PATH", ""), str(Path(manager.bin).parent)])
 
-        add_mysqlclient_flags(env)
+        HostPlatform().add_mysqlclient_flags(env)
         # frappe-ui's Vite plugins look for the bench here before walking up from the
         # app, whose real path is outside the bench when the app is linked.
         env["FRAPPE_BENCH_PATH"] = str(self.bench.path)
@@ -212,7 +212,7 @@ class PythonEnvManager:
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
     def install_node(self) -> None:
-        if not which("node"):
+        if not HostPlatform().get_executable_path("node"):
             self._install_node()
         self.require_node_version()
         YARN.ensure_installed()
@@ -225,11 +225,11 @@ class PythonEnvManager:
         if major < MINIMUM_NODE_MAJOR:
             raise BenchError(
                 f"Node.js {MINIMUM_NODE_MAJOR} or later is required, but `node` on PATH is {version} "
-                f"({which('node')}). Install Node.js {MINIMUM_NODE_MAJOR} or put it first on PATH."
+                f"({HostPlatform().get_executable_path('node')}). Install Node.js {MINIMUM_NODE_MAJOR} or put it first on PATH."
             )
 
     def _install_node(self) -> None:
-        if is_macos():
+        if HostPlatform().is_macos:
             run_command(["brew", "install", "node"])
             return
         raise BenchError(

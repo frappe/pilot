@@ -12,7 +12,7 @@ from pilot.config import RedisConfig
 from pilot.exceptions import BenchError, ConfigError
 from pilot.internal.host_resources import LocalPort
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_macos, which
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -24,7 +24,7 @@ _PILOT_DIRECTIVE = re.compile(r"^(port|bind|save)\b")
 
 def redis_server_binary() -> str | None:
     """Return redis-server or valkey-server when installed."""
-    return which("redis-server") or which("valkey-server")
+    return HostPlatform().get_executable_path("redis-server") or HostPlatform().get_executable_path("valkey-server")
 
 
 class RedisManager:
@@ -58,7 +58,7 @@ class RedisManager:
         if self.is_installed():
             return
         package_manager = get_package_manager()
-        package = self._brew_package() if is_macos() else "redis-server"
+        package = self._brew_package() if HostPlatform().is_macos else "redis-server"
         package_manager.install(package)
 
     def _brew_package(self) -> str:

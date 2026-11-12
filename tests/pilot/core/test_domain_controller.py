@@ -9,6 +9,7 @@ from pilot.core.adapters.domain_provider import DomainRouteProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
 from pilot.managers.nginx import NginxConfigRenderer
+from pilot.managers.platform import HostPlatform
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -290,7 +291,7 @@ def test_a_provider_that_does_not_answer_fails_within_its_timeout(monkeypatch) -
     def hang(argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
 
-    monkeypatch.setattr(domain_provider, "which", lambda name: "/usr/local/bin/bench-domain-provider")
+    monkeypatch.setattr(HostPlatform, "get_executable_path", lambda self, name: "/usr/local/bin/bench-domain-provider")
     monkeypatch.setattr(domain_provider.subprocess, "run", hang)
 
     with pytest.raises(DomainProviderError, match="did not answer within 30 seconds"):

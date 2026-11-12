@@ -8,7 +8,7 @@ from pilot.config.mariadb import MEMORY_SHARE_RANGE
 from pilot.core.mariadb_memory import calculate_mariadb_memory
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.config import BenchConfig
@@ -152,7 +152,7 @@ class DatabaseQuickActions:
                 "enabled": None,
                 "requires_restart": True,
             }
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return {
                 **self._capability(
                     False,
@@ -209,7 +209,7 @@ class DatabaseQuickActions:
                 False,
                 "Pilot cannot change an external MariaDB server's configuration.",
             )
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return self._capability(
                 False,
                 "MariaDB configuration actions are available only on Linux.",

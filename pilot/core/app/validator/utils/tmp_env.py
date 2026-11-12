@@ -11,7 +11,7 @@ from pathlib import Path
 from pilot.exceptions import AppValidationError, BenchError, CommandError
 from pilot.internal.command import run_command
 from pilot.managers.environment import ensure_uv
-from pilot.managers.platform import add_mysqlclient_flags
+from pilot.managers.platform import HostPlatform
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
@@ -67,7 +67,7 @@ class TmpEnv:
     def _pip_install(self, arguments: list[str | Path]) -> None:
         python = str(self.python)
         env = os.environ.copy()
-        add_mysqlclient_flags(env)
+        HostPlatform().add_mysqlclient_flags(env)
         run_command([ensure_uv(), "pip", "install", "--python", python, *map(str, arguments)], env=env)
 
     def delete(self) -> None:

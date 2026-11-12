@@ -11,7 +11,7 @@ from pilot.core.app.validator.base import read_pyproject
 from pilot.exceptions import AppValidationError, CommandError
 from pilot.internal.command import run_command
 from pilot.managers.environment import ensure_uv
-from pilot.managers.platform import add_mysqlclient_flags
+from pilot.managers.platform import HostPlatform
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
@@ -32,7 +32,7 @@ class DependencyResolutionCheck:
             return  # no environment to resolve against yet
 
         environment = os.environ.copy()
-        add_mysqlclient_flags(environment)
+        HostPlatform().add_mysqlclient_flags(environment)
         with tempfile.TemporaryDirectory(prefix="pilot-constraints-") as directory:
             constraints = self._write_constraints(app, Path(directory))
             argv = [ensure_uv(), "pip", "install", "--dry-run", "--python", str(python)]

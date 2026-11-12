@@ -26,11 +26,11 @@ def run(benches_root: Path) -> None:
 
 
 def _has_own_mariadb(config, manager) -> bool:
-    from pilot.managers.platform import is_macos
+    from pilot.managers.platform import HostPlatform
 
     return (
         config.db_type == "mariadb"
-        and not is_macos()
+        and not HostPlatform().is_macos
         and not config.mariadb.existing
         and manager.unit_path.exists()
     )

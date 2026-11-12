@@ -16,9 +16,9 @@ from pilot.core.site.provisioning import (
 )
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock
-from pilot.internal.hostnames import hosts_line_contains
 from pilot.internal.private_files import PrivateFile
 from pilot.internal.validators import validate_site_name
+from pilot.managers.platform import HostsFile
 
 
 class SiteClone:
@@ -126,9 +126,7 @@ class SiteClone:
                 lambda: SiteDropper(site).release_domains([self.name]), error, on_progress
             )
         if self.hosts_added:
-            from pilot.managers.platform import remove_hosts_entry
-
-            self.has_cleanup_succeeded(lambda: remove_hosts_entry(self.name), error, on_progress)
+            self.has_cleanup_succeeded(lambda: HostsFile().remove(self.name), error, on_progress)
         database_clean = not self.database_started or self.has_cleanup_succeeded(
             database.cleanup, error, on_progress
         )
@@ -209,9 +207,7 @@ class SiteClone:
         provisioner.write_pilot_communication_config(site)
         self.bench.write_common_site_config()
         if self.bench.config.production.process_manager == "none":
-            self.hosts_added = not any(
-                hosts_line_contains(line, self.name) for line in Path("/etc/hosts").read_text().splitlines()
-            )
+            self.hosts_added = not HostsFile().has_entry(self.name)
         provisioner.add_to_hosts(site)
         self.nginx_changed = True
         provisioner.reload_nginx()

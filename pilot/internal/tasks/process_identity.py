@@ -9,7 +9,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
-from pilot.managers.platform import is_macos
+from pilot.managers.platform import HostPlatform
 
 _BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
 _PROC_ROOT = Path("/proc")
@@ -244,7 +244,7 @@ class _DarwinPsBackend:
 
 
 def _default_backend() -> _ProcessBackend:
-    return _DarwinPsBackend() if is_macos() else _ProcSysBackend()
+    return _DarwinPsBackend() if HostPlatform().is_macos else _ProcSysBackend()
 
 
 class ProcessInspector:

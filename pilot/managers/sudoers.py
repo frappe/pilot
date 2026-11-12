@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pilot.internal.command import run_command
-from pilot.managers.platform import _privileged
+from pilot.managers.platform import Privileges
 
 
 def stage_and_copy(stage_dir: Path, content: str, target: Path, validate: list[str] | None = None) -> None:
@@ -14,8 +14,8 @@ def stage_and_copy(stage_dir: Path, content: str, target: Path, validate: list[s
     staged.parent.mkdir(parents=True, exist_ok=True)
     staged.write_text(content)
     if validate:
-        run_command(_privileged([*validate, str(staged)]))
-    run_command(_privileged(["cp", str(staged), str(target)]))
+        run_command(Privileges.get_command([*validate, str(staged)]))
+    run_command(Privileges.get_command(["cp", str(staged), str(target)]))
     staged.unlink()
 
 
@@ -38,7 +38,7 @@ def install_sudoers_grant(
             raise
         print(f"Warning: this sudo rejects argument wildcards, so {sudoers_file.name} grants its commands without argument limits.")
         stage_and_copy(stage_dir, _grant(bench_user, bare_commands), sudoers_file, validate=["visudo", "-cf"])
-    run_command(_privileged(["chmod", "440", str(sudoers_file)]))
+    run_command(Privileges.get_command(["chmod", "440", str(sudoers_file)]))
 
 
 def is_sudo_rs() -> bool:
@@ -56,11 +56,11 @@ def has_passwordless_sudo_for(command: list[str]) -> bool:
     """True when `sudo -n -l <command>` shows it's grantable without a password prompt."""
     import subprocess
 
-    from pilot.managers.platform import is_root, which
+    from pilot.managers.platform import HostPlatform
 
-    if is_root():
+    if HostPlatform().is_root:
         return True
-    if which("sudo") is None:
+    if HostPlatform().get_executable_path("sudo") is None:
         return False
     result = subprocess.run(["sudo", "-n", "-l", *command], capture_output=True, timeout=5)
     return result.returncode == 0

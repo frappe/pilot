@@ -4,14 +4,7 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 from pilot.exceptions import BenchError
-from pilot.managers.platform import (
-    Distro,
-    _privileged,
-    detect_distro,
-    has_passwordless_sudo,
-    is_macos,
-    is_root,
-)
+from pilot.managers.platform import Distro, HostPlatform, Privileges
 
 
 class SystemPackageManager(ABC):
@@ -28,7 +21,11 @@ class SystemPackageManager(ABC):
         return resolved
 
     def install(self, *packages: str) -> None:
-        if self.requires_privilege and not is_root() and not has_passwordless_sudo():
+        if (
+            self.requires_privilege
+            and not HostPlatform().is_root
+            and not HostPlatform().has_passwordless_sudo
+        ):
             names = ", ".join(self._resolve(*packages))
             raise BenchError(
                 f"Required: {names}. No passwordless sudo available. Re-run install.sh as root, "
@@ -53,7 +50,7 @@ class AptPackageManager(SystemPackageManager):
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
-            _privileged(["apt-get", "install", "-y", *self._resolve(*packages)]),
+            Privileges.get_command(["apt-get", "install", "-y", *self._resolve(*packages)]),
             env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
             check=True,
         )
@@ -83,7 +80,7 @@ class DnfPackageManager(SystemPackageManager):
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
-            _privileged(["dnf", "install", "-y", *self._resolve(*packages)]),
+            Privileges.get_command(["dnf", "install", "-y", *self._resolve(*packages)]),
             check=True,
         )
 
@@ -113,7 +110,7 @@ class PacmanPackageManager(SystemPackageManager):
 
     def _install(self, *packages: str) -> None:
         subprocess.run(
-            _privileged(["pacman", "-S", "--noconfirm", "--needed", *self._resolve(*packages)]),
+            Privileges.get_command(["pacman", "-S", "--noconfirm", "--needed", *self._resolve(*packages)]),
             check=True,
         )
 
@@ -150,8 +147,8 @@ _LINUX_PACKAGE_MANAGERS: dict[Distro, type[SystemPackageManager]] = {
 
 
 def get_package_manager() -> SystemPackageManager:
-    if is_macos():
+    if HostPlatform().is_macos:
         return BrewPackageManager()
     # Debian, Ubuntu, and unknown distros all fall back to apt.
-    manager = _LINUX_PACKAGE_MANAGERS.get(detect_distro(), AptPackageManager)
+    manager = _LINUX_PACKAGE_MANAGERS.get(HostPlatform().distro, AptPackageManager)
     return manager()

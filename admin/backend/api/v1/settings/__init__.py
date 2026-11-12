@@ -36,7 +36,7 @@ from pilot.core.bench.settings import (
 from pilot.exceptions import MalformedSiteConfig
 from pilot.integrations.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.internal.validators import validate_external_url
-from pilot.managers.platform import is_linux, native_process_manager
+from pilot.managers.platform import HostPlatform
 from pilot.managers.redis import RedisManager
 from pilot.managers.waf import WafManager
 
@@ -78,8 +78,8 @@ def lite_mode_payload(config: BenchConfig, bench_root: Path | None) -> dict:
 
 def build_settings_response(config: BenchConfig, bench_root: Path | None = None) -> dict:
     return {
-        "is_linux": is_linux(),
-        "native_process_manager": native_process_manager(),
+        "is_linux": HostPlatform().is_linux,
+        "native_process_manager": HostPlatform.native_process_manager,
         "bench": {
             "name": config.name,
             "python": config.python_version,
