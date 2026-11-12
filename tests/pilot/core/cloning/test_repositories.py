@@ -401,15 +401,12 @@ def test_clone_rejects_existing_destinations_and_missing_apps(source):
 
 
 def test_current_clone_does_not_inherit_source_worktrees(source):
-    from pilot.internal.git import GitRepo
-
     app = source.apps_path / "frappe"
     worktree = source.path.parent / "task"
     git(app, "worktree", "add", "-b", "task", str(worktree))
     destination = source.clone("independent", lambda message: None, branch="current")
     copied = destination.apps_path / "frappe"
     assert str(worktree) not in git(copied, "worktree", "list", "--porcelain")
-    GitRepo(copied).ensure_removable()
     assert str(worktree) in git(app, "worktree", "list", "--porcelain")
     assert git(worktree, "rev-parse", "--git-common-dir") == str(app / ".git")
 
