@@ -202,6 +202,24 @@ def test_a_workload_cannot_plant_code_the_admin_runs(run_sandboxed, sandboxed: P
         assert not path.exists(), path
 
 
+def test_a_package_planted_in_sites_does_not_replace_frappe_outside(run_sandboxed, sandboxed: Path) -> None:
+    """Pilot runs the bench Python in sites/ outside the sandbox, such as for backups and the console."""
+    bench = Bench(sandboxed)
+    planted = sandboxed / "sites" / "frappe"
+    marker = sandboxed / "sites" / "planted-frappe-ran"
+    try:
+        line = f"mkdir {planted} && echo \"open('{marker}', 'w').close()\" > {planted}/__init__.py"
+        assert run_sandboxed(line), "the plant must succeed, or this test checks nothing"
+        _run(*bench.frappe_call, "frappe", "--version", cwd=sandboxed / "sites")
+        assert not marker.exists()
+    finally:
+        marker.unlink(missing_ok=True)
+        if planted.exists():
+            for path in sorted(planted.rglob("*"), reverse=True):
+                path.rmdir() if path.is_dir() else path.unlink()
+            planted.rmdir()
+
+
 def test_sudo_works_outside_the_sandbox(sandboxed: Path) -> None:
     """Shows the sudo check above is meaningful on this host."""
     assert _run("sudo", "-n", "true").returncode == 0

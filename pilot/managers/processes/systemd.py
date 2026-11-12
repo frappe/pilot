@@ -127,20 +127,32 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         declared = [*write_paths, *(path for pd in defs or [] for path in pd.write_paths)]
         PilotSandboxPaths.create_entries(self.bench, declared)
         properties = SystemdRenderer.get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
-        if error := get_sandbox_error(properties):
+        if error := self.get_python_error() or get_sandbox_error(properties):
             if production.sandbox is None:
                 logging.warning(
-                    "Bench '%s' runs without the sandbox: this host cannot start sandboxed units (%s)\n"
+                    "Bench '%s' runs without the sandbox: it cannot run sandboxed units here (%s)\n"
                     "Set sandbox = false under [production] to silence this.",
                     self.bench.config.name,
                     error,
                 )
                 return []
             raise BenchError(
-                f"This host cannot start sandboxed units for bench '{self.bench.config.name}': {error}\n"
+                f"Bench '{self.bench.config.name}' cannot run sandboxed units here: {error}\n"
                 "Set sandbox = false under [production] to run the bench without it."
             )
         return properties
+
+    def get_python_error(self) -> str:
+        """Why the bench venv's Python cannot run beside the sandbox, or "". Outside the sandbox Pilot runs
+        that Python with -P, so a workload's sites/frappe/ cannot replace Frappe, and -P needs 3.11."""
+        version = self.bench.python_version
+        if version and version < (3, 11):
+            found = ".".join(map(str, version))
+            return (
+                f"the bench venv uses Python {found}, and the sandbox needs 3.11 or later "
+                "(python -P keeps sites/ off sys.path outside the sandbox)."
+            )
+        return ""
 
     def get_sandbox_paths(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Paths every workload unit gets back from the masked home.

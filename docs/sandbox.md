@@ -54,6 +54,8 @@ sandbox = true # or false
 
 Before Pilot writes the units, it starts a trial unit with the same directives. If the host cannot start it, a bench with no setting runs without the sandbox and Pilot logs the reason. A bench with `sandbox = true` fails with the systemd error and keeps its current units.
 
+The sandbox also needs Python 3.11 or later in the bench venv. Outside the sandbox Pilot runs that Python with `-P`, in `sites/`, so a package that a workload plants in `sites/` cannot replace Frappe. Python 3.10 has no `-P`, so a bench on it is treated like a host that fails the trial.
+
 The trial needs unprivileged user namespaces. Ubuntu 24.04 blocks them through AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`), so there the trial fails with exit code 226.
 
 ## Give an app or a process more paths

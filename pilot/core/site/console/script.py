@@ -83,7 +83,7 @@ class SiteScript:
     def _start(self) -> subprocess.Popen:
         mode = "commit" if self.commit else "rollback"
         process = subprocess.Popen(
-            [str(self.site.bench.python), "-c", _BOOTSTRAP, self.site.config.name, mode],
+            [*self.site.bench.python_argv, "-c", _BOOTSTRAP, self.site.config.name, mode],
             cwd=self.site.bench.sites_path,
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdin=subprocess.PIPE,

@@ -68,7 +68,7 @@ class ConsoleCompletions:
         return found
 
     def _query(self, *args: str) -> Any:
-        argv = [str(self.site.bench.python), "-c", _BOOTSTRAP, self.site.config.name, *args]
+        argv = [*self.site.bench.python_argv, "-c", _BOOTSTRAP, self.site.config.name, *args]
         result = run_command(argv, cwd=self.site.bench.sites_path, timeout=TIMEOUT_SECONDS)
         # Apps may print while Frappe loads, so the answer is the last line.
         return json.loads(result.stdout.decode().strip().splitlines()[-1])

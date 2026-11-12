@@ -132,7 +132,7 @@ class Marketplace:
 
     def get_current_frappe_version(self) -> str:
         cmd = [
-            str(self.bench.env_path / "bin" / "python"),
+            *self.bench.python_argv,
             "-c",
             "import frappe; print(frappe.__version__)",
         ]

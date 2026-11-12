@@ -67,7 +67,8 @@ def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
 def restart_admin_with_new_code(bench_path: Path) -> None:
     """Restart the admin service from a new process, because this process still holds the old modules."""
     env = {**os.environ, "PYTHONPATH": str(cli_root())}
-    subprocess.run([sys.executable, "-m", "pilot.updater", str(bench_path)], check=True, env=env)
+    # -P: PYTHONPATH finds Pilot, not the caller's working directory, which may be a bench's sites/.
+    subprocess.run([sys.executable, "-P", "-m", "pilot.updater", str(bench_path)], check=True, env=env)
 
 
 def restart_admin(bench_path: Path) -> None:

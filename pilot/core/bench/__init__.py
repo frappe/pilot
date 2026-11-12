@@ -196,9 +196,31 @@ class Bench:
         return self.python.exists() and not (self.path / ".initializing").exists()
 
     @property
+    def python_version(self) -> tuple[int, ...]:
+        """The venv's Python from pyvenv.cfg (`version_info` from uv, `version` from venv); () if unknown."""
+        try:
+            lines = (self.env_path / "pyvenv.cfg").read_text().splitlines()
+        except OSError:
+            return ()
+        values = dict(line.split("=", 1) for line in lines if "=" in line)
+        values = {key.strip(): value.strip() for key, value in values.items()}
+        text = values.get("version_info") or values.get("version") or ""
+        try:
+            return tuple(int(part) for part in text.split(".")[:2])
+        except ValueError:
+            return ()
+
+    @property
+    def python_argv(self) -> list[str]:
+        """The venv Python for a run outside the sandbox. Pilot runs it in sites/, which a workload can
+        write, and Python puts the working directory first on sys.path, so a planted sites/frappe/ would
+        replace Frappe. -P leaves it out; Python 3.10 has no -P, and the sandbox refuses it."""
+        return [str(self.python), *(["-P"] if self.python_version >= (3, 11) else [])]
+
+    @property
     def frappe_call(self) -> list[str]:
         """Command prefix to invoke frappe's bench helper via the venv Python."""
-        return [str(self.python), "-m", "frappe.utils.bench_helper"]
+        return [*self.python_argv, "-m", "frappe.utils.bench_helper"]
 
     @property
     def has_app_disabling(self) -> bool:

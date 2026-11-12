@@ -213,6 +213,32 @@ def test_a_failed_probe_keeps_the_current_units(tmp_path: Path, monkeypatch: pyt
     assert existing.read_text() == "[Service]\nExecStart=/env/bin/python serve\n"
 
 
+@pytest.mark.parametrize("sandbox", [True, None])
+def test_a_venv_python_without_safe_path_cannot_run_the_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sandbox: bool | None
+) -> None:
+    """Python 3.10 has no -P, so outside the sandbox a workload's sites/frappe/ would replace Frappe."""
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="", sandbox=sandbox)
+    manager.bench.env_path.mkdir(parents=True, exist_ok=True)
+    (manager.bench.env_path / "pyvenv.cfg").write_text("version = 3.10.12\n")
+
+    if sandbox:
+        with pytest.raises(BenchError, match=r"Python 3\.10"):
+            manager.get_checked_sandbox_properties()
+    else:
+        assert manager.get_checked_sandbox_properties() == []
+
+
+def test_a_venv_python_with_safe_path_runs_the_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="")
+    manager.bench.env_path.mkdir(parents=True, exist_ok=True)
+    (manager.bench.env_path / "pyvenv.cfg").write_text("version_info = 3.11.9\n")
+
+    assert "NoNewPrivileges=yes" in manager.get_checked_sandbox_properties()
+
+
 def test_write_config_skips_the_sandbox_and_trial_when_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
