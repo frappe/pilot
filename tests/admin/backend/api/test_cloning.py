@@ -102,6 +102,15 @@ def test_invalid_branch_selections_cannot_queue(cloning_client, selection):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("field", ["branch", "app_branches"])
+def test_invalid_branch_name_reports_the_name_not_git_output(cloning_client, field):
+    client, _ = cloning_client
+    selection = {"branch": "bad..name"} if field == "branch" else {"app_branches": {"frappe": "bad..name"}}
+    response = client.post("/api/v1/benches/dev/actions/clone", json={"name": "uat", **selection})
+    assert response.status_code == 422
+    assert response.get_json()["error"]["message"] == "'bad..name' is not a valid branch name."
+
+
 @pytest.mark.parametrize("target", ["../outside", "pilot", "123", ""])
 def test_invalid_bench_targets_cannot_queue(cloning_client, target):
     client, _ = cloning_client

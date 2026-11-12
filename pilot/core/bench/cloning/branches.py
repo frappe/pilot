@@ -23,8 +23,12 @@ def validate_branches(branch: str, app_branches: dict[str, str]) -> None:
         raise BenchError("Select default, current, or a branch name.")
     validate_app_branches(app_branches)
     for value in [branch, *app_branches.values()]:
-        if value not in ("default", "current"):
+        if value in ("default", "current"):
+            continue
+        try:
             run_command(["git", "check-ref-format", "--branch", value], env=git_env())
+        except CommandError as error:
+            raise BenchError(f"'{value}' is not a valid branch name.") from error
 
 
 def validate_app_branches(app_branches: dict[str, str]) -> None:
