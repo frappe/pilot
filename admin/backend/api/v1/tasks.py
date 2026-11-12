@@ -135,16 +135,18 @@ def retry_task(task_id: str):
         return error_response("task_not_found", str(error), 404)
     except Exception:
         return error_response("task_unavailable", "Could not read task.", 500)
-    if task_has_secrets(task.command, task.args):
-        return error_response(
-            "fresh_credentials_required",
-            "This task requires fresh credentials and cannot be retried.",
-            409,
-        )
     if task.status.is_active:
         return error_response(
             "task_not_finished",
             "An active task cannot be retried.",
+            409,
+        )
+    if task.command == "new-site":
+        return _retry_new_site(task)
+    if task_has_secrets(task.command, task.args):
+        return error_response(
+            "fresh_credentials_required",
+            "This task requires fresh credentials and cannot be retried.",
             409,
         )
     try:
@@ -157,6 +159,37 @@ def retry_task(task_id: str):
         return error_response("invalid_task", str(error), 422)
     except Exception:
         return error_response("task_creation_failed", "Could not retry task.", 500)
+
+
+def _retry_new_site(task):
+    """Recreate a failed site using its recorded app selection and fresh credentials."""
+    from admin.backend.api.v1.sites.core import start_site_creation
+    from pilot.core.site.creation import SiteCreationOwner
+    from pilot.internal.validators import validate_site_name
+
+    if task.status != TaskStatus.FAILED:
+        return error_response("task_not_failed", "Only failed site creation can be retried.", 409)
+    name = task.args.get("name")
+    apps = task.args.get("apps", [])
+    if (
+        not isinstance(name, str)
+        or validate_site_name(name)
+        or not isinstance(apps, list)
+        or not all(isinstance(app, str) for app in apps)
+    ):
+        return error_response("invalid_task", "The original site settings are unavailable.", 422)
+
+    bench_root = _bench_root()
+    owner = SiteCreationOwner(bench_root, name)
+    with owner.locked():
+        if owner.path.exists() or (bench_root / "sites" / name).exists():
+            return error_response(
+                "site_cleanup_incomplete",
+                "The previous attempt still has site files or cleanup in progress. "
+                "Inspect the failed task before trying again.",
+                409,
+            )
+        return start_site_creation(bench_root, name, apps)
 
 
 @tasks_bp.get("/<task_id>/events")
