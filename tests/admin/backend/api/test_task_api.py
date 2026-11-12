@@ -244,6 +244,88 @@ def test_retry_rejects_a_task_that_was_given_a_secret(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "fresh_credentials_required"
 
 
+def test_retry_failed_new_site_preserves_apps_and_uses_new_password(tmp_path: Path) -> None:
+    original = {
+        "name": "site1.localhost",
+        "apps": ["erpnext", "hrms", "csf_tz"],
+        "admin_password": "[redacted]",
+    }
+    create_task(tmp_path, status=TaskStatus.FAILED, args=original, command="new-site")
+
+    def enqueue(*args, **kwargs):
+        create_task(tmp_path, RETRY_TASK_ID, args=original, command="new-site")
+        return RETRY_TASK_ID
+
+    with (
+        patch("admin.backend.api.v1.sites.core.new_site_name_error", return_value=None),
+        patch("admin.backend.api.v1.sites.core.NewSiteTask.queue", side_effect=enqueue) as queue,
+    ):
+        response = client(tmp_path).post(f"/api/v1/tasks/{TASK_ID}/actions/retry")
+
+    assert response.status_code == 202
+    assert response.get_json()["task_id"] == RETRY_TASK_ID
+    assert response.headers["Location"] == f"/api/v1/tasks/{RETRY_TASK_ID}"
+    assert queue.call_args.kwargs["name"] == "site1.localhost"
+    assert queue.call_args.kwargs["apps"] == ["erpnext", "hrms", "csf_tz"]
+    assert queue.call_args.kwargs["admin_password"] not in ("", "[redacted]")
+    assert len(queue.call_args.kwargs["admin_password"]) >= 16
+
+
+def test_retry_new_site_requires_a_failed_attempt(tmp_path: Path) -> None:
+    create_task(
+        tmp_path,
+        status=TaskStatus.SUCCESS,
+        args={"name": "site1.localhost", "apps": ["erpnext"], "admin_password": "[redacted]"},
+        command="new-site",
+    )
+    with patch("admin.backend.api.v1.sites.core.NewSiteTask.queue") as queue:
+        response = client(tmp_path).post(f"/api/v1/tasks/{TASK_ID}/actions/retry")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_not_failed"
+    queue.assert_not_called()
+
+
+def test_retry_new_site_rejects_incomplete_cleanup(tmp_path: Path) -> None:
+    create_task(
+        tmp_path,
+        status=TaskStatus.FAILED,
+        args={"name": "site1.localhost", "apps": ["erpnext"], "admin_password": "[redacted]"},
+        command="new-site",
+    )
+    site = tmp_path / "sites" / "site1.localhost"
+    site.mkdir(parents=True)
+    (site / "site_config.json").write_text('{"db_name":"partial"}')
+
+    with patch("admin.backend.api.v1.sites.core.NewSiteTask.queue") as queue:
+        response = client(tmp_path).post(f"/api/v1/tasks/{TASK_ID}/actions/retry")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "site_cleanup_incomplete"
+    assert (site / "site_config.json").exists()
+    queue.assert_not_called()
+
+
+def test_retry_new_site_rejects_pending_creation_owner(tmp_path: Path) -> None:
+    from pilot.core.site.creation import SiteCreationOwner
+
+    create_task(
+        tmp_path,
+        status=TaskStatus.FAILED,
+        args={"name": "site1.localhost", "apps": ["erpnext"], "admin_password": "[redacted]"},
+        command="new-site",
+    )
+    with SiteCreationOwner(tmp_path, "site1.localhost").locked() as owner:
+        owner.claim(TASK_ID)
+
+    with patch("admin.backend.api.v1.sites.core.NewSiteTask.queue") as queue:
+        response = client(tmp_path).post(f"/api/v1/tasks/{TASK_ID}/actions/retry")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "site_cleanup_incomplete"
+    queue.assert_not_called()
+
+
 def test_retry_rejects_an_active_task(tmp_path: Path) -> None:
     create_task(tmp_path)
 
