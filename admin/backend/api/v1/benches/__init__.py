@@ -24,31 +24,10 @@ from pilot.internal.atomic_file import exclusive_file_lock
 
 benches_bp = Blueprint("benches", __name__)
 
-__all__ = ["bench_readiness_bp", "benches_bp"]
+__all__ = ["bench_readiness_bp", "benches_bp", "cloning"]
 
 
 benches_bp.before_request(guard_bench_management)
-
-
-@benches_bp.post("/<name>/actions/clone")
-def clone_bench(name: str):
-    from admin.backend.api.v1.cloning import clone_bench as submit
-
-    return submit(name)
-
-
-@benches_bp.get("/<name>/clone-apps")
-def clone_apps(name: str):
-    from admin.backend.api.v1.cloning import clone_apps as read
-
-    return read(name)
-
-
-@benches_bp.get("/<name>/clone-apps/<app>/branches")
-def clone_app_branches(name: str, app: str):
-    from admin.backend.api.v1.cloning import clone_app_branches as read
-
-    return read(name, app)
 
 
 @benches_bp.get("")
@@ -325,3 +304,6 @@ def _process_manager_request(data):
         f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}.",
         422,
     )
+
+
+from admin.backend.api.v1 import cloning  # noqa: E402

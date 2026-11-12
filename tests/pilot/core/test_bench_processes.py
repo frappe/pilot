@@ -169,7 +169,8 @@ def test_a_database_restore_applies_the_process_set(bench, parts, applies) -> No
 
 
 def test_a_site_made_from_a_backup_applies_the_process_set(bench) -> None:
-    from pilot.core.site import Site, provision_from_backup
+    from pilot.core.site import Site
+    from pilot.core.site.provisioning import provision_from_backup
 
     calls = []
     with (

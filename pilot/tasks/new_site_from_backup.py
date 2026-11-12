@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
-from pilot.core.site import provision_from_backup
+from pilot.core.site.provisioning import provision_from_backup
 from pilot.tasks import Arg, Task, on_cancel, on_failure, on_success, step
 
 

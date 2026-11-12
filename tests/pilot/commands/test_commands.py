@@ -394,7 +394,7 @@ def test_new_command_skips_offset_with_live_admin_internal_port(
 
 
 def test_new_site_raises_if_site_exists(tmp_path: Path) -> None:
-    from pilot.core.site import _validate_new_site
+    from pilot.core.site.provisioning import validate_new_site
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -403,42 +403,41 @@ def test_new_site_raises_if_site_exists(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     with pytest.raises(BenchError, match="already exists"):
-        _validate_new_site(bench, "site1.localhost", ["frappe"])
+        validate_new_site(bench, "site1.localhost", ["frappe"])
 
 
 def test_new_site_raises_if_app_not_in_apps_txt(tmp_path: Path) -> None:
-    from pilot.core.site import _validate_new_site
+    from pilot.core.site.provisioning import validate_new_site
 
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
     with pytest.raises(BenchError, match="erpnext"):
-        _validate_new_site(bench, "site1.localhost", ["erpnext"])
+        validate_new_site(bench, "site1.localhost", ["erpnext"])
 
 
 def test_new_site_validate_passes_when_all_ok(tmp_path: Path) -> None:
-    from pilot.core.site import _validate_new_site
+    from pilot.core.site.provisioning import validate_new_site
 
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
-    _validate_new_site(bench, "site1.localhost", ["frappe"])  # no raise
+    validate_new_site(bench, "site1.localhost", ["frappe"])  # no raise
 
 
 def test_new_site_validate_passes_with_no_apps_requested(tmp_path: Path) -> None:
-    from pilot.core.site import _validate_new_site
+    from pilot.core.site.provisioning import validate_new_site
 
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    _validate_new_site(bench, "site1.localhost", [])  # no raise
+    validate_new_site(bench, "site1.localhost", [])  # no raise
 
 
 def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path) -> None:
-    from pilot.config import SiteConfig
-    from pilot.core.site import Site
+    from pilot.core.site.provisioning import SiteProvisioner
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -448,7 +447,7 @@ def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path)
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
     with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build:
-        Site(SiteConfig(name="site1.localhost", apps=["frappe"]), bench)._build_missing_assets()
+        SiteProvisioner(bench, "site1.localhost", ["frappe"], None).build_missing_assets()
 
     built = {call.args[0].config.name for call in build.call_args_list}
     assert built == {"frappe"}

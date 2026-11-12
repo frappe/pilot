@@ -95,7 +95,7 @@ def _remove_from_hosts(site_name: str) -> None:
 
 
 def _disable_site_ssl(meta: dict, args: dict) -> None:
-    from pilot.core.site import set_site_ssl_flag
+    from pilot.core.site.config import set_site_ssl_flag
 
     sites_root = Path(meta["bench_root"]) / "sites"
     set_site_ssl_flag(sites_root, args["site"], False)

@@ -6,7 +6,9 @@ from pathlib import Path
 from flask import current_app, jsonify, request
 
 from admin.backend.api.responses import accepted_task_response, error_response
+from admin.backend.api.v1.benches import benches_bp
 from admin.backend.api.v1.benches.support import BENCH_NAME_RE, guard_bench_management, target_bench_dir
+from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import host_resource_key, task_failure
 from admin.backend.providers.apps import AppProvider
 from pilot.config import BenchConfig
@@ -28,6 +30,7 @@ def clone_source(name: str) -> Bench:
     return Bench(path)
 
 
+@benches_bp.get("/<name>/clone-apps")
 def clone_apps(name: str):
     try:
         source = clone_source(name)
@@ -41,6 +44,7 @@ def clone_apps(name: str):
     return jsonify({"apps": apps})
 
 
+@benches_bp.get("/<name>/clone-apps/<app>/branches")
 def clone_app_branches(name: str, app: str):
     try:
         source = clone_source(name)
@@ -65,6 +69,7 @@ def get_clone_bench_name(name: str, data: dict) -> str:
     return target
 
 
+@benches_bp.post("/<name>/actions/clone")
 def clone_bench(name: str):
     root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)
@@ -115,6 +120,7 @@ def get_clone_site_names(name: str, data) -> tuple[str, str]:
     return target, bench_name
 
 
+@sites_bp.post("/<name>/actions/clone")
 def clone_site(name: str):
     root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)

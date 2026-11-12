@@ -31,6 +31,7 @@ def _no_host_nginx_lock(monkeypatch):
 @pytest.fixture(autouse=True)
 def _no_privileged_certificate_reads(monkeypatch):
     """Certificate files are root-only, so reading them shells out to sudo. Tests that need a
-    certificate patch these themselves."""
+    certificate patch these themselves; the cert_files_exist tests import it before this runs."""
     monkeypatch.setattr("pilot.managers.nginx.NginxManager.has_cert", lambda self, site: False)
+    monkeypatch.setattr("pilot.managers.nginx.cert_files_exist", lambda domain: False)
     monkeypatch.setattr("pilot.core.bench.certificates.read_certificate", lambda cert_file: (None, []))
