@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pilot.core.bench.cloning.repository import clone_repository
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.command import run_command
 from pilot.internal.git import GitRepo, git_env
-from pilot.utils import run_command
 
 
 def parse_app_branches(value: str) -> dict[str, str]:

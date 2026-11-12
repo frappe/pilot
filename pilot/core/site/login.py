@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pilot.config import RoutePolicy, SiteConfig
-from pilot.utils import normalize_host
+from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.site import Site

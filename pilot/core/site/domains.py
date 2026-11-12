@@ -41,7 +41,7 @@ class SiteDomains:
         self._provider.set_primary(self.site.config.name, domain)
 
     def status(self, domain: str) -> tuple[bool, bool]:
-        from pilot.utils import normalize_host
+        from pilot.internal.hostnames import normalize_host
 
         normalized = normalize_host(domain)
         primary = self.primary()
@@ -64,7 +64,7 @@ class SiteDomains:
         if not attached:
             return None
 
-        from pilot.utils import normalize_host
+        from pilot.internal.hostnames import normalize_host
 
         config = self._site_config()
         normalized = normalize_host(domain)

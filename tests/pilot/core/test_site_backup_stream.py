@@ -65,7 +65,7 @@ def site(tmp_path) -> Site:
 
 
 def test_stream_uploads_every_file_whole_and_leaves_nothing_on_disk(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("pilot.utils.run_command", fake_frappe_backup())
+    monkeypatch.setattr("pilot.internal.command.run_command", fake_frappe_backup())
     offsite = FakeOffsite()
 
     timestamp, sizes = SiteBackupStream(site(tmp_path), offsite).run(with_files=True)
@@ -96,7 +96,7 @@ def fail_second_holder(monkeypatch) -> None:
 def test_a_failed_run_fails_loudly_and_leaves_nothing_offsite(tmp_path, monkeypatch, failure) -> None:
     """A backup that fails after writing its database and config completes no upload. A failed upload drains its pipe and
     deletes every file that did upload, even when one of those deletes fails."""
-    monkeypatch.setattr("pilot.utils.run_command", fake_frappe_backup(fail=failure == "backup"))
+    monkeypatch.setattr("pilot.internal.command.run_command", fake_frappe_backup(fail=failure == "backup"))
     if failure == "holder":
         fail_second_holder(monkeypatch)
     offsite = FakeOffsite(

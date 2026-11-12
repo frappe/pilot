@@ -38,7 +38,7 @@ def test_admin_password_uses_stdin_and_closes_frappe_connection(tmp_path, monkey
         + ("    raise RuntimeError('password update failed')\n" if fails else "")
     )
     password = "secret 'quoted'\nwith newline"
-    from pilot.utils import run_command
+    from pilot.internal.command import run_command
 
     def checked_run(argv, **kwargs):
         assert password not in " ".join(argv)

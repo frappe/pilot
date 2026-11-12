@@ -15,6 +15,7 @@ import psutil
 from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.bench.telemetry import DatumCredential
 from pilot.core.notification.events import raise_event, record_alert
+from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import MetricShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
@@ -22,7 +23,6 @@ from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
 from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
 from pilot.managers.fluentbit import LogsConfigurator
-from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -378,11 +378,9 @@ def _to_int(value: object) -> int:
 
 def _production_monitors() -> list[Monitor]:
     from pilot.core.bench import Bench
-
-    sentinel = cli_root() / "benches" / ".monitor-placeholder"
     return [
         Monitor(bench=Bench(bench_config, bench_path))
-        for bench_path, bench_config in iter_sibling_benches(sentinel)
+        for bench_path, bench_config in Server().benches.iter_configs()
         if bench_config.production.enabled
     ]
 
@@ -435,7 +433,7 @@ def update_site_rollups() -> None:
     """Hourly per-site counts, so the Sites list reads a few KB instead of a week of logs."""
     from pilot.core.bench import Bench
 
-    for bench_path, config in iter_sibling_benches(cli_root() / "benches" / ".rollup-placeholder"):
+    for bench_path, config in Server().benches.iter_configs():
         bench = Bench(config, bench_path)
         for rollup in (UptimeRollup(bench), RequestRollup(bench)):
             try:

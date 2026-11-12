@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import typing
 
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench

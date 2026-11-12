@@ -11,7 +11,7 @@ from pilot.core.bench import Bench
 from pilot.core.database import make_database, site_database_name
 from pilot.core.database.base import StorageComponent
 from pilot.exceptions import CommandError
-from pilot.utils import directory_bytes
+from pilot.internal.host_resources import DiskUsage
 
 _SYSTEM_SCHEMAS = {"mysql", "performance_schema", "information_schema", "sys"}
 
@@ -81,7 +81,7 @@ class StorageBreakdown:
 def directory_size_bytes(path: str) -> int:
     """Cached for the 10s /metrics poll; see `get_breakdown` for when it is
     cleared."""
-    return directory_bytes(path)
+    return DiskUsage(path).bytes
 
 
 def _data_directory_bytes(path: str | None) -> int | None:

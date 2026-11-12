@@ -154,12 +154,12 @@ class BenchInitializer:
             return
         import secrets
 
-        from pilot.utils import pick_free_port
+        from pilot.internal.host_resources import LocalPort
 
         db = self.bench.config.mariadb if self.bench.config.db_type == "mariadb" else self.bench.config.postgres
         if db.existing or db.root_password:
             return
-        db.port = pick_free_port(db.port)
+        db.port = LocalPort(db.port).get_first_free()
         db.root_password = secrets.token_hex(nbytes=8)
         self.bench.config.write(self.bench.path)
 

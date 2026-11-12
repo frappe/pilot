@@ -5,10 +5,10 @@ import time
 from pathlib import Path
 
 from pilot.exceptions import DatabaseError
+from pilot.internal.command import run_command
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos
 from pilot.managers.systemd_user import SystemdUserMixin
-from pilot.utils import run_command
 
 
 class UserOwnedDBManager(SystemdUserMixin):

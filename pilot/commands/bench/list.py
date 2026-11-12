@@ -15,9 +15,9 @@ class ListCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        benches_dir = cli_root() / "benches"
+        benches_dir = Server().root / "benches"
         rows = self._collect(benches_dir)
         if not rows:
             self.report("No benches yet. Create one with: pilot new <name>")
@@ -81,11 +81,10 @@ class ListCommand(Command):
         }
 
     def _address(self, bench) -> str:
-        from pilot.utils import admin_url
 
         admin = bench.config.admin
         if not admin.domain:
-            return admin_url(bench.config)
+            return bench.config.admin_url
         from pilot.managers.nginx import NginxManager
 
         scheme = "https" if admin.tls and NginxManager(bench).has_admin_cert else "http"

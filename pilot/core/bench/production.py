@@ -190,7 +190,6 @@ class BenchProduction:
             production.pop("nginx", None)
 
     def _report_removed_production(self, on_progress: Callable[[str], None]) -> None:
-        from pilot.utils import admin_url
 
         name = self.bench.config.name
         self.bench.config.production.enabled = False
@@ -199,7 +198,7 @@ class BenchProduction:
         on_progress("\nRun it locally with:")
         on_progress(f"  pilot -b {name} start")
         on_progress("\nDevelopment admin:")
-        on_progress(f"  {admin_url(self.bench.config)}")
+        on_progress(f"  {self.bench.config.admin_url}")
 
     def _release_admin_domain(self) -> None:
         from pilot.core.adapters.domain_provider import DomainRouteProvider

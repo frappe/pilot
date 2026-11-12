@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from pilot.utils import normalize_host
+from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

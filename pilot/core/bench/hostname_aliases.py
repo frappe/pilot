@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pilot.config.central import HostnameAlias
-from pilot.utils import normalize_host
+from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

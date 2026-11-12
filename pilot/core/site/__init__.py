@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
 from pilot.exceptions import BenchError, CronError
+from pilot.internal.command import run_command
 from pilot.managers.cron import CronManager
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.core.app import App

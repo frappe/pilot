@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pilot.config.monitor import monitor_log_dir
+from pilot.core.server import Server
 from pilot.managers.systemd_user import SystemdUserMixin, install_user_timer, user_timer_installed
-from pilot.utils import cli_root
 
 SITE_STORAGE_TIMER_TEMPLATE = """\
 [Unit]
@@ -43,7 +43,7 @@ class SiteStorageConfigurator(SystemdUserMixin):
     def __init__(self) -> None:
         self.unit_name = "pilot-storage.service"
         self.timer_unit_name = "pilot-storage.timer"
-        self.storage_dir = cli_root() / "system" / "storage"
+        self.storage_dir = Server().root / "system" / "storage"
 
     def install(self) -> None:
         if user_timer_installed(self.timer_unit_name):
@@ -61,7 +61,7 @@ class SiteStorageConfigurator(SystemdUserMixin):
     def _render_unit(self) -> str:
         from pilot.managers.environment import AdminEnvManager
 
-        root = cli_root()
+        root = Server().root
         return SITE_STORAGE_COLLECTOR_TEMPLATE.format(
             cli_root=root,
             python=AdminEnvManager(root).python,

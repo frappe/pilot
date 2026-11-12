@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from pilot.core.site import Site

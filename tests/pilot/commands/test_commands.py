@@ -225,7 +225,7 @@ def test_new_command_second_postgres_bench_inherits_password(
     from pilot.commands.bench.create import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
+    monkeypatch.setattr("pilot.internal.host_resources.LocalPort.is_listening", property(lambda self: False))
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "pg1", bench_name="pg1", database="postgres").run()
     _ensure_database_credentials(benches_dir / "pg1")
@@ -247,7 +247,7 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
+    monkeypatch.setattr("pilot.internal.host_resources.LocalPort.is_listening", property(lambda self: False))
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first", database="postgres").run()
     _ensure_database_credentials(benches_dir / "first")
@@ -268,7 +268,10 @@ def test_new_command_postgres_port_ignores_live_scan_on_macos(
     monkeypatch.setattr("builtins.input", lambda _: "")
     default_port = PostgresConfig().port
     # The default port reads as live, which would normally push the picker up.
-    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: port == default_port)
+    monkeypatch.setattr(
+        "pilot.internal.host_resources.LocalPort.is_listening",
+        property(lambda self: self.number == default_port),
+    )
     target = tmp_path / "benches" / "pg"
     with patch("pilot.managers.platform.is_macos", return_value=True):
         NewCommand(target_directory=target, bench_name="pg", database="postgres").run()
@@ -300,7 +303,7 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
+    monkeypatch.setattr("pilot.internal.host_resources.LocalPort.is_listening", property(lambda self: False))
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
     _ensure_database_credentials(benches_dir / "first")
@@ -321,7 +324,10 @@ def test_new_command_mariadb_port_ignores_live_scan_on_macos(
     monkeypatch.setattr("builtins.input", lambda _: "")
     default_port = MariaDBConfig().port
     # The default port reads as live, which would normally push the picker up.
-    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: port == default_port)
+    monkeypatch.setattr(
+        "pilot.internal.host_resources.LocalPort.is_listening",
+        property(lambda self: self.number == default_port),
+    )
     target = tmp_path / "benches" / "m"
     with patch("pilot.managers.platform.is_macos", return_value=True):
         NewCommand(target_directory=target, bench_name="m").run()
@@ -337,7 +343,7 @@ def test_new_command_second_mariadb_bench_inherits_password(
     from pilot.commands.bench.create import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr("pilot.utils.is_port_listening", lambda port: False)
+    monkeypatch.setattr("pilot.internal.host_resources.LocalPort.is_listening", property(lambda self: False))
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "m1", bench_name="m1").run()
     _ensure_database_credentials(benches_dir / "m1")
@@ -1063,7 +1069,7 @@ def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.C
     (benches / "beta" / "bench.toml").write_text('[bench]\nname = "beta"\n\n[admin]\nport = 7005\n')
 
     with (
-        patch("pilot.utils.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.commands.bench.list.ListCommand._state", return_value="stopped"),
     ):
         ListCommand().run()
@@ -1086,7 +1092,7 @@ def test_ls_shows_manager_and_domain_before_wizard_finishes(
     )
 
     with (
-        patch("pilot.utils.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.commands.bench.list.ListCommand._state", return_value="stopped"),
         patch(
             "pilot.managers.nginx.NginxManager.has_admin_cert",
@@ -1123,7 +1129,7 @@ def test_ls_empty_when_no_benches(tmp_path: Path, capsys: pytest.CaptureFixture)
     from pilot.commands.bench.list import ListCommand
 
     (tmp_path / "benches").mkdir()
-    with patch("pilot.utils.cli_root", return_value=tmp_path):
+    with patch("pilot.core.server.Server.root", tmp_path):
         ListCommand().run()
     assert "No benches yet" in capsys.readouterr().out
 
@@ -1400,7 +1406,7 @@ def test_drop_bench_refuses_while_the_dev_bench_runs(tmp_path: Path) -> None:
 def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
     from admin.backend.frontend import _check_node_version
 
-    monkeypatch.setattr("pilot.utils.run_command", lambda *a, **k: MagicMock(stdout=b"v18.20.8\n"))
+    monkeypatch.setattr("pilot.internal.command.run_command", lambda *a, **k: MagicMock(stdout=b"v18.20.8\n"))
     with pytest.raises(BenchError, match=r"Node\.js"):
         _check_node_version()
 
@@ -1408,7 +1414,7 @@ def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_admin_accepts_supported_node(monkeypatch: pytest.MonkeyPatch) -> None:
     from admin.backend.frontend import _check_node_version
 
-    monkeypatch.setattr("pilot.utils.run_command", lambda *a, **k: MagicMock(stdout=b"v20.11.0\n"))
+    monkeypatch.setattr("pilot.internal.command.run_command", lambda *a, **k: MagicMock(stdout=b"v20.11.0\n"))
     _check_node_version()  # no raise
 
 
@@ -1418,7 +1424,7 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
     def _missing(*a, **k):
         raise FileNotFoundError("node")
 
-    monkeypatch.setattr("pilot.utils.run_command", _missing)
+    monkeypatch.setattr("pilot.internal.command.run_command", _missing)
     with pytest.raises(BenchError, match=r"Node\.js is required"):
         _check_node_version()
 
@@ -1431,7 +1437,7 @@ def test_build_admin_errors_when_node_exits_nonzero(monkeypatch: pytest.MonkeyPa
     def _failing(*a, **k):
         raise CommandError("Command 'node' failed with exit code 1.", returncode=1)
 
-    monkeypatch.setattr("pilot.utils.run_command", _failing)
+    monkeypatch.setattr("pilot.internal.command.run_command", _failing)
     with pytest.raises(BenchError, match=r"Node\.js is required"):
         _check_node_version()
 
@@ -1512,7 +1518,7 @@ def test_start_rebuilds_admin_in_a_dev_checkout(tmp_path: Path, monkeypatch: pyt
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     build = MagicMock()
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: cli_root)
+    monkeypatch.setattr("pilot.core.server.Server.root", cli_root)
     monkeypatch.setattr("admin.backend.frontend.build_admin_frontend", build)
 
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)

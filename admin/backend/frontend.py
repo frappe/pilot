@@ -17,9 +17,9 @@ def ensure_admin_frontend(on_progress: Callable[[str], None] = lambda message: N
     Released tarballs carry the source too, so the version - not source presence -
     decides: only dev builds compile, releases always serve the bundled dist."""
     from pilot import is_dev_build
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    root = cli_root()
+    root = Server().root
     if is_dev_build and _has_frontend_source(root):
         build_admin_frontend(on_progress=on_progress)
         return
@@ -35,10 +35,10 @@ def build_admin_frontend(
 ) -> None:
     """Build dashboard, editor, and in-app-embed frontends from source, skipping any
     whose dist already exists unless force is set."""
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
     _check_node_version()
-    root = cli_root()
+    root = Server().root
     _build_frontend(
         _find_frontend(), root / "admin" / "backend" / "static" / "dashboard", "dashboard", on_progress, force=force
     )
@@ -58,7 +58,7 @@ def build_admin_frontend(
 def _build_frontend(
     frontend: Path, dist: Path, label: str, on_progress: Callable[[str], None], *, force: bool = False
 ) -> None:
-    from pilot.utils import run_command
+    from pilot.internal.command import run_command
 
     if not force and _is_built(dist):
         on_progress(f"{label} frontend is already built, skipping.")
@@ -100,9 +100,9 @@ def is_admin_frontend_built(root: Path) -> bool:
 
 
 def _find_frontend() -> Path:
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    candidate = cli_root() / "admin" / "frontend" / "dashboard"
+    candidate = Server().root / "admin" / "frontend" / "dashboard"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
@@ -112,9 +112,9 @@ def _find_frontend() -> Path:
 
 
 def _find_editor() -> Path:
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    candidate = cli_root() / "admin" / "frontend" / "editor"
+    candidate = Server().root / "admin" / "frontend" / "editor"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
@@ -124,9 +124,9 @@ def _find_editor() -> Path:
 
 
 def _find_in_app_embed() -> Path:
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    candidate = cli_root() / "admin" / "frontend" / "in-app-embed"
+    candidate = Server().root / "admin" / "frontend" / "in-app-embed"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
@@ -149,7 +149,7 @@ def _is_npm_install_stale(frontend: Path) -> bool:
 
 def _check_node_version() -> None:
     from pilot.exceptions import CommandError
-    from pilot.utils import run_command
+    from pilot.internal.command import run_command
 
     try:
         output = run_command(["node", "--version"], timeout=5).stdout.decode().strip()

@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pilot.utils import open_private
+from pilot.internal.private_files import PrivateFile
 
 
 class JsonlLog:
@@ -22,7 +22,7 @@ class JsonlLog:
 
     def append(self, record: dict) -> None:
         self.directory.mkdir(parents=True, exist_ok=True)
-        with open_private(self.current_file, "a") as handle:
+        with PrivateFile(self.current_file).open("a") as handle:
             handle.write(json.dumps(record) + "\n")
 
     def read_newest_first(self) -> Iterator[dict]:

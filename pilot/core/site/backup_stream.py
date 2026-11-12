@@ -83,7 +83,7 @@ class SiteBackupStream:
     def run_backup(self, readers: dict[str, FifoReader]) -> None:
         """Frappe closes the database file between its header and the dump, so pilot holds
         a writer on every FIFO until the backup exits; readers see one EOF at the end."""
-        from pilot.utils import run_command
+        from pilot.internal.command import run_command
 
         argv = [*self.site.bench.frappe_call, "frappe", "--site", self.site.config.name, "backup"]
         if "--backup-path-files" in readers:

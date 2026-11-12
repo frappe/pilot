@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError, CommandError
 from pilot.internal.atomic_file import exclusive_file_lock
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 
 class BenchArtifacts:

@@ -32,7 +32,7 @@ def test_a_backup_returns_its_own_run_while_another_one_is_written(tmp_path: Pat
         (staging / "20261015_020000-site1-database.sql.gz").write_text("complete")
         (staging / "20261015_020000-site1-files.tar").write_text("complete")
 
-    with patch("pilot.utils.run_command", side_effect=frappe_backup):
+    with patch("pilot.internal.command.run_command", side_effect=frappe_backup):
         timestamp, files = bench.site("site1.localhost").backups.take(with_files=True)
 
     assert timestamp == "20261015_020000"
@@ -57,7 +57,7 @@ def test_a_backup_never_overwrites_a_run_from_the_same_second(tmp_path: Path, no
         (staging / "20261015_020000-site1-database.sql.gz").write_text("this run")
 
     with (
-        patch("pilot.utils.run_command", side_effect=frappe_backup),
+        patch("pilot.internal.command.run_command", side_effect=frappe_backup),
         pytest.raises(BenchError, match="same second"),
     ):
         bench.site("site1.localhost").backups.take(with_files=False)
@@ -126,8 +126,8 @@ def test_without_a_dump_the_database_and_files_size_is_the_estimate(tmp_path: Pa
             return_value={"site1.localhost": 7000},
         ),
         patch(
-            "pilot.utils.directory_bytes",
-            side_effect=lambda path: 300 if path.parent.name == "public" else 200,
+            "pilot.internal.host_resources.DiskUsage.bytes",
+            property(lambda self: 300 if self.path.parent.name == "public" else 200),
         ),
     ):
         assert site.backups.get_estimated_size(with_files=True) == 7500
@@ -140,7 +140,7 @@ def test_a_backup_the_disk_cannot_hold_is_refused_before_frappe_runs(tmp_path: P
 
     with (
         _disk(free=1100),
-        patch("pilot.utils.run_command") as frappe_backup,
+        patch("pilot.internal.command.run_command") as frappe_backup,
         pytest.raises(InsufficientDiskSpaceError, match=r"the backup of site1\.localhost") as error,
     ):
         bench.site("site1.localhost").backups.take(with_files=False)

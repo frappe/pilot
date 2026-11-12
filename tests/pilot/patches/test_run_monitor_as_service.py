@@ -42,7 +42,7 @@ def host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         )
 
     monkeypatch.setattr("pilot.managers.systemd_user.user_unit_dir", lambda: unit_dir)
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
     monkeypatch.setattr("subprocess.run", systemctl)
     monkeypatch.setattr(MonitorConfigurator, "install", install)
     monkeypatch.setattr(MonitorConfigurator, "restart", lambda self: None)

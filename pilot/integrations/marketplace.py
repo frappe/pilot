@@ -125,9 +125,9 @@ class Marketplace:
     @staticmethod
     def _load_registry() -> list[dict]:
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        return RegistryCache(cli_root()).load()
+        return RegistryCache(Server().root).load()
 
     def get_current_frappe_version(self) -> str:
         """From pip's dist-info; importing frappe in a subprocess cost ~160 ms per request."""
@@ -138,9 +138,9 @@ class Marketplace:
         """The app index for callers without a Marketplace/bench (e.g. tasks), reread when
         the registry clone changes."""
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        return Marketplace._registry_at(_modified_ns(RegistryCache(cli_root()).index_path))
+        return Marketplace._registry_at(_modified_ns(RegistryCache(Server().root).index_path))
 
     @staticmethod
     @lru_cache(maxsize=1)
@@ -156,18 +156,18 @@ class Marketplace:
     def releases(app_name: str) -> tuple[dict, ...]:
         """One app's releases, reread when its registry file changes."""
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        registry = RegistryCache(cli_root())
+        registry = RegistryCache(Server().root)
         return Marketplace._releases_at(app_name, _modified_ns(registry.path / "apps" / f"{app_name}.json"))
 
     @staticmethod
     @lru_cache(maxsize=512)
     def _releases_at(app_name: str, modified_ns: int) -> tuple[dict, ...]:
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        return Marketplace._newest_first(RegistryCache(cli_root()).releases(app_name))
+        return Marketplace._newest_first(RegistryCache(Server().root).releases(app_name))
 
     @staticmethod
     def _newest_first(releases: list[dict]) -> tuple[dict, ...]:

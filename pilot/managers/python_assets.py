@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.command import run_command
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.core.app import App

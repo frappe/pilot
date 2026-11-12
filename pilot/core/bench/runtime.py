@@ -205,10 +205,9 @@ class BenchRuntime:
         return SupervisorProcessManager(self.bench)
 
     def _start_setup_admin(self, manager: "ManagedProcessManager", on_progress) -> None:
-        from pilot.utils import admin_url
 
         manager.start_admin()
-        on_progress(f"Admin running at {admin_url(self.bench.config)}")
+        on_progress(f"Admin running at {self.bench.config.admin_url}")
         on_progress("Finish setup there; the bench starts serving once it's initialized.")
 
     def _rebuild_manager_config(self, manager: "ProcessManager") -> None:
@@ -218,9 +217,9 @@ class BenchRuntime:
     def _ensure_admin_dist(self, on_progress: Callable[[str], None]) -> None:
         from admin.backend.frontend import is_admin_frontend_built
         from pilot import is_dev_build
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        root = cli_root()
+        root = Server().root
         frontend = root / "admin" / "frontend" / "dashboard"
         # Releases ship the source too; only dev builds may (re)compile it.
         can_build = is_dev_build and (frontend / "package.json").exists()
@@ -234,21 +233,21 @@ class BenchRuntime:
 
     def _rebuild_admin(self, on_progress: Callable[[str], None]) -> None:
         from admin.backend.frontend import build_admin_frontend, is_admin_frontend_built
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
         try:
             build_admin_frontend(on_progress=on_progress)
         except BenchError as error:
-            if not is_admin_frontend_built(cli_root()):
+            if not is_admin_frontend_built(Server().root):
                 raise
             on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
         from admin.backend.frontend import ensure_admin_frontend, is_admin_frontend_built
+        from pilot.core.server import Server
         from pilot.managers.environment import AdminEnvManager
-        from pilot.utils import cli_root
 
-        root = cli_root()
+        root = Server().root
         admin_mgr = AdminEnvManager(root)
         admin_mgr.ensure()
 

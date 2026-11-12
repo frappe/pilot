@@ -3,9 +3,9 @@ from pathlib import Path
 
 def monitor_log_dir() -> Path:
     """Monitor logs live beside the install, not in root-owned /var/log."""
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    return cli_root() / "system" / "logs"
+    return Server().root / "system" / "logs"
 
 
 def system_log_path() -> Path:

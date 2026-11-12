@@ -15,9 +15,9 @@ from admin.backend.middleware import is_bench_scoped, require_scope
 from pilot.core.bench import Bench
 from pilot.core.bench.uploads import upload_file_name
 from pilot.core.site.restore import RESTORE_PARTS
+from pilot.internal.private_files import PrivateDirectory
 from pilot.internal.site_paths import site_exists
 from pilot.tasks.restore_site import RestoreSiteTask
-from pilot.utils import make_private_directory
 
 _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 
@@ -61,7 +61,7 @@ def restore_site_from_upload(name: str):
 
     # The task's cleanup-site-restore callback removes this directory if the restore fails.
     upload_dir = Bench(bench_root).uploads_path / secrets.token_hex(8)
-    make_private_directory(upload_dir, parents=True)
+    PrivateDirectory(upload_dir).create(parents=True)
     # The site config carries the encryption key a restored database needs.
     fields = [*parts, "config"] if "database" in parts else parts
     try:

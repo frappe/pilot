@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pilot.exceptions import TaskNotFoundError
 from pilot.internal.atomic_file import replace_private_text_locked
-from pilot.utils import open_private
+from pilot.internal.private_files import PrivateFile
 
 _QUEUED_STATUS = "queued"
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
@@ -110,7 +110,7 @@ class TaskFiles:
 
     @staticmethod
     def write_staged(path: Path, content: str) -> None:
-        with open_private(path) as staged_file:
+        with PrivateFile(path).open() as staged_file:
             staged_file.write(content)
             staged_file.flush()
             os.fsync(staged_file.fileno())

@@ -10,7 +10,6 @@ from pilot.core.bench import Bench
 from pilot.core.server import Server
 from pilot.exceptions import CronError
 from pilot.internal.git import GitRepo
-from pilot.utils import cli_root
 
 
 class AppUpdate(TypedDict):
@@ -144,7 +143,7 @@ def _cli_update(*, fetch: bool) -> dict:
 
 
 def _cli_update_dev(*, fetch: bool) -> dict:
-    repo = GitRepo(cli_root())
+    repo = GitRepo(Server().root)
     branch = repo.branch
     if fetch:
         repo.fetch(branch, timeout=60)

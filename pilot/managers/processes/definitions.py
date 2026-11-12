@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from pilot.core.app.node_packages import NodePackages
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
-from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -124,10 +123,12 @@ class ProcessDefinitionBuilder:
         ]
 
     def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
+        from pilot.core.server import Server
+
         web = next(pd for pd in defs if pd.name == "web")
         web.pre_run = [
-            str(AdminEnvManager(cli_root()).python),
-            str(cli_root() / "bin" / "pilot"),
+            str(AdminEnvManager(Server().root).python),
+            str(Server().root / "bin" / "pilot"),
             "-b",
             str(self.bench.path),
             "wait-for-database",
@@ -373,7 +374,9 @@ class ProcessDefinitionBuilder:
         )
 
     def admin_definition(self) -> ProcessDefinition:
-        root = cli_root()
+        from pilot.core.server import Server
+
+        root = Server().root
         admin = AdminEnvManager(root)
         return ProcessDefinition(
             name="admin",
@@ -397,7 +400,9 @@ class ProcessDefinitionBuilder:
         return self.build_admin_definition("--dev")
 
     def build_admin_definition(self, mode_flag: str) -> ProcessDefinition:
-        root = cli_root()
+        from pilot.core.server import Server
+
+        root = Server().root
         python = AdminEnvManager(root).python
         cfg = self.bench.config.admin
         return ProcessDefinition(
@@ -419,7 +424,9 @@ class ProcessDefinitionBuilder:
         )
 
     def admin_frontend_dev_definition(self) -> ProcessDefinition:
-        frontend_dir = cli_root() / "admin" / "frontend"
+        from pilot.core.server import Server
+
+        frontend_dir = Server().root / "admin" / "frontend"
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin-ui",

@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from pilot.utils import host_owner, matches_wildcard, normalize_host
+from pilot.internal.hostnames import matches_wildcard, normalize_host
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy
@@ -29,7 +30,7 @@ class ProductionAdminDomain:
         domain = self.bench.config.admin.domain
         if not domain:
             return  # config validation raises the required-in-prod error with bench context
-        owner = host_owner(self.bench.path, domain)
+        owner = BenchDirectory.siblings_of(self.bench.path).get_host_owner(domain)
         if owner:
             raise BenchError(f"Admin domain '{domain}' is already used by bench '{owner}'.")
         # Check this bench separately because host_owner only sees siblings.

@@ -59,7 +59,7 @@ def test_ensure_database_credentials_generates_for_a_fresh_server() -> None:
     bench.config.mariadb.root_password = ""
     bench.config.mariadb.port = 3306
 
-    with patch("pilot.utils.pick_free_port", return_value=3306):
+    with patch("pilot.internal.host_resources.LocalPort.get_first_free", return_value=3306):
         BenchInitializer(bench)._ensure_database_credentials()
 
     assert bench.config.mariadb.root_password

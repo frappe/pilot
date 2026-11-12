@@ -32,7 +32,6 @@ class WebhookDelivery:
 
 def get_webhook_body(bench: "Bench", payload: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """The fixed JSON every endpoint receives. `event`, `message` and `context` keep the older body's fields."""
-    from pilot.utils import admin_url
 
     route = payload.get("action_route")
     return {
@@ -45,7 +44,7 @@ def get_webhook_body(bench: "Bench", payload: dict[str, typing.Any]) -> dict[str
         "severity": payload.get("severity", "Warning"),
         "category": payload.get("category"),
         "site": payload.get("site"),
-        "url": f"{admin_url(bench.config)}{route}" if route else None,
+        "url": f"{bench.config.admin_url}{route}" if route else None,
         "context": payload.get("context") or {},
     }
 

@@ -73,7 +73,7 @@ class MigrationRecovery:
         Re-arms the chain so the caller can resume migration immediately: the
         failed site goes back to pending and the operation returns to migrating.
         """
-        from pilot.utils import run_command
+        from pilot.internal.command import run_command
 
         if self.state != "needs_attention" or not self.failed_site:
             raise MigrationStateError("Skip patch is only available on a failed migration.")

@@ -18,7 +18,7 @@ def test_patch_runs_when_executed_as_a_script(tmp_path: Path) -> None:
     manager.is_provisioned.return_value = True
     with (
         patch("pilot.managers.platform.is_linux", return_value=True),
-        patch("pilot.utils.benches_dir", return_value=tmp_path),
+        patch("pilot.core.server.Server.benches_dir", tmp_path),
         patch.object(BenchConfig, "read", return_value=BenchConfig.default("managed", benches_root=tmp_path)),
         patch("pilot.managers.database.mariadb.MariaDBManager", return_value=manager),
     ):

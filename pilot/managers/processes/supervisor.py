@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from pilot.exceptions import BenchError
+from pilot.internal.command import run_command
 from pilot.managers.cron import CronManager
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
@@ -20,7 +21,6 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.utils import cli_root, run_command
 
 _BOOT_JOB = "supervisord-boot"
 # Above the longest stop timeout a program gets, the lite runner's job drain.
@@ -169,7 +169,9 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def write_config(self) -> None:
-        AdminEnvManager(cli_root()).ensure()
+        from pilot.core.server import Server
+
+        AdminEnvManager(Server().root).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()

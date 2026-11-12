@@ -320,14 +320,15 @@ class TaskProcess:
         try:
             run_stored_callback(self._store.task_dir(task_id), trigger)
         except Exception as exc:
+            from pilot.internal.command import Command
+            from pilot.internal.private_files import PrivateFile
             from pilot.internal.tasks.wrapper import _load_redactions
-            from pilot.utils import open_private, redact_text
 
-            message = redact_text(
+            message = Command.redact(
                 str(exc), _load_redactions(self._store.task_dir(task_id), self._store.bench_root)
             )
             logging.warning("Stored callback %r failed for task %s: %s", trigger, task_id, message)
-            with open_private(self._store.task_dir(task_id) / "output.log", "a") as output:
+            with PrivateFile(self._store.task_dir(task_id) / "output.log").open("a") as output:
                 output.write(f"Recovery callback failed: {message}\n")
 
     def _run_stored_callback_for_status(self, task_id: str) -> None:

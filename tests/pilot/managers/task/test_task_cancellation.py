@@ -199,7 +199,7 @@ def test_cancel_kills_nested_command_session(tmp_path: Path) -> None:
         "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)"
     )
     task_code = (
-        "import sys; from pilot.utils import run_command; "
+        "import sys; from pilot.internal.command import run_command; "
         "run_command([sys.executable,'-c',sys.argv[1],sys.argv[2]])"
     )
     argv = [sys.executable, "-c", task_code, nested_code, str(child_pid_path)]

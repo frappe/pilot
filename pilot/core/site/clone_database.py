@@ -6,7 +6,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 from pilot.exceptions import BenchError, CommandError
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 
 def stream_database(dump: list[str], restore: list[str], source_env: dict, target_env: dict) -> None:

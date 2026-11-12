@@ -10,10 +10,10 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.internal.private_files import PrivateFile
 from pilot.internal.tasks.callbacks import run_bounded_callback, trigger_for_task_status
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
-from pilot.utils import open_private
 
 _HOSTNAME = socket.gethostname()
 
@@ -71,7 +71,7 @@ def run_with_syslog_output(
         log_file.write(ts)
         log_file.write(tail)
 
-    with open_private(log_path, "wb") as log_file:
+    with PrivateFile(log_path).open("wb") as log_file:
         buf = bytearray()
         while chunk := os.read(fd, 65536):
             start = 0
@@ -107,7 +107,7 @@ def callback_handler(
     head, tail = _syslog_prefix_parts(meta["command"], os.getpid())
     ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
     prefix = (head + ts + tail).decode()
-    with open_private(output_log, "a") as log_file:
+    with PrivateFile(output_log).open("a") as log_file:
         try:
             run_bounded_callback(callback, meta)
             log_file.write(f"{prefix}Callback successfully triggered\n")

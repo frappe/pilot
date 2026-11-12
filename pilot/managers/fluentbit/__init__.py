@@ -8,6 +8,7 @@ from pathlib import Path
 from pilot.config.telemetry import TelemetryConfig
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import atomic_write_private_text
+from pilot.internal.command import run_command
 from pilot.internal.template import Template
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_linux
@@ -16,7 +17,6 @@ from pilot.managers.systemd_user import (
     install_user_service,
     user_service_installed,
 )
-from pilot.utils import cli_root, run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -65,8 +65,10 @@ class LogsConfigurator(SystemdUserMixin):
     unit_name = "pilot-fluent-bit.service"
 
     def __init__(self, bench: "Bench | None" = None) -> None:
+        from pilot.core.server import Server
+
         self.bench = bench
-        self.conf_dir = cli_root() / "system" / "fluent-bit"
+        self.conf_dir = Server().root / "system" / "fluent-bit"
         self.state_dir = self.conf_dir / "state"
 
     def setup(self) -> None:
@@ -127,8 +129,10 @@ class LogsConfigurator(SystemdUserMixin):
             (self.conf_dir / name).write_text(text)
 
     def _render_files(self, config: TelemetryConfig) -> dict[str, str]:
+        from pilot.core.server import Server
+
         conf = _CONF_TEMPLATE.render(
-            cli_root=cli_root(),
+            cli_root=Server().root,
             conf_dir=self.conf_dir,
             host=self._host(config.endpoint),
             port=self._port(config.endpoint),
@@ -148,9 +152,11 @@ class LogsConfigurator(SystemdUserMixin):
         return {name: path.read_text() for name in names if (path := self.conf_dir / name).exists()}
 
     def _render_unit(self) -> str:
+        from pilot.core.server import Server
+
         if not (binary := self.binary_path):
             raise BenchError("fluent-bit binary not found. Install it before setting up log shipping.")
-        return UNIT_TEMPLATE.format(cli_root=cli_root(), fluent_bit=binary, conf_dir=self.conf_dir)
+        return UNIT_TEMPLATE.format(cli_root=Server().root, fluent_bit=binary, conf_dir=self.conf_dir)
 
     @property
     def binary_path(self) -> str | None:

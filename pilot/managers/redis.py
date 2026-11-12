@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 
 from pilot.config import RedisConfig
 from pilot.exceptions import BenchError, ConfigError
+from pilot.internal.host_resources import LocalPort
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos, which
-from pilot.utils import is_port_listening
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -83,7 +83,7 @@ class RedisManager:
         processes: list[subprocess.Popen] = []
         try:
             for name, port in self.servers.items():
-                if is_port_listening(port):
+                if LocalPort(port).is_listening:
                     continue
                 if binary is None:
                     raise BenchError("redis-server is not installed. Install Redis or Valkey, then try again.")
@@ -126,7 +126,7 @@ class RedisManager:
 
 def wait_until_serving(port: int, timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
-    while not is_port_listening(port):
+    while not LocalPort(port).is_listening:
         if time.monotonic() > deadline:
             raise BenchError(f"Redis did not start on port {port} within {timeout:.0f}s.")
         time.sleep(0.1)

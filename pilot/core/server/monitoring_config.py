@@ -10,10 +10,11 @@ from pilot.config.monitor import (
     slow_query_log_path,
     system_log_path,
 )
+from pilot.core.server import Server
 from pilot.exceptions import BenchError
+from pilot.internal.command import run_command
 from pilot.managers.platform import is_linux
 from pilot.managers.systemd_user import SystemdUserMixin, install_user_service, user_service_installed
-from pilot.utils import cli_root, run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -46,7 +47,7 @@ class MonitorConfigurator(SystemdUserMixin):
     def __init__(self, bench: "Bench | None" = None):
         self.bench = bench
         self.unit_name = "pilot-monitor.service"
-        self.monitor_dir = cli_root() / "system" / "monitor"
+        self.monitor_dir = Server().root / "system" / "monitor"
 
     def install(self) -> None:
         """Write, enable and start the service. A no-op when the installed unit is current. A running
@@ -91,7 +92,7 @@ class MonitorConfigurator(SystemdUserMixin):
     def _render_unit(self) -> str:
         from pilot.managers.environment import AdminEnvManager
 
-        root = cli_root()
+        root = Server().root
         return MONITOR_DAEMON_TEMPLATE.format(
             cli_root=root,
             python=AdminEnvManager(root).python,

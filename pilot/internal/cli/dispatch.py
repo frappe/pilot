@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -178,8 +177,10 @@ def error_boundary(context: CliContext) -> Iterator[None]:
 
 
 def build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> CliContext:
+    from pilot.core.server import Server
+
     return CliContext(
-        installation_root=cli_root(),
+        installation_root=Server().root,
         bench_name=bench_name,
         verbose=verbose,
         assume_yes=assume_yes,

@@ -19,14 +19,15 @@ class ApiReferenceCommand(Command):
     ] = None
 
     def run(self) -> None:
+        from pilot.core.server import Server
+        from pilot.internal.command import run_command
         from pilot.managers.environment import AdminEnvManager
-        from pilot.utils import cli_root, run_command
 
         output = (
-            Path(self.output).resolve() if self.output else cli_root() / "docs" / "admin-api-reference.md"
+            Path(self.output).resolve() if self.output else Server().root / "docs" / "admin-api-reference.md"
         )
         # The routes need Flask, which only the admin venv has.
-        admin = AdminEnvManager(cli_root())
+        admin = AdminEnvManager(Server().root)
         admin.install_python_deps()
-        run_command([str(admin.python), "-m", "admin.backend.api.reference", str(output)], cwd=cli_root())
+        run_command([str(admin.python), "-m", "admin.backend.api.reference", str(output)], cwd=Server().root)
         self.report(f"Wrote {output}")

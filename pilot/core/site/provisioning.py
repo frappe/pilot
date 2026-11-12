@@ -94,13 +94,13 @@ class SiteProvisioner:
         """Persist provider route metadata after site creation."""
         if not site.config.route:
             return
-        from pilot.utils import write_private_text
+        from pilot.internal.private_files import PrivateFile
 
         path = site.path / "site_config.json"
         config = json.loads(path.read_text())
         config["ssl"] = site.config.route.public_tls
         config["route"] = site.config.route.to_dict()
-        write_private_text(path, json.dumps(config, indent=1))
+        PrivateFile(path).write_text(json.dumps(config, indent=1))
 
     def install_apps(self, site: "Site", on_progress: Callable[[str], None]) -> None:
         framework = self.bench.config.framework_app.name
@@ -112,7 +112,7 @@ class SiteProvisioner:
 
     def write_pilot_communication_config(self, site: "Site") -> None:
         from admin.backend.internal.session import Session
-        from pilot.utils import write_private_text
+        from pilot.internal.private_files import PrivateFile
 
         if not self.bench.config.admin.allow_site_to_pilot_communication:
             # Dev sites stay unmarked so Frappe treats them as self-hosted.
@@ -125,7 +125,7 @@ class SiteProvisioner:
         config["cloud_server_url"] = self.bench.admin_endpoint
         config["cloud_settings_embed_url"] = self.bench.embed_endpoint
         config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(site.config.name)
-        write_private_text(config_path, json.dumps(config, indent=1))
+        PrivateFile(config_path).write_text(json.dumps(config, indent=1))
 
     def build_missing_assets(self) -> None:
         from pilot.managers.environment import PythonEnvManager
@@ -182,12 +182,13 @@ class SiteProvisioner:
 
 def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import host_owner, matches_wildcard, normalize_host
+    from pilot.core.bench.directory import BenchDirectory
+    from pilot.internal.hostnames import matches_wildcard, normalize_host
 
     path = bench.sites_path / name
     if not path.is_symlink() and (path / "site_config.json").exists():
         raise BenchError(f"Site '{name}' already exists.")
-    owner = host_owner(bench.path, name)
+    owner = BenchDirectory.siblings_of(bench.path).get_host_owner(name)
     if owner:
         raise BenchError(
             f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "

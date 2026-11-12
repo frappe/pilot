@@ -8,8 +8,8 @@ from typing import Annotated, ClassVar
 
 from pilot.core.site.restore import BackupRun, BackupStream
 from pilot.exceptions import BenchError, RemoteSiteError
+from pilot.internal.private_files import PrivateDirectory
 from pilot.tasks import Arg, Task, on_cancel, on_failure, step
-from pilot.utils import make_private_directory
 
 
 @dataclass(kw_only=True)
@@ -38,7 +38,7 @@ class RestoreSiteTask(Task):
     def run(self) -> None:
         if self.upload_dir and Path(self.upload_dir).resolve().parent != self.bench.uploads_path.resolve():
             raise BenchError(f"Uploaded backups must be in {self.bench.uploads_path}.")
-        make_private_directory(self.bench.restores_path, parents=True)
+        PrivateDirectory(self.bench.restores_path).create(parents=True)
         prefix = f"{self.running_task_id}-"
         with tempfile.TemporaryDirectory(dir=self.bench.restores_path, prefix=prefix) as workdir:
             self.restore(self.fetch(Path(workdir)))

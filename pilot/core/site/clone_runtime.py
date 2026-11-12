@@ -8,8 +8,8 @@ from contextlib import ExitStack
 
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.private_files import PrivateFile
 from pilot.managers.redis import RedisManager, redis_server_binary
-from pilot.utils import open_private
 
 
 class CloneRuntime:
@@ -29,7 +29,7 @@ class CloneRuntime:
         with exclusive_file_lock(self.bench.path / "clone-runtime"):
             try:
                 self.lease = self.stack.enter_context(
-                    open_private(self.bench.path / ".clone-runtime-users", mode="a")
+                    PrivateFile(self.bench.path / ".clone-runtime-users").open(mode="a")
                 )
                 fcntl.flock(self.lease.fileno(), fcntl.LOCK_SH)
                 self.start_services(binary)

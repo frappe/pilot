@@ -126,7 +126,7 @@ def test_ensure_fresh_falls_back_to_local_clone_when_offline(tmp_path: Path) -> 
 def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
     """A mid-refresh fetch failure keeps serving the local clone."""
     from pilot.exceptions import CommandError
-    from pilot.utils import run_command as real_run_command
+    from pilot.internal.command import run_command as real_run_command
 
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
@@ -169,7 +169,7 @@ def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(
 ) -> None:
     """rev-parse failure during refresh keeps serving the local clone."""
     from pilot.exceptions import CommandError
-    from pilot.utils import run_command as real_run_command
+    from pilot.internal.command import run_command as real_run_command
 
     cache = make_cache(tmp_path)
     cache.ensure_fresh()

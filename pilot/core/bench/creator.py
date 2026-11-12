@@ -5,9 +5,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
 from pilot.internal.validators import validate_branch_name
-from pilot.utils import iter_sibling_benches
 
 if TYPE_CHECKING:
     from pilot.config import BenchConfig
@@ -115,7 +115,7 @@ class BenchCreator:
         bases = [*defaults.values(), defaults["admin.port"] + 1]
         used = {
             port
-            for _, config in iter_sibling_benches(bench_path)
+            for _, config in BenchDirectory.siblings_of(bench_path).iter_configs()
             for port in self.get_configured_ports(config)
         }
 
