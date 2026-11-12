@@ -20,10 +20,6 @@ from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer
 from pilot.managers.systemd_user import SystemdUserMixin
 
-# Seconds of inactivity before the socket-activated admin stops. This outlives the
-# window a host image builder keeps a machine running before it captures a memory
-# snapshot, so the admin is still resident in the snapshot instead of cold on resume.
-_ADMIN_IDLE_TIMEOUT = 600
 # systemd's DefaultTimeoutStopSec: how long a unit without TimeoutStopSec may take to stop.
 
 
@@ -32,6 +28,11 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     # Until write_config compares them, assume both admin units changed.
     # Longer than systemd's 90-second start limit, so systemd reports a slow start first.
+    # Seconds of inactivity before the socket-activated admin stops. This outlives the
+    # window a host image builder keeps a machine running before it captures a memory
+    # snapshot, so the admin is still resident in the snapshot instead of cold on resume.
+    admin_idle_timeout = 600
+
     systemctl_timeout = 120
 
     admin_service_changed = True
@@ -389,7 +390,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             env={
                 "BENCH_ADMIN_ROOT": str(self.bench.path),
                 "PYTHONPATH": str(root),
-                "BENCH_ADMIN_IDLE_TIMEOUT": str(_ADMIN_IDLE_TIMEOUT),
+                "BENCH_ADMIN_IDLE_TIMEOUT": str(self.admin_idle_timeout),
                 "MALLOC_ARENA_MAX": "2",
             },
             working_dir=root,

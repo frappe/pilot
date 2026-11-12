@@ -13,10 +13,10 @@ from pilot.internal.tasks.queue import TaskQueue
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
-_DATABASE_POLL_SECONDS = 1.0
-
 
 class TaskWorker:
+    database_poll_seconds = 1.0
+
     control_poll_seconds = 0.2
 
     def __init__(self, bench_root: Path) -> None:
@@ -89,7 +89,7 @@ class TaskWorker:
                 if time.monotonic() >= deadline:
                     logging.warning("The database is not reachable; queued tasks run anyway.")
                     return
-                if self._drain.wait(_DATABASE_POLL_SECONDS):
+                if self._drain.wait(self.database_poll_seconds):
                     return
         except (BenchError, OSError) as error:
             logging.warning("Could not check the database before running tasks: %s", error)

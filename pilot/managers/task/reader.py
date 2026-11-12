@@ -29,9 +29,6 @@ SITE_PROVISIONING_ARGS = {
     "reinstall-site": "site",
     "clone-site": "name",
 }
-_SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
-# A progress bar line, such as Frappe's "Updating DocTypes for erpnext : [=====     ] 45%".
-_PERCENT_RE = re.compile(r"\s*:?\s*(?:\[[^\]]*\]\s*)?(\d{1,3})%\s*$")
 
 
 class TaskStep(TypedDict):
@@ -118,13 +115,13 @@ def display_line(raw_line: str) -> str:
 
 def strip_syslog_envelope(segment: str) -> str:
     """The segment without its syslog prefix."""
-    match = _SYSLOG_RE.match(segment)
+    match = re.match(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$", segment)
     return match.group(1) if match else segment
 
 
 def _split_percent(line: str) -> tuple[str, int | None]:
     """Split a progress bar line into its text and its percentage."""
-    match = _PERCENT_RE.search(line)
+    match = re.search(r"\s*:?\s*(?:\[[^\]]*\]\s*)?(\d{1,3})%\s*$", line)
     if not match:
         return line, None
     return line[: match.start()], min(int(match[1]), 100)

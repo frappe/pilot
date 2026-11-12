@@ -17,8 +17,6 @@ SENSITIVE_KEY_PARTS = (
     "access_key",
     "private_key",
 )
-_REPO_ARGS = frozenset({"repo", "repo_url"})
-_BRANCH_ARGS = frozenset({"branch", "target_branch"})
 
 
 def task_secret_args(command: str, args: dict) -> dict:
@@ -68,9 +66,9 @@ def reject_unsafe_git_args(args: dict) -> None:
     for key, value in args.items():
         if not isinstance(value, str) or not value:
             continue
-        if key in _REPO_ARGS and (error := validate_repo_url(value)):
+        if key in frozenset({"repo", "repo_url"}) and (error := validate_repo_url(value)):
             raise ValueError(error)
-        if key in _BRANCH_ARGS and (error := validate_branch_name(value)):
+        if key in frozenset({"branch", "target_branch"}) and (error := validate_branch_name(value)):
             raise ValueError(error)
 
 

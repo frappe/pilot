@@ -7,14 +7,14 @@ from pathlib import Path
 from pilot.internal.jsonl_log import JsonLines
 
 WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 86400, "1w": 604800}
-_MAX_BUCKETS = 48
-_TOP_LIMIT = 10
 # CRS scoring/correlation rules (949xxx inbound anomaly, 980xxx reporting) are
 # bookkeeping, not attacks - keep them out of the "top rules" breakdown.
 
 
 class WafProvider:
     """Aggregates ModSecurity JSON audit logs for one time window."""
+
+    top_limit = 10
 
     time_formats = ("%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S")
 
@@ -31,7 +31,7 @@ class WafProvider:
         ips: Counter = Counter()
         buckets: Counter = Counter()
         bucket_blocked: Counter = Counter()
-        bucket_size = max(60, WINDOW_SECONDS[self._window] // _MAX_BUCKETS)
+        bucket_size = max(60, WINDOW_SECONDS[self._window] // 48)
 
         for record in JsonLines(self._log_path).read_newest_first():
             transaction = record.get("transaction", record)
@@ -68,9 +68,9 @@ class WafProvider:
             "totals": {"flagged": flagged, "blocked": blocked, "would_block": would_block},
             "top_rules": [
                 {"id": rule_id, "message": label, "count": count}
-                for (rule_id, label), count in rules.most_common(_TOP_LIMIT)
+                for (rule_id, label), count in rules.most_common(self.top_limit)
             ],
-            "top_ips": [{"ip": ip, "count": count} for ip, count in ips.most_common(_TOP_LIMIT)],
+            "top_ips": [{"ip": ip, "count": count} for ip, count in ips.most_common(self.top_limit)],
             "series": [
                 {"t": bucket * 1000, "flagged": count, "blocked": bucket_blocked[bucket]}
                 for bucket, count in sorted(buckets.items())

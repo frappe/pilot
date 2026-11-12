@@ -14,14 +14,14 @@ if TYPE_CHECKING:
     from pilot.config import BenchConfig
 
 
-_MARIADB_ONLY = "This action is available only when the bench uses MariaDB."
-_UNREACHABLE = "MariaDB is not reachable with Pilot's admin credentials."
-
 RestartExecutor = Callable[[Callable[[], None]], None]
 
 
 class DatabaseQuickActions:
     """Capability checks and guarded host-level database operations."""
+
+    mariadb_only = "This action is available only when the bench uses MariaDB."
+    unreachable = "MariaDB is not reachable with Pilot's admin credentials."
 
     external_mariadb = "Database actions are available only for Pilot-managed MariaDB instances."
     memory_share_step = 0.05
@@ -57,7 +57,7 @@ class DatabaseQuickActions:
         memory_share = self._memory_share_capability(configuration)
         manage_binlogs = self._capability(
             not server_reason and reachable,
-            server_reason or ("" if reachable else _UNREACHABLE),
+            server_reason or ("" if reachable else self.unreachable),
         )
         return {
             "engine": self.config.db_type,
@@ -177,7 +177,7 @@ class DatabaseQuickActions:
         reachable = manager.is_healthy() if reachable is None else reachable
         if not reachable:
             return {
-                **self._capability(False, _UNREACHABLE),
+                **self._capability(False, self.unreachable),
                 "enabled": None,
                 "requires_restart": True,
             }
@@ -233,7 +233,7 @@ class DatabaseQuickActions:
             return self._capability(False, server_reason)
         reachable = self._manager().is_healthy() if reachable is None else reachable
         if not reachable:
-            return self._capability(False, _UNREACHABLE)
+            return self._capability(False, self.unreachable)
         return self._capability(True)
 
     def _innodb_buffer_pool_capability(self, configuration: dict | None = None) -> dict:
@@ -326,7 +326,7 @@ class DatabaseQuickActions:
         if self.config.db_type == "sqlite":
             return "SQLite does not have a shared database server."
         if self.config.db_type != "mariadb":
-            return _MARIADB_ONLY
+            return self.mariadb_only
         return ""
 
     def _unavailable_capabilities(self, reason: str) -> dict:
@@ -353,7 +353,7 @@ class DatabaseQuickActions:
     def _manager(self) -> MariaDBManager:
         """The MariaDB manager; raise when there is none."""
         if self.manager is None:
-            raise DatabaseError(self._engine_reason() or _MARIADB_ONLY)
+            raise DatabaseError(self._engine_reason() or self.mariadb_only)
         return self.manager
 
     @staticmethod

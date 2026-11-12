@@ -116,7 +116,6 @@ _TARGETS = (
     ),
 )
 _PRIMITIVES = {str: "string", int: "number", float: "number", bool: "boolean", type(None): "null"}
-_UNKNOWN = {Any, object, dict, list}
 
 
 def _is_union(tp) -> bool:
@@ -157,7 +156,7 @@ def _named_type(tp) -> str:
         return tp.__name__
     if tp in _PRIMITIVES:
         return _PRIMITIVES[tp]
-    if tp in _UNKNOWN:
+    if tp in {Any, object, dict, list}:
         return "Record<string, unknown>" if tp is dict else "unknown[]" if tp is list else "unknown"
     raise TypeError(f"No TypeScript mapping for {tp!r}")
 

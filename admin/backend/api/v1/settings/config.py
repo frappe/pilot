@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import smtplib
+from typing import ClassVar
 
 from pilot.config import BenchConfig, FirewallRule, S3Config, WafCondition, WafRule, WorkerGroup
 from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
@@ -10,21 +11,6 @@ from pilot.config.mail import MailConfig
 from pilot.config.webhook import WebhookEndpoint
 from pilot.config.worker import parse_timeout
 from pilot.core.notification.mail import AlertMail
-
-_GROUP_TYPES: dict[str, type] = {
-    "bench": dict,
-    "lite_mode": dict,
-    "letsencrypt": dict,
-    "workers": list,
-    "firewall": dict,
-    "proxy": dict,
-    "waf": dict,
-    "llm": dict,
-    "s3": dict,
-    "resource_limits": dict,
-    "webhook_endpoints": list,
-    "mail": dict,
-}
 
 
 def _coerce_int(value):
@@ -36,6 +22,21 @@ def _coerce_int(value):
 
 
 class ConfigPatcher:
+    group_types: ClassVar[dict[str, type]] = {
+        "bench": dict,
+        "lite_mode": dict,
+        "letsencrypt": dict,
+        "workers": list,
+        "firewall": dict,
+        "proxy": dict,
+        "waf": dict,
+        "llm": dict,
+        "s3": dict,
+        "resource_limits": dict,
+        "webhook_endpoints": list,
+        "mail": dict,
+    }
+
     def __init__(self, config: BenchConfig, data: dict, mail: MailConfig | None = None) -> None:
         self.config = config
         self.data = data
@@ -70,7 +71,7 @@ class ConfigPatcher:
 
     def get_group_type_error(self) -> str | None:
         """The error when a settings group has the wrong type, or None."""
-        for name, expected in _GROUP_TYPES.items():
+        for name, expected in self.group_types.items():
             value = self.data.get(name)
             if value is not None and not isinstance(value, expected):
                 return f"{name} must be {'a list' if expected is list else 'an object'}."

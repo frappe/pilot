@@ -421,7 +421,7 @@ def test_server_binary_falls_back_to_newest_debian_versioned_dir(tmp_path) -> No
         (bin_dir / "initdb").touch()
     with (
         patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None),
-        patch(f"{MODULE}._DEBIAN_POSTGRES_ROOT", tmp_path),
+        patch.object(PostgresManager, "debian_postgres_root", tmp_path),
     ):
         assert _mgr()._server_binary("initdb") == str(tmp_path / "17" / "bin" / "initdb")
 
@@ -429,7 +429,7 @@ def test_server_binary_falls_back_to_newest_debian_versioned_dir(tmp_path) -> No
 def test_server_binary_returns_bare_name_when_missing(tmp_path) -> None:
     with (
         patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None),
-        patch(f"{MODULE}._DEBIAN_POSTGRES_ROOT", tmp_path / "missing"),
+        patch.object(PostgresManager, "debian_postgres_root", tmp_path / "missing"),
     ):
         assert _mgr()._server_binary("initdb") == "initdb"
 

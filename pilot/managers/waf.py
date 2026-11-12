@@ -23,7 +23,6 @@ def shared_modsec_dir() -> Path:
     return Server().root / "system" / "waf" / "modsecurity-crs"
 
 MODSEC_MODULE_NAME = "ngx_http_modsecurity_module.so"
-_MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 
 # Pinned OWASP CRS (the 4.x LTS line) so every host runs an identical,
 # reproducible rule set regardless of what - or whether - the distro packages it.
@@ -33,7 +32,6 @@ _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 # against the OWASP CRS PGP signing key (36006F0E0BA167832158821138EEACA1AB8A6E72,
 # security@coreruleset.org) at pin time.
 CRS_VERSION = "4.25.0"
-_CRS_SHA256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
 
 class WafManager:
@@ -41,6 +39,9 @@ class WafManager:
 
     # Canonical (apt-style) name; per-distro names live in each package manager's
     # package_aliases map.
+    module_dirs = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
+    crs_sha256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
+
     crs_url = "https://github.com/coreruleset/coreruleset/releases/download/"
     f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
 
@@ -53,7 +54,7 @@ class WafManager:
     def module_available() -> bool:
         """True if nginx can load the module - the .so is on disk or a
         modules-enabled drop-in (the Debian package's mechanism) references it."""
-        if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in _MODULE_DIRS):
+        if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in WafManager.module_dirs):
             return True
         modules_dir = Path("/etc/nginx/modules-enabled")
         return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
@@ -61,7 +62,7 @@ class WafManager:
     @staticmethod
     def module_path() -> str | None:
         """The ModSecurity nginx module, if found."""
-        for base in _MODULE_DIRS:
+        for base in WafManager.module_dirs:
             candidate = Path(base) / MODSEC_MODULE_NAME
             if candidate.exists():
                 return str(candidate)
@@ -110,8 +111,8 @@ class WafManager:
     def _verify_checksum(archive: Path) -> None:
         """Abort before extraction if the archive digest changed."""
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        if digest != _CRS_SHA256:
+        if digest != WafManager.crs_sha256:
             raise RuntimeError(
-                f"CRS archive checksum mismatch: expected {_CRS_SHA256}, got {digest}. "
+                f"CRS archive checksum mismatch: expected {WafManager.crs_sha256}, got {digest}. "
                 f"Refusing to install potentially tampered WAF rules."
             )

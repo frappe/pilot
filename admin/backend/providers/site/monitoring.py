@@ -10,9 +10,6 @@ from admin.backend.providers.windowed_log import WindowedLogProvider
 from pilot.core.site.uptime_monitoring import PING_PATH
 from pilot.internal.site_paths import site_config_path
 
-_MAX_BUCKETS = 30
-_TOP_LIMIT = 5
-
 
 class SiteMonitoringProvider(WindowedLogProvider):
     """Aggregates one site's slice of Frappe's monitor.json.log for one time window.
@@ -22,12 +19,14 @@ class SiteMonitoringProvider(WindowedLogProvider):
     the site has a real nginx access log (production, nginx in front), that's
     used instead - it's sourced from nginx's own trustworthy $remote_addr."""
 
+    top_limit = 5
+
     def __init__(self, bench_root: Path, site_name: str, window: str) -> None:
         super().__init__(window)
         self._bench_root = bench_root
         self._log_path = bench_root / "logs" / "monitor.json.log"
         self._site_name = site_name
-        self._bucket_seconds = max(60, self.window_seconds // _MAX_BUCKETS)
+        self._bucket_seconds = max(60, self.window_seconds // 30)
         self._access_log = SiteAccessLogProvider(bench_root, site_name, window)
         self._db_name = self._read_db_name(bench_root, site_name)
         self._start_ms = self.to_epoch_ms(self.cutoff)
@@ -77,7 +76,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
                 and (when := self.get_time(record.get("time"))) is not None
                 and when >= self.cutoff
             ]
-        return build_timeline(points, _TOP_LIMIT, self._bucket_seconds, by, self._start_ms, self.now_ms())
+        return build_timeline(points, self.top_limit, self._bucket_seconds, by, self._start_ms, self.now_ms())
 
     @staticmethod
     def _read_db_name(bench_root: Path, site_name: str) -> str | None:
@@ -101,7 +100,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
     ) -> dict:
         """The top categories of one transaction type over time."""
         points = self._points(entries, transaction_type, category)
-        return build_timeline(points, _TOP_LIMIT, self._bucket_seconds, by, self._start_ms, self.now_ms())
+        return build_timeline(points, self.top_limit, self._bucket_seconds, by, self._start_ms, self.now_ms())
 
     def _points(
         self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None]

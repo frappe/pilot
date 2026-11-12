@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 CHUNK_SIZE = 256 * 1024 * 1024
 STALE_SECONDS = 3 * 60 * 60
 MANIFEST_NAME = "upload.json"
-_UPLOAD_ID = re.compile(r"^[0-9a-f]{16}$")
 # Saved under names Frappe's backup files carry, so the restore can tell the parts apart.
 _FILE_NAMES = {
     "database": ("upload-database.sql", "upload-database.sql.gz"),
@@ -40,7 +39,7 @@ class BackupUpload:
     progress; a restore removes it and then owns the directory and its cleanup."""
 
     def __init__(self, bench: Bench, upload_id: str) -> None:
-        if not _UPLOAD_ID.fullmatch(upload_id):
+        if not re.fullmatch(r"^[0-9a-f]{16}$", upload_id):
             raise BenchError("The upload does not exist.")
         self.bench = bench
         self.upload_id = upload_id

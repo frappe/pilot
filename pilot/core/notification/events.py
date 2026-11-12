@@ -53,8 +53,6 @@ _UNREPORTED_COMMANDS = frozenset(
 )
 
 
-_SITE_CREATING_COMMANDS = frozenset({"new-site", "new-site-from-backup"})
-
 # The event a successful task raises, its title, and whether the bench's own feed shows it.
 # Only long operations a user waits for go to the feed; the rest go to webhooks only.
 _SUCCESS_EVENTS = {
@@ -221,7 +219,7 @@ def backups_failing(bench: "Bench", site: str, failures: int) -> None:
 def _task_site(meta: dict) -> str | None:
     """The site a task acts on. Tasks that create a site take it as `name`."""
     args = meta.get("args") or {}
-    if meta.get("command") in _SITE_CREATING_COMMANDS:
+    if meta.get("command") in frozenset({"new-site", "new-site-from-backup"}):
         return args.get("name")
     return args.get("site")
 

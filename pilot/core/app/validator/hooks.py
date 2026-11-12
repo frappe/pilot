@@ -11,52 +11,6 @@ if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
 
-_PATH_HOOKS = frozenset(
-    [
-        "additional_timeline_content",
-        "after_build",
-        "after_install",
-        "after_migrate",
-        "after_sync",
-        "after_uninstall",
-        "auth_hooks",
-        "before_install",
-        "before_migrate",
-        "before_tests",
-        "before_uninstall",
-        "before_write_file",
-        "boot_session",
-        "clear_cache",
-        "delete_file_data_content",
-        "doc_events",
-        "extend_bootinfo",
-        "extend_doctype_class",
-        "extend_website_page_controller_context",
-        "get_sender_details",
-        "get_web_pages_with_dynamic_routes",
-        "get_website_user_home_page",
-        "has_permission",
-        "jinja",
-        "notification_config",
-        "on_login",
-        "on_logout",
-        "on_session_creation",
-        "override_doctype_class",
-        "override_email_send",
-        "override_whitelisted_methods",
-        "permission_query_conditions",
-        "scheduler_events",
-        "send_sms",
-        "send_token_via_sms",
-        "standard_queries",
-        "update_website_context",
-        "website_clear_cache",
-        "website_path_resolver",
-        "write_file",
-    ]
-)
-
-
 _SYMBOLS_AST_SCRIPT = """
 import ast, json, sys
 
@@ -117,6 +71,51 @@ class HooksCheck:
     Only documented hooks are inspected; app-specific hook names are left alone.
     SyntaxCheck guarantees hooks.py parses first.
     """
+
+    known_path_hooks = frozenset(
+        [
+            "additional_timeline_content",
+            "after_build",
+            "after_install",
+            "after_migrate",
+            "after_sync",
+            "after_uninstall",
+            "auth_hooks",
+            "before_install",
+            "before_migrate",
+            "before_tests",
+            "before_uninstall",
+            "before_write_file",
+            "boot_session",
+            "clear_cache",
+            "delete_file_data_content",
+            "doc_events",
+            "extend_bootinfo",
+            "extend_doctype_class",
+            "extend_website_page_controller_context",
+            "get_sender_details",
+            "get_web_pages_with_dynamic_routes",
+            "get_website_user_home_page",
+            "has_permission",
+            "jinja",
+            "notification_config",
+            "on_login",
+            "on_logout",
+            "on_session_creation",
+            "override_doctype_class",
+            "override_email_send",
+            "override_whitelisted_methods",
+            "permission_query_conditions",
+            "scheduler_events",
+            "send_sms",
+            "send_token_via_sms",
+            "standard_queries",
+            "update_website_context",
+            "website_clear_cache",
+            "website_path_resolver",
+            "write_file",
+        ]
+    )
 
     dict_hooks = frozenset(
         [
@@ -222,7 +221,7 @@ print(json.dumps({"dict_errors": dict_errors, "path_hooks": found_paths}))
         payload = {
             "path": str(hooks_path),
             "dict_hooks": list(cls.dict_hooks),
-            "path_hooks": list(_PATH_HOOKS),
+            "path_hooks": list(cls.known_path_hooks),
         }
         data = run_in_bench(bench_python, cls.hooks_ast_script, payload)
         if "syntax_error" in data:

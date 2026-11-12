@@ -12,14 +12,12 @@ from typing import IO
 
 from pilot.exceptions import RemoteSiteError
 
-_REQUEST_TIMEOUT_SECONDS = 30
-# Per socket read, so a large download may take as long as it needs but a stalled one ends.
-_DOWNLOAD_READ_TIMEOUT_SECONDS = 300
-
 
 class RemoteFrappeSite:
     """A Frappe site reached as its Administrator, to copy its latest backup. Method calls
     use GET: a session-cookie POST needs a CSRF token that only Frappe's desk receives."""
+
+    request_timeout_seconds = 30
 
     def __init__(self, site: str, password: str) -> None:
         site = site.strip().rstrip("/")
@@ -57,7 +55,7 @@ class RemoteFrappeSite:
 
     def open_backup(self, path: str) -> IO[bytes]:
         """A backup file as a stream. Frappe serves /backups/<name> to System Managers."""
-        return self._open(f"/backups/{urllib.parse.quote(Path(path).name)}", timeout=_DOWNLOAD_READ_TIMEOUT_SECONDS)
+        return self._open(f"/backups/{urllib.parse.quote(Path(path).name)}", timeout=300)
 
     def download_backup(self, path: str, directory: Path) -> Path:
         """Download a backup file into the directory."""
@@ -74,10 +72,10 @@ class RemoteFrappeSite:
         except urllib.error.HTTPError as error:
             raise RemoteSiteError(f"{self.url} rejected {method}: HTTP {error.code}.") from error
 
-    def _open(self, path: str, data: bytes | None = None, timeout: float = _REQUEST_TIMEOUT_SECONDS):
+    def _open(self, path: str, data: bytes | None = None, timeout: float | None = None):
         """Open a site URL; raise a site error on failure."""
         try:
-            return self._opener.open(urllib.request.Request(f"{self.url}{path}", data=data), timeout=timeout)
+            return self._opener.open(urllib.request.Request(f"{self.url}{path}", data=data), timeout=timeout or self.request_timeout_seconds)
         except urllib.error.HTTPError:
             raise
         except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as error:

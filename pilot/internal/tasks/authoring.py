@@ -18,9 +18,6 @@ from pilot.tasks import Task
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_EXCLUDED_FIELDS = frozenset({"bench", "bench_root"})
-_HINT_NAMESPACE = {"Bench": object}
-
 
 def apply_task_secrets(args: argparse.Namespace) -> None:
     """Load secret arguments from the task's secrets file into the parsed arguments."""
@@ -122,7 +119,7 @@ def run_task(task: Task) -> None:
 
 def task_fields(cls: type[Task]) -> list:
     """The task's dataclass fields that are task arguments."""
-    return arg_fields(cls, exclude=_EXCLUDED_FIELDS, hint_namespace=_HINT_NAMESPACE)
+    return arg_fields(cls, exclude=frozenset({"bench", "bench_root"}), hint_namespace={"Bench": object})
 
 
 def is_positional_arg(arg_field) -> bool:

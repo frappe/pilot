@@ -11,8 +11,6 @@ from typing import IO
 
 from pilot.exceptions import FrappeCloudError
 
-_REQUEST_TIMEOUT_SECONDS = 30
-_DOWNLOAD_READ_TIMEOUT_SECONDS = 300
 # Cloudflare's Browser Integrity Check blocks urllib's default User-Agent with HTTP 403.
 _HEADERS = {"User-Agent": "pilot"}
 
@@ -66,7 +64,7 @@ class FrappeCloud:
         if self.token:
             request.add_header("X-Press-Migration-Token", self.token)
         try:
-            with urllib.request.urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(request, timeout=30) as response:
                 return json.loads(response.read() or b"{}").get("message")
         except urllib.error.HTTPError as error:
             raise FrappeCloudError(get_error_message(error)) from error
@@ -81,7 +79,7 @@ def open_download_link(url: str) -> IO[bytes]:
         raise FrappeCloudError("Frappe Cloud sent a download link that is not HTTP.")
     try:
         request = urllib.request.Request(url, headers=_HEADERS)
-        return urllib.request.urlopen(request, timeout=_DOWNLOAD_READ_TIMEOUT_SECONDS)
+        return urllib.request.urlopen(request, timeout=300)
     except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
         raise FrappeCloudError(f"Could not download the backup: {error}") from error
 

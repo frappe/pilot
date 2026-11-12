@@ -11,13 +11,6 @@ from pilot.core.database.slow_queries import normalize
 
 TAIL_BYTES = 8 * 1024 * 1024
 
-_THREAD = re.compile(r"^# Thread_id: (\d+)\s+Schema: (\S*)")
-_STATS = re.compile(r"^# Query_time: ([\d.]+)\s+Lock_time: [\d.]+\s+Rows_sent: (\d+)\s+Rows_examined: (\d+)")
-_TIMESTAMP = re.compile(r"^SET timestamp=(\d+);$")
-_USE = re.compile(r"^use [^;]+;$", re.IGNORECASE)
-# The server repeats this banner in the file on each start.
-_BANNER = re.compile(r"started with:$|^Tcp port: |^Time\s+Id\s+Command")
-
 
 @dataclass
 class SlowLogEntry:
@@ -114,11 +107,17 @@ def parse_slow_log(text: str) -> list[SlowLogEntry]:
 
 def _read_line(entry: SlowLogEntry, line: str, lines: list[str]) -> None:
     """Read one slow log line into the entry."""
-    if match := _THREAD.match(line):
+    if match := re.match(r"^# Thread_id: (\d+)\s+Schema: (\S*)", line):
         entry.thread_id, entry.database = int(match[1]), match[2]
-    elif match := _STATS.match(line):
+    elif match := re.match(
+        r"^# Query_time: ([\d.]+)\s+Lock_time: [\d.]+\s+Rows_sent: (\d+)\s+Rows_examined: (\d+)", line
+    ):
         entry.query_time, entry.rows_sent, entry.rows_examined = float(match[1]), int(match[2]), int(match[3])
-    elif match := _TIMESTAMP.match(line):
+    elif match := re.match(r"^SET timestamp=(\d+);$", line):
         entry.time = datetime.fromtimestamp(int(match[1]))
-    elif not line.startswith("#") and not _USE.match(line) and not _BANNER.search(line):
+    elif (
+        not line.startswith("#")
+        and not re.match(r"^use [^;]+;$", line, flags=re.IGNORECASE)
+        and not re.search(r"started with:$|^Tcp port: |^Time\s+Id\s+Command", line)
+    ):
         lines.append(line)

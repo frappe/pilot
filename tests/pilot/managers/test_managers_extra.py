@@ -11,7 +11,7 @@ import pytest
 from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.exceptions import CommandError, ConfigError
-from pilot.managers.processes.systemd import _ADMIN_IDLE_TIMEOUT
+from pilot.managers.processes.systemd import SystemdProcessManager
 from pilot.managers.redis import RedisManager
 
 
@@ -601,8 +601,8 @@ def test_systemd_admin_service_runs_gunicorn_with_idle_timeout(tmp_path: Path) -
     assert "admin.backend.wsgi:application" in service
     # The value must outlive an image builder's pre-snapshot window, so assert the
     # constant reaches the unit rather than pinning a number here.
-    assert f'Environment="BENCH_ADMIN_IDLE_TIMEOUT={_ADMIN_IDLE_TIMEOUT}"' in service
-    assert _ADMIN_IDLE_TIMEOUT >= 600
+    assert f'Environment="BENCH_ADMIN_IDLE_TIMEOUT={SystemdProcessManager.admin_idle_timeout}"' in service
+    assert SystemdProcessManager.admin_idle_timeout >= 600
     assert "Requires=test-bench-admin.socket" in service
     assert "After=test-bench-admin.socket" in service
     # Re-activation is via the socket, not a systemd restart loop.

@@ -10,10 +10,6 @@ from pathlib import Path
 # Deadlocks are wanted recent, and the log can be large, so only its end is read.
 TAIL_BYTES = 8 * 1024 * 1024
 
-_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) +\d+ \[\w+\] InnoDB: ?")
-_TRANSACTION_ID = re.compile(r"^TRANSACTION (\d+),")
-_THREAD = re.compile(r"^MariaDB thread id (\d+),")
-
 
 @dataclass
 class DeadlockTransaction:
@@ -114,7 +110,7 @@ class DeadlockParser:
     def parse(self, text: str) -> list[Deadlock]:
         """The deadlocks in the error log text."""
         for raw in text.splitlines():
-            stamp = _PREFIX.match(raw)
+            stamp = re.match(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) +\d+ \[\w+\] InnoDB: ?", raw)
             line = (raw[stamp.end() :] if stamp else raw).strip()
             if "Transactions deadlock detected" in line:
                 self.current = Deadlock(time=server_time_to_utc(stamp[1]) if stamp else "")
@@ -143,9 +139,9 @@ class DeadlockParser:
 
     def read_transaction_line(self, transaction: DeadlockTransaction, line: str) -> None:
         """Read one line of a transaction in the dump."""
-        if match := _TRANSACTION_ID.match(line):
+        if match := re.match(r"^TRANSACTION (\d+),", line):
             transaction.transaction_id = match[1]
-        elif match := _THREAD.match(line):
+        elif match := re.match(r"^MariaDB thread id (\d+),", line):
             transaction.thread_id = int(match[1])
             self.reading_query = True
         elif self.reading_query:

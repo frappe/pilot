@@ -6,8 +6,6 @@ import shlex
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
 
-_SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
-
 
 def _exec(argv: list[str]) -> str:
     """The ExecStart value of a command."""
@@ -19,7 +17,7 @@ def _exec(argv: list[str]) -> str:
 
 def _quote(argument: str) -> str:
     """systemd reads C escapes inside quotes and expands % specifiers and $ variables everywhere."""
-    if not _SAFE_ARGUMENT.fullmatch(argument):
+    if not re.fullmatch(r"[\w@%+=:,./-]+", argument, flags=re.ASCII):
         argument = '"' + argument.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return argument.replace("%", "%%").replace("$", "$$")
 

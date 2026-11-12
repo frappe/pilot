@@ -122,7 +122,7 @@ def test_write_waf_files_noop_when_disabled(tmp_path: Path, installed) -> None:
 def test_module_already_loaded_survives_unreadable_nginx_conf(tmp_path: Path, monkeypatch) -> None:
     # An unreadable/absent nginx.conf must not raise (which would break
     # install_config before rollback); treat it as "loaded" and skip injection.
-    monkeypatch.setattr(nginx, "_NGINX_CONF", tmp_path / "nonexistent-nginx.conf")
+    monkeypatch.setattr(NginxManager, "nginx_conf", tmp_path / "nonexistent-nginx.conf")
     assert NginxManager._module_already_loaded() is True
 
 
@@ -218,8 +218,8 @@ def test_a_module_loaded_from_fedora_module_dir_is_not_loaded_again(tmp_path: Pa
     fedora_modules = tmp_path / "modules"
     fedora_modules.mkdir()
     (fedora_modules / "mod-modsecurity.conf").write_text("load_module ngx_http_modsecurity_module.so;\n")
-    monkeypatch.setattr(nginx, "_NGINX_CONF", nginx_conf)
-    monkeypatch.setattr(nginx, "_MODULE_DIRS", (tmp_path / "missing", fedora_modules))
+    monkeypatch.setattr(NginxManager, "nginx_conf", nginx_conf)
+    monkeypatch.setattr(NginxManager, "module_dirs", (tmp_path / "missing", fedora_modules))
 
     assert NginxManager._module_already_loaded() is True
 
