@@ -4,6 +4,7 @@ import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import SupportsFloat
 
 from pilot.core.database.base import (
     BinlogFile,
@@ -474,7 +475,7 @@ class MariaDB(Database):
         return int(result.rows[0][1])
 
 
-def _utc_iso(epoch: object) -> str | None:
+def _utc_iso(epoch: SupportsFloat | None) -> str | None:
     """INNODB_TRX times are server-local with no zone; an epoch turned UTC reads the same everywhere."""
     if epoch is None:
         return None

@@ -42,9 +42,11 @@ class HourlyRollup:
                     break  # still being written; the next update reads it whole
                 offset += len(line)
                 record = _parse(line)
-                hour = self.get_hour(record.get(self.time_key)) if record else None
-                if hour and isinstance(record.get("site"), str):
-                    self.add(sites.setdefault(record["site"], {}), hour, record)
+                if record is None:
+                    continue
+                hour, site = self.get_hour(record.get(self.time_key)), record.get("site")
+                if hour and isinstance(site, str):
+                    self.add(sites.setdefault(site, {}), hour, record)
         self.prune(sites, now or datetime.now(UTC))
         atomic_write_private_text(
             self.state_path, json.dumps({"inode": stat.st_ino, "offset": offset, "sites": sites})
