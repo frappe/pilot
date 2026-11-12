@@ -168,3 +168,27 @@ def test_cache_hit_precedes_seeding_except_for_current_checkout(install, branch)
         branch == "default"
     )
     assert any(call.args[1] == target for call in seed.call_args_list) == (branch == "current")
+
+
+def test_restore_marks_entry_recently_used(install):
+    import os
+
+    source, target, cache = install
+    capture_install(source, cache)
+    entry = cache.root / NodeDependencies.get_key(source)
+    os.utime(entry, (0, 0))
+    assert cache.restore(target)
+    assert entry.stat().st_mtime > 0
+
+
+def test_capture_prunes_entries_beyond_limit(install, monkeypatch):
+    import os
+
+    source, _target, cache = install
+    stale = cache.root / ("0" * 64)
+    (stale / "node_modules").mkdir(parents=True)
+    os.utime(stale, (0, 0))
+    monkeypatch.setattr(NodeDependencyCache, "max_entries", 1)
+    capture_install(source, cache)
+    assert not stale.exists()
+    assert (cache.root / NodeDependencies.get_key(source)).is_dir()

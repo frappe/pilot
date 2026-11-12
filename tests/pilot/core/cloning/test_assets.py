@@ -337,3 +337,71 @@ def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(sou
     hooks = source.apps_path / "frappe/frappe/hooks.py"
     hooks.write_text("after_build = 'frappe.custom_build'\n")
     assert artifacts.get_key() is None
+
+
+@pytest.mark.parametrize("stage", ["before", "after", "publish"])
+def test_clone_build_succeeds_when_optional_cache_fails(source, stage):
+    from unittest.mock import PropertyMock, patch
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    failure = OSError("cannot fingerprint")
+    keys = {"before": [failure], "after": ["key", failure], "publish": ["key", "key"]}[stage]
+    builds = []
+    with (
+        patch.object(BuildArtifacts, "get_key", side_effect=keys),
+        patch.object(BuildArtifacts, "publish", side_effect=OSError("cache unavailable")),
+        patch.object(BuildArtifacts, "paths", new_callable=PropertyMock, return_value=["sites/assets"]),
+        patch.object(
+            BuildArtifacts, "required_paths", new_callable=PropertyMock, return_value=["sites/assets"]
+        ),
+    ):
+        BuildArtifacts(source).restore_or_build(lambda: builds.append(True), lambda message: None)
+    assert builds == [True]
+
+
+def test_clone_build_caches_output_only_when_inputs_are_unchanged(source):
+    from unittest.mock import patch
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    (source.apps_path / "frappe/frappe/public/dist").mkdir(parents=True)
+    artifacts = BuildArtifacts(source)
+    with patch.object(BuildArtifacts, "get_key", side_effect=["before", "after"]):
+        artifacts.restore_or_build(lambda: None, lambda message: None)
+    assert not (artifacts.root / "before").exists()
+    with patch.object(BuildArtifacts, "get_key", side_effect=["stable", "stable"]):
+        artifacts.restore_or_build(lambda: None, lambda message: None)
+    assert (artifacts.root / "stable/manifest.json").is_file()
+
+
+def test_cache_prune_keeps_most_recently_used_entries(tmp_path):
+    import os
+
+    from pilot.core.bench.artifacts import BenchArtifacts
+
+    root = tmp_path / "cache"
+    keys = [f"{index:064x}" for index in range(4)]
+    for index, key in enumerate(keys):
+        (root / key).mkdir(parents=True)
+        (root / key / "manifest.json").write_text("[]")
+        os.utime(root / key, (index, index))
+    (root / "build-staging").mkdir()
+    BenchArtifacts.prune(root, 2, "manifest.json")
+    assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
+        [*keys[2:], "build-staging"]
+    )
+
+
+def test_asset_restore_marks_entry_recently_used(source):
+    import os
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    (source.apps_path / "frappe/frappe/public/dist").mkdir(parents=True)
+    artifacts = BuildArtifacts(source)
+    key = "a" * 64
+    artifacts.capture(key)
+    os.utime(artifacts.root / key, (0, 0))
+    assert artifacts.restore(key)
+    assert (artifacts.root / key).stat().st_mtime > 0

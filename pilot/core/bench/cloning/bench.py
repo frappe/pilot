@@ -74,12 +74,7 @@ class BenchClone:
                     continue
                 for relative in (".", "frontend", "roster"):
                     cache.capture(app.path / relative)
-            artifacts = BuildArtifacts(destination)
-            if artifacts.restore(artifacts.optional_key):
-                on_progress("Reusing matching built assets")
-            else:
-                on_progress("Installing Node dependencies and rebuilding assets for selected branches")
-                environment.build_assets()
+            BuildArtifacts(destination).restore_or_build(environment.build_assets, on_progress)
 
     def create_python_environment(self, destination, environment, rebuild: bool) -> None:
         with ThreadPoolExecutor(max_workers=1) as executor:

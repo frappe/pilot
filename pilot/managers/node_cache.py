@@ -13,6 +13,8 @@ from pilot.managers.node_dependencies import NodeDependencies
 class NodeDependencyCache:
     """Reuse completed portable installs without sharing writable dependency files."""
 
+    max_entries = 8
+
     def __init__(self, bench) -> None:
         self.root = bench.path.parent / ".pilot" / "node-cache"
 
@@ -32,6 +34,7 @@ class NodeDependencyCache:
             return
         try:
             self.publish(path, key)
+            BenchArtifacts.prune(self.root, self.max_entries, "node_modules/.pilot-install-key")
         except (OSError, CommandError) as error:
             logging.warning("Skipping Node dependency cache publication: %s", error)
 
@@ -60,16 +63,16 @@ class NodeDependencyCache:
         if key is None or not self.root.is_dir():
             return False
         target = self.root / key
-        if not NodeDependencies.has_matching_install(target, key):
-            return False
-        # Completed entries are immutable, so concurrent forks can read them together.
-        modules = path / "node_modules"
-        if modules.exists() or modules.is_symlink():
+        with exclusive_file_lock(self.root / f"{key}.guard"):
+            if not NodeDependencies.has_matching_install(target, key):
+                return False
+            os.utime(target)
+            modules = path / "node_modules"
             if modules.is_symlink():
                 modules.unlink()
-            else:
+            elif modules.exists():
                 shutil.rmtree(modules)
-        BenchArtifacts.copy_directory(target / "node_modules", modules)
+            BenchArtifacts.copy_directory(target / "node_modules", modules)
         BenchArtifacts.relocate_links(target.resolve(), path.resolve(), root=modules)
         return True
 

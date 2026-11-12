@@ -8,6 +8,7 @@ import os
 import shutil
 import stat
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from pilot.core.app.node_packages import get_app_packages
@@ -20,6 +21,8 @@ from pilot.utils import run_command
 
 class BuildArtifacts:
     """Reuse completed builds with identical code, environment and toolchains."""
+
+    max_entries = 3
 
     def __init__(self, bench) -> None:
         self.bench = bench
@@ -177,6 +180,17 @@ class BuildArtifacts:
             )
         return paths
 
+    def restore_or_build(self, build: Callable[[], None], on_progress: Callable[[str], None]) -> None:
+        """Restore a matching cached build, or build and cache the result."""
+        key = self.optional_key
+        if self.restore(key):
+            on_progress("Reusing matching built assets")
+            return
+        on_progress("Installing Node dependencies and rebuilding assets for selected branches")
+        build()
+        if key is not None and self.optional_key == key:
+            self.capture(key)
+
     def capture(self, key: str | None) -> None:
         if key is None:
             return
@@ -185,6 +199,7 @@ class BuildArtifacts:
             if not set(self.required_paths).issubset(paths):
                 return
             self.publish(key, paths)
+            BenchArtifacts.prune(self.root, self.max_entries, "manifest.json")
         except Exception as error:
             logging.warning("Skipping asset cache publication: %s", error)
 
@@ -221,6 +236,7 @@ class BuildArtifacts:
                 return False
             if not self.has_valid_manifest(target, paths):
                 return False
+            os.utime(target)
             BenchArtifacts(target).restore(self.bench, paths)
         return True
 

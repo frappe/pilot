@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import sys
 from pathlib import Path
 
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.utils import run_command
 
 
@@ -34,6 +37,19 @@ class BenchArtifacts:
             except CommandError:
                 pass  # clonefile is unavailable across volumes or on non-APFS storage.
         run_command([*argv, str(source) + "/.", str(destination)])
+
+    @staticmethod
+    def prune(root: Path, keep: int, marker: str) -> None:
+        """Delete all but the `keep` most recently used entries; `marker` goes first to invalidate."""
+        entries = sorted(
+            (path for path in root.iterdir() if path.is_dir() and re.fullmatch(r"[0-9a-f]{64}", path.name)),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for entry in entries[keep:]:
+            with exclusive_file_lock(root / f"{entry.name}.guard"):
+                (entry / marker).unlink(missing_ok=True)
+                shutil.rmtree(entry)
 
     @staticmethod
     def relocate_links(source: Path, destination: Path, *, root: Path | None = None) -> None:
