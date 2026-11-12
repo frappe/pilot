@@ -1570,3 +1570,12 @@ def test_only_the_admin_is_kept_out_of_search_engines(tmp_path: Path) -> None:
     assert 'location = /robots.txt {\n        default_type text/plain;\n        return 200 "User-agent: *\\nDisallow: /\\n";' in admin_block
     assert "X-Robots-Tag" not in site_block
     assert "robots.txt" not in site_block
+
+
+def test_a_site_server_follows_no_symlinks_below_the_bench(tmp_path: Path) -> None:
+    """nginx runs as the bench user, so a link that a workload makes in sites/ could reach any of its files."""
+    renderer = _renderer(tmp_path)
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    assert f"disable_symlinks on from={renderer.bench.path};" in config
+    assert config.count("disable_symlinks on") == config.count(f"root {renderer.bench.path}/sites;")

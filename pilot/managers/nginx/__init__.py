@@ -336,6 +336,7 @@ class NginxConfigRenderer:
                 f"http://realtime-{config.name}" if socket else f"http://127.0.0.1:{self.bench.realtime_port}"
             ),
             "sites_root": f"{self.bench.path}/sites",
+            "bench_root": str(self.bench.path),
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,

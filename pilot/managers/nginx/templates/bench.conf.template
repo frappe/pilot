@@ -60,6 +60,8 @@ server {
     {% else %}
     {% if alias.site %}
     root {{ sites_root }};
+    {# a workload can write below sites/, so a link there must not reach a file it cannot read #}
+    disable_symlinks on from={{ bench_root }};
     client_max_body_size {{ client_max_body_size }};
 
 {{ site_embed }}
@@ -269,6 +271,8 @@ server {
     {# document root #}
     {% if vhost.kind == "site" %}
     root {{ sites_root }};
+    {# a workload can write below sites/, so a link there must not reach a file it cannot read #}
+    disable_symlinks on from={{ bench_root }};
 
     {% endif %}
     {# the admin takes backup uploads, so it gets at least the site limit #}
