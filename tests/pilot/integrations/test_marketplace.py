@@ -125,11 +125,6 @@ def test_resolve_single_app_no_deps_returns_self():
     assert result == [r]
 
 
-def test_resolve_returns_list_of_resolvers():
-    r = make_resolver()
-    assert isinstance(r.resolve(), list)
-
-
 def test_resolve_installs_dependency_before_root():
     dep = make_resolver(app="payments", version="1.0.0")
     root = make_resolver(app="erpnext", dependencies={"payments": ">=1.0.0"})
