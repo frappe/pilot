@@ -203,12 +203,27 @@ def run_frappe(context: CliContext, args: list[str]) -> None:
         FrappeCommand(load_bench(context), args=tuple(args)).run()
 
 
+def requested_command(remaining: list[str]) -> str | None:
+    """The command the user asked for, so the parser can build just that one.
+
+    None when the invocation needs the whole parser: no command, a help or
+    version request, or a flag before the command that the CLI does not own.
+    """
+    for arg in remaining:
+        if arg in ("--help", "-h", "--version"):
+            return None
+        if arg.startswith("-"):
+            continue
+        return arg
+    return None
+
+
 def run_native(context: CliContext, remaining: list[str]) -> None:
     import time
 
     from pilot.internal.cli import registry
 
-    parser = registry.build_parser()
+    parser = registry.build_parser(only=requested_command(remaining))
     args = parser.parse_args(remaining)
     started = time.monotonic()
     with error_boundary(context):

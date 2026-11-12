@@ -9,6 +9,7 @@ from pilot.internal.cli.dispatch import (
     forwarded_frappe_args,
     is_frappe_passthrough,
     main,
+    requested_command,
     strip_bench_flag,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "forwarded_frappe_args",
     "is_frappe_passthrough",
     "main",
+    "requested_command",
     "strip_bench_flag",
 ]

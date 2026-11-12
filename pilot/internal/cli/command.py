@@ -5,7 +5,7 @@ from dataclasses import fields
 from typing import TYPE_CHECKING
 
 from pilot.commands import Command
-from pilot.internal.cli.fields import add_argument, arg_fields, value_from_namespace
+from pilot.internal.cli.fields import NOT_PROVIDED, add_argument, arg_fields, value_from_namespace
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -20,7 +20,14 @@ def add_command_arguments(cls: type[Command], parser: argparse.ArgumentParser) -
 
 
 def command_from_args(cls: type[Command], args: argparse.Namespace, bench: Bench | None) -> Command:
-    kwargs = {cli_field.name: value_from_namespace(args, cli_field) for cli_field in command_fields(cls)}
+    kwargs = {}
+    for cli_field in command_fields(cls):
+        value = value_from_namespace(args, cli_field)
+        if value is NOT_PROVIDED:
+            # The dataclass supplies the default, so a factory runs here only when
+            # the command is actually built.
+            continue
+        kwargs[cli_field.name] = value
     if any(field.name == "skip_confirm" for field in fields(cls)):
         kwargs["skip_confirm"] = args.yes
     return cls(bench=bench, **kwargs)
