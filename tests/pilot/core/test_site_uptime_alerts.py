@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS
 from pilot.core.bench import Bench
+from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.notification.webhooks import WebhookDelivery
 from pilot.core.site.uptime_monitoring import UptimeMonitor
 
@@ -55,7 +55,7 @@ def _ping(site: str, up: bool) -> dict:
 def _age_alerts(monitor: UptimeMonitor) -> None:
     state = json.loads(monitor.alerts_path.read_text())
     for entry in state.values():
-        entry["since"] -= ALERT_SUSTAINED_SECONDS + 1
+        entry["since"] -= SustainedAlerts.window_seconds + 1
     monitor.alerts_path.write_text(json.dumps(state))
 
 

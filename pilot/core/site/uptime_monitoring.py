@@ -11,8 +11,8 @@ import time
 import typing
 from datetime import UTC, datetime
 
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.notification.events import raise_event, record_alert
+from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
@@ -101,7 +101,7 @@ class UptimeMonitor:
         if not due:
             return
 
-        if notify(self.bench, self._alert_payload(due, results)):
+        if self.bench.notifier.send(self._alert_payload(due, results)):
             alerts.mark_notified(due)
 
     def announce_recovered(self, sites: list[str]) -> None:
@@ -142,7 +142,7 @@ class UptimeMonitor:
             "context": {
                 "bench": self.bench.config.name,
                 "time": datetime.now(UTC).isoformat(),
-                "sustained_seconds": ALERT_SUSTAINED_SECONDS,
+                "sustained_seconds": SustainedAlerts.window_seconds,
                 "sites": sites,
             },
         }

@@ -22,7 +22,7 @@ from admin.backend.middleware import (
 )
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
-from pilot.core.bench.settings import active_tokens_payload
+from pilot.core.bench.settings.payload import SettingsPayload
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -289,7 +289,7 @@ def list_sessions():
         return error_response("settings_unavailable", "Could not read settings.", 500)
     return jsonify(
         {
-            "active_tokens": active_tokens_payload(config, bench_root),
+            "active_tokens": SettingsPayload(config).get_active_tokens(bench_root),
             "current_jti": (getattr(g, "jwt_claims", None) or {}).get("jti"),
         }
     )

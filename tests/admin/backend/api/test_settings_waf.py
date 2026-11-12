@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response, waf_payload
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
 from pilot.config import BenchConfig
+from pilot.core.bench.settings.payload import SettingsPayload
 
 
 def _config() -> BenchConfig:
@@ -47,7 +48,7 @@ def test_patcher_applies_waf() -> None:
     assert error is None
     assert config.waf.enabled and config.waf.mode == "On" and config.waf.paranoia == 3
     assert config.waf.exclusions == ["SecRuleRemoveById 942100"]
-    assert waf_payload(config)["exempt_paths"] == ["/api/method/ping"]
+    assert SettingsPayload(config).waf["exempt_paths"] == ["/api/method/ping"]
 
 
 def test_patcher_rejects_invalid_mode() -> None:

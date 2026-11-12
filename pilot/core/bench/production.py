@@ -34,7 +34,7 @@ class BenchProduction:
         if not self.bench.config.production.enabled:
             return
 
-        from pilot.core.bench.settings import regenerate_nginx
+        from pilot.core.bench.settings import BenchSettings
         from pilot.managers.processes.base import ManagedProcessManager
         from pilot.managers.processes.local import ProcessManager
 
@@ -47,7 +47,7 @@ class BenchProduction:
         try:
             on_progress("Rewriting the bench configuration")
             self.bench.write_common_site_config()
-            regenerate_nginx(self.bench)
+            BenchSettings(self.bench).regenerate_nginx()
             on_progress("Installing the new process set")
             manager.write_config()
             manager.install_config()

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response, restart_trigger_values
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
 from pilot.config import BenchConfig
-from pilot.core.bench.settings import is_restart_needed
+from pilot.core.bench.settings import BenchSettings
+from pilot.core.bench.settings.payload import SettingsPayload
 
 
 def _config() -> BenchConfig:
@@ -43,7 +44,7 @@ def test_patcher_leaves_lite_mode_alone_when_unmentioned() -> None:
 
 def test_toggling_lite_mode_triggers_a_process_rebuild() -> None:
     config = _config()
-    before = restart_trigger_values(config)
+    before = SettingsPayload(config).restart_triggers
     config.lite_mode.enabled = True
 
-    assert is_restart_needed(before, restart_trigger_values(config))
+    assert BenchSettings.is_restart_needed(before, SettingsPayload(config).restart_triggers)

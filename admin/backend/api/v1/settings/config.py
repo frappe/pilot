@@ -9,7 +9,7 @@ from pilot.config.llm import LLMConfig
 from pilot.config.mail import MailConfig
 from pilot.config.webhook import WebhookEndpoint
 from pilot.config.worker import parse_timeout
-from pilot.core.alerts import check_mail_credentials
+from pilot.core.notification.mail import AlertMail
 
 _GROUP_TYPES: dict[str, type] = {
     "bench": dict,
@@ -188,7 +188,7 @@ class ConfigPatcher:
         if not self.mail.server:
             return None
         try:
-            check_mail_credentials(self.mail)
+            AlertMail(self.mail).check_credentials()
         except smtplib.SMTPAuthenticationError:
             return "The mail server rejected that login name and password."
         except (OSError, smtplib.SMTPException) as error:

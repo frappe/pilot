@@ -146,7 +146,6 @@ class BenchCertificates:
 
     def alert_broken(self, files: list[CertificateFile]) -> None:
         """Alert when a certificate enters a broken state, and forget the alert once it is valid again."""
-        from pilot.core.alerts import notify
         from pilot.core.notification.events import record_alert
 
         for file in files:
@@ -159,7 +158,7 @@ class BenchCertificates:
             if state:
                 payload = record.get_alert_payload(self.bench.config.name, file.site)
                 record_alert(self.bench, payload)
-                notify(self.bench, payload)
+                self.bench.notifier.send(payload)
             self.mark_alerted(file.name, state)
 
     def mark_alerted(self, name: str, state: str | None) -> None:

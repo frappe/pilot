@@ -169,7 +169,7 @@ def _check(bench, tmp_path: Path, days_left: float):
         patch.object(NginxManager, "cert_path", return_value=cert_file),
         patch("pilot.core.bench.certificates.read_certificate", return_value=(expiry.isoformat(), ["site.example.com"])),
         patch("pilot.core.notification.events.record_alert") as record_alert,
-        patch("pilot.core.alerts.notify") as notify,
+        patch("pilot.core.notification.notifier.Notifier.send") as notify,
     ):
         LetsEncryptManager(bench).check_certificates()
     return record_alert, notify
@@ -181,7 +181,7 @@ def test_a_certificate_close_to_expiry_raises_an_alert(tmp_path: Path) -> None:
 
     record_alert, notify = _check(bench, tmp_path, days_left=9.5)
 
-    payload = notify.call_args.args[1]
+    payload = notify.call_args.args[0]
     assert payload["event"] == "certificate_expiry"
     assert payload["context"]["days_left"] == 9
     assert payload["site"] == "site.example.com"

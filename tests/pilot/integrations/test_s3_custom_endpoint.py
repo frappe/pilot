@@ -6,7 +6,7 @@ from flask import Flask
 from admin.backend.api.v1.settings import ConfigPatcher, s3_provider_options, settings_bp
 from pilot.config import S3Config
 from pilot.config.bench import BenchConfig
-from pilot.core.bench.settings import s3_payload
+from pilot.core.bench.settings.payload import SettingsPayload
 from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.integrations.s3 import base
 from pilot.internal.toml import Toml
@@ -101,7 +101,7 @@ def test_s3_payload_tracks_the_custom_endpoint() -> None:
     config = bench_config()
     config.s3.endpoint_url = "https://s3.in-mumbai.example.test"
 
-    assert s3_payload(config)["endpoint_url"] == "https://s3.in-mumbai.example.test"
+    assert SettingsPayload(config).s3["endpoint_url"] == "https://s3.in-mumbai.example.test"
 
 
 def test_migration_backups_go_to_the_bucket_until_turned_off() -> None:
@@ -115,7 +115,7 @@ def test_migration_backups_go_to_the_bucket_until_turned_off() -> None:
 
     assert error is None
     assert not config.s3.stores_migration_backups
-    assert s3_payload(config)["upload_migration_backups"] is False
+    assert SettingsPayload(config).s3["upload_migration_backups"] is False
     assert BenchConfig._from_dict(Toml.loads(config.dumps())).s3.upload_migration_backups is False
 
 

@@ -60,7 +60,8 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
     bench_root = tmp_path / "bench"
     client = _client(bench_root)
     with patch(
-        "pilot.core.bench.settings.regenerate_configs",
+        "pilot.core.bench.settings.BenchSettings.regenerate_configs",
+            autospec=True,
         side_effect=RuntimeError("secret generator detail"),
     ):
         response = client.patch("/api/v1/settings", json=_worker_update())
@@ -80,9 +81,10 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
 def test_settings_report_restart_failure_without_stderr(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     with (
-        patch("pilot.core.bench.settings.regenerate_configs"),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs", autospec=True),
         patch(
-            "pilot.core.bench.settings.restart_running_workload",
+            "pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True,
             side_effect=RuntimeError("secret supervisor stderr"),
         ),
     ):
@@ -113,10 +115,12 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
         },
     }
     with (
-        patch("pilot.core.bench.settings.regenerate_configs"),
-        patch("pilot.core.bench.settings.restart_running_workload", return_value=False),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs", autospec=True),
+        patch("pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True, return_value=False),
         patch(
-            "pilot.core.bench.settings.regenerate_nginx",
+            "pilot.core.bench.settings.BenchSettings.regenerate_nginx",
+            autospec=True,
             side_effect=RuntimeError("secret nginx detail"),
         ),
     ):
@@ -134,8 +138,9 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
 def test_settings_success_has_no_legacy_error_fields(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     with (
-        patch("pilot.core.bench.settings.regenerate_configs"),
-        patch("pilot.core.bench.settings.restart_running_workload", return_value=True),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs", autospec=True),
+        patch("pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True, return_value=True),
     ):
         response = client.patch("/api/v1/settings", json=_worker_update())
 
@@ -151,12 +156,15 @@ def test_a_port_change_on_production_rewrites_nginx_after_the_restart(tmp_path: 
     client = _client(tmp_path / "bench", enable_production)
     calls: list[str] = []
     with (
-        patch("pilot.core.bench.settings.regenerate_configs", side_effect=lambda bench: calls.append("units")),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs",
+            autospec=True, side_effect=lambda settings: calls.append("units")),
         patch(
-            "pilot.core.bench.settings.restart_running_workload",
-            side_effect=lambda bench: calls.append("restart") or True,
+            "pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True,
+            side_effect=lambda settings: calls.append("restart") or True,
         ),
-        patch("pilot.core.bench.settings.regenerate_nginx", side_effect=lambda bench: calls.append("nginx")),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_nginx",
+            autospec=True, side_effect=lambda settings: calls.append("nginx")),
     ):
         response = client.patch("/api/v1/settings", json={"bench": {"http_port": 8123}})
 
@@ -171,9 +179,10 @@ def test_a_failed_restart_on_production_still_rewrites_nginx(tmp_path: Path) -> 
 
     client = _client(tmp_path / "bench", enable_production)
     with (
-        patch("pilot.core.bench.settings.regenerate_configs"),
-        patch("pilot.core.bench.settings.restart_running_workload", side_effect=TimeoutError()),
-        patch("pilot.core.bench.settings.regenerate_nginx") as regenerate_nginx,
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs", autospec=True),
+        patch("pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True, side_effect=TimeoutError()),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_nginx", autospec=True) as regenerate_nginx,
     ):
         response = client.patch("/api/v1/settings", json={"bench": {"http_port": 8123}})
 
@@ -186,8 +195,9 @@ def test_settings_save_a_worker_timeout(tmp_path: Path, timeout, saved) -> None:
     bench_root = tmp_path / "bench"
     client = _client(bench_root)
     with (
-        patch("pilot.core.bench.settings.regenerate_configs"),
-        patch("pilot.core.bench.settings.restart_running_workload", return_value=True),
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs", autospec=True),
+        patch("pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True, return_value=True),
     ):
         response = client.patch(
             "/api/v1/settings",
