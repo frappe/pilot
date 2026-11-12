@@ -14,7 +14,6 @@ from pilot.core.bench import Bench
 
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
-_WINDOWS_EXTENSION = "rate_limit_windows"
 _WINDOWS_LOCK = threading.Lock()
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -265,5 +264,5 @@ def _get_window(view, attempts: int, seconds: int) -> SlidingWindow:
     """One SlidingWindow per (Flask app, decorated view), created on first use."""
     app = current_app._get_current_object()  # type: ignore[attr-defined]  # unwrap Flask's LocalProxy
     with _WINDOWS_LOCK:
-        windows = app.extensions.setdefault(_WINDOWS_EXTENSION, {})
+        windows = app.extensions.setdefault("rate_limit_windows", {})
         return windows.setdefault(view, SlidingWindow(attempts, seconds))

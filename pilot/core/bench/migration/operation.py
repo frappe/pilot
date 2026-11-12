@@ -38,9 +38,6 @@ _CHAIN_TASKS = {
     "restart-services": "pilot.tasks.restart_services.RestartServicesTask",
     "complete-migration": "pilot.tasks.complete_migration.CompleteMigrationTask",
 }
-_CHAIN_PHASES = ("backing_up", "updating", "migrating")
-_REVERT_PHASES = ("reverting_apps", "reverting_sites", "restarting")
-_JOBS_WAIT_SECONDS = 300
 
 
 def _load_task(command: str):
@@ -92,6 +89,8 @@ class SiteProgress:
 @dataclass
 class MigrationOperation(MigrationRecovery):
     """Durable owner of an update/site-migrate workflow, advanced one task at a time via `enqueue_next`."""
+
+    jobs_wait_seconds = 300
 
     id: str
     kind: str  # update | site_migrate
@@ -294,14 +293,14 @@ class MigrationOperation(MigrationRecovery):
         if not names or not ProcessManager.for_bench(self.bench).is_running():
             return
         self._restart_web_in_maintenance(on_progress)
-        deadline = time.monotonic() + _JOBS_WAIT_SECONDS
+        deadline = time.monotonic() + self.jobs_wait_seconds
         for name in names:
             on_progress(f"Waiting for the background jobs of {name}...")
             try:
                 while self.bench.site(name).has_pending_background_jobs:
                     if time.monotonic() >= deadline:
                         raise BenchError(
-                            f"{name} still has background jobs after {_JOBS_WAIT_SECONDS} seconds."
+                            f"{name} still has background jobs after {self.jobs_wait_seconds} seconds."
                         )
                     time.sleep(2)
             except BenchError as error:
@@ -323,12 +322,12 @@ class MigrationOperation(MigrationRecovery):
         if self.state == "retrying":
             self._enter_needs_attention(self.return_state or "migrating", self.failed_site)
             return
-        if self.state in _REVERT_PHASES:
+        if self.state in ("reverting_apps", "reverting_sites", "restarting"):
             self._fail_revert(
                 BenchError(f"The recovery task stopped{detail}. Restore again to resume from its checkpoint.")
             )
             return
-        if self.state not in _CHAIN_PHASES:
+        if self.state not in ("backing_up", "updating", "migrating"):
             return
         self._fail_stopped_forward_step(phase, site_name, detail)
 

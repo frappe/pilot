@@ -10,7 +10,6 @@ from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
 _DB_ENGINES = ("mariadb", "postgres")
-_DB_FIELDS = ("admin_user", "existing", "host", "password", "port")
 
 SETTABLE_KEYS = frozenset(
     {
@@ -18,7 +17,7 @@ SETTABLE_KEYS = frozenset(
         "app_repo",
         "db_mode",
         "db_type",
-        *(f"{engine}_{field}" for engine in _DB_ENGINES for field in _DB_FIELDS),
+        *(f"{engine}_{field}" for engine in _DB_ENGINES for field in ("admin_user", "existing", "host", "password", "port")),
     }
 )
 

@@ -26,9 +26,6 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 # client does. A path in the configured endpoint is not honoured, so the two cannot drift.
 LOGS_PATH = "/v1/logs/ingest"
 
-_CONF_TEMPLATE = Template.from_path(TEMPLATES_DIR / "fluent-bit.conf.template")
-_PARSERS_CONF = (TEMPLATES_DIR / "parsers.conf").read_text()
-_PILOT_LUA = (TEMPLATES_DIR / "pilot.lua").read_text()
 
 # A long-running user service: Fluent Bit tails every bench under the CLI root
 # as the bench user. The token lives in an EnvironmentFile written separately
@@ -61,6 +58,10 @@ class LogsConfigurator(SystemdUserMixin):
     normalizer next to it, and enables a user service. Installing the binary
     (if missing) mirrors how the WAF installs the ModSecurity nginx module.
     """
+
+    conf_template = Template.from_path(TEMPLATES_DIR / "fluent-bit.conf.template")
+    parsers_conf = (TEMPLATES_DIR / "parsers.conf").read_text()
+    pilot_lua = (TEMPLATES_DIR / "pilot.lua").read_text()
 
     unit_name = "pilot-fluent-bit.service"
 
@@ -136,7 +137,7 @@ class LogsConfigurator(SystemdUserMixin):
         """The fluent-bit config files by name."""
         from pilot.core.server import Server
 
-        conf = _CONF_TEMPLATE.render(
+        conf = self.conf_template.render(
             cli_root=Server().root,
             conf_dir=self.conf_dir,
             host=self._host(config.endpoint),
@@ -146,8 +147,8 @@ class LogsConfigurator(SystemdUserMixin):
         )
         return {
             "fluent-bit.conf": conf,
-            "parsers.conf": _PARSERS_CONF,
-            "pilot.lua": _PILOT_LUA,
+            "parsers.conf": self.parsers_conf,
+            "pilot.lua": self.pilot_lua,
             "token.env": f"DATUM_LOG_TOKEN={config.token}",
             self.unit_name: self._render_unit(),
         }

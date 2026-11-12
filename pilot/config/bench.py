@@ -42,10 +42,6 @@ from pilot.internal.atomic_file import (
 )
 from pilot.internal.toml import ConfigDict, Toml
 
-_BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
-# Every host-wide user unit is named "pilot-<what>.service". A bench owns
-# "<name>-*", so a bench named pilot could not be told apart from them.
-_RESERVED_BENCH_NAMES = frozenset({"pilot"})
 _PORT_MIN = 1
 _PORT_MAX = 65535
 
@@ -88,27 +84,113 @@ FLAT_KEYS = {
 FRAMEWORK_BRANCHES = ["version-16", "develop"]
 ONBOARDING_STATES = ("", "minimized", "dismissed")
 
-_DEFAULT_DATA: dict = {
-    "bench": {"name": "", "python": "3.14"},
-    "apps": [
-        {
-            "name": "frappe",
-            "repo": "https://github.com/frappe/frappe",
-            "branch": FRAMEWORK_BRANCHES[0],
-        }
-    ],
-}
 
-# Wizard suggestion for a brand-new host with no common_config.toml yet.
-_DEFAULT_COMMON_CONFIG = CommonConfig(mariadb=MariaDBConfig(root_password="root"))
+@dataclass(frozen=True)
+class _Section:
+    """Describe one nested bench.toml table and its read/write handlers."""
 
-# Offset-managed ports stay out of wizard/settings input.
-_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port")
+    attr: str
+    read: Callable[[dict], Any]
+    write: Callable[[BenchConfig], Any | None]
 
 
 @dataclass
 class BenchConfig:
     """A bench's configuration, validation, persistence, and wizard view."""
+
+    bench_name_pattern = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+    # Every host-wide user unit is named "pilot-<what>.service". A bench owns
+    # "<name>-*", so a bench named pilot could not be told apart from them.
+    reserved_bench_names = frozenset({"pilot"})
+    default_data: ClassVar[dict] = {
+        "bench": {"name": "", "python": "3.14"},
+        "apps": [
+            {
+                "name": "frappe",
+                "repo": "https://github.com/frappe/frappe",
+                "branch": FRAMEWORK_BRANCHES[0],
+            }
+        ],
+    }
+    # Wizard suggestion for a brand-new host with no common_config.toml yet.
+    default_common_config = CommonConfig(mariadb=MariaDBConfig(root_password="root"))
+    # Offset-managed ports stay out of wizard/settings input.
+    port_fields = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port")
+    sections: ClassVar[tuple[_Section, ...]] = (
+        _Section(
+            "redis",
+            lambda data: RedisConfig.from_dict(data.get("redis", {})),
+            lambda config: config._redis_section(),
+        ),
+        _Section(
+            "workers",
+            lambda data: WorkerConfig.from_dict(data.get("workers", [])),
+            lambda config: config._workers_section(),
+        ),
+        _Section(
+            "production",
+            lambda data: ProductionConfig.from_dict(data.get("production")),
+            lambda config: config._production_section(),
+        ),
+        _Section(
+            "lite_mode",
+            lambda data: LiteModeConfig.from_dict(data.get("lite_mode", {})),
+            lambda config: config._lite_mode_section() if config.lite_mode.enabled else None,
+        ),
+        _Section(
+            "gunicorn",
+            lambda data: GunicornConfig.from_dict(data.get("gunicorn", {})),
+            lambda config: config._gunicorn_section(),
+        ),
+        _Section(
+            "build",
+            lambda data: BuildConfig.from_dict(data.get("build", {})),
+            lambda config: config._build_section() if config.build.memory_limit_mb else None,
+        ),
+        _Section(
+            "processes",
+            lambda data: ProcessesConfig.from_dict(data.get("processes", {})),
+            lambda config: {"disabled": config.processes.disabled} if config.processes.disabled else None,
+        ),
+        _Section(
+            "admin",
+            lambda data: AdminConfig.from_dict(data.get("admin", {})),
+            lambda config: config._admin_section(),
+        ),
+        _Section(
+            "firewall",
+            lambda data: FirewallConfig.from_dict(data.get("firewall")),
+            lambda config: (
+                config._firewall_section() if (config.firewall.enabled or config.firewall.rules) else None
+            ),
+        ),
+        _Section(
+            "waf",
+            lambda data: WafConfig.from_dict(data.get("waf")),
+            lambda config: config._waf_section() if config.waf != WafConfig() else None,
+        ),
+        _Section(
+            "s3",
+            lambda data: S3Config(**BenchConfig._known_fields(S3Config, data.get("s3", {}))),
+            lambda config: (
+                config._s3_section()
+                if (
+                    config.s3.access_key
+                    or config.s3.secret_key
+                    or config.s3.bucket
+                    or config.s3.provider
+                    or config.s3.region
+                    or config.s3.endpoint_url
+                )
+                else None
+            ),
+        ),
+        _Section(
+            "llm",
+            lambda data: LLMConfig(**BenchConfig._known_fields(LLMConfig, data.get("llm", {}))),
+            lambda config: config._llm_section() if (config.llm.api_key or config.llm.provider) else None,
+        ),
+    )
 
     FILENAME: ClassVar[str] = "bench.toml"
 
@@ -169,8 +251,8 @@ class BenchConfig:
     @classmethod
     def default(cls, name: str = "", benches_root: Path | None = None) -> "BenchConfig":
         """Build a fresh config from the setup wizard's baseline values."""
-        common = CommonConfig.read(benches_root) if benches_root else copy.deepcopy(_DEFAULT_COMMON_CONFIG)
-        data = copy.deepcopy(_DEFAULT_DATA)
+        common = CommonConfig.read(benches_root) if benches_root else copy.deepcopy(cls.default_common_config)
+        data = copy.deepcopy(cls.default_data)
         data["bench"]["name"] = name
         return cls._from_dict(data, common=common)
 
@@ -193,7 +275,7 @@ class BenchConfig:
         if name:
             config.name = name
         if port_offset:
-            for path in _PORT_FIELDS:
+            for path in cls.port_fields:
                 _set_path(config, path, _get_path(config, path) + port_offset)
         return config
 
@@ -220,7 +302,7 @@ class BenchConfig:
             )
             for a in data.get("apps", [])
         ]
-        sections = {section.attr: section.read(data) for section in _SECTIONS}
+        sections = {section.attr: section.read(data) for section in cls.sections}
         config = cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -321,11 +403,11 @@ class BenchConfig:
 
     def _validate_bench_name(self) -> None:
         """Raise when the bench name is invalid."""
-        if not _BENCH_NAME_PATTERN.match(self.name):
+        if not self.bench_name_pattern.match(self.name):
             raise ConfigError(
                 f"bench.name '{self.name}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
             )
-        if self.name in _RESERVED_BENCH_NAMES:
+        if self.name in self.reserved_bench_names:
             raise ConfigError(
                 f"bench.name '{self.name}' is reserved: this host's own services are named "
                 f"'{self.name}-<service>', so a bench of this name could not be told apart "
@@ -577,7 +659,7 @@ class BenchConfig:
     def _to_toml_dict(self) -> ConfigDict:
         """The config as TOML tables."""
         data: ConfigDict = {"bench": self._bench_section(), "apps": self._apps_section()}
-        for section in _SECTIONS:
+        for section in self.sections:
             value = section.write(self)
             if value is not None:
                 data[section.attr] = value
@@ -802,7 +884,7 @@ class BenchConfig:
     def default_ports(cls) -> dict[str, int]:
         """Default value for every port field, keyed by its dotted attribute path."""
         config = cls.default()
-        return {path: _get_path(config, path) for path in _PORT_FIELDS}
+        return {path: _get_path(config, path) for path in cls.port_fields}
 
     @classmethod
     def current_port_offset(cls, toml_path: Path) -> int:
@@ -824,98 +906,12 @@ class BenchConfig:
     @staticmethod
     def unknown_config_paths(data: Mapping) -> list[str]:
         """Return dotted paths for keys outside the declared schema."""
-        return _SCHEMA_ROOT.get_unknown_paths(data)
+        return _bench_schema().get_unknown_paths(data)
 
     @staticmethod
     def _preserve_unknown_config(original: Mapping, replacement: Mapping) -> dict:
         """Keep fields outside the managed schema when replacing known config."""
-        return _preserve_unknown(original, replacement, _SCHEMA_ROOT)
-
-
-@dataclass(frozen=True)
-class _Section:
-    """Describe one nested bench.toml table and its read/write handlers."""
-
-    attr: str
-    read: Callable[[dict], Any]
-    write: Callable[[BenchConfig], Any | None]
-
-
-_SECTIONS: tuple[_Section, ...] = (
-    _Section(
-        "redis",
-        lambda data: RedisConfig.from_dict(data.get("redis", {})),
-        lambda config: config._redis_section(),
-    ),
-    _Section(
-        "workers",
-        lambda data: WorkerConfig.from_dict(data.get("workers", [])),
-        lambda config: config._workers_section(),
-    ),
-    _Section(
-        "production",
-        lambda data: ProductionConfig.from_dict(data.get("production")),
-        lambda config: config._production_section(),
-    ),
-    _Section(
-        "lite_mode",
-        lambda data: LiteModeConfig.from_dict(data.get("lite_mode", {})),
-        lambda config: config._lite_mode_section() if config.lite_mode.enabled else None,
-    ),
-    _Section(
-        "gunicorn",
-        lambda data: GunicornConfig.from_dict(data.get("gunicorn", {})),
-        lambda config: config._gunicorn_section(),
-    ),
-    _Section(
-        "build",
-        lambda data: BuildConfig.from_dict(data.get("build", {})),
-        lambda config: config._build_section() if config.build.memory_limit_mb else None,
-    ),
-    _Section(
-        "processes",
-        lambda data: ProcessesConfig.from_dict(data.get("processes", {})),
-        lambda config: {"disabled": config.processes.disabled} if config.processes.disabled else None,
-    ),
-    _Section(
-        "admin",
-        lambda data: AdminConfig.from_dict(data.get("admin", {})),
-        lambda config: config._admin_section(),
-    ),
-    _Section(
-        "firewall",
-        lambda data: FirewallConfig.from_dict(data.get("firewall")),
-        lambda config: (
-            config._firewall_section() if (config.firewall.enabled or config.firewall.rules) else None
-        ),
-    ),
-    _Section(
-        "waf",
-        lambda data: WafConfig.from_dict(data.get("waf")),
-        lambda config: config._waf_section() if config.waf != WafConfig() else None,
-    ),
-    _Section(
-        "s3",
-        lambda data: S3Config(**BenchConfig._known_fields(S3Config, data.get("s3", {}))),
-        lambda config: (
-            config._s3_section()
-            if (
-                config.s3.access_key
-                or config.s3.secret_key
-                or config.s3.bucket
-                or config.s3.provider
-                or config.s3.region
-                or config.s3.endpoint_url
-            )
-            else None
-        ),
-    ),
-    _Section(
-        "llm",
-        lambda data: LLMConfig(**BenchConfig._known_fields(LLMConfig, data.get("llm", {}))),
-        lambda config: config._llm_section() if (config.llm.api_key or config.llm.provider) else None,
-    ),
-)
+        return _preserve_unknown(original, replacement, _bench_schema())
 
 
 def _get_path(config: BenchConfig, path: str):
@@ -1032,9 +1028,6 @@ def _bench_schema() -> TomlSchema:
             "workers": TomlSchema(keys=field_names(WorkerGroup) | _WORKER_LEGACY),
         },
     )
-
-
-_SCHEMA_ROOT = _bench_schema()
 
 
 def _preserve_unknown(original: Mapping, replacement: Mapping, table: TomlSchema) -> dict:

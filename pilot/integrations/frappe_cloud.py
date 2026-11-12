@@ -13,8 +13,6 @@ from pilot.exceptions import FrappeCloudError
 
 _REQUEST_TIMEOUT_SECONDS = 30
 _DOWNLOAD_READ_TIMEOUT_SECONDS = 300
-_API = "/api/method/press.api.v1_migration"
-_TOKEN_HEADER = "X-Press-Migration-Token"
 # Cloudflare's Browser Integrity Check blocks urllib's default User-Agent with HTTP 403.
 _HEADERS = {"User-Agent": "pilot"}
 
@@ -62,9 +60,11 @@ class FrappeCloud:
         """GET without `data`, POST with it. Frappe's error message is raised as is."""
         query = f"?{urllib.parse.urlencode(params)}" if params else ""
         body = urllib.parse.urlencode(data).encode() if data is not None else None
-        request = urllib.request.Request(f"{self.url}{_API}.{method}{query}", data=body, headers=_HEADERS)
+        request = urllib.request.Request(
+            f"{self.url}/api/method/press.api.v1_migration.{method}{query}", data=body, headers=_HEADERS
+        )
         if self.token:
-            request.add_header(_TOKEN_HEADER, self.token)
+            request.add_header("X-Press-Migration-Token", self.token)
         try:
             with urllib.request.urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
                 return json.loads(response.read() or b"{}").get("message")

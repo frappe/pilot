@@ -24,14 +24,11 @@ from pilot.internal.tasks.process_identity import (
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.platform import Privileges
 
-_READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
 # Lets a running task hand its resources to the task it queues next.
 TASK_ID_ENV = "BENCH_TASK_ID"
 WRAPPER_MODULE = "pilot.internal.tasks.wrapper"
 CANCEL_GRACE_SECONDS = 3.0
-_PROCESS_EXIT_POLL_SECONDS = 0.05
-_UNKNOWN_GRACE_SECONDS = 60.0
 
 
 class TaskProcessStartError(BenchError):
@@ -145,7 +142,7 @@ class TaskProcess:
         """UNKNOWN for a short grace period after it is first seen, then DEAD."""
         # ponytail: in-memory clock, a worker restart extends the wait
         first_seen = self._unknown_since.setdefault(task_id, time.monotonic())
-        if time.monotonic() - first_seen < _UNKNOWN_GRACE_SECONDS:
+        if time.monotonic() - first_seen < 60.0:
             return ProcessOwnership.UNKNOWN
         self._unknown_since.pop(task_id, None)
         return ProcessOwnership.DEAD
@@ -219,7 +216,7 @@ class TaskProcess:
         """The environment for the task wrapper, with its launch id and ready pipe."""
         environment = {
             **os.environ,
-            _READY_FD_ENV: str(read_fd),
+            "BENCH_TASK_READY_FD": str(read_fd),
             _LAUNCH_ID_ENV: launch_id,
             TASK_ID_ENV: task_dir.name,
             Privileges.environment_key: "1",
@@ -330,7 +327,7 @@ class TaskProcess:
                     cleared = True
                 if not self._inspector.owned_pids(record.identity):
                     return True
-            time.sleep(_PROCESS_EXIT_POLL_SECONDS)
+            time.sleep(0.05)
         return False
 
     def _run_stored_callback(self, task_id: str, trigger: str) -> None:

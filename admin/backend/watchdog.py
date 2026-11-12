@@ -11,8 +11,6 @@ from flask import Flask
 
 from pilot.managers.task import TaskActivityReader
 
-_WATCHDOG_MAX_POLL_SECONDS = 30.0  # longest single sleep between activity checks
-
 
 @dataclass(frozen=True)
 class AdminProcessOwner:
@@ -94,7 +92,7 @@ class AdminIdleWatchdog:
 
     def _watch(self) -> None:
         """Check for idleness until the Admin stops."""
-        poll_seconds = min(self._timeout, _WATCHDOG_MAX_POLL_SECONDS)
+        poll_seconds = min(self._timeout, 30.0)
         while True:
             time.sleep(poll_seconds)
             if self.check_once():

@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-_REDACTED = "[redacted]"
 _PRIVATE_ARGS = {
     "new-site-from-backup": frozenset({"db_file", "public_files", "private_files"}),
 }
@@ -90,7 +89,7 @@ def reject_url_credentials(value) -> None:
 def _redact_value(key: str, value):
     """One value with secrets and URL credentials removed."""
     if is_sensitive_key(key):
-        return _REDACTED
+        return "[redacted]"
     if isinstance(value, dict):
         return redact_task_args(value)
     if isinstance(value, list):

@@ -115,7 +115,6 @@ _TARGETS = (
         "database.ts",
     ),
 )
-_OUTPUT_DIR = "admin/frontend/dashboard/src/types"
 _PRIMITIVES = {str: "string", int: "number", float: "number", bool: "boolean", type(None): "null"}
 _UNKNOWN = {Any, object, dict, list}
 
@@ -255,7 +254,7 @@ def render_all(targets) -> dict[str, str]:
 
 def main() -> None:
     """Write the TypeScript type files."""
-    output_dir = Path(__file__).resolve().parent.parent / _OUTPUT_DIR
+    output_dir = Path(__file__).resolve().parent.parent / "admin/frontend/dashboard/src/types"
     output_dir.mkdir(parents=True, exist_ok=True)
     for file_name, source in render_all(_TARGETS).items():
         path = output_dir / file_name

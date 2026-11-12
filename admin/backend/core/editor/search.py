@@ -4,7 +4,6 @@ import json
 import re
 import subprocess
 
-_MATCH_CAP = 2000
 _SED_DELIM = "\x01"
 _TIMEOUT = 30
 
@@ -21,7 +20,7 @@ def search(root, query: str, regex: bool, word: bool, case: bool) -> list[dict]:
     by_file: dict[str, int] = {}
     total = 0
     for raw in _run_ripgrep(root, query, regex, word, case).split("\n"):
-        if total >= _MATCH_CAP or not raw:
+        if total >= 2000 or not raw:
             break
         if _consume_match(raw, results, by_file):
             total += 1

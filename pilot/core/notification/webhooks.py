@@ -17,7 +17,6 @@ if typing.TYPE_CHECKING:
 
 PING_EVENT = "ping"
 WEBHOOK_TIMEOUT_SECONDS = 10
-_RESPONSE_EXCERPT_BYTES = 2000
 
 
 @dataclass(frozen=True)
@@ -85,4 +84,4 @@ def ping_webhook(bench: "Bench", endpoint: "WebhookEndpoint") -> WebhookDelivery
 
 def _excerpt(response) -> str:
     """The start of the response body."""
-    return response.read(_RESPONSE_EXCERPT_BYTES).decode(errors="replace")
+    return response.read(2000).decode(errors="replace")

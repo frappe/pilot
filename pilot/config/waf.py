@@ -22,19 +22,7 @@ WAF_RULE_ACTIONS = ("block", "log", "skip")
 WAF_RULE_MATCH = ("all", "any")
 
 _SIZE_UNITS = {"k": 1024, "m": 1024**2, "g": 1024**3}
-_WAF_EXEMPT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
-# A custom-rule condition value is interpolated into a quoted SecLang operator
-# argument. Regex metacharacters are allowed (the "matches" operator), but a
-# double quote, newline, or NUL would break out of the string and inject
-# directives, so those are forbidden. Header names must be plain HTTP tokens.
-_WAF_RULE_VALUE_FORBIDDEN = re.compile(r'["\n\r\x00]')
-# The rule name is wrapped in a single-quoted SecLang msg inside a double-quoted
-# action list, so it must contain neither quote style nor a newline.
-_WAF_RULE_NAME_FORBIDDEN = re.compile("[\"'\n\r\x00]")
 _WAF_HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
-_WAF_MAX_RULES = 100
-_WAF_MAX_CONDITIONS = 10
-_WAF_MAX_VALUE_LEN = 1024
 
 
 def parse_nginx_size(value: str) -> int:
@@ -71,6 +59,19 @@ class WafRule:
 @dataclass
 class WafConfig:
     """ModSecurity/OWASP CRS settings applied to every nginx vhost."""
+
+    waf_exempt_path_pattern = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
+    # A custom-rule condition value is interpolated into a quoted SecLang operator
+    # argument. Regex metacharacters are allowed (the "matches" operator), but a
+    # double quote, newline, or NUL would break out of the string and inject
+    # directives, so those are forbidden. Header names must be plain HTTP tokens.
+    waf_rule_value_forbidden = re.compile(r'["\n\r\x00]')
+    # The rule name is wrapped in a single-quoted SecLang msg inside a double-quoted
+    # action list, so it must contain neither quote style nor a newline.
+    waf_rule_name_forbidden = re.compile("[\"'\n\r\x00]")
+    waf_max_rules = 100
+    waf_max_conditions = 10
+    waf_max_value_len = 1024
 
     enabled: bool = False
     mode: str = "DetectionOnly"  # "DetectionOnly" | "On" | "Off"
@@ -146,7 +147,7 @@ class WafConfig:
                 f"'{nginx_max_body_size}', else large uploads bypass inspection."
             )
         for i, path in enumerate(self.exempt_paths):
-            if len(path) > 255 or not _WAF_EXEMPT_PATH_PATTERN.match(path):
+            if len(path) > 255 or not self.waf_exempt_path_pattern.match(path):
                 raise ConfigError(
                     f"waf.exempt_paths[{i}] '{path}' is invalid. Must be a URL path starting "
                     f"with '/' using only letters, digits, and . _ ~ % / - characters."
@@ -155,8 +156,8 @@ class WafConfig:
 
     def _validate_custom_rules(self) -> None:
         """Raise when the custom rules are invalid."""
-        if len(self.custom_rules) > _WAF_MAX_RULES:
-            raise ConfigError(f"waf.custom_rules has too many rules (max {_WAF_MAX_RULES}).")
+        if len(self.custom_rules) > self.waf_max_rules:
+            raise ConfigError(f"waf.custom_rules has too many rules (max {self.waf_max_rules}).")
         for i, rule in enumerate(self.custom_rules):
             self._validate_custom_rule(f"waf.custom_rules[{i}]", rule)
 
@@ -170,7 +171,7 @@ class WafConfig:
             raise ConfigError(
                 f"{prefix}.match '{rule.match}' is invalid. Must be one of: {', '.join(WAF_RULE_MATCH)}."
             )
-        if _WAF_RULE_NAME_FORBIDDEN.search(rule.name) or len(rule.name) > 128:
+        if self.waf_rule_name_forbidden.search(rule.name) or len(rule.name) > 128:
             raise ConfigError(
                 f"{prefix}.name is invalid. Must be under 128 chars with no quotes or newlines."
             )
@@ -180,8 +181,8 @@ class WafConfig:
         """Raise when a rule's conditions are invalid."""
         if not conditions:
             raise ConfigError(f"{prefix} must have at least one condition.")
-        if len(conditions) > _WAF_MAX_CONDITIONS:
-            raise ConfigError(f"{prefix} has too many conditions (max {_WAF_MAX_CONDITIONS}).")
+        if len(conditions) > self.waf_max_conditions:
+            raise ConfigError(f"{prefix} has too many conditions (max {self.waf_max_conditions}).")
         for j, cond in enumerate(conditions):
             self._validate_condition(f"{prefix}.conditions[{j}]", cond)
 
@@ -198,9 +199,11 @@ class WafConfig:
             )
         if not cond.value:
             raise ConfigError(f"{prefix}.value is required.")
-        if len(cond.value) > _WAF_MAX_VALUE_LEN or _WAF_RULE_VALUE_FORBIDDEN.search(cond.value):
+        if len(cond.value) > WafConfig.waf_max_value_len or WafConfig.waf_rule_value_forbidden.search(
+            cond.value
+        ):
             raise ConfigError(
-                f"{prefix}.value is invalid. Must be under {_WAF_MAX_VALUE_LEN} chars with no double quotes or newlines."
+                f"{prefix}.value is invalid. Must be under {WafConfig.waf_max_value_len} chars with no double quotes or newlines."
             )
         _validate_header_condition(prefix, cond)
         _validate_source_ip_condition(prefix, cond)

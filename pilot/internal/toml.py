@@ -5,23 +5,23 @@ import re
 import tomllib
 from collections.abc import Mapping
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, ClassVar
 
 ConfigDict = dict[str, Any]
 
-_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
-_ESCAPES = {
-    '"': '\\"',
-    "\\": "\\\\",
-    "\b": "\\b",
-    "\t": "\\t",
-    "\n": "\\n",
-    "\f": "\\f",
-    "\r": "\\r",
-}
-
 
 class Toml:
+    bare_key = re.compile(r"^[A-Za-z0-9_-]+$")
+    escapes: ClassVar[dict[str, str]] = {
+        '"': '\\"',
+        "\\": "\\\\",
+        "\b": "\\b",
+        "\t": "\\t",
+        "\n": "\\n",
+        "\f": "\\f",
+        "\r": "\\r",
+    }
+
     def __init__(self) -> None:
         self._lines: list[str] = []
 
@@ -124,7 +124,7 @@ class Toml:
     @classmethod
     def _key(cls, value: str) -> str:
         """A key, quoted when it is not a bare key."""
-        return value if _BARE_KEY.fullmatch(value) else cls._string(value)
+        return value if cls.bare_key.fullmatch(value) else cls._string(value)
 
     @classmethod
     def _string(cls, value: str) -> str:
@@ -134,8 +134,8 @@ class Toml:
     @staticmethod
     def _escaped_character(character: str) -> str:
         """One character escaped for a TOML string."""
-        if character in _ESCAPES:
-            return _ESCAPES[character]
+        if character in Toml.escapes:
+            return Toml.escapes[character]
         codepoint = ord(character)
         if 0xD800 <= codepoint <= 0xDFFF:
             raise ValueError("TOML strings cannot contain Unicode surrogate code points")

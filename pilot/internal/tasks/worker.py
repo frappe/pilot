@@ -13,13 +13,12 @@ from pilot.internal.tasks.queue import TaskQueue
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
-_CONTROL_POLL_SECONDS = 0.2
-_ERROR_BACKOFF_SECONDS = 1.0
-_DATABASE_START_TIMEOUT_SECONDS = 120.0
 _DATABASE_POLL_SECONDS = 1.0
 
 
 class TaskWorker:
+    control_poll_seconds = 0.2
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = Path(bench_root)
         self._queue = TaskQueue(self._bench_root)
@@ -80,7 +79,7 @@ class TaskWorker:
         from pilot.core.bench.runtime import BenchRuntime
         from pilot.exceptions import BenchError
 
-        deadline = time.monotonic() + _DATABASE_START_TIMEOUT_SECONDS
+        deadline = time.monotonic() + 120.0
         try:
             bench = Bench(self._bench_root)
             if not bench.is_initialized:
@@ -102,7 +101,7 @@ class TaskWorker:
                 self._work_once(pid)
             except Exception:
                 logging.exception("Task worker cycle failed")
-                self._wake.wait(_ERROR_BACKOFF_SECONDS)
+                self._wake.wait(1.0)
 
     def _work_once(self, pid: int) -> None:
         """One pass: reconcile processes, then run the next task if nothing blocks."""
@@ -111,18 +110,18 @@ class TaskWorker:
         if blocking_task is not None:
             status = WorkerStatus.DRAINING if self._intent_stopped() else WorkerStatus.RUNNING
             self._write_state(status, pid, blocking_task)
-            self._wake.wait(_CONTROL_POLL_SECONDS)
+            self._wake.wait(self.control_poll_seconds)
             return
         if self._intent_stopped():
             self._write_state(WorkerStatus.STOPPED, pid)
-            self._wake.wait(_CONTROL_POLL_SECONDS)
+            self._wake.wait(self.control_poll_seconds)
             return
         if self._run_next(pid):
             return
         if self._drain.is_set() or self._intent_stopped():
             return
         self._write_state(WorkerStatus.IDLE, pid)
-        self._wake.wait(_CONTROL_POLL_SECONDS)
+        self._wake.wait(self.control_poll_seconds)
 
     def _run_next(self, pid: int) -> bool:
         """Claim and run the next queued task; False when none is queued."""

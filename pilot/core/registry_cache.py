@@ -19,15 +19,11 @@ from pilot.managers.cron import CronManager, cron_module_command
 
 REGISTRY_URL = "https://github.com/frappe/marketplace"
 
-_REFRESH_INTERVAL_SECONDS = 60 * 60
-_LS_REMOTE_TIMEOUT_SECONDS = 15
-_CRON_JOB_KEY = "marketplace-registry-refresh"
-_CRON_SCHEDULE = "0 3 * * *"  # once a day, 03:00
-_APP_NAME = re.compile(r"[a-z][a-z0-9_]*")
-
 
 class RegistryCache:
     """Shallow, read-only clone at <cli_root>/registry-cache."""
+
+    app_name = re.compile(r"[a-z][a-z0-9_]*")
 
     def __init__(self, cli_root: Path) -> None:
         self._cli_root = cli_root
@@ -62,7 +58,7 @@ class RegistryCache:
     def releases(self, app_name: str) -> list[dict]:
         """Releases for one indexed app. Assumes `load` has already run, so it does
         not re-check freshness - that check shells out to git."""
-        if not _APP_NAME.fullmatch(app_name):
+        if not self.app_name.fullmatch(app_name):
             raise RegistryUnavailableError(f"{app_name!r} is not a marketplace app name.")
         payload = self._read_json(self.path / "apps" / f"{app_name}.json")
         releases = payload.get("releases") if isinstance(payload, dict) else None
@@ -76,7 +72,7 @@ class RegistryCache:
         name = entry.get("name") or ""
         pointer = entry.get("releases")
         expected = f"apps/{name}.json"
-        if not _APP_NAME.fullmatch(name) or pointer != expected:
+        if not RegistryCache.app_name.fullmatch(name) or pointer != expected:
             raise RegistryUnavailableError(
                 f"The marketplace entry {name or entry!r} must point 'releases' at "
                 f"{expected!r}, not {pointer!r} - the registry cache is unusable."
@@ -144,7 +140,7 @@ class RegistryCache:
         if not self._last_checked_path.exists():
             return True
         last_checked = self._last_checked_path.stat().st_mtime
-        return time.time() - last_checked >= _REFRESH_INTERVAL_SECONDS
+        return time.time() - last_checked >= 60 * 60
 
     def _refresh(self) -> None:
         """Pull the registry when the remote head moved; keep the clone when offline."""
@@ -166,9 +162,7 @@ class RegistryCache:
     def _remote_head_sha(self) -> str | None:
         """The remote head commit, or None when offline."""
         try:
-            result = run_command(
-                ["git", "ls-remote", REGISTRY_URL, "HEAD"], timeout=_LS_REMOTE_TIMEOUT_SECONDS
-            )
+            result = run_command(["git", "ls-remote", REGISTRY_URL, "HEAD"], timeout=15)
         except (CommandError, subprocess.SubprocessError, OSError):
             return None
         stdout = result.stdout.decode()
@@ -185,7 +179,7 @@ class RegistryCache:
         log_file = self._cli_root / "system" / "registry-cache.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         command = cron_module_command("pilot.core.registry_cache", [self._cli_root], log_file)
-        CronManager(self._cli_root).set_schedule(_CRON_JOB_KEY, _CRON_SCHEDULE, command)
+        CronManager(self._cli_root).set_schedule("marketplace-registry-refresh", "0 3 * * *", command)
 
 
 if __name__ == "__main__":

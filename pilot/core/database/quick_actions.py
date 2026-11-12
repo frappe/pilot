@@ -15,16 +15,16 @@ if TYPE_CHECKING:
 
 
 _MARIADB_ONLY = "This action is available only when the bench uses MariaDB."
-_SQLITE_HAS_NO_SERVER = "SQLite does not have a shared database server."
 _UNREACHABLE = "MariaDB is not reachable with Pilot's admin credentials."
-_EXTERNAL_MARIADB = "Database actions are available only for Pilot-managed MariaDB instances."
-_MEMORY_SHARE_STEP = 0.05
 
 RestartExecutor = Callable[[Callable[[], None]], None]
 
 
 class DatabaseQuickActions:
     """Capability checks and guarded host-level database operations."""
+
+    external_mariadb = "Database actions are available only for Pilot-managed MariaDB instances."
+    memory_share_step = 0.05
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class DatabaseQuickActions:
         if engine_reason:
             return self._unavailable_capabilities(engine_reason)
         if self.config.mariadb.existing:
-            return self._unavailable_capabilities(_EXTERNAL_MARIADB)
+            return self._unavailable_capabilities(self.external_mariadb)
 
         manager = self._manager()
         server_reason = self._managed_server_reason()
@@ -290,8 +290,8 @@ class DatabaseQuickActions:
         low, high = MEMORY_SHARE_RANGE
         steps = []
         # The sizing each share gives, so a client never repeats the formula.
-        for index in range(round((high - low) / _MEMORY_SHARE_STEP) + 1):
-            share = round(low + index * _MEMORY_SHARE_STEP, 2)
+        for index in range(round((high - low) / self.memory_share_step) + 1):
+            share = round(low + index * self.memory_share_step, 2)
             sizing = calculate_mariadb_memory(total_mb, share)
             steps.append(
                 {
@@ -324,7 +324,7 @@ class DatabaseQuickActions:
     def _engine_reason(self) -> str:
         """Why the engine has no quick actions, or an empty string."""
         if self.config.db_type == "sqlite":
-            return _SQLITE_HAS_NO_SERVER
+            return "SQLite does not have a shared database server."
         if self.config.db_type != "mariadb":
             return _MARIADB_ONLY
         return ""

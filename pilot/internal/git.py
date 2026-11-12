@@ -6,7 +6,6 @@ import subprocess
 import time
 from pathlib import Path
 
-_STALE_TEMP_FILE_SECONDS = 24 * 60 * 60
 # ext:: hands git an arbitrary command to run as the transport, so no bench input can
 # ever be allowed to reach it. See gitprotocol-ext(5).
 _BASE_GIT_CONFIG = {"protocol.ext.allow": "never"}
@@ -151,7 +150,7 @@ class GitRepo:
         one-day floor is git's own staleness rule for these files, which keeps
         it clear of a fetch running right now.
         """
-        cutoff = time.time() - _STALE_TEMP_FILE_SECONDS
+        cutoff = time.time() - (24 * 60 * 60)
         for temp_file in self.path.glob(".git/objects/pack/tmp_*"):
             with contextlib.suppress(OSError):
                 if temp_file.stat().st_mtime < cutoff:

@@ -8,10 +8,10 @@ from pilot.internal.template import Template
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_CONFIG_TEMPLATE = Template.from_path(Path(__file__).parent / "templates" / "gunicorn.conf.py.template")
-
 
 class GunicornManager:
+    config_template = Template.from_path(Path(__file__).parent / "templates" / "gunicorn.conf.py.template")
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
@@ -56,7 +56,7 @@ class GunicornManager:
         # gthread is required for threads to actually be used.
         if cfg.threads > 0 and worker_class == "sync":
             worker_class = "gthread"
-        return _CONFIG_TEMPLATE.render(
+        return self.config_template.render(
             bind=self._bind(),
             workers=cfg.workers,
             threads=cfg.threads,

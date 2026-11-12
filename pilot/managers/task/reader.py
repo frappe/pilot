@@ -19,7 +19,6 @@ from pilot.managers.task.models import (
     TaskStatus,
 )
 
-_TASK_POLL_SECONDS = 0.5
 # A write is the only way to see that a client went away, so a quiet stream still writes.
 HEARTBEAT_SECONDS = 15
 # Tasks that write a site's site_config.json before its database is ready, mapped to the
@@ -31,8 +30,6 @@ SITE_PROVISIONING_ARGS = {
     "clone-site": "name",
 }
 _SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
-_STEP_RE = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
-_STEP_FAILED_RE = re.compile(r"^STEP-FAILED ([\w-]+),")
 # A progress bar line, such as Frappe's "Updating DocTypes for erpnext : [=====     ] 45%".
 _PERCENT_RE = re.compile(r"\s*:?\s*(?:\[[^\]]*\]\s*)?(\d{1,3})%\s*$")
 
@@ -134,6 +131,9 @@ def _split_percent(line: str) -> tuple[str, int | None]:
 
 
 class TaskReader:
+    step_re = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
+    step_failed_re = re.compile(r"^STEP-FAILED ([\w-]+),")
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
         self._files = TaskFiles(self._bench_root / "tasks")
@@ -193,7 +193,7 @@ class TaskReader:
         steps: list[TaskStep] = []
         last_line = step_line = ""
         for line in self.read_output(task.task_id):
-            if match := _STEP_RE.match(line):
+            if match := self.step_re.match(line):
                 if steps and steps[-1]["status"] == "running":
                     steps[-1]["status"] = "done"
                 step_line = ""
@@ -202,7 +202,7 @@ class TaskReader:
                     steps.append(
                         {"key": key, "label": label, "status": "running", "started_at": float(started_at)}
                     )
-            elif match := _STEP_FAILED_RE.match(line):
+            elif match := self.step_failed_re.match(line):
                 steps = [{**step, "status": "failed"} if step["key"] == match[1] else step for step in steps]
             elif line.strip():
                 last_line = step_line = line.strip()
@@ -271,7 +271,7 @@ class TaskReader:
                     yield None
                     last_write = time.monotonic()
 
-                time.sleep(_TASK_POLL_SECONDS)
+                time.sleep(0.5)
 
     def _stream_chunk(self, chunk: str, cur: str) -> Generator[TaskStreamEvent, None, str]:
         """Yield an event for each finished line; return the unfinished line."""

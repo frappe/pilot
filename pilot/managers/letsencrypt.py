@@ -20,12 +20,8 @@ if TYPE_CHECKING:
     from pilot.core.bench.certificates import CertificateFile
     from pilot.core.site import Site
 
-_CERT_EXPIRY_THRESHOLD_DAYS = 30
 # certbot renews from 30 days left, so a certificate this close to expiry is failing to renew.
 # certbot exits at once while another run (e.g. the renewal timer) holds its lock.
-_CERTBOT_LOCKED = "Another instance of Certbot is already running"
-_CERTBOT_LOCK_ATTEMPTS = 6
-_CERTBOT_LOCK_WAIT_SECONDS = 10
 _RENEWAL_TIMER = """\
 [Unit]
 Description=certificate renewal timer
@@ -189,6 +185,9 @@ def is_letsencrypt_required(bench: "Bench") -> bool:
 
 
 class LetsEncryptManager:
+    certbot_lock_attempts = 6
+    certbot_lock_wait_seconds = 10
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
@@ -379,18 +378,18 @@ class LetsEncryptManager:
     def run_certbot(self, argv: list[str]) -> None:
         """Run certbot with sudo, waiting while another certbot run holds its lock. Its output
         goes to the task log, and a failure keeps certbot's reason."""
-        for attempt in range(1, _CERTBOT_LOCK_ATTEMPTS + 1):
+        for attempt in range(1, self.certbot_lock_attempts + 1):
             result = run_command(Privileges.get_command(argv), tee_output=True)
             if result.returncode == 0:
                 return
-            if _CERTBOT_LOCKED not in result.stdout:
+            if "Another instance of Certbot is already running" not in result.stdout:
                 raise CommandError(get_certbot_failure(result.stdout), returncode=result.returncode)
-            if attempt == _CERTBOT_LOCK_ATTEMPTS:
+            if attempt == self.certbot_lock_attempts:
                 raise CommandError(
                     "Another certbot run is in progress. Try again in a minute.", returncode=result.returncode
                 )
-            print(f"Another certbot run is in progress. Retrying in {_CERTBOT_LOCK_WAIT_SECONDS} seconds...")
-            time.sleep(_CERTBOT_LOCK_WAIT_SECONDS)
+            print(f"Another certbot run is in progress. Retrying in {self.certbot_lock_wait_seconds} seconds...")
+            time.sleep(self.certbot_lock_wait_seconds)
 
     def renew(self) -> None:
         """Refresh this bench's current origin certificates without renewing retired routes."""
@@ -418,7 +417,7 @@ class LetsEncryptManager:
     def _is_near_expiry_cert(self, cert_file: Path) -> bool:
         """Whether the certificate is missing or near expiry."""
         days_left = certificate_days_left(cert_file)
-        return days_left is None or days_left < _CERT_EXPIRY_THRESHOLD_DAYS
+        return days_left is None or days_left < 30
 
     def get_certificate_files(self) -> list["CertificateFile"]:
         """The certificates this bench's current local TLS routes use, whether or not the file exists yet."""

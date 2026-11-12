@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 
 _MARIADB_ONLY = "Database configurations are available only when the bench uses MariaDB."
 _UNREACHABLE = "MariaDB is not reachable with Pilot's admin credentials."
-_EXTERNAL_READ_ONLY = (
-    "External MariaDB configurations are read-only. Pilot changes only the MariaDB instance it "
-    "provisioned on this server."
-)
 _MEBIBYTE = 1024 * 1024
 
 
@@ -59,6 +55,11 @@ class GuardedEditor(TypedDict):
 
 class DatabaseConfigurations:
     """Read the MariaDB catalog and authorize its small editable subset."""
+
+    external_read_only = (
+        "External MariaDB configurations are read-only. Pilot changes only the MariaDB instance it "
+    )
+    "provisioned on this server."
 
     def __init__(
         self,
@@ -378,7 +379,7 @@ class DatabaseConfigurations:
         if self.config.db_type != "mariadb":
             return _MARIADB_ONLY
         if self.config.mariadb.existing:
-            return _EXTERNAL_READ_ONLY
+            return self.external_read_only
         if not HostPlatform().is_linux:
             return "MariaDB configuration changes are available only on Linux."
         if require_reachable:

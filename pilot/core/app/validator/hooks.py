@@ -10,28 +10,6 @@ from pilot.exceptions import AppValidationError
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
-_DICT_HOOKS = frozenset(
-    [
-        "additional_timeline_content",
-        "base_template_map",
-        "doc_events",
-        "doctype_js",
-        "extend_doctype_class",
-        "extend_website_page_controller_context",
-        "has_permission",
-        "jinja",
-        "override_doctype_class",
-        "override_whitelisted_methods",
-        "page_js",
-        "permission_query_conditions",
-        "role_home_page",
-        "scheduler_events",
-        "standard_queries",
-        "webform_include_css",
-        "webform_include_js",
-        "website_context",
-    ]
-)
 
 _PATH_HOOKS = frozenset(
     [
@@ -78,51 +56,6 @@ _PATH_HOOKS = frozenset(
     ]
 )
 
-_HOOKS_AST_SCRIPT = """
-import ast, json, sys
-
-req = json.load(sys.stdin)
-path = req["path"]
-try:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        tree = ast.parse(f.read(), filename=path)
-except SyntaxError as exc:
-    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
-    sys.exit(0)
-except (OSError, UnicodeDecodeError):
-    print(json.dumps({"dict_errors": [], "path_hooks": []}))
-    sys.exit(0)
-
-dict_hooks = set(req.get("dict_hooks", []))
-path_hooks = set(req.get("path_hooks", []))
-
-def string_values(node):
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return [(node.value, node.lineno)]
-    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return [found for el in node.elts for found in string_values(el)]
-    if isinstance(node, ast.Dict):
-        return [found for val in node.values if val for found in string_values(val)]
-    return []
-
-not_a_dict = (ast.List, ast.Tuple, ast.Set, ast.Constant)
-dict_errors = []
-found_paths = []
-
-for node in tree.body:
-    if isinstance(node, ast.Assign):
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                name = target.id
-                val = node.value
-                if name in dict_hooks and isinstance(val, not_a_dict):
-                    dict_errors.append(f"line {val.lineno}: {name} must be a dict")
-                elif name in path_hooks:
-                    for p, lineno in string_values(val):
-                        found_paths.append([name, p, lineno])
-
-print(json.dumps({"dict_errors": dict_errors, "path_hooks": found_paths}))
-"""
 
 _SYMBOLS_AST_SCRIPT = """
 import ast, json, sys
@@ -185,6 +118,74 @@ class HooksCheck:
     SyntaxCheck guarantees hooks.py parses first.
     """
 
+    dict_hooks = frozenset(
+        [
+            "additional_timeline_content",
+            "base_template_map",
+            "doc_events",
+            "doctype_js",
+            "extend_doctype_class",
+            "extend_website_page_controller_context",
+            "has_permission",
+            "jinja",
+            "override_doctype_class",
+            "override_whitelisted_methods",
+            "page_js",
+            "permission_query_conditions",
+            "role_home_page",
+            "scheduler_events",
+            "standard_queries",
+            "webform_include_css",
+            "webform_include_js",
+            "website_context",
+        ]
+    )
+    hooks_ast_script = """
+import ast, json, sys
+
+req = json.load(sys.stdin)
+path = req["path"]
+try:
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        tree = ast.parse(f.read(), filename=path)
+except SyntaxError as exc:
+    print(json.dumps({"syntax_error": f"line {exc.lineno}: {exc.msg}"}))
+    sys.exit(0)
+except (OSError, UnicodeDecodeError):
+    print(json.dumps({"dict_errors": [], "path_hooks": []}))
+    sys.exit(0)
+
+dict_hooks = set(req.get("dict_hooks", []))
+path_hooks = set(req.get("path_hooks", []))
+
+def string_values(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [(node.value, node.lineno)]
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [found for el in node.elts for found in string_values(el)]
+    if isinstance(node, ast.Dict):
+        return [found for val in node.values if val for found in string_values(val)]
+    return []
+
+not_a_dict = (ast.List, ast.Tuple, ast.Set, ast.Constant)
+dict_errors = []
+found_paths = []
+
+for node in tree.body:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                name = target.id
+                val = node.value
+                if name in dict_hooks and isinstance(val, not_a_dict):
+                    dict_errors.append(f"line {val.lineno}: {name} must be a dict")
+                elif name in path_hooks:
+                    for p, lineno in string_values(val):
+                        found_paths.append([name, p, lineno])
+
+print(json.dumps({"dict_errors": dict_errors, "path_hooks": found_paths}))
+"""
+
     def run(self, app: "App") -> None:
         """Raise when hooks.py points at missing modules or attributes."""
         hooks_path = module_path(app) / "hooks.py"
@@ -220,10 +221,10 @@ class HooksCheck:
         bench_python = get_bench_python(app)
         payload = {
             "path": str(hooks_path),
-            "dict_hooks": list(_DICT_HOOKS),
+            "dict_hooks": list(cls.dict_hooks),
             "path_hooks": list(_PATH_HOOKS),
         }
-        data = run_in_bench(bench_python, _HOOKS_AST_SCRIPT, payload)
+        data = run_in_bench(bench_python, cls.hooks_ast_script, payload)
         if "syntax_error" in data:
             raise AppValidationError(
                 f"'{app.config.name}' has syntax errors in {app.module_name}/hooks.py: {data['syntax_error']}"

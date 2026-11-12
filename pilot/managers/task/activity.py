@@ -13,8 +13,6 @@ from pilot.internal.tasks.worker_state import (
 )
 from pilot.managers.task.models import TaskStatus
 
-_ACTIVE_WORKER_STATUSES = frozenset({WorkerStatus.STARTING, WorkerStatus.RUNNING, WorkerStatus.DRAINING})
-
 
 @dataclass(frozen=True)
 class TaskActivity:
@@ -38,6 +36,8 @@ class TaskActivity:
 
 
 class TaskActivityReader:
+    active_worker_statuses = frozenset({WorkerStatus.STARTING, WorkerStatus.RUNNING, WorkerStatus.DRAINING})
+
     def __init__(self, bench_root: Path) -> None:
         self._files = TaskFiles(Path(bench_root) / "tasks")
         self._worker = WorkerStore(bench_root)
@@ -48,7 +48,7 @@ class TaskActivityReader:
         worker_intent, intent_uncertain = self._read_worker_intent()
         queued, running, tasks_uncertain = self._read_task_counts()
         uncertain = state_uncertain or intent_uncertain or tasks_uncertain
-        worker_active = worker_state is not None and worker_state.status in _ACTIVE_WORKER_STATUSES
+        worker_active = worker_state is not None and worker_state.status in self.active_worker_statuses
         # Queued work holds the admin open until the worker claims it.
         pending = queued > 0 and worker_intent != WorkerIntent.STOPPED
         return TaskActivity(

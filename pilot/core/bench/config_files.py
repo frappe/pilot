@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 # One process holds one client cache, so lite mode gives it a ceiling.
-_LITE_CLIENT_CACHE_BYTES = 10 * 1024 * 1024
 
 # Keys Pilot writes from bench.toml or other settings; an edit would be overwritten.
 MANAGED_COMMON_SITE_CONFIG_KEYS = frozenset(
@@ -124,7 +123,7 @@ class BenchConfigFiles:
                 }
             )
             if self.bench.is_lite_mode:
-                config["client_cache_max_bytes"] = _LITE_CLIENT_CACHE_BYTES
+                config["client_cache_max_bytes"] = 10 * 1024 * 1024
             else:
                 config.pop("client_cache_max_bytes", None)
             self.set_worker_queues(config)

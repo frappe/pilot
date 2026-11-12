@@ -6,16 +6,15 @@ from pathlib import Path
 
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
-# Bucket size scales with the window so short ranges stay at fine granularity
-# while long ranges (24h/1w) don't explode into thousands of buckets.
-_BUCKET_SECONDS = [(3600, 300), (86400, 3600), (float("inf"), 86400)]
-_TOP_QUERIES = 6
-_QUERY_LABEL_LEN = 60
-
 
 class SlowQueryProvider(WindowedLogProvider):
     """Reads the slow-query occurrence log for a window, bucketed per site so
     the dashboard can show which site is causing trouble over time."""
+
+    # Bucket size scales with the window so short ranges stay at fine granularity
+    # while long ranges (24h/1w) don't explode into thousands of buckets.
+    bucket_sizes = ((3600, 300), (86400, 3600), (float("inf"), 86400))
+    query_label_len = 60
 
     def __init__(self, bench_root: Path | str, window: str = "1h") -> None:
         super().__init__(window)
@@ -47,8 +46,8 @@ class SlowQueryProvider(WindowedLogProvider):
             if (when := self.get_time(record.get("time"))) and when >= self.cutoff
         ]
         sites = sorted({r["site"] for r in records})
-        queries = [q for q, _ in Counter(r["query"] for r in records).most_common(_TOP_QUERIES)]
-        bucket_seconds = next(seconds for cutoff, seconds in _BUCKET_SECONDS if self.window_seconds <= cutoff)
+        queries = [q for q, _ in Counter(r["query"] for r in records).most_common(6)]
+        bucket_seconds = next(seconds for cutoff, seconds in self.bucket_sizes if self.window_seconds <= cutoff)
         buckets = self._bucket_starts(bucket_seconds)
         return {
             "enabled": True,
@@ -83,7 +82,7 @@ class SlowQueryProvider(WindowedLogProvider):
     @staticmethod
     def _label(query: str) -> str:
         """The query, cut to the label length."""
-        return query if len(query) <= _QUERY_LABEL_LEN else query[: _QUERY_LABEL_LEN - 1] + "…"
+        return query if len(query) <= SlowQueryProvider.query_label_len else query[: SlowQueryProvider.query_label_len - 1] + "…"
 
     def _site_by_db(self) -> dict[str, str]:
         """The site name of each database."""

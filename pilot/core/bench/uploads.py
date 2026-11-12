@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 CHUNK_SIZE = 256 * 1024 * 1024
 STALE_SECONDS = 3 * 60 * 60
 MANIFEST_NAME = "upload.json"
-_COPY_BUFFER_SIZE = 1024 * 1024
 _UPLOAD_ID = re.compile(r"^[0-9a-f]{16}$")
 # Saved under names Frappe's backup files carry, so the restore can tell the parts apart.
 _FILE_NAMES = {
@@ -159,7 +158,7 @@ def _copy(source: IO[bytes], target: IO[bytes], length: int) -> int:
     """Copy up to length bytes and return the count copied."""
     copied = 0
     while copied < length:
-        block = source.read(min(_COPY_BUFFER_SIZE, length - copied))
+        block = source.read(min(1024 * 1024, length - copied))
         if not block:
             break
         target.write(block)

@@ -17,7 +17,11 @@ from pilot.exceptions import AppValidationError, BenchError
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
-_IMPORTS_AST_SCRIPT = """
+
+class ImportCheck:
+    """Validates imports in a throwaway venv without executing app modules."""
+
+    imports_ast_script = """
 import ast, json, sys
 
 def is_type_checking(test):
@@ -61,10 +65,6 @@ def file_imports(path):
 
 print(json.dumps({path: file_imports(path) for path in json.load(sys.stdin)["paths"]}))
 """
-
-
-class ImportCheck:
-    """Validates imports in a throwaway venv without executing app modules."""
 
     def __init__(self) -> None:
         self.tmp_env = TmpEnv()
@@ -185,7 +185,7 @@ class ImportCheck:
         if not paths:
             return {}
         bench_python = get_bench_python(app)
-        results = run_in_bench(bench_python, _IMPORTS_AST_SCRIPT, {"paths": [str(p) for p in paths]})
+        results = run_in_bench(bench_python, self.imports_ast_script, {"paths": [str(p) for p in paths]})
         modules: dict[Path, list[tuple[str, int]]] = {}
         for path in paths:
             data = results[str(path)]

@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 MAX_DAILY_FAILURES = 6
 # A dump grows between runs; the newest one plus this margin predicts the next.
-_DUMP_SIZE_HEADROOM = 1.2
 # Kept free after a backup, so the database and the system can still write.
 SYSTEM_RESERVED_BYTES = 500 * 1024**2
 _TS_RE = re.compile(r"^(\d{8}_\d{6})")
@@ -108,7 +107,7 @@ class SiteBackups:
 
         dumps = sorted(self.directory.glob("*-database.sql*")) if self.directory.is_dir() else []
         if dumps:
-            return int(dumps[-1].stat().st_size * _DUMP_SIZE_HEADROOM)
+            return int(dumps[-1].stat().st_size * 1.2)
         return SiteStorageCollector(self.site.bench).get_database_bytes([self.site])[self.site.config.name]
 
     @property

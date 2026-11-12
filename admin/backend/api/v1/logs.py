@@ -37,8 +37,6 @@ class LogErrorEvent(TypedDict):
 
 logs_bp = Blueprint("logs", __name__)
 
-_MAX_LINES = 5000
-
 
 @logs_bp.get("")
 def index():
@@ -74,7 +72,7 @@ def viewer(filename: str):
         lines_param = int(request.args.get("lines", 200))
     except ValueError:
         lines_param = 200
-    lines_param = min(lines_param, _MAX_LINES)
+    lines_param = min(lines_param, 5000)
 
     try:
         provider = LogProvider(bench_root)

@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 # Frappe builds every app's page islands here. Its archive holds only Frappe's own.
 PAGE_ISLAND_DIR = Path("frappe/public/dist/page-island")
 PAGE_ISLAND_URL = "/assets/frappe/dist/page-island/"
-_DOWNLOAD_TIMEOUT_SECONDS = 60
-_CHUNK_BYTES = 1024 * 1024
 
 
 def _asset_tables(app: App) -> list[dict]:
@@ -58,6 +56,8 @@ class PrebuiltAssets:
     """Assets the app's CI built for one commit (scripts/build-app-assets.sh), published on
     its GitHub release `assets-<branch>` as `<app>-<commit>.tar.gz` with a `.sha256`."""
 
+    download_timeout_seconds = 60
+
     def __init__(self, app: App) -> None:
         self.app = app
         # The archive's assets.json entries; None for archives without them.
@@ -74,7 +74,7 @@ class PrebuiltAssets:
             return False
         name = f"{self.app.config.name}-{commit}.tar.gz"
         try:
-            with urllib.request.urlopen(f"{base_url}/{name}.sha256", timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(f"{base_url}/{name}.sha256", timeout=self.download_timeout_seconds) as response:
                 expected = response.read().decode().split()[0]
         except (urllib.error.URLError, OSError, IndexError) as error:
             print(f"  No prebuilt assets for {self.app.config.name} at {commit[:10]} ({error}).")
@@ -192,8 +192,8 @@ class PrebuiltAssets:
     def _download(url: str, destination: Path) -> str:
         """Download the URL to the file and return its SHA-256."""
         digest = hashlib.sha256()
-        with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, destination.open("wb") as file:
-            while chunk := response.read(_CHUNK_BYTES):
+        with urllib.request.urlopen(url, timeout=PrebuiltAssets.download_timeout_seconds) as response, destination.open("wb") as file:
+            while chunk := response.read(1024 * 1024):
                 digest.update(chunk)
                 file.write(chunk)
         return digest.hexdigest()

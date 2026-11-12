@@ -18,10 +18,11 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.managers.environment import PythonEnvManager
 
-_BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
 
 
 class PythonAssetBuilder:
+    bundle_re = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
+
     def __init__(self, manager: "PythonEnvManager") -> None:
         self.manager = manager
         self.bench = manager.bench
@@ -272,7 +273,7 @@ class PythonAssetBuilder:
 
         entries = {}
         for path in sorted(bundle_dir.iterdir()):
-            match = _BUNDLE_RE.match(path.name)
+            match = PythonAssetBuilder.bundle_re.match(path.name)
             if match and match.group(2) == extension:
                 key = f"{key_prefix}{match.group(1)}.bundle.{extension}"
                 entries[key] = f"/assets/{app_name}/dist/{directory}/{path.name}"

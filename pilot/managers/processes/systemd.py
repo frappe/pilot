@@ -24,16 +24,16 @@ from pilot.managers.systemd_user import SystemdUserMixin
 # window a host image builder keeps a machine running before it captures a memory
 # snapshot, so the admin is still resident in the snapshot instead of cold on resume.
 _ADMIN_IDLE_TIMEOUT = 600
-# Longer than systemd's 90-second start limit, so systemd reports a slow start first.
-_SYSTEMCTL_TIMEOUT = 120
 # systemd's DefaultTimeoutStopSec: how long a unit without TimeoutStopSec may take to stop.
-_SYSTEMD_STOP_TIMEOUT = 90
 
 
 class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
     """Manages bench processes via systemd --user (no sudo required)."""
 
     # Until write_config compares them, assume both admin units changed.
+    # Longer than systemd's 90-second start limit, so systemd reports a slow start first.
+    systemctl_timeout = 120
+
     admin_service_changed = True
     admin_socket_changed = True
     # Workload sockets write_config rewrote, which install_config must hand their ports to.
@@ -197,9 +197,9 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             subprocess.run(self._systemctl("stop", service), capture_output=True, env=env)
             if not is_workload_running:
                 continue
-            run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+            run_command(self._systemctl("restart", socket), env=env, timeout=self.systemctl_timeout)
             if was_active.returncode == 0:
-                run_command(self._systemctl("start", service), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+                run_command(self._systemctl("start", service), env=env, timeout=self.systemctl_timeout)
         self.changed_sockets = ()
 
     @staticmethod
@@ -315,8 +315,8 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         """Restart the processes."""
         units = [self._unit_name(definition.name) for definition in definitions]
         # A restart waits for the slowest unit to stop, then for the units to start.
-        timeout = _SYSTEMCTL_TIMEOUT + max(
-            (definition.stop_timeout or _SYSTEMD_STOP_TIMEOUT for definition in definitions), default=0
+        timeout = self.systemctl_timeout + max(
+            (definition.stop_timeout or 90 for definition in definitions), default=0
         )
         run_command(self._systemctl("restart", *units), env=self._systemctl_env(), timeout=timeout)
 
@@ -407,7 +407,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             service = self._unit_name("admin")
             if (self.user_unit_dir / service).exists():
                 subprocess.run(self._systemctl("reset-failed", service), capture_output=True, env=env)
-                run_command(self._systemctl("restart", service), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+                run_command(self._systemctl("restart", service), env=env, timeout=self.systemctl_timeout)
 
     def _activate_admin(self, env: dict) -> None:
         """The kernel queues requests on a listening socket while the service restarts.
@@ -428,8 +428,8 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         service = self._unit_name("admin")
         subprocess.run(self._systemctl("stop", service), capture_output=True, env=env)
         subprocess.run(self._systemctl("reset-failed", socket, service), capture_output=True, env=env)
-        run_command(self._systemctl("enable", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
-        run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+        run_command(self._systemctl("enable", socket), env=env, timeout=self.systemctl_timeout)
+        run_command(self._systemctl("restart", socket), env=env, timeout=self.systemctl_timeout)
 
     def _installed_bench_units(self) -> set[str]:
         """The installed units of this bench."""

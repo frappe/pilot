@@ -3,7 +3,6 @@ from dataclasses import dataclass, field
 
 from pilot.exceptions import ConfigError
 
-_QUEUE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 FRAPPE_QUEUES = ("default", "short", "long")
 
 
@@ -42,6 +41,8 @@ class WorkerGroup:
 
 @dataclass
 class WorkerConfig:
+    queue_name_pattern = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
     groups: list[WorkerGroup] = field(
         default_factory=lambda: [
             WorkerGroup(queues=["default", "short", "long"], count=1),
@@ -103,7 +104,7 @@ class WorkerConfig:
         for queue in group.queues:
             # A queue name reaches a systemd ExecStart and a supervisor stanza, where
             # a newline would start a directive of the attacker's choosing.
-            if not isinstance(queue, str) or not _QUEUE_NAME_PATTERN.match(queue):
+            if not isinstance(queue, str) or not WorkerConfig.queue_name_pattern.match(queue):
                 raise ConfigError(
                     f"{prefix}.queues entries must be 1-64 characters of letters, "
                     f"numbers, '-' or '_' (got {queue!r})."

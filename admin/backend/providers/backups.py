@@ -3,17 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 
 from pilot.core.bench import Bench
 from pilot.core.site.backups import parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
-
-_OFFSITE_FILE_KINDS = {
-    "database": "database",
-    "files": "public-file",
-    "private_files": "private-file",
-    "site_config": "site_config",
-}
 
 
 @dataclass
@@ -38,6 +32,13 @@ class Backup:
 
 class BackupProvider:
     """A site's backups, local (on disk) and offsite (S3), merged into one timeline."""
+
+    offsite_file_kinds: ClassVar[dict[str, str]] = {
+        "database": "database",
+        "files": "public-file",
+        "private_files": "private-file",
+        "site_config": "site_config",
+    }
 
     def __init__(self, bench_root: Path, site_name: str) -> None:
         self._site_name = site_name
@@ -127,7 +128,7 @@ class BackupProvider:
             path="",
             size_bytes=size_bytes,
             created_at=self._get_timestamp_or_now(timestamp),
-            kind=_OFFSITE_FILE_KINDS.get(file_type, "site_config"),
+            kind=self.offsite_file_kinds.get(file_type, "site_config"),
             timestamp=timestamp,
         )
 

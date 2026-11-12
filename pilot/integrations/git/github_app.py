@@ -7,12 +7,12 @@ from typing import ClassVar
 from pilot.integrations.central.client import CentralClient, CentralClientError
 from pilot.integrations.git.credentials import GITHUB_APP_AUTH_TYPE, GitCredentialStore
 
-# A token this close to expiry could expire during a long clone.
-_EXPIRY_MARGIN = timedelta(minutes=10)
-
 
 class GitHubAppTokens:
     """Per-process cache of the read-only repository tokens Central mints."""
+
+    # A token this close to expiry could expire during a long clone.
+    expiry_margin = timedelta(minutes=10)
 
     _tokens: ClassVar[dict[str, tuple[str, datetime]]] = {}
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -23,7 +23,7 @@ class GitHubAppTokens:
         key = full_name.lower()
         with cls._lock:
             token, expires_at = cls._tokens.get(key, ("", datetime.min.replace(tzinfo=UTC)))
-        if expires_at > datetime.now(UTC) + _EXPIRY_MARGIN:
+        if expires_at > datetime.now(UTC) + cls.expiry_margin:
             return token
 
         try:

@@ -18,7 +18,6 @@ from pilot.internal.tasks.store import TaskStore
 _HOSTNAME = socket.gethostname()
 
 # facility=1 (user-level messages), severity=6 (informational) -> PRI 14.
-_PRI = 14
 _cancel_requested = False
 
 
@@ -42,7 +41,7 @@ def _request_cancel(_signum, _frame) -> None:
 
 def _syslog_prefix_parts(tag: str, pid: int) -> tuple[bytes, bytes]:
     """Return static syslog prefix fragments around the timestamp field."""
-    head = f"<{_PRI}>1 ".encode()
+    head = f"<{14}>1 ".encode()
     tail = f" {_HOSTNAME} {tag} {pid} - - ".encode()
     return head, tail
 

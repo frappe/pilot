@@ -6,11 +6,7 @@ import subprocess
 from functools import cached_property
 from pathlib import Path
 
-_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-_SHA_RE = re.compile(r"^[0-9a-fA-F]{4,40}$")
 _FIELD = "\x1f"
-_LOG_FORMAT = _FIELD.join(["%H", "%h", "%an", "%at", "%s", "%D"])
-_INFO_FORMAT = _FIELD.join(["%H", "%h", "%an", "%ae", "%at", "%s", "%b"])
 
 
 class EditorGit:
@@ -19,6 +15,11 @@ class EditorGit:
     Isolated from pilot.internal.git.GitRepo on purpose: the editor needs stdin
     patches, combined stderr and NUL parsing that the lifecycle wrapper omits.
     """
+
+    hunk_re = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+    sha_re = re.compile(r"^[0-9a-fA-F]{4,40}$")
+    log_format = _FIELD.join(["%H", "%h", "%an", "%at", "%s", "%D"])
+    info_format = _FIELD.join(["%H", "%h", "%an", "%ae", "%at", "%s", "%b"])
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
@@ -50,7 +51,7 @@ class EditorGit:
 
     def is_sha(self, sha: str) -> bool:
         """Whether the text is a commit SHA."""
-        return bool(_SHA_RE.match(sha or ""))
+        return bool(self.sha_re.match(sha or ""))
 
     def is_branch_name(self, name: str) -> bool:
         """A valid branch name that git cannot read as an option."""
@@ -144,7 +145,7 @@ class EditorGit:
         if self.is_repo:
             out = self._text("diff", "HEAD", "--no-color", "-U0", "--", rel)
             for line in out.split("\n"):
-                match = _HUNK_RE.match(line)
+                match = self.hunk_re.match(line)
                 if not match:
                     continue
                 old_count = _int_or(match.group(2), 1)
@@ -233,7 +234,7 @@ class EditorGit:
         if not self.is_repo:
             return {"repo": False, "commits": []}
         result = self._run(
-            "log", "--no-color", f"--skip={skip}", f"-n{limit}", f"--pretty=format:{_LOG_FORMAT}"
+            "log", "--no-color", f"--skip={skip}", f"-n{limit}", f"--pretty=format:{self.log_format}"
         )
         if result.returncode != 0:
             return {"repo": True, "commits": []}
@@ -256,7 +257,7 @@ class EditorGit:
 
     def commit_info(self, sha: str) -> dict | None:
         """One commit with its files, or None."""
-        result = self._run("show", "-s", "--no-color", f"--pretty=format:{_INFO_FORMAT}", sha)
+        result = self._run("show", "-s", "--no-color", f"--pretty=format:{self.info_format}", sha)
         if result.returncode != 0:
             return None
         fields = result.stdout.rstrip("\n").split(_FIELD, 6)
