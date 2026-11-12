@@ -222,6 +222,28 @@ test('with lists from Central, country and an Indian state are picked from dropd
   expect(saved?.get('phone')).toBe('+91-98765 43210')
 })
 
+test('a held mouse click picks a country and a calling code', async ({ page }) => {
+  await openBilling(page, {
+    get_billing: () => ({ message: billing({ profileComplete: false }) }),
+    get_account_url: accountLinks,
+    ...upgrade,
+    get_billing_profile: () => ({ message: { ...emptyProfile().message, countries: ['India', 'United States'] } }),
+    get_payment_gateways: stripeOnly,
+  })
+  await chooseTrialPlan(page)
+
+  // A person holds the button for a moment, so focus reaches the option before the click selects it.
+  const pick = async (trigger: string, option: RegExp) => {
+    await page.getByRole('button', { name: new RegExp(`^${trigger}`) }).click()
+    await page.getByRole('option', { name: option }).first().click({ delay: 100 })
+  }
+
+  await pick('Country', /^India$/)
+  await expect(page.getByRole('button', { name: /^Country/ })).toContainText('India')
+  await pick('Code', /\+44/)
+  await expect(page.getByRole('button', { name: /^Code/ })).toContainText('+44')
+})
+
 test('a paid site moves to a bigger plan and opens the progress page', async ({ page }) => {
   const calls = await openBilling(page, {
     get_billing: () => ({ message: billing({ onTrial: null, hasCard: true }) }),
