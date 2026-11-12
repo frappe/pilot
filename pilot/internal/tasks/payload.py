@@ -16,7 +16,7 @@ from pilot.internal.tasks.args import (
     task_secret_args,
 )
 from pilot.internal.tasks.authoring import task_argv_suffix
-from pilot.internal.tasks.callbacks import validate_callback
+from pilot.internal.tasks.callbacks import CallbackOperations
 from pilot.tasks import Task
 from pilot.tasks.callbacks import TaskCallbacks
 
@@ -131,5 +131,5 @@ class TaskPayloadBuilder:
             if trigger not in ("on_success", "on_failure", "on_cancel"):
                 raise ValueError(f"Unknown callback trigger: {trigger!r}")
             if spec is not None:
-                payload[trigger] = validate_callback(spec)
+                payload[trigger] = CallbackOperations.validate(spec)
         return payload

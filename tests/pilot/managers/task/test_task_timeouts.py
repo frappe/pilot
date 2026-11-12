@@ -123,20 +123,20 @@ def test_submission_records_the_task_specific_limit(tmp_path, monkeypatch):
 
 
 def test_a_blocked_callback_has_a_separate_deadline(tmp_path, monkeypatch):
-    from pilot.internal.tasks import callbacks
+    from pilot.internal.tasks.callbacks import BoundedCallback
 
     site = tmp_path / "sites" / "test.local"
     site.mkdir(parents=True)
     config = site / "site_config.json"
     config.write_text('{"ssl": true}')
-    monkeypatch.setattr(callbacks, "CALLBACK_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(BoundedCallback, "timeout", 0.3)
 
     started = time.monotonic()
     with exclusive_file_lock(config), pytest.raises(RuntimeError, match="timed out"):
-        callbacks.run_bounded_callback(
+        BoundedCallback(
             {"operation": "disable-site-ssl", "args": {"site": "test.local"}},
             {"bench_root": str(tmp_path)},
-        )
+        ).run()
     assert time.monotonic() - started < 3
 
 

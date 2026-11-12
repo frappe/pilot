@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.internal.private_files import PrivateFile
-from pilot.internal.tasks.callbacks import run_bounded_callback, trigger_for_task_status
+from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
 
@@ -109,7 +109,7 @@ def callback_handler(
     prefix = (head + ts + tail).decode()
     with PrivateFile(output_log).open("a") as log_file:
         try:
-            run_bounded_callback(callback, meta)
+            BoundedCallback(callback, meta).run()
             log_file.write(f"{prefix}Callback successfully triggered\n")
         except Exception as error:
             message = str(error)
@@ -215,7 +215,7 @@ def _run_task() -> None:
 
         (task_failed if status == TaskStatus.FAILED else task_succeeded)(bench_root, meta)
 
-    trigger = trigger_for_task_status(status)
+    trigger = CallbackOperations.get_trigger(status)
     selected = callbacks.get(trigger)
     if selected:
         callback_handler(selected, task_dir / "output.log", meta=meta, redactions=redactions)
