@@ -15,6 +15,7 @@ from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
+from pilot.managers.task import TaskReader
 from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
@@ -31,7 +32,9 @@ class UptimeMonitor:
         self._configurator = UptimeMonitorConfigurator(bench)
 
     def get_sites(self) -> list[str]:
-        return [site.config.name for site in self.bench.sites()]
+        """Sites still being created answer 500 until they are ready, which is not downtime."""
+        provisioning = TaskReader(self.bench.path).get_provisioning_site_names()
+        return [site.config.name for site in self.bench.sites() if site.config.name not in provisioning]
 
     def get_maintenance_sites(self) -> set[str]:
         """Sites serving frappe's 503 page on purpose, such as during an update."""

@@ -349,3 +349,17 @@ def test_a_site_that_recovers_before_any_alert_sends_nothing(tmp_path: Path) -> 
         monitor.send_alert_if_required([_ping("a.test", up=True)])
 
     assert payloads == []
+
+
+def test_a_site_still_being_created_is_not_pinged(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    sites = [type("S", (), {"config": type("C", (), {"name": name})()})() for name in ("ready.local", "new.local")]
+
+    with (
+        patch.object(Bench, "sites", return_value=sites),
+        patch(
+            "pilot.core.site.uptime_monitoring.TaskReader.get_provisioning_site_names",
+            return_value={"new.local"},
+        ),
+    ):
+        assert monitor.get_sites() == ["ready.local"]

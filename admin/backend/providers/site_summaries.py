@@ -37,7 +37,7 @@ class SiteSummaryProvider:
 
         for record in self.uptime_log.records_in_window(path, time_key="time"):
             site, up = record.get("site"), record.get("up")
-            if site in checks and isinstance(up, bool):
+            if site in checks and isinstance(up, bool) and not record.get("maintenance"):
                 checks[site].append(up)
         return checks
 

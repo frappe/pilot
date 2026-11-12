@@ -701,3 +701,21 @@ def test_a_running_task_stream_ends_when_the_worker_drains(tmp_path: Path) -> No
 
     assert {"type": "line", "line": "alpha"} in events
     assert all(event["type"] != "done" for event in events)
+
+
+def test_provisioning_site_names_cover_active_site_creation_only(tmp_path: Path) -> None:
+    tasks = tmp_path / "tasks"
+    for task_id, command, args, status in [
+        ("20260521-143022-aaaaaa", "new-site", {"name": "new.local"}, "running"),
+        ("20260521-143023-bbbbbb", "clone-site", {"site": "source.local", "name": "copy.local"}, "running"),
+        ("20260521-143024-cccccc", "new-site", {"name": "done.local"}, "success"),
+        ("20260521-143025-dddddd", "backup-site", {"site": "backup.local"}, "running"),
+    ]:
+        task_dir = _make_task_dir(tasks, task_id, status=status, command=command)
+        meta = json.loads((task_dir / "meta.json").read_text())
+        (task_dir / "meta.json").write_text(json.dumps({**meta, "args": args}))
+
+    with patch("os.kill", return_value=None):
+        names = TaskReader(tmp_path).get_provisioning_site_names()
+
+    assert names == {"new.local", "copy.local"}
