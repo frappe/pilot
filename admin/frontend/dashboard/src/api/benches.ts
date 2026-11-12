@@ -1,10 +1,5 @@
 import { request } from '@/api/client'
-import type {
-  BenchReadiness,
-  BenchResource,
-  CreatedBench,
-  CloneBranchOptions,
-} from '@/types/benches'
+import type { BenchReadiness, BenchResource, CloneBranchOptions, CreatedBench } from '@/types/benches'
 import type { WildcardDomains } from '@/types/sites'
 import type { TaskPayload } from '@/types/tasks'
 

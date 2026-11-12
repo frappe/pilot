@@ -110,11 +110,7 @@ class PythonAssetBuilder:
             return False
         app_public_dir = app.path / app.config.name / "public"
         self.setup_prebuilt_assets(
-            app.config.name,
-            app_public_dir,
-            app_public_dir / "dist",
-            prebuilt.asset_maps,
-            prebuilt.has_page_islands,
+            app.config.name, app_public_dir, app_public_dir / "dist", prebuilt.asset_maps, prebuilt.has_page_islands
         )
         if not skip_frontend:
             if app.has_page_islands and not prebuilt.has_page_islands:
@@ -223,9 +219,7 @@ class PythonAssetBuilder:
         self.studio_editor.ensure_installed()
         print(f"  Building Studio apps for {app.config.name}...")
         sys.stdout.flush()
-        build = (
-            f"from frappe.studio.build import build_standard_apps; build_standard_apps([{app.config.name!r}])"
-        )
+        build = f"from frappe.studio.build import build_standard_apps; build_standard_apps([{app.config.name!r}])"
         self.run_compiler(
             [str(self.bench.python), "-c", build],
             cwd=self.bench.sites_path,

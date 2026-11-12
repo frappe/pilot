@@ -190,11 +190,7 @@ const siteMenuOptions = (site: SiteResource) => {
     {
       label: 'View analytics',
       icon: 'lucide-chart-line',
-      onClick: () =>
-        router.push({
-          name: 'Analytics',
-          query: { view: 'site', site: site.name },
-        }),
+      onClick: () => router.push({ name: 'Analytics', query: { view: 'site', site: site.name } }),
     },
     {
       label: 'View jobs',

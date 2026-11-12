@@ -148,11 +148,7 @@ const menuOptions = (bench: BenchResource) => {
     },
   })
   if (canOpen(bench))
-    opts.push({
-      label: 'Open',
-      icon: LucideExternalLink,
-      onClick: () => openBench(bench),
-    })
+    opts.push({ label: 'Open', icon: LucideExternalLink, onClick: () => openBench(bench) })
   if (bench.production) {
     const running = bench.workload_running
     const current = isCurrentBench(bench)
@@ -264,11 +260,7 @@ watch(show, (open) => {
   <Dialog v-model="showDropConfirm" title="Drop Bench" size="sm">
     <div class="flex flex-col gap-4" @pointerdown.stop>
       <div class="flex flex-col gap-2 text-ink-gray-7 text-sm leading-relaxed">
-        <p>
-          Permanently delete
-          <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong
-          >?
-        </p>
+        <p>Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?</p>
 
         <p>
           This tears down its production services, nginx config and MariaDB instance, then removes

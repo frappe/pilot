@@ -118,9 +118,7 @@ class SiteCommands:
             if "NOT READY for migration" in str(error):
                 return True
             reason = str(error).strip().splitlines()[-1]
-            raise BenchError(
-                f"Could not check the background jobs of {self.site.config.name}: {reason}"
-            ) from error
+            raise BenchError(f"Could not check the background jobs of {self.site.config.name}: {reason}") from error
         return False
 
     def clear_cache(self) -> None:

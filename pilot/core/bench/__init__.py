@@ -625,10 +625,7 @@ class Bench:
         return Session(self).issue_setup_link_token()
 
     def initialize(
-        self,
-        commit: str = "",
-        skip_frontend: bool = False,
-        on_progress: Callable[[str], None] = lambda message: None,
+        self, commit: str = "", skip_frontend: bool = False, on_progress: Callable[[str], None] = lambda message: None
     ) -> None:
         """Set up the bench from bench.toml; `commit` pins the framework app."""
         from pilot.core.bench.initializer import BenchInitializer
