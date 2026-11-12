@@ -149,7 +149,7 @@ def test_unsafe_or_corrupt_installs_are_not_reused(install, unsafe):
 
 
 @pytest.mark.parametrize("branch", ["default", "current"])
-def test_cache_hit_precedes_seeding_except_for_current_checkout(install, branch):
+def test_cache_hit_precedes_seeding_and_current_checkout_is_not_copied_again(install, branch):
     from pilot.core.bench.cloning.bench import BenchClone
 
     source, target, cache = install
@@ -167,7 +167,9 @@ def test_cache_hit_precedes_seeding_except_for_current_checkout(install, branch)
     assert NodeDependencies.has_matching_install(target, NodeDependencies.get_key(target)) == (
         branch == "default"
     )
-    assert any(call.args[1] == target for call in seed.call_args_list) == (branch == "current")
+    assert not any(call.args[1] == target for call in seed.call_args_list)
+    if branch == "current":
+        seed.assert_not_called()
 
 
 def test_restore_marks_entry_recently_used(install):

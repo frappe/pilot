@@ -98,9 +98,11 @@ class BenchClone:
 
         cache = NodeDependencyCache(destination)
         for app in self.source.apps():
+            if self.app_branches.get(app.config.name, self.branch) == "current":
+                continue  # copy_app already copied its node_modules with the checkout.
             for relative in (".", "frontend", "roster"):
                 target = destination.apps_path / app.config.name / relative
-                if self.app_branches.get(app.config.name, self.branch) != "current" and cache.restore(target):
+                if cache.restore(target):
                     continue
                 if NodeDependencies.copy(app.path / relative, target):
                     BenchArtifacts.relocate_links(
