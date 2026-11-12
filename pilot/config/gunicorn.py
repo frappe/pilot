@@ -5,7 +5,7 @@ from pilot.exceptions import ConfigError
 
 @dataclass
 class GunicornConfig:
-    workers: int = 2
+    workers: int | None = None  # None = one per CPU available to Pilot
     threads: int = 8
     timeout: int = 120
     worker_class: str = "gthread"
@@ -16,7 +16,7 @@ class GunicornConfig:
     def from_dict(cls, data: dict) -> "GunicornConfig":
         d = cls()
         return cls(
-            workers=data.get("workers", d.workers),
+            workers=data.get("workers"),
             threads=data.get("threads", d.threads),
             timeout=data.get("timeout", d.timeout),
             worker_class=data.get("worker_class", d.worker_class),
@@ -24,8 +24,14 @@ class GunicornConfig:
             max_requests_jitter=data.get("max_requests_jitter", d.max_requests_jitter),
         )
 
+    @property
+    def worker_count(self) -> int:
+        from pilot.managers.platform import available_cpu_count
+
+        return self.workers or available_cpu_count()
+
     def validate(self) -> None:
-        if not isinstance(self.workers, int) or self.workers < 1:
+        if self.workers is not None and (not isinstance(self.workers, int) or self.workers < 1):
             raise ConfigError(f"gunicorn.workers must be a positive integer, got '{self.workers}'.")
         if not isinstance(self.threads, int) or self.threads < 1:
             raise ConfigError(f"gunicorn.threads must be a positive integer, got '{self.threads}'.")

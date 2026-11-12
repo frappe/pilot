@@ -1040,6 +1040,7 @@ def test_restart_production_restarts_when_configured(tmp_path: Path) -> None:
     from pilot.commands.runtime.restart import RestartCommand
 
     bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
     bench.config.production.enabled = True
     bench.config.production.process_manager = "supervisor"
     with patch("pilot.managers.processes.local.ProcessManager.for_bench") as create:

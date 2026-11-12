@@ -49,7 +49,7 @@ def make_bench(tmp_path: Path, gunicorn: GunicornConfig | None = None) -> Bench:
 
 def test_gunicorn_config_defaults() -> None:
     cfg = GunicornConfig()
-    assert cfg.workers == 2
+    assert cfg.workers is None
     assert cfg.threads == 8
     assert cfg.timeout == 120
     assert cfg.worker_class == "gthread"
@@ -114,17 +114,22 @@ def test_gunicorn_worker_class_must_not_be_empty(tmp_path: Path) -> None:
         bench.config.validate()
 
 
-def test_gunicorn_manager_generates_config_file(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
+@pytest.mark.parametrize(("workers", "expected"), [(None, 4), (3, 3)], ids=["one per CPU", "set by hand"])
+def test_gunicorn_manager_generates_config_file(tmp_path: Path, workers, expected) -> None:
+    bench = make_bench(tmp_path, GunicornConfig(workers=workers))
     bench.config_path.mkdir(parents=True, exist_ok=True)
 
-    GunicornManager(bench).generate_config()
+    with patch("pilot.managers.platform.available_cpu_count", return_value=4):
+        GunicornManager(bench).generate_config()
+    bench.config.write(tmp_path)
 
     config_path = bench.config_path / "gunicorn.conf.py"
     assert config_path.exists()
     content = config_path.read_text()
     assert 'bind = "127.0.0.1:8000"' in content
-    assert "workers = 2" in content
+    assert f"workers = {expected}" in content
+    # Only a hand-set count is pinned in bench.toml.
+    assert BenchConfig.from_file(tmp_path / "bench.toml").gunicorn.workers == workers
     assert "threads = 8" in content
     # threads > 0 forces gthread because sync workers ignore threads
     assert 'worker_class = "gthread"' in content

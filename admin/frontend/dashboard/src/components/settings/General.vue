@@ -4,7 +4,6 @@ import { onMounted, ref } from 'vue'
 import { settingsApi } from '@/api/settings'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 import CommonSiteConfig from '@/components/settings/CommonSiteConfig.vue'
-import Workers from '@/components/settings/Workers.vue'
 import { useSession } from '@/composables/auth/useSession'
 import { errorMessage } from '@/utils/error'
 
@@ -130,16 +129,6 @@ onMounted(async () => {
           @update:model-value="toggleBucketBackups"
         />
       </SettingsRow>
-
-      <section class="px-3 py-3.5">
-        <h4 class="text-base-medium text-ink-gray-8">Background workers</h4>
-
-        <p class="mt-1 mb-3 text-ink-gray-6 text-p-sm">
-          Configure background worker groups and queues.
-        </p>
-
-        <Workers />
-      </section>
 
       <section class="px-3 py-3.5">
         <CommonSiteConfig />

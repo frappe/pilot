@@ -625,8 +625,9 @@ class BenchConfig:
         }
 
     def _gunicorn_section(self) -> ConfigDict:
+        # Unset workers follow the host's CPUs, so a resized VM is picked up on the next restart.
         return {
-            "workers": self.gunicorn.workers,
+            **({"workers": self.gunicorn.workers} if self.gunicorn.workers else {}),
             "threads": self.gunicorn.threads,
             "timeout": self.gunicorn.timeout,
             "worker_class": self.gunicorn.worker_class,
