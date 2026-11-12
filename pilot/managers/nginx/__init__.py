@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import pwd
 import re
 import sys
@@ -211,6 +212,37 @@ class NginxConfigRenderer:
             cloudflare_networks=CLOUDFLARE_NETWORKS if self.bench.config.proxy.cloudflare else (),
         )
 
+    def get_asset_locations(self) -> list[tuple[str, Path, Path]]:
+        """The URL prefix, the real folder and the prefix nginx does not check, for each app's public
+        folder and for each link directly in it. A link that leaves its app gets no entry, so nginx
+        does not serve it."""
+        bench_root = Path(os.path.realpath(self.bench.path))
+        locations = []
+        for app in self.bench.apps():
+            app_root = Path(os.path.realpath(app.path))
+            public = app_root / app.module_name / "public"
+            if not public.is_dir():
+                continue
+            unchecked = bench_root if app_root.is_relative_to(bench_root) else app_root
+            url = f"/assets/{app.module_name}/"
+            locations.append((url, public, unchecked))
+            for link in sorted(entry for entry in public.iterdir() if entry.is_symlink()):
+                target = Path(os.path.realpath(link))
+                if target.is_dir() and target.is_relative_to(app_root):
+                    locations.append((f"{url}{link.name}/", target, unchecked))
+        return locations
+
+    def render_asset_locations(self) -> str:
+        return "".join(
+            f"    location ^~ {url} {{\n"
+            f"        alias {folder}/;\n"
+            f"        disable_symlinks on from={unchecked};\n"
+            f"        expires 1y;\n"
+            f'        add_header Cache-Control "public, immutable";\n'
+            f"    }}\n\n"
+            for url, folder, unchecked in self.get_asset_locations()
+        )
+
     def get_proxy_servers(self) -> list[str]:
         """Edge-proxy IPs in front of this bench, if any; looked up once."""
         if self._proxy_servers_cache is None:
@@ -337,6 +369,7 @@ class NginxConfigRenderer:
             ),
             "sites_root": f"{self.bench.path}/sites",
             "bench_root": str(self.bench.path),
+            "asset_locations": self.render_asset_locations(),
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,

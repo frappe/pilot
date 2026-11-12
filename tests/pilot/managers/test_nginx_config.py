@@ -1579,3 +1579,35 @@ def test_a_site_server_follows_no_symlinks_below_the_bench(tmp_path: Path) -> No
 
     assert f"disable_symlinks on from={renderer.bench.path};" in config
     assert config.count("disable_symlinks on") == config.count(f"root {renderer.bench.path}/sites;")
+
+
+def _app_folder(renderer, name: str = "frappe") -> Path:
+    public = renderer.bench.path / "apps" / name / name / "public"
+    public.mkdir(parents=True)
+    (public.parent.parent / ".git").mkdir()
+    return public.parent.parent
+
+
+def test_app_assets_are_served_from_their_real_folders(tmp_path: Path) -> None:
+    renderer = _renderer(tmp_path)
+    app = _app_folder(renderer)
+    (app / "node_modules").mkdir()
+    (app / "frappe" / "public" / "node_modules").symlink_to(app / "node_modules")
+    bench_root = renderer.bench.path.resolve()
+
+    assert renderer.get_asset_locations() == [
+        ("/assets/frappe/", bench_root / "apps/frappe/frappe/public", bench_root),
+        ("/assets/frappe/node_modules/", bench_root / "apps/frappe/node_modules", bench_root),
+    ]
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+    assert f"location ^~ /assets/frappe/ {{\n        alias {bench_root}/apps/frappe/frappe/public/;" in config
+
+
+def test_a_link_that_leaves_its_app_is_not_served(tmp_path: Path) -> None:
+    renderer = _renderer(tmp_path)
+    app = _app_folder(renderer)
+    (tmp_path / "secrets").mkdir()
+    (app / "frappe" / "public" / "leak").symlink_to(tmp_path / "secrets")
+    (app / "frappe" / "public" / "file-leak").symlink_to(renderer.bench.path / "bench.toml")
+
+    assert [url for url, _, _ in renderer.get_asset_locations()] == ["/assets/frappe/"]

@@ -65,7 +65,7 @@ server {
     client_max_body_size {{ client_max_body_size }};
 
 {{ site_embed }}
-    location /assets {
+{{ asset_locations }}    location /assets {
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
@@ -303,7 +303,7 @@ server {
     {% if vhost.kind == "site" %}
 {{ site_embed }}
     {# static assets and public files served straight from disk #}
-    location /assets {
+{{ asset_locations }}    location /assets {
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
