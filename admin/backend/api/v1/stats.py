@@ -107,7 +107,7 @@ def get_monitor_status():
 
 @stats_bp.get("/monitor/history")
 def get_monitor_history():
-    from admin.backend.providers.system_monitoring import SystemMonitoringProvider
+    from admin.backend.providers.server.monitoring import SystemMonitoringProvider
 
     bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "1h")
@@ -123,7 +123,7 @@ def get_monitor_history():
 
 @stats_bp.get("/database/history")
 def get_db_history():
-    from admin.backend.providers.database_monitoring import DatabaseMonitoringProvider
+    from admin.backend.providers.database.monitoring import DatabaseMonitoringProvider
 
     bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "1h")
@@ -139,7 +139,7 @@ def get_db_history():
 
 @stats_bp.get("/waf")
 def get_waf_analytics():
-    from admin.backend.providers.waf import WafProvider
+    from admin.backend.providers.server.waf import WafProvider
 
     bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "24h")
@@ -151,7 +151,7 @@ def get_waf_analytics():
 
 @stats_bp.get("/system")
 def system_info():
-    from admin.backend.providers.os import OSProvider
+    from admin.backend.providers.server.os import OSProvider
     from pilot.managers.platform import HostPlatform
 
     bench_root = ApiRequest.get_bench_root()
@@ -198,7 +198,7 @@ def stats():
 def storage_breakdown():
     from dataclasses import asdict
 
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     bench_root = ApiRequest.get_bench_root()
     disk = psutil.disk_usage("/")

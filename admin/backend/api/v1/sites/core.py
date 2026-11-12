@@ -30,8 +30,8 @@ from admin.backend.api.v1.sites.shared import (
 from admin.backend.internal.session import Session
 from admin.backend.middleware import rate_limit, require_scope
 from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.site_summaries import SiteSummaryProvider
-from admin.backend.providers.sites import SiteInfo, SiteProvider
+from admin.backend.providers.site.listing import SiteInfo, SiteProvider
+from admin.backend.providers.site.summaries import SiteSummaryProvider
 from pilot.core.bench import Bench
 from pilot.core.site.login import primary_host, site_url
 from pilot.internal.site_paths import site_exists

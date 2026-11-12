@@ -12,7 +12,7 @@ from admin.backend.api.v1.types.site_backups import BackupUploadFile, BackupUplo
 from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
 from pilot.core.bench.uploads import CHUNK_SIZE, BackupUpload
-from pilot.core.site.restore import RESTORE_PARTS
+from pilot.core.site.backups.restore import RESTORE_PARTS
 from pilot.exceptions import BenchError, UploadOffsetError
 from pilot.internal.site_paths import site_exists
 

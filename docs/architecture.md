@@ -22,7 +22,7 @@ pilot/
 
 admin/backend/
   api/v1/        Flask route groups
-  providers/     backend provider integrations
+  providers/     read models for the API: site/, database/, server/
 
 admin/frontend/dashboard/  Vue Admin UI
 admin/frontend/editor/     Vue code editor

@@ -35,7 +35,7 @@ def get_storage():
 @require_scope(site_name)
 def get_site_storage(name: str):
     """One site's folder breakdown plus its database size, for callers holding only its token."""
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):

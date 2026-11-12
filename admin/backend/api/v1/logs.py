@@ -8,7 +8,7 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.draining import is_draining
-from admin.backend.providers.logs import LogProvider
+from admin.backend.providers.server.logs import LogProvider
 
 
 class LogFile(TypedDict):

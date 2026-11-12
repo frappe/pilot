@@ -8,7 +8,7 @@ from admin.backend.api.requests import ApiRequest
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import internal_error, site_name, site_not_found
 from admin.backend.middleware import require_scope
-from admin.backend.providers.site_monitoring import SiteMonitoringProvider
+from admin.backend.providers.site.monitoring import SiteMonitoringProvider
 from pilot.internal.site_paths import site_exists
 
 

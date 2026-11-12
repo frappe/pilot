@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from admin.backend.providers.slow_queries import SlowQueryProvider
+from admin.backend.providers.database.slow_queries import SlowQueryProvider
 
 
 def _provider(bench_root: Path, window: str = "1h") -> SlowQueryProvider:

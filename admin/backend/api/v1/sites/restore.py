@@ -15,7 +15,7 @@ from admin.backend.api.v1.types.site_backups import RemoteBackup, RemoteBackupLi
 from admin.backend.middleware import is_bench_scoped, require_scope
 from pilot.core.bench import Bench
 from pilot.core.bench.uploads import upload_file_name
-from pilot.core.site.restore import RESTORE_PARTS
+from pilot.core.site.backups.restore import RESTORE_PARTS
 from pilot.internal.private_files import PrivateDirectory
 from pilot.internal.site_paths import site_exists
 from pilot.tasks.restore_site import RestoreSiteTask

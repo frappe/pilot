@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.core.site.backups.migration import SiteMigrationBackup
 from pilot.core.site.config.file import SiteConfigFile
-from pilot.core.site.migration_backup import SiteMigrationBackup
 from pilot.exceptions import BenchError
 from pilot.integrations.s3.base import S3IntegrationError
 
@@ -26,7 +26,7 @@ def test_non_mariadb_snapshot_uses_frappe_full_database_backup(
         config_path.write_text("{}")
         return CompletedProcess(argv, 0)
 
-    with patch("pilot.core.site.migration_backup.run_command", side_effect=complete_backup) as run:
+    with patch("pilot.core.site.backups.migration.run_command", side_effect=complete_backup) as run:
         previous_tables = backup.create("operation-1")
 
     argv = run.call_args.args[0]
@@ -96,7 +96,7 @@ def test_a_failed_table_import_says_why(tmp_path: Path, rows: int) -> None:
     with (
         patch.object(SiteMigrationBackup, "_cli", return_value=str(client)),
         patch.object(SiteMigrationBackup, "_conn_args", return_value=[]),
-        patch("pilot.core.site.migration_backup.subprocess.Popen", side_effect=exited_client),
+        patch("pilot.core.site.backups.migration.subprocess.Popen", side_effect=exited_client),
         pytest.raises(BenchError, match=r"Failed to import tabUser\.sql\.gz .*Can.t connect to server"),
     ):
         backup._import_dump({}, "site_db", dump)
@@ -205,7 +205,7 @@ def test_gzip_reader_produces_a_gzip_stream_in_any_read_size() -> None:
     import io
     import os
 
-    from pilot.core.site.migration_backup import GzipReader
+    from pilot.core.site.backups.migration import GzipReader
 
     payload = os.urandom(3 << 20)
     reader = GzipReader(io.BytesIO(payload))
@@ -289,7 +289,7 @@ def test_gunzip_writer_decompresses_writes_of_any_size() -> None:
     import io
     import os
 
-    from pilot.core.site.migration_backup import GunzipWriter
+    from pilot.core.site.backups.migration import GunzipWriter
 
     payload = os.urandom(3 << 20)
     compressed = gzip.compress(payload)

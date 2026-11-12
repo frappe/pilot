@@ -795,7 +795,7 @@ def test_next_revert_site_skips_pending_and_recovered_sites(tmp_path: Path) -> N
 
 
 def test_snapshot_creation_rejects_another_unresolved_owner(tmp_path: Path) -> None:
-    from pilot.core.site.migration_backup import SiteMigrationBackup
+    from pilot.core.site.backups.migration import SiteMigrationBackup
 
     site = MagicMock()
     site.path = tmp_path / "site1.localhost"

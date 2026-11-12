@@ -10,7 +10,7 @@ import pytest
 from pilot.config import BenchConfig
 from pilot.exceptions import DatabaseError
 
-_PROVIDER = "admin.backend.providers.database.DatabaseDiagnosticsProvider"
+_PROVIDER = "admin.backend.providers.database.diagnostics.DatabaseDiagnosticsProvider"
 
 
 def _patched_provider(**attributes):
@@ -836,7 +836,7 @@ def test_binlog_listing_still_allowed_when_bench_management_disabled(tmp_path: P
 
 
 def test_diagnostics_reports_unsupported_for_sqlite_bench(tmp_path: Path) -> None:
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
 
     client = _client(tmp_path / "benches" / "current", db_type="sqlite")
     response = client.get("/api/v1/database/diagnostics")
@@ -850,7 +850,7 @@ def test_diagnostics_reports_unsupported_for_sqlite_bench(tmp_path: Path) -> Non
 
 
 def test_binlogs_rejected_for_sqlite_bench(tmp_path: Path) -> None:
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
 
     client = _client(tmp_path / "benches" / "current", db_type="sqlite")
     response = client.get("/api/v1/database/binlogs")
@@ -860,7 +860,7 @@ def test_binlogs_rejected_for_sqlite_bench(tmp_path: Path) -> None:
 
 
 def test_purge_rejected_for_sqlite_bench(tmp_path: Path) -> None:
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
 
     client = _client(tmp_path / "benches" / "current", db_type="sqlite")
     response = client.post("/api/v1/database/binlogs/purge", json={"up_to": "mysql-bin.000002"})

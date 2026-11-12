@@ -21,7 +21,7 @@ from admin.backend.api.v1.sites.shared import (
 )
 from admin.backend.middleware import is_bench_scoped, require_scope
 from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.sites import SiteProvider
+from admin.backend.providers.site.listing import SiteProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import (
     BenchError,
