@@ -128,6 +128,7 @@ class BenchProcesses:
     def apply(self) -> None:
         """Write, link and start the production process set. Running processes keep running;
         a new app process starts, and a removed one stops and is unlinked."""
+        from pilot.managers.nginx import NginxManager
         from pilot.managers.processes.base import UnitGroup
 
         if not self.bench.config.production.enabled:
@@ -142,6 +143,7 @@ class BenchProcesses:
         manager.install_config()
         manager.reload_manager_config()
         manager.apply_unit_action("start" if is_running else "stop", UnitGroup.WORKLOAD)
+        NginxManager(self.bench).reload_for_asset_change()
 
     def restart(self, names: list[str]) -> list[str]:
         """Restart the named processes. An app name stands for every process of that app that runs."""

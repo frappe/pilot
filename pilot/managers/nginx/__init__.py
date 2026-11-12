@@ -494,6 +494,12 @@ class NginxManager:
         sys.stdout.flush()
         self.apply_config()
 
+    def reload_for_asset_change(self) -> None:
+        """Write the config again when an app's assets are not in it, such as after an install or an update."""
+        current = self.include_path.read_text() if self.include_path.is_file() else ""
+        if self._renderer.render_asset_locations() not in current:
+            self.reload_for_site_change()
+
     def _write_error_pages(self, nginx_dir: Path) -> None:
         error_dir = nginx_dir / "error_pages"
         error_dir.mkdir(parents=True, exist_ok=True)

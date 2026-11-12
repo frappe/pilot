@@ -1611,3 +1611,16 @@ def test_a_link_that_leaves_its_app_is_not_served(tmp_path: Path) -> None:
     (app / "frappe" / "public" / "file-leak").symlink_to(renderer.bench.path / "bench.toml")
 
     assert [url for url, _, _ in renderer.get_asset_locations()] == ["/assets/frappe/"]
+
+
+@pytest.mark.parametrize("is_current, reloads", [(True, 0), (False, 1)])
+def test_nginx_reloads_only_when_an_apps_assets_are_missing(tmp_path: Path, is_current: bool, reloads: int) -> None:
+    manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
+    _app_folder(manager._renderer)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text(manager._renderer.render_asset_locations() if is_current else "server {}")
+
+    with patch.object(NginxManager, "reload_for_site_change") as reload:
+        manager.reload_for_asset_change()
+
+    assert reload.call_count == reloads
