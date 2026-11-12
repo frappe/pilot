@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from flask import current_app
-
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.providers.bench import BenchProvider
 from pilot.config import BenchConfig
@@ -18,7 +17,7 @@ ADMIN_DOMAIN_RE = re.compile(
 
 def guard_bench_management():
     """Gate bench-management routes behind admin.allow_bench_management."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read_raw(bench_root)
     except Exception:

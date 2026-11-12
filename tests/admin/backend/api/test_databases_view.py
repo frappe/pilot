@@ -349,7 +349,7 @@ def test_restart_database_queues_guarded_non_cancellable_task(tmp_path: Path) ->
         patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
         patch("admin.backend.api.v1.databases.RestartDatabaseTask.queue", return_value="task-1") as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-1"}, 202),
         ),
     ):
@@ -405,7 +405,7 @@ def test_performance_schema_queues_guarded_task(tmp_path: Path) -> None:
             return_value="task-2",
         ) as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-2"}, 202),
         ),
     ):
@@ -475,7 +475,7 @@ def test_innodb_buffer_pool_size_queues_guarded_task(tmp_path: Path) -> None:
             return_value="task-3",
         ) as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-3"}, 202),
         ),
     ):
@@ -505,7 +505,7 @@ def test_max_connections_queues_guarded_task(tmp_path: Path) -> None:
             return_value="task-4",
         ) as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-4"}, 202),
         ),
     ):
@@ -645,6 +645,10 @@ def test_database_settings_queue_without_bench_management(
         patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
         patch("admin.backend.api.v1.databases._configurations", return_value=configurations),
         patch(f"admin.backend.api.v1.databases.{queue_target}", return_value="task-1") as queue,
+        patch(
+            "admin.backend.api.requests.accepted_task_response",
+            return_value=({"task_id": "task-1"}, 202),
+        ),
         patch(
             "admin.backend.api.v1.databases.accepted_task_response",
             return_value=({"task_id": "task-1"}, 202),
@@ -959,7 +963,7 @@ def test_memory_share_queues_guarded_task(tmp_path: Path) -> None:
     with (
         patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
         patch("admin.backend.api.v1.databases.SetMariaDBMemoryShareTask.queue", return_value="task-5") as queue,
-        patch("admin.backend.api.v1.databases.accepted_task_response", return_value=({"task_id": "task-5"}, 202)),
+        patch("admin.backend.api.requests.accepted_task_response", return_value=({"task_id": "task-5"}, 202)),
     ):
         response = client.post("/api/v1/database/quick-actions/memory-share", json={"memory_share": 0.6})
 

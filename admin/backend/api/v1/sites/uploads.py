@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import current_app, jsonify, request
+from flask import jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import malformed_body, site_name, site_not_found
@@ -20,7 +21,7 @@ from pilot.internal.site_paths import site_exists
 @require_scope(site_name)
 def start_backup_upload(name: str):
     """Start a chunked upload of backup files: `{"files": {part: {"filename", "size"}}}`."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     data = request.get_json(silent=True)
@@ -70,7 +71,7 @@ def find_upload(bench_root: Path, name: str, upload_id: str) -> BackupUpload:
 
 
 def _with_upload(name: str, upload_id: str, action):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:

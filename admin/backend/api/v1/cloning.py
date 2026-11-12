@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import secrets
-from pathlib import Path
 
-from flask import current_app, jsonify, request
+from flask import jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.benches import benches_bp
 from admin.backend.api.v1.benches.support import BENCH_NAME_RE, guard_bench_management, target_bench_dir
@@ -24,7 +24,7 @@ from pilot.tasks.clone_site import CloneSiteTask
 def clone_source(name: str) -> Bench:
     if not BENCH_NAME_RE.fullmatch(name):
         raise ValueError
-    path = target_bench_dir(Path(current_app.config["BENCH_ROOT"]), name)
+    path = target_bench_dir(ApiRequest.get_bench_root(), name)
     if not (path / "bench.toml").is_file():
         raise ValueError
     return Bench(path)
@@ -71,7 +71,7 @@ def get_clone_bench_name(name: str, data: dict) -> str:
 
 @benches_bp.post("/<name>/actions/clone")
 def clone_bench(name: str):
-    root = Path(current_app.config["BENCH_ROOT"])
+    root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return error_response("invalid_clone", "Enter a destination bench name.", 422)
@@ -84,7 +84,7 @@ def clone_bench(name: str):
         source = Bench(target_bench_dir(root, name))
         args = dict(source_bench=source.path.name, name=target, branch=branch, app_branches=app_branches)
         existing = Bench(root).tasks.find_idempotent_task(
-            "clone-bench", args, request.headers.get("Idempotency-Key")
+            "clone-bench", args, ApiRequest.get_idempotency_key()
         )
         if existing:
             return accepted_task_response(root, existing)
@@ -96,7 +96,7 @@ def clone_bench(name: str):
             name=target,
             branch=branch,
             app_branches=app_branches,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=[f"bench:{name}", f"bench:{target}"],
         )
     except TaskConflictError as error:
@@ -122,7 +122,7 @@ def get_clone_site_names(name: str, data) -> tuple[str, str]:
 
 @sites_bp.post("/<name>/actions/clone")
 def clone_site(name: str):
-    root = Path(current_app.config["BENCH_ROOT"])
+    root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     try:
         target, bench_name = get_clone_site_names(name, data)
@@ -135,9 +135,7 @@ def clone_site(name: str):
         destination = Bench(target_bench_dir(root, bench_name))
         password = secrets.token_urlsafe(24)
         args = dict(site=name, name=target, target_bench=bench_name, admin_password=password)
-        existing = bench.tasks.find_idempotent_task(
-            "clone-site", args, request.headers.get("Idempotency-Key")
-        )
+        existing = bench.tasks.find_idempotent_task("clone-site", args, ApiRequest.get_idempotency_key())
         if existing:
             return accepted_task_response(root, existing)
         SiteClone(bench.site(name), destination, target, password).validate()
@@ -147,7 +145,7 @@ def clone_site(name: str):
             name=target,
             target_bench=bench_name,
             admin_password=password,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=[f"site:{name.lower()}", f"bench:{bench_name}", host_resource_key(target)],
         )
     except TaskConflictError as error:

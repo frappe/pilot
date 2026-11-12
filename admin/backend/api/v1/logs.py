@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import TypedDict
 
-from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.draining import is_draining
 from admin.backend.providers.logs import LogProvider
@@ -41,7 +42,7 @@ _MAX_LINES = 5000
 
 @logs_bp.get("")
 def index():
-    bench_root = current_app.config["BENCH_ROOT"]
+    bench_root = ApiRequest.get_bench_root()
     try:
         log_files = LogProvider(bench_root).get_all()
     except Exception:
@@ -64,7 +65,7 @@ def index():
 
 @logs_bp.route("/<filename>")
 def viewer(filename: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+    bench_root = ApiRequest.get_bench_root()
     search = request.args.get("search", "").strip()
 
     try:
@@ -96,7 +97,7 @@ def viewer(filename: str):
 
 @logs_bp.get("/<filename>/content")
 def download_log(filename: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+    bench_root = ApiRequest.get_bench_root()
     try:
         provider = LogProvider(bench_root)
         log_path = provider.get_file_path(filename)
@@ -115,7 +116,7 @@ def download_log(filename: str):
 
 @logs_bp.get("/<filename>/events")
 def stream_log(filename: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+    bench_root = ApiRequest.get_bench_root()
     provider = LogProvider(bench_root)
 
     def generate():

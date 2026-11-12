@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import created_response, error_response, no_content_response
 from admin.backend.internal.session import Session
 from admin.backend.internal.two_factor_authentication import (
@@ -51,7 +51,7 @@ def _second_factor_error(bench: Bench, otp: str):
 @auth_bp.get("/session")
 @allow_unauthenticated
 def get_session():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         bench = Bench(bench_root)
     except Exception:
@@ -73,7 +73,7 @@ def get_session():
 @allow_unauthenticated
 @rate_limit(5, 60, user_ip=True)
 def create_session():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         bench = Bench(bench_root)
     except Exception:
@@ -82,9 +82,7 @@ def create_session():
             "Bench configuration is unavailable.",
             503,
         )
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    data = ApiRequest.get_json_body()
     error, redeemed = _validate_login(data, bench)
     if error is not None:
         return error
@@ -130,7 +128,7 @@ def delete_session():
     token = request.cookies.get("sid")
     if token:
         try:
-            bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+            bench = ApiRequest.get_bench()
         except Exception:
             bench = None
         if bench:
@@ -180,11 +178,9 @@ def _validate_login(data: dict, bench):
 def change_admin_password():
     """Change the admin password. Leaves existing sessions alone - revoking them is a
     separate, caller-confirmed step."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     bench = Bench(bench_root)
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    data = ApiRequest.get_json_body()
 
     new_password = str(data.get("new_password", ""))
     if error := _validate_new_password(bench, new_password):
@@ -209,17 +205,15 @@ def two_factor_payload(bench: Bench) -> dict:
 
 @auth_bp.get("/two-factor")
 def get_two_factor():
-    return jsonify(two_factor_payload(Bench(Path(current_app.config["BENCH_ROOT"]))))
+    return jsonify(two_factor_payload(ApiRequest.get_bench()))
 
 
 @auth_bp.post("/two-factor/enrollment")
 @rate_limit(10, 60, user_ip=True)
 def start_two_factor_enrollment():
     """Register a device and hand back its setup key, shown only here."""
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench = ApiRequest.get_bench()
+    data = ApiRequest.get_json_body()
     try:
         enrollment = TwoFactorAuthentication(bench).start_enrollment(str(data.get("name", "")))
     except TwoFactorError as error:
@@ -231,10 +225,8 @@ def start_two_factor_enrollment():
 @rate_limit(5, 60, user_ip=True)
 def confirm_two_factor_credential(name: str):
     """Activate a device once a code proves its setup key was entered correctly."""
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench = ApiRequest.get_bench()
+    data = ApiRequest.get_json_body()
     two_factor = TwoFactorAuthentication(bench)
     was_enabled = two_factor.is_enabled
     if not two_factor.confirm_enrollment(name, str(data.get("otp", ""))):
@@ -265,7 +257,7 @@ def confirm_two_factor_credential(name: str):
 @rate_limit(5, 60, user_ip=True)
 def remove_two_factor_credential(name: str):
     """Remove a device. Dropping the last confirmed one turns 2FA off."""
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    bench = ApiRequest.get_bench()
     two_factor = TwoFactorAuthentication(bench)
     if not two_factor.remove_credential(name):
         return error_response("unknown_credential", "No such device.", 404)
@@ -282,7 +274,7 @@ def remove_two_factor_credential(name: str):
 
 @auth_bp.get("/sessions")
 def list_sessions():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
     except Exception:
@@ -299,7 +291,7 @@ def list_sessions():
 @rate_limit(5, 60, user_ip=True)
 def revoke_all_sessions():
     """Revoke every other live session and re-issue one for the caller."""
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    bench = ApiRequest.get_bench()
     session = Session(bench)
     revoked = session.revoke_all()
     token, jti = session.issue_session_token(ip=client_ip())
@@ -316,7 +308,7 @@ def revoke_all_sessions():
 @auth_bp.post("/sessions/revoke/<jti>")
 def revoke_session(jti: str):
     """Revoke an active session by its jti. Requires an authenticated bench session."""
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    bench = ApiRequest.get_bench()
     if not Session(bench).revoke_jti(jti):
         return error_response("unknown_session", "No such active session.", 404)
     bench.audit_action("session", {"event": "revoked", "jti": jti})
@@ -327,7 +319,7 @@ def revoke_session(jti: str):
 @rate_limit(5, 60, user_ip=True)
 def regenerate_recovery_codes():
     """Replace the whole set. Any code saved from the previous set stops working."""
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    bench = ApiRequest.get_bench()
     codes = TwoFactorAuthentication(bench).generate_recovery_codes()
     bench.audit_action("session", {"event": "recovery_codes_regenerated"})
     return jsonify({"recovery_codes": codes})

@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.providers.apps import AppProvider
 from pilot.core.bench import Bench
@@ -23,7 +24,7 @@ marketplace_bp = Blueprint("marketplace", __name__)
 
 @apps_bp.get("")
 def index():
-    bench_root = current_app.config["BENCH_ROOT"]
+    bench_root = ApiRequest.get_bench_root()
     try:
         apps = AppProvider(bench_root).get_all()
     except Exception:
@@ -33,7 +34,7 @@ def index():
 
 @marketplace_bp.get("/apps")
 def marketplace():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         from pilot.integrations.marketplace import Marketplace
 
@@ -47,7 +48,7 @@ def marketplace():
 
 @apps_bp.post("")
 def install():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
     task_args, sites, response = _install_request(data, bench_root)
@@ -122,7 +123,7 @@ def _queue_install_task(bench_root: Path, task_args: dict, sites: list[str]) -> 
 
 @apps_bp.get("/<name>")
 def detail(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not (bench_root / "apps" / name / ".git").exists():
         return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
     try:
@@ -134,10 +135,8 @@ def detail(name: str):
 
 @apps_bp.patch("/<name>")
 def update(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
     if data.get("repo") is not None and not isinstance(data["repo"], str):
         return error_response("invalid_repository", "Repository URL must be a string.", 422)
     repo = (data.get("repo") or "").strip()
@@ -162,7 +161,7 @@ def update(name: str):
 
 @apps_bp.delete("/<name>")
 def remove(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
 
     if not (bench_root / "apps" / name).exists():
         return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
@@ -177,7 +176,7 @@ def remove(name: str):
 
 @apps_bp.post("/<name>/actions/switch-branch")
 def switch_branch(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if validate_app_name(name) or not (bench_root / "apps" / name).is_dir():
         return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
     data = request.get_json(silent=True)
@@ -189,7 +188,7 @@ def switch_branch(name: str):
 
     try:
         task_id = SwitchBranchTask.queue_switch(
-            Bench(bench_root), name, branch.strip(), idempotency_key=request.headers.get("Idempotency-Key")
+            Bench(bench_root), name, branch.strip(), idempotency_key=ApiRequest.get_idempotency_key()
         )
     except TaskConflictError as error:
         return error_response("task_conflict", str(error), 409)
@@ -200,7 +199,7 @@ def switch_branch(name: str):
 
 @apps_bp.post("/fetch")
 def fetch_updates():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         task_id = FetchAppUpdatesTask.queue(Bench(bench_root))
     except RegistryUnavailableError as exc:

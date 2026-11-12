@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 
 from flask import (
     Blueprint,
     Response,
-    current_app,
     jsonify,
     request,
     stream_with_context,
     url_for,
 )
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import (
     accepted_response,
     accepted_task_response,
@@ -76,9 +75,7 @@ def list_tasks():
 
 @tasks_bp.post("")
 def create_task():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    data = ApiRequest.get_json_body()
     command = data.get("command")
     if not isinstance(command, str) or not command.strip():
         return error_response(
@@ -88,12 +85,12 @@ def create_task():
         )
     args = {key: value for key, value in data.items() if key != "command"}
     try:
-        task_id = TaskRunner(_bench_root()).run(
+        task_id = TaskRunner(ApiRequest.get_bench_root()).run(
             command.strip(),
             args,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
         )
-        return accepted_task_response(_bench_root(), task_id)
+        return accepted_task_response(ApiRequest.get_bench_root(), task_id)
     except TaskConflictError as error:
         return error_response("task_conflict", str(error), 409)
     except ValueError as error:
@@ -115,7 +112,7 @@ def get_task(task_id: str):
 @tasks_bp.delete("/<task_id>")
 def cancel_task(task_id: str):
     try:
-        TaskRunner(_bench_root()).kill(task_id)
+        TaskRunner(ApiRequest.get_bench_root()).kill(task_id)
     except TaskNotFoundError as error:
         return error_response("task_not_found", str(error), 404)
     except TaskNotRunningError as error:
@@ -148,7 +145,7 @@ def retry_task(task_id: str):
             409,
         )
     try:
-        bench_root = _bench_root()
+        bench_root = ApiRequest.get_bench_root()
         return accepted_task_response(
             bench_root,
             TaskRunner(bench_root).run(task.command, task.args),
@@ -232,7 +229,7 @@ def debug_task(task_id: str):
     from pilot.integrations.llm.registry import is_configured
     from pilot.managers.task.debug import stream_task_debug
 
-    bench_root = _bench_root()
+    bench_root = ApiRequest.get_bench_root()
     config = BenchConfig.read(bench_root)
     if not is_configured(config.llm):
         return error_response("ai_not_configured", "Connect an AI assistant in Settings first.", 409)
@@ -268,14 +265,14 @@ def get_task_worker():
 
 @task_worker_bp.post("/task-worker/actions/start")
 def start_task_worker():
-    bench_root = _bench_root()
+    bench_root = ApiRequest.get_bench_root()
     TaskWorkerControl(bench_root).request_start()
     return _accepted_worker()
 
 
 @task_worker_bp.post("/task-worker/actions/stop")
 def stop_task_worker():
-    bench_root = _bench_root()
+    bench_root = ApiRequest.get_bench_root()
     TaskWorkerControl(bench_root).request_stop()
     return _accepted_worker()
 
@@ -288,7 +285,7 @@ def _accepted_worker():
 
 
 def _worker_resource() -> dict:
-    activity = TaskActivityReader(_bench_root()).read()
+    activity = TaskActivityReader(ApiRequest.get_bench_root()).read()
     return {
         **activity.public_dict,
         "queued_tasks": activity.queued_tasks,
@@ -297,8 +294,4 @@ def _worker_resource() -> dict:
 
 
 def _reader() -> TaskReader:
-    return TaskReader(_bench_root())
-
-
-def _bench_root() -> Path:
-    return Path(current_app.config["BENCH_ROOT"])
+    return TaskReader(ApiRequest.get_bench_root())

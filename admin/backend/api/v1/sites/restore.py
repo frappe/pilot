@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import malformed_body, site_name, site_not_found, task_failure
@@ -27,7 +28,7 @@ _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 def restore_site(name: str):
     """Restore from a site on this bench (a backup run or a fresh backup), a remote site, Frappe
     Cloud, or files from a chunked upload."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     data = request.get_json(silent=True)
@@ -50,7 +51,7 @@ def restore_site(name: str):
 @require_scope(site_name)
 def restore_site_from_upload(name: str):
     """Restore from backup files sent as multipart fields database, public, private and config."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     parts = _parts(request.form.getlist("parts"))
@@ -118,7 +119,7 @@ def list_remote_backups(name: str):
     from admin.backend.providers.backups import BackupProvider
     from pilot.exceptions import RemoteSiteError
 
-    if not site_exists(Path(current_app.config["BENCH_ROOT"]), name):
+    if not site_exists(ApiRequest.get_bench_root(), name):
         return site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -201,7 +202,7 @@ def _queue(bench_root: Path, name: str, parts: list[str], sites: set[str], idemp
             Bench(bench_root),
             site=name,
             parts=parts,
-            idempotency_key=request.headers.get("Idempotency-Key") if idempotent else None,
+            idempotency_key=ApiRequest.get_idempotency_key() if idempotent else None,
             resource_key=[f"site:{site.lower()}" for site in sorted(sites)],
             skip_failing_patches=_skips_failing_patches(),
             **source,

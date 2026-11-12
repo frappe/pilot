@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.settings.config import ConfigPatcher
 from admin.backend.middleware import client_ip
@@ -153,7 +154,7 @@ def llm_provider_options() -> list[dict]:
 def _saved_llm_api_key() -> str:
     """The key already stored in bench.toml, so editing settings does not force a retype."""
     try:
-        return BenchConfig.read(Path(current_app.config["BENCH_ROOT"])).llm.api_key
+        return BenchConfig.read(ApiRequest.get_bench_root()).llm.api_key
     except Exception:
         return ""
 
@@ -162,7 +163,7 @@ def _saved_llm_api_base() -> str:
     """The endpoint already stored in bench.toml - listing models must hit the same
     server the assistant will, not the provider's default."""
     try:
-        return BenchConfig.read(Path(current_app.config["BENCH_ROOT"])).llm.api_base
+        return BenchConfig.read(ApiRequest.get_bench_root()).llm.api_base
     except Exception:
         return ""
 
@@ -207,7 +208,7 @@ def llm_models():
 
 @settings_bp.get("")
 def get_settings():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
     except Exception:
@@ -221,7 +222,7 @@ def get_cloudflare_status():
     from pilot.exceptions import DomainProviderError
 
     try:
-        return jsonify(Bench(Path(current_app.config["BENCH_ROOT"])).get_cloudflare_status())
+        return jsonify(ApiRequest.get_bench().get_cloudflare_status())
     except DomainProviderError as error:
         return error_response("cloudflare_status_unavailable", str(error), 502)
 
@@ -254,7 +255,7 @@ def audit_log():
     from admin.backend.api.responses import paginated_response, parse_pagination
     from pilot.core.bench.audit_log import AuditLog
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     limit, offset = parse_pagination(_AUDIT_LOG_DEFAULT_LIMIT, _AUDIT_LOG_MAX_LIMIT)
     try:
         filters = _audit_filters(
@@ -283,7 +284,7 @@ def export_audit_log():
     """Download filtered bench audit events as CSV."""
     from pilot.core.bench.audit_log import AuditLog
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         filters = _audit_filters(
             entry_type=request.args.get("type"),
@@ -322,10 +323,8 @@ def change_admin_domain():
     from pilot.internal.validators import validate_hostname
     from pilot.tasks.change_admin_domain import ChangeAdminDomainTask
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
 
     domain = data.get("domain")
     if not isinstance(domain, str):
@@ -348,7 +347,7 @@ def change_admin_domain():
             bench,
             domain=domain,
             tls=tls,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             # Hold both hostnames until the old provider route is released.
             resource_key=resources,
         )
@@ -359,10 +358,8 @@ def change_admin_domain():
 
 @settings_bp.patch("")
 def update_settings():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
 
     try:
         update = _save_settings_update(bench_root, data)

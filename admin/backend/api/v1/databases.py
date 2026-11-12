@@ -4,9 +4,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.benches.support import guard_bench_management
 from pilot.core.bench import Bench
@@ -27,16 +28,12 @@ database_bp = Blueprint("database", __name__)
 _DATABASE_RESOURCE_KEY = "database-server"
 
 
-def _bench() -> Bench:
-    return Bench(Path(current_app.config["BENCH_ROOT"]))
-
-
 def _quick_actions() -> DatabaseQuickActions:
-    return DatabaseQuickActions(_bench().config)
+    return DatabaseQuickActions(ApiRequest.get_bench().config)
 
 
 def _configurations() -> DatabaseConfigurations:
-    return DatabaseConfigurations(_bench().config)
+    return DatabaseConfigurations(ApiRequest.get_bench().config)
 
 
 def _queue_configuration_change(
@@ -88,7 +85,7 @@ def _queue_configuration_change(
 
 @database_bp.get("/sites")
 def list_query_sites() -> ResponseReturnValue:
-    bench_root: Path = current_app.config["BENCH_ROOT"]
+    bench_root: Path = ApiRequest.get_bench_root()
     sites_path = bench_root / "sites"
     if not sites_path.is_dir():
         return jsonify([])
@@ -111,7 +108,7 @@ def list_query_sites() -> ResponseReturnValue:
 
 @database_bp.get("/schema")
 def get_schema() -> ResponseReturnValue:
-    bench_root: Path = current_app.config["BENCH_ROOT"]
+    bench_root: Path = ApiRequest.get_bench_root()
     site = request.args.get("site", "")
     if not site:
         return error_response("invalid_site", "Site is required.", 422)
@@ -127,7 +124,7 @@ def get_schema() -> ResponseReturnValue:
 
 @database_bp.post("/queries")
 def execute_query() -> ResponseReturnValue:
-    bench_root: Path = current_app.config["BENCH_ROOT"]
+    bench_root: Path = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
     query_data, response = _query_request(data)
@@ -158,7 +155,7 @@ def execute_query() -> ResponseReturnValue:
 def _provider():
     from admin.backend.providers.database import DatabaseDiagnosticsProvider
 
-    return DatabaseDiagnosticsProvider(current_app.config["BENCH_ROOT"])
+    return DatabaseDiagnosticsProvider(ApiRequest.get_bench_root())
 
 
 @database_bp.get("/diagnostics")
@@ -214,11 +211,11 @@ def set_database_configuration(variable: str):
                 f"MariaDB variable '{variable}' already has the requested value.",
                 409,
             )
-        bench = _bench()
+        bench = ApiRequest.get_bench()
         task_id = _queue_configuration_change(
             bench,
             change,
-            request.headers.get("Idempotency-Key"),
+            ApiRequest.get_idempotency_key(),
         )
         return accepted_task_response(bench.path, task_id)
     except ValueError as exc:
@@ -237,13 +234,8 @@ def set_database_configuration(variable: str):
 def restart_database():
     try:
         _quick_actions().require_restart()
-        bench = _bench()
-        task_id = RestartDatabaseTask.queue(
-            bench,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=_DATABASE_RESOURCE_KEY,
-        )
-        return accepted_task_response(bench.path, task_id)
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(RestartDatabaseTask, bench, resource_key=_DATABASE_RESOURCE_KEY)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -269,14 +261,13 @@ def set_performance_schema():
                 f"Performance Schema is already {state}.",
                 409,
             )
-        bench = _bench()
-        task_id = SetPerformanceSchemaTask.queue(
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetPerformanceSchemaTask,
             bench,
             state="enabled" if enabled else "disabled",
-            idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=_DATABASE_RESOURCE_KEY,
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -305,14 +296,10 @@ def set_innodb_buffer_pool_size():
                 f"InnoDB Buffer Pool size is already {size_mb} MB.",
                 409,
             )
-        bench = _bench()
-        task_id = SetInnoDBBufferPoolSizeTask.queue(
-            bench,
-            size_mb=size_mb,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=_DATABASE_RESOURCE_KEY,
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetInnoDBBufferPoolSizeTask, bench, size_mb=size_mb, resource_key=_DATABASE_RESOURCE_KEY
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -345,14 +332,13 @@ def set_max_connections():
                 f"Max DB Connections is already {max_connections}.",
                 409,
             )
-        bench = _bench()
-        task_id = SetMaxDatabaseConnectionsTask.queue(
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetMaxDatabaseConnectionsTask,
             bench,
             max_connections=max_connections,
-            idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=_DATABASE_RESOURCE_KEY,
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -375,14 +361,13 @@ def set_memory_share():
     try:
         actions = _quick_actions()
         actions.require_memory_share(memory_share)
-        bench = _bench()
-        task_id = SetMariaDBMemoryShareTask.queue(
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetMariaDBMemoryShareTask,
             bench,
             memory_share=float(memory_share),
-            idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=_DATABASE_RESOURCE_KEY,
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:

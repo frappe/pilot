@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import current_app, jsonify, request, send_file
+from flask import jsonify, request, send_file
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
@@ -32,7 +33,7 @@ _DEFAULT_BACKUPS_PAGE_SIZE = 20
 def backup_site(name: str):
     if refused := server_access_locked_response():
         return refused
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -49,7 +50,7 @@ def backup_site(name: str):
 def list_backups(name: str):
     from admin.backend.providers.backups import BackupProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
     try:
         sets = BackupProvider(bench_root, name).get_all(limit=limit)
@@ -61,7 +62,7 @@ def list_backups(name: str):
 @sites_bp.get("/<name>/backups/<timestamp>")
 @require_scope(site_name)
 def get_backup(name: str, timestamp: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     match, failure = _find_backup_set(bench_root, name, timestamp)
     if failure:
         return failure
@@ -71,7 +72,7 @@ def get_backup(name: str, timestamp: str):
 @sites_bp.delete("/<name>/backups/<timestamp>")
 @require_scope(site_name)
 def delete_backup(name: str, timestamp: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     match, failure = _find_backup_set(bench_root, name, timestamp)
     if failure:
         return failure
@@ -120,7 +121,7 @@ def download_backup_file(name: str, timestamp: str, file_id: str):
     # A backup restores elsewhere, so a free trial cannot take its data out.
     if refused := server_access_locked_response():
         return refused
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     bench = Bench(bench_root)
     try:
         target = bench.site(name).backups.download_file_path(timestamp, file_id)
@@ -144,7 +145,7 @@ def backup_download_links(name: str, timestamp: str):
     straight from the bucket, so this server never proxies the transfer."""
     if refused := server_access_locked_response():
         return refused
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     bench = Bench(bench_root)
     try:
         links = bench.site(name).backups.download_links(timestamp)
@@ -170,7 +171,7 @@ def _retention_from_payload(block: dict | None):
 @sites_bp.get("/<name>/backup-schedule")
 @require_scope(site_name)
 def get_backup_schedule(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         schedule = Bench(bench_root).site(name).backups.schedule()
     except CronError as error:
@@ -183,7 +184,7 @@ def get_backup_schedule(name: str):
 @sites_bp.put("/<name>/backup-schedule")
 @require_scope(site_name)
 def set_backup_schedule(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return malformed_body()
@@ -210,7 +211,7 @@ def set_backup_schedule(name: str):
 @sites_bp.delete("/<name>/backup-schedule")
 @require_scope(site_name)
 def delete_backup_schedule(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         Bench(bench_root).site(name).backups.clear_schedule()
     except CronError as error:

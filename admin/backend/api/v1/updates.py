@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal, TypedDict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from pilot.core.bench import Bench
 from pilot.core.server import Server
@@ -67,7 +67,7 @@ def check_app_updates():
 
 
 def _app_updates(*, fetch: bool) -> list[dict]:
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     bench = Bench(bench_root)
 
     apps_info = []
@@ -166,7 +166,7 @@ def _cli_update_release(*, fetch: bool) -> dict:
     from pilot.managers.processes.base import ManagedProcessManager
     from pilot.managers.processes.local import ProcessManager
 
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    bench = ApiRequest.get_bench()
     result = {
         "current_version": pilot.__version__,
         "is_dev": False,
