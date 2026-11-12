@@ -727,6 +727,18 @@ def test_lockwaits_maps_unsupported_engine_to_422(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "lockwaits_unavailable"
 
 
+def test_deadlocks_pass_the_site_and_return_the_report(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    report = {"log_path": "/x/mariadb-error.log", "print_all_deadlocks": True, "deadlocks": []}
+    patcher, provider = _patched_provider(**{"get_deadlocks.return_value": report})
+    with patcher:
+        response = client.get("/api/v1/database/deadlocks?site=one.local")
+
+    assert response.status_code == 200
+    assert response.get_json() == report
+    provider.get_deadlocks.assert_called_once_with("one.local")
+
+
 def test_kill_process_succeeds(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
     patcher, provider = _patched_provider()

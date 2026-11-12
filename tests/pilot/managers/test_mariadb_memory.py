@@ -279,3 +279,24 @@ def test_an_existing_server_gets_its_aria_page_cache_sized_once(tmp_path: Path) 
         assert "aria-pagecache-buffer-size = 32M" in manager.my_cnf_path.read_text()
         manager.size_aria_pagecache()
         write_config.assert_called_once()
+
+
+def test_an_existing_server_gets_its_error_log_file_once(tmp_path: Path) -> None:
+    manager = MariaDBManager(MariaDBConfig())
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "my.cnf").write_text("[mysqld]\ninnodb-print-all-deadlocks = ON\n")
+    error_log = tmp_path / "logs" / "mariadb-error.log"
+    with (
+        patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch.object(type(manager), "error_log_path", new_callable=PropertyMock, return_value=error_log),
+        patch("pilot.managers.database.mariadb.is_macos", return_value=False),
+        patch.object(manager, "_total_memory_mb", return_value=1962),
+        patch.object(manager, "database_action_lock", return_value=nullcontext()),
+        patch.object(manager, "_write_config", wraps=manager._write_config) as write_config,
+    ):
+        manager.log_errors_to_file()
+        assert f"log-error = {error_log}" in manager.my_cnf_path.read_text()
+        assert error_log.parent.is_dir()
+        manager.log_errors_to_file()
+        write_config.assert_called_once()

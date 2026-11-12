@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from pilot.core.database.base import (
     StorageComponent,
     TableSize,
 )
+from pilot.core.database.deadlocks import DeadlockLog, DeadlockReport
 from pilot.core.database.engines.helpers import (
     DEFAULT_CONNECT_TIMEOUT,
     MAX_ROWS,
@@ -270,15 +272,17 @@ class MariaDB(Database):
         )
 
     def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
-        """Each row is the waiting side of a lock wait, joined to its own
-        transaction for state/query/row-count context. INNODB_TRX has no
-        database column, so the owning connection supplies it."""
+        """Each row is one lock wait: the waiting transaction with its state, query and row
+        counts, and the transaction blocking it. INNODB_TRX has no database column, so the
+        owning connection supplies it."""
         result = self.execute(
             "SELECT w.requesting_trx_id, l.lock_type, l.lock_mode, l.lock_table, l.lock_index, "
-            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB "
+            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB, "
+            "w.blocking_trx_id, b.trx_mysql_thread_id, b.trx_query "
             "FROM information_schema.INNODB_LOCK_WAITS w "
             "JOIN information_schema.INNODB_LOCKS l ON l.lock_id = w.requested_lock_id "
             "JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id "
+            "LEFT JOIN information_schema.INNODB_TRX b ON b.trx_id = w.blocking_trx_id "
             "LEFT JOIN information_schema.PROCESSLIST p ON p.ID = t.trx_mysql_thread_id"
         )
         rows = [row for row in result.rows if not database or row[10] == database]
@@ -294,9 +298,32 @@ class MariaDB(Database):
                 query=row[7],
                 rows_locked=int(row[8]) if row[8] is not None else None,
                 rows_modified=int(row[9]) if row[9] is not None else None,
+                blocking_id=str(row[11]) if row[11] is not None else None,
+                blocking_thread_id=int(row[12]) if row[12] is not None else None,
+                blocking_query=row[13],
             )
             for row in rows
         ]
+
+    def get_deadlocks(self, database: str = "", limit: int = 50) -> DeadlockReport:
+        """Deadlocks InnoDB printed to the error log, which must be a file on this host."""
+        print_all = str(self.get_scalar("SELECT @@innodb_print_all_deadlocks")) in ("1", "ON")
+        path = self.get_error_log_path()
+        if path is None:
+            return DeadlockReport(log_path=None, print_all_deadlocks=print_all)
+        return DeadlockReport(str(path), print_all, DeadlockLog(path).get_deadlocks(database, limit))
+
+    def get_error_log_path(self) -> Path | None:
+        """None when errors go to stderr (the journal) or the file is out of reach."""
+        if not is_local_host(self._host, self._socket):
+            return None
+        value = str(self.get_scalar("SELECT @@log_error") or "")
+        if not value:
+            return None
+        path = Path(value)
+        if not path.is_absolute():
+            path = Path(self.get_data_directory() or ".") / path
+        return path if path.is_file() and os.access(path, os.R_OK) else None
 
     def get_time_consuming_queries(
         self, database: str = "", limit: int = 20, offset: int = 0

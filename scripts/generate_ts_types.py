@@ -63,6 +63,7 @@ from pilot.core.database.base import (
     UnusedIndex,
 )
 from pilot.core.database.configurations import DatabaseConfigurationEditor
+from pilot.core.database.deadlocks import DeadlockReport
 from pilot.core.notification import Notification
 from pilot.core.site.storage import SiteStorageReport
 from pilot.managers.task.reader import DoneEvent, OutputEvent, StatusEvent
@@ -98,6 +99,7 @@ _TARGETS = (
             database,
             DatabaseProcess,
             LockWaitRow,
+            DeadlockReport,
             PerformanceSection,
             TimeConsumingQuery,
             FullTableScanQuery,

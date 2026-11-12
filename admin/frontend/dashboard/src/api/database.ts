@@ -9,6 +9,7 @@ import type {
   DatabaseSite,
   DatabaseSize,
   ExecutedQuery,
+  DeadlockReport,
   LockWaitRow,
   PerformanceSection,
   TableSchema,
@@ -34,6 +35,9 @@ export const databaseApi = {
 
   lockWaitRows: (site = ''): Promise<LockWaitRow[]> =>
     request.get('database/lockwaits', { searchParams: site ? { site } : {} }).json(),
+
+  deadlocks: (site = ''): Promise<DeadlockReport> =>
+    request.get('database/deadlocks', { searchParams: site ? { site } : {} }).json(),
 
   size: (site = ''): Promise<DatabaseSize> =>
     request.get('database/size', { searchParams: site ? { site } : {} }).json(),

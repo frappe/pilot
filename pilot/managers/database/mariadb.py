@@ -107,6 +107,11 @@ class MariaDBManager(UserOwnedDBManager):
         return self.run_dir / "mysqld.pid"
 
     @property
+    def error_log_path(self) -> Path:
+        """In system/logs so the host's logrotate rule covers it. Deadlocks are read from here."""
+        return cli_root() / "system" / "logs" / "mariadb-error.log"
+
+    @property
     def socket_path(self) -> str:
         if self.config.socket_path:
             return self.config.socket_path
@@ -162,6 +167,7 @@ class MariaDBManager(UserOwnedDBManager):
         limits = calculate_mariadb_variable_limits(total_memory_mb, self.config.memory_share)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.error_log_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_managed_cnf()
         content = (
             "# Managed by Pilot.\n"
@@ -171,6 +177,7 @@ class MariaDBManager(UserOwnedDBManager):
             f"socket = {self.socket_path}\n"
             f"port = {self.config.port}\n"
             f"pid-file = {self.pid_file}\n"
+            f"log-error = {self.error_log_path}\n"
             "bind-address = 127.0.0.1\n"
             "\n"
             "default-storage-engine = InnoDB\n"
@@ -400,6 +407,15 @@ class MariaDBManager(UserOwnedDBManager):
         if is_macos() or self.config.existing or not self.my_cnf_path.exists():
             return
         if "aria-pagecache-buffer-size" in self.my_cnf_path.read_text():
+            return
+        with self.database_action_lock():
+            self._write_config()
+
+    def log_errors_to_file(self) -> None:
+        """Write the error log setting for the next start, so deadlock dumps reach a file."""
+        if is_macos() or self.config.existing or not self.my_cnf_path.exists():
+            return
+        if "log-error" in self.my_cnf_path.read_text():
             return
         with self.database_action_lock():
             self._write_config()

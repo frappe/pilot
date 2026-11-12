@@ -433,6 +433,16 @@ def get_lock_wait_rows():
         return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
 
 
+@database_bp.get("/deadlocks")
+def get_deadlocks():
+    try:
+        return jsonify(_provider().get_deadlocks(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("deadlocks_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("deadlocks_unavailable", "Could not read database deadlocks.", 500)
+
+
 @database_bp.get("/performance-report")
 def get_performance_report() -> ResponseReturnValue:
     provider = _provider()
