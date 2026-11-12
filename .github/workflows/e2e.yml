@@ -33,8 +33,9 @@ jobs:
             admin/frontend/in-app-embed/package-lock.json
 
       - name: Install dependencies
+        # The dashboard's preinstall generates TS types with uv; the Cloud Settings specs only need Playwright.
         run: |
-          npm ci --prefix admin/frontend/dashboard
+          npm ci --prefix admin/frontend/dashboard --ignore-scripts
           npm ci --prefix admin/frontend/cloud-sdk
           npm ci --prefix admin/frontend/in-app-embed
 
