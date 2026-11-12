@@ -225,6 +225,13 @@ class Site:
 
         return SiteApps(self).disabled_apps()
 
+    @property
+    def unfinished_installs(self) -> list[str]:
+        """Apps listed as installed whose install failed after Frappe listed them."""
+        from pilot.core.site.apps import SiteApps
+
+        return SiteApps(self).get_unfinished_installs()
+
     def get_missing_dependencies(self, app: "App") -> list[str]:
         """Apps `app` requires that this site does not have at all."""
         from pilot.core.site.apps import SiteApps

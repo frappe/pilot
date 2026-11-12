@@ -58,6 +58,7 @@ def site_apps(name: str):
 
     bench = Bench(bench_root)
     provider = AppProvider(bench_root)
+    unfinished = set(bench.site(name).unfinished_installs)
     result: list[SiteApp] = []
     for app_name in site.active_apps:
         entry: SiteApp = {
@@ -68,6 +69,7 @@ def site_apps(name: str):
             "commit": "",
             "version": "",
             "repo": "",
+            "install_unfinished": app_name in unfinished,
         }
         try:
             app = bench.app(app_name)

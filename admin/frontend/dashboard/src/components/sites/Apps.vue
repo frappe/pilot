@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Button, Dropdown, type DropdownItem } from 'frappe-ui'
+import { Button, Dropdown, type DropdownItem, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import SwitchBranchDialog from '@/components/apps/SwitchBranchDialog.vue'
 import UninstallAppDialog from '@/components/apps/UninstallAppDialog.vue'
 import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
@@ -8,7 +9,11 @@ import MarketplaceAppCardSkeleton from '@/components/marketplace/MarketplaceAppC
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
 import { useSite } from '@/composables/sites/useSite'
+import { apiErrorMessage } from '@/api/client'
+import { sitesApi } from '@/api/sites'
+import { errorMessage } from '@/utils/error'
 import { toSentenceCase } from '@/utils/format'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 interface Props {
   siteName: string
@@ -23,10 +28,12 @@ interface AppCardEntry {
   documentation: string
   website: string
   missing: boolean
+  unfinished: boolean
 }
 
 const props = defineProps<Props>()
 const { session } = useSession()
+const router = useRouter()
 
 const { apps, canDisableApps, installedApps, appsLoading, loadApps, reload } = useSite(
   props.siteName,
@@ -63,14 +70,21 @@ const appObjects = computed<AppCardEntry[]>(() =>
     return {
       name,
       title: registryValue(titleMap.value, name) || toSentenceCase(detail?.title) || name,
-      label: detail?.missing ? 'Not on bench' : detail?.version || '',
+      label: detail?.missing
+        ? 'Not on bench'
+        : detail?.install_unfinished
+          ? 'Install incomplete'
+          : detail?.version || '',
       description: detail?.missing
         ? 'The site lists this app, but the bench does not have it. Uninstall removes it from the site.'
-        : registryValue(descriptionMap.value, name) || detail?.description || '',
+        : detail?.install_unfinished
+          ? 'Its install failed after the site listed it. Retry the install to finish it.'
+          : registryValue(descriptionMap.value, name) || detail?.description || '',
       logo_url: registryValue(logoMap.value, name) || null,
       documentation: registryValue(documentationMap.value, name),
       website: registryValue(websiteMap.value, name),
       missing: Boolean(detail?.missing),
+      unfinished: Boolean(detail?.install_unfinished),
     }
   }),
 )
@@ -90,8 +104,25 @@ const openLink = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
+const retryInstall = async (app: AppCardEntry) => {
+  try {
+    const result = await sitesApi.apps.install(props.siteName, { app: app.name })
+    if ('task_id' in result && result.task_id) openTaskDetailPage(router, result.task_id)
+    else toast.error(apiErrorMessage(result, `Could not retry ${app.title}.`))
+  } catch (caught) {
+    toast.error(errorMessage(caught, `Could not retry ${app.title}.`))
+  }
+}
+
 const menuOptions = (app: AppCardEntry): DropdownItem[] => {
   const options: DropdownItem[] = []
+
+  if (app.unfinished)
+    options.push({
+      label: 'Retry install',
+      icon: 'lucide-rotate-ccw',
+      onClick: () => retryInstall(app),
+    })
 
   if (session.codeEditor)
     options.push({
