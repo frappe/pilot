@@ -17,6 +17,7 @@ import UpdateStatusButton from '@/components/common/UpdateStatusButton.vue'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
 import BenchSwitcherDialog from '@/components/benches/BenchSwitcherDialog.vue'
 import NewBenchDialog from '@/components/benches/NewBenchDialog.vue'
+import CloneDialog from '@/components/common/CloneDialog.vue'
 import SearchDialog from '@/components/search/SearchDialog.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 
@@ -25,6 +26,7 @@ import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSession } from '@/composables/auth/useSession'
 import { useAppMenu } from '@/components/navigation/useAppMenu'
 import { openSearch, searchOpen, useSearchShortcut } from '@/composables/common/useSearch'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +34,12 @@ const isMobile = useIsMobile()
 
 const { session } = useSession()
 const { showBenches, showNewBench } = useAppMenu()
+const cloneBenchSource = ref('')
+const showCloneBench = ref(false)
+const cloneBench = (name: string) => {
+  cloneBenchSource.value = name
+  showCloneBench.value = true
+}
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 
 useSearchShortcut()
@@ -156,8 +164,18 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
   <SettingsDialog v-model="showSettings" />
 
   <template v-if="session.allowBenchManagement">
-    <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
+    <BenchSwitcherDialog
+      v-model="showBenches"
+      @new-bench="showNewBench = true"
+      @clone-bench="cloneBench"
+    />
     <NewBenchDialog v-model="showNewBench" />
+    <CloneDialog
+      v-model="showCloneBench"
+      kind="bench"
+      :source="cloneBenchSource"
+      @started="(taskId) => openTaskDetailPage(router, taskId)"
+    />
   </template>
 
   <SearchDialog v-model:open="searchOpen" />

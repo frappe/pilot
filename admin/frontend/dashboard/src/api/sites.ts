@@ -58,6 +58,13 @@ export const sitesApi = {
   create: (payload: Record<string, unknown>): Promise<TaskPayload> =>
     request.post('sites', { json: payload }).json(),
 
+  clone: (source: string, name: string, targetBench: string): Promise<TaskPayload> =>
+    request
+      .post(`sites/${encodeURIComponent(source)}/actions/clone`, {
+        json: { name, target_bench: targetBench },
+      })
+      .json(),
+
   loginLink: (name: string): Promise<SiteLoginLink> =>
     request.post(`sites/${encodeURIComponent(name)}/login`).json(),
 

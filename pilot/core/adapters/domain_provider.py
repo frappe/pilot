@@ -199,16 +199,14 @@ class DomainRouteProvider:
             return None
         try:
             policy = RoutePolicy.from_dict(data)
+            if policy.client_ip_source != "direct" and not self.proxy_servers():
+                raise DomainProviderError("The domain provider returned a proxy route without proxy servers.")
         except (ValueError, TypeError, BenchError) as error:
             with contextlib.suppress(BenchError):
                 self._ask_provider("deregister", domain)
             raise DomainProviderError(
                 f"The domain provider returned an invalid route policy: {error}"
             ) from error
-        if policy.client_ip_source != "direct" and not self.proxy_servers():
-            with contextlib.suppress(BenchError):
-                self._ask_provider("deregister", domain)
-            raise DomainProviderError("The domain provider returned a proxy route without proxy servers.")
         return policy
 
     def _validate_new(self, site_name: str, domain: str) -> str:

@@ -52,6 +52,8 @@ const COMMAND_LABELS: Record<string, string> = {
   'new-app': 'New App',
   'remove-app': 'Remove App',
   'new-site': 'New Site',
+  'clone-site': 'Clone Site',
+  'clone-bench': 'Clone Bench',
   'drop-site': 'Drop Site',
   'backup-site': 'Backup Site',
   'delete-backup': 'Delete Backup',
@@ -80,6 +82,7 @@ export const TASK_TYPES = [
     label: 'Sites',
     commands: [
       'new-site',
+      'clone-site',
       'new-site-from-backup',
       'drop-site',
       'rename-site',
@@ -131,7 +134,7 @@ export const TASK_TYPES = [
     value: 'server',
     icon: 'lucide-server',
     label: 'Server',
-    commands: ['setup-nginx', 'setup-letsencrypt', 'restart-services'],
+    commands: ['setup-nginx', 'setup-letsencrypt', 'restart-services', 'clone-bench'],
   },
   // Catch-all for commands this table has not learned.
   { value: 'other', icon: 'lucide-ellipsis', label: 'Other', commands: [] },
@@ -154,6 +157,7 @@ export const commandLabel = (command: string) => {
 }
 
 const SITE_ARG_KEY: Record<string, string> = {
+  'clone-site': 'site',
   migrate: 'site',
   'migration-backup': 'site',
   'clear-cache': 'site',
