@@ -80,14 +80,15 @@ jobs:
           sudo systemctl disable --now postgresql
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-dependency-glob: pyproject.toml
 
       - name: Install yarn, Pilot and e2e deps
         run: |
           npm install -g yarn
-          pip install -e ".[test,admin,e2e]"
+          uv pip install --system -e ".[test,admin,e2e]"
 
       - name: Cache admin frontend node_modules
         uses: actions/cache@v4
