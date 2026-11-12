@@ -96,7 +96,7 @@ If a command or API route starts doing subprocess, filesystem, nginx, database, 
 
 ## State Layout
 
-Bench data lives under the fixed top-level benches directory returned by `pilot.utils.benches_dir()`.
+Bench data lives under the fixed top-level benches directory returned by `Server().benches_dir`.
 
 Inside a bench:
 

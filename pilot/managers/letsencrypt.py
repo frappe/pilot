@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import CommandError
+from pilot.internal.command import run_command
 from pilot.managers.nginx import LETSENCRYPT_LIVE
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import _privileged, which
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.config import SiteConfig
@@ -84,7 +84,7 @@ def certificate_domains(site: "SiteConfig") -> list[str]:
 def local_public_domains(site: "SiteConfig") -> list[str]:
     """Public domains eligible for local TLS, respecting provider routing."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import matches_wildcard
+    from pilot.internal.hostnames import matches_wildcard
 
     patterns: list[str] | None = None
     domains = []
@@ -104,7 +104,7 @@ def local_public_domains(site: "SiteConfig") -> list[str]:
 def is_admin_certificate_required(bench: "Bench") -> bool:
     """Whether the public Admin hostname needs a certificate on this host."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import matches_wildcard
+    from pilot.internal.hostnames import matches_wildcard
 
     admin = bench.config.admin
     if not admin.tls or not is_public_domain(admin.domain):
@@ -390,11 +390,11 @@ class LetsEncryptManager:
     def renew(self) -> None:
         """Refresh this bench's current origin certificates without renewing retired routes."""
         from pilot.internal.atomic_file import exclusive_file_lock
+        from pilot.internal.private_files import PrivateDirectory
         from pilot.managers.nginx import NginxManager
-        from pilot.utils import make_private_directory
 
         directory = self.bench.config_path / "site-renames"
-        make_private_directory(directory, parents=True)
+        PrivateDirectory(directory).create(parents=True)
         with exclusive_file_lock(directory / "operations"):
             if not any(
                 certificate_domains(site.config) for site in self.bench.sites()
@@ -443,13 +443,13 @@ def is_renewal_timer_installed() -> bool:
 def install_renewal_timer() -> None:
     """Install the host-wide daily timer that renews certificates and warns before one
     expires, once; Fedora and Arch do not enable certbot's timer."""
+    from pilot.core.server import Server
     from pilot.managers.environment import AdminEnvManager
     from pilot.managers.systemd_user import install_user_timer
-    from pilot.utils import cli_root
 
     if is_renewal_timer_installed():
         return
-    root = cli_root()
+    root = Server().root
     (root / "system" / "logs").mkdir(parents=True, exist_ok=True)
     install_user_timer(
         unit_dir=root / "system" / "certificates",
@@ -463,12 +463,12 @@ def install_renewal_timer() -> None:
 def main() -> None:
     """Refresh each bench's local certificates, then check their expiry."""
     from pilot.core.bench import Bench
+    from pilot.core.server import Server
     from pilot.exceptions import BenchError
-    from pilot.utils import cli_root, iter_sibling_benches
 
     benches = [
         Bench(config, path)
-        for path, config in iter_sibling_benches(cli_root() / "benches" / ".certificates-placeholder")
+        for path, config in Server().benches.iter_configs()
         if config.production.enabled and config.letsencrypt.email
     ]
     for bench in benches:

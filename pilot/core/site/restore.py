@@ -12,7 +12,7 @@ from typing import IO, TYPE_CHECKING
 
 from pilot.core.site.config.public import PublicConfig
 from pilot.exceptions import BenchError
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from pilot.core.site import Site

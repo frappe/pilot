@@ -15,8 +15,8 @@ from pilot.core.app.node_packages import get_app_packages
 from pilot.core.app.prebuilt_assets import asset_build_dirs, build_output_paths
 from pilot.core.bench.artifacts import BenchArtifacts
 from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.command import run_command
 from pilot.managers.node_dependencies import NodeDependencies
-from pilot.utils import run_command
 
 
 class BuildArtifacts:

@@ -37,7 +37,7 @@ def test_success_exit_but_no_files_records_failure(tmp_path, monkeypatch) -> Non
     """Subprocess exits 0 but leaves no files: record a failed run and exit non-zero
     instead of crashing on max({})."""
     task, bench = _task(tmp_path)
-    monkeypatch.setattr("pilot.utils.run_command", lambda *a, **k: None)
+    monkeypatch.setattr("pilot.internal.command.run_command", lambda *a, **k: None)
 
     with pytest.raises(SystemExit) as exit_info:
         task.run()
@@ -55,7 +55,7 @@ def test_nonzero_exit_records_failure(tmp_path, monkeypatch) -> None:
     def fail(*a, **k):
         raise CommandError("frappe backup failed", returncode=2)
 
-    monkeypatch.setattr("pilot.utils.run_command", fail)
+    monkeypatch.setattr("pilot.internal.command.run_command", fail)
 
     with pytest.raises(SystemExit) as exit_info:
         task.run()
@@ -72,7 +72,7 @@ def test_a_disk_write_failure_is_recorded_for_the_scheduler_retry_limit(tmp_path
     def fail(*args, **kwargs):
         raise OSError("No space left on device")
 
-    monkeypatch.setattr("pilot.utils.run_command", fail)
+    monkeypatch.setattr("pilot.internal.command.run_command", fail)
     with pytest.raises(SystemExit) as failure:
         task.run()
 
@@ -89,7 +89,7 @@ def test_backup_is_written_outside_private_backups(tmp_path, monkeypatch) -> Non
         calls.append(argv)
         raise CommandError("frappe backup failed", returncode=2)
 
-    monkeypatch.setattr("pilot.utils.run_command", fail)
+    monkeypatch.setattr("pilot.internal.command.run_command", fail)
 
     with pytest.raises(SystemExit):
         task.run()

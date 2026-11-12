@@ -12,10 +12,11 @@ from typing import TYPE_CHECKING
 
 from pilot.config.proxy import is_cloudflare_address
 from pilot.config.route import RoutePolicy
+from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.hostnames import normalize_host
 from pilot.managers.platform import which
-from pilot.utils import host_owner, normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -223,7 +224,7 @@ class DomainRouteProvider:
                 raise DomainConflictError(
                     f"{domain} is already used by site '{site.config.name}' in this bench."
                 )
-        owner = host_owner(self.bench.path, domain)
+        owner = BenchDirectory.siblings_of(self.bench.path).get_host_owner(domain)
         if owner:
             raise DomainConflictError(
                 f"{domain} is already used by bench '{owner}'. Hostnames must be unique across benches."

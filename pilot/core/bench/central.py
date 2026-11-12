@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
-from pilot.utils import iter_sibling_benches
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -51,7 +51,9 @@ class CentralSetup:
         not provision would take over a live vhost."""
         from pilot.internal.validators import validate_hostname_pattern
 
-        if others := sorted(config.name for _, config in iter_sibling_benches(self.bench.path)):
+        if others := sorted(
+            config.name for _, config in BenchDirectory.siblings_of(self.bench.path).iter_configs()
+        ):
             raise BenchError(
                 f"Central manages a host with one bench, but this one also has: {', '.join(others)}. "
                 f"Write the [central] settings in common_config.toml by hand instead."

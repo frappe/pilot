@@ -16,8 +16,9 @@ from pilot.core.site.provisioning import (
 )
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.hostnames import hosts_line_contains
+from pilot.internal.private_files import PrivateFile
 from pilot.internal.validators import validate_site_name
-from pilot.utils import hosts_line_contains, write_private_text
 
 
 class SiteClone:
@@ -86,7 +87,7 @@ class SiteClone:
         if site.config.route:
             routing["route"] = site.config.route.to_dict()
         config["host_name"] = site_url(self.name, routing, self.bench.config)
-        write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
+        PrivateFile(site.path / "site_config.json").write_text(json.dumps(config, indent=2))
         self.prepare(site, database, on_progress)
         with CloneRuntime(self.bench, allow_existing=True):
             self.finish(site, on_progress)

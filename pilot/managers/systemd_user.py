@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 
 def systemctl(*args: str) -> list[str]:

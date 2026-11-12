@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from pilot.internal.atomic_file import fsync_directory_files
+from pilot.internal.command import run_command
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.platform import _privileged
@@ -18,7 +19,6 @@ from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer
 from pilot.managers.systemd_user import SystemdUserMixin
-from pilot.utils import cli_root, run_command
 
 # Seconds of inactivity before the socket-activated admin stops. This outlives the
 # window a host image builder keeps a machine running before it captures a memory
@@ -45,9 +45,11 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def write_config(self) -> None:
+        from pilot.core.server import Server
+
         service_before, socket_before = self._admin_unit_text()
         sockets_before = self._workload_socket_text()
-        AdminEnvManager(cli_root()).ensure()
+        AdminEnvManager(Server().root).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
@@ -103,10 +105,12 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return workload_units
 
     def _write_central_bootstrap(self, renderer: SystemdRenderer) -> None:
+        from pilot.core.server import Server
+
         (self.systemd_conf_dir / self._central_bootstrap_name()).write_text(
             renderer.render_central_bootstrap(
-                str(AdminEnvManager(cli_root()).python),
-                str(cli_root()),
+                str(AdminEnvManager(Server().root).python),
+                str(Server().root),
                 str(self.bench.path),
                 str(self.bench.logs_path / "central-bootstrap.log"),
             )
@@ -350,7 +354,9 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return f"{self.bench.config.name}.target"
 
     def _admin_service_text(self) -> str:
-        root = cli_root()
+        from pilot.core.server import Server
+
+        root = Server().root
         gunicorn = AdminEnvManager(root).gunicorn
         admin_conf = GunicornManager(self.bench).admin_config_path
         pd = ProcessDefinition(

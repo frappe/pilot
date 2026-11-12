@@ -31,9 +31,7 @@ def _crs_tarball() -> bytes:
 @pytest.fixture
 def fake_download(monkeypatch, tmp_path):
     """Make urlretrieve write chosen bytes, and land the CRS under a temp root."""
-    import pilot.utils
-
-    monkeypatch.setattr(pilot.utils, "cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
 
     def _install(payload: bytes, expected_sha: str | None = None):
         if expected_sha is not None:

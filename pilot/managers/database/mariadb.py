@@ -33,10 +33,10 @@ from pilot.internal.atomic_file import (
     atomic_write_private_text,
     exclusive_file_lock,
 )
+from pilot.internal.command import run_command
 from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.database.memory import MariaDBMemory
 from pilot.managers.platform import is_macos, which
-from pilot.utils import cli_root, run_command
 
 _CLIENT_TIMEOUT = 5
 _IMPORT_CHUNK_BYTES = 1024 * 1024
@@ -77,7 +77,9 @@ class MariaDBManager(UserOwnedDBManager):
     @property
     def state_dir(self) -> Path:
         """One rootless MariaDB server per host, shared by all its benches."""
-        return cli_root() / "databases" / "mariadb"
+        from pilot.core.server import Server
+
+        return Server().root / "databases" / "mariadb"
 
     @property
     def config_dir(self) -> Path:
@@ -110,11 +112,15 @@ class MariaDBManager(UserOwnedDBManager):
     @property
     def error_log_path(self) -> Path:
         """In system/logs so the host's logrotate rule covers it. Deadlocks are read from here."""
-        return cli_root() / "system" / "logs" / "mariadb-error.log"
+        from pilot.core.server import Server
+
+        return Server().root / "system" / "logs" / "mariadb-error.log"
 
     @property
     def slow_log_path(self) -> Path:
-        return cli_root() / "system" / "logs" / "mariadb-slow.log"
+        from pilot.core.server import Server
+
+        return Server().root / "system" / "logs" / "mariadb-slow.log"
 
     @property
     def socket_path(self) -> str:
@@ -1203,7 +1209,7 @@ class MariaDBManager(UserOwnedDBManager):
 def main() -> None:
     """Entry point of the sizing unit: one MariaDB serves every bench of this host."""
     from pilot.config.common import CommonConfig
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    if sizing := MariaDBManager(CommonConfig.read(benches_dir()).mariadb).size_for_host():
+    if sizing := MariaDBManager(CommonConfig.read(Server().benches_dir).mariadb).size_for_host():
         print(f"Sized MariaDB for {sizing.total_memory_mb} MiB of host memory.")

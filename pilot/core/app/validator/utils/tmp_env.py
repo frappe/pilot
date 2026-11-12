@@ -9,9 +9,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from pilot.exceptions import AppValidationError, BenchError, CommandError
+from pilot.internal.command import run_command
 from pilot.managers.environment import ensure_uv
 from pilot.managers.platform import add_mysqlclient_flags
-from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App

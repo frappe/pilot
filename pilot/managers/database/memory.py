@@ -10,7 +10,7 @@ from pilot.config.common import CommonConfig
 from pilot.core.mariadb_memory import calculate_mariadb_memory
 from pilot.exceptions import DatabaseError
 from pilot.internal.atomic_file import atomic_write_private_text
-from pilot.utils import benches_dir, cli_root, run_command
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from pilot.managers.database.mariadb import MariaDBManager
@@ -58,6 +58,8 @@ class MariaDBMemory:
         )
 
     def prepare_boot(self) -> None:
+        from pilot.core.server import Server
+
         manager = self.manager
         manager._require_linux_managed_server()
         if self.state_path.exists():
@@ -80,12 +82,14 @@ class MariaDBMemory:
                 sizing = calculate_mariadb_memory(manager._total_memory_mb(), manager.config.memory_share)
                 manager._install_unit(sizing, preserve_swap_limit=True, reload_manager=False)
                 manager._set_runtime_memory_limits(sizing)
-            with CommonConfig.open(benches_dir()) as config:
+            with CommonConfig.open(Server().benches_dir) as config:
                 config.mariadb.memory_high_mb = None
                 config.mariadb.memory_max_mb = None
             self.record_host()
 
     def install_startup_hook(self) -> None:
+        from pilot.core.server import Server
+
         path = self.manager.user_unit_dir / "pilot-mariadb-sizing.service"
         command = shlex.quote(sys.executable).replace("%", "%%")
         atomic_write_private_text(
@@ -93,8 +97,8 @@ class MariaDBMemory:
             (
                 "[Unit]\nDescription=Size MariaDB after host memory changes\n"
                 "Before=pilot-mariadb.service\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\n"
-                f"WorkingDirectory={str(cli_root()).replace('%', '%%')}\n"
-                f"Environment=PYTHONPATH={str(cli_root()).replace('%', '%%')}\n"
+                f"WorkingDirectory={str(Server().root).replace('%', '%%')}\n"
+                f"Environment=PYTHONPATH={str(Server().root).replace('%', '%%')}\n"
                 f"ExecStart={command} -m pilot.internal.mariadb_startup\n"
                 "\n[Install]\nWantedBy=pilot-mariadb.service\n"
             ),

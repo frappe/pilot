@@ -8,7 +8,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 from pilot.exceptions import BenchError
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 
 @dataclass(frozen=True)

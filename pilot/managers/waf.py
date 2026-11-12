@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 # Shared, read-only CRS assets; every bench's generated main.conf Includes these.
 # Bench-user owned, so installing them never needs privileges.
 def shared_modsec_dir() -> Path:
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    return cli_root() / "system" / "waf" / "modsecurity-crs"
+    return Server().root / "system" / "waf" / "modsecurity-crs"
 
 MODSEC_MODULE_NAME = "ngx_http_modsecurity_module.so"
 _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")

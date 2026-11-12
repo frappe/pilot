@@ -17,6 +17,7 @@ from pilot.config.proxy import CLOUDFLARE_NETWORKS
 from pilot.config.waf import parse_nginx_size
 from pilot.exceptions import CommandError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.command import run_command
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
@@ -32,7 +33,6 @@ from pilot.managers.platform import (
 )
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.config import HostnameAlias, SiteConfig
@@ -89,9 +89,9 @@ _MODULE_DIRS = (Path("/etc/nginx/modules-enabled"), Path("/usr/share/nginx/modul
 
 def _shared_nginx_dir() -> Path:
     """Host-wide nginx artifacts the bench user owns, globbed in by 00-pilot.conf."""
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    return cli_root() / "system" / "nginx"
+    return Server().root / "system" / "nginx"
 
 
 def vm_hostname_pattern(pattern: str) -> str:
@@ -419,10 +419,10 @@ class NginxManager:
     def config_lock(self) -> Iterator[None]:
         """Serialize nginx config changes across benches, from the first write to the reload.
         Every bench shares one nginx, so `nginx -t` must not see another bench's untested files."""
-        from pilot.utils import benches_dir
+        from pilot.core.server import Server
 
-        benches_dir().mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(benches_dir() / "nginx"):
+        Server().benches_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(Server().benches_dir / "nginx"):
             yield
 
     @contextmanager

@@ -60,7 +60,7 @@ class SiteBackups:
         import tempfile
 
         from pilot.exceptions import BenchError
-        from pilot.utils import run_command
+        from pilot.internal.command import run_command
 
         self.ensure_disk_space(with_files)
         with tempfile.TemporaryDirectory(prefix=".backup-", dir=self.directory) as staging:
@@ -92,12 +92,12 @@ class SiteBackups:
 
     def get_estimated_size(self, with_files: bool = True) -> int:
         """Bytes a local run needs. File archives are about the size of the files they hold."""
-        from pilot.utils import directory_bytes
+        from pilot.internal.host_resources import DiskUsage
 
         size = self.estimated_database_size
         if with_files:
-            size += directory_bytes(self.site.path / "public" / "files")
-            size += directory_bytes(self.site.path / "private" / "files")
+            size += DiskUsage(self.site.path / "public" / "files").bytes
+            size += DiskUsage(self.site.path / "private" / "files").bytes
         return size
 
     @property

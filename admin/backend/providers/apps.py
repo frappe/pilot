@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pilot.internal.git import GitRepo
-from pilot.utils import installed_app_version
+from pilot.internal.host_resources import InstalledPackages
 
 
 @dataclass
@@ -53,7 +53,7 @@ class AppProvider:
             current_commit="",
             commit_message="",
             has_local_changes=False,
-            installed_version=installed_app_version(self._bench_root / "env", name),
+            installed_version=InstalledPackages(self._bench_root / "env").get_version(name),
             has_update=False,
         )
         if not repo.is_cloned:

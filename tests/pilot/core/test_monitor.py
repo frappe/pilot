@@ -22,7 +22,7 @@ def _confine_monitor_logs_to_tmp_path(monkeypatch: pytest.MonkeyPatch, tmp_path:
     """log_path/system_log_path/etc. are computed from cli_root() with no
     override left - pin it to tmp_path so tests never touch the real host's
     system/logs/ directory."""
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
 
 
 def _make_bench(path: Path, name: str = "my-bench") -> Bench:
@@ -699,7 +699,7 @@ def test_site_rollups_update_every_bench_and_survive_one_failure(tmp_path) -> No
             raise OSError("log unreadable")
 
     with (
-        patch.object(monitoring, "iter_sibling_benches", return_value=benches),
+        patch("pilot.core.bench.directory.BenchDirectory.iter_configs", return_value=benches),
         patch("pilot.core.bench.Bench", side_effect=lambda config, path: SimpleNamespace(path=path)),
         patch.object(monitoring.UptimeRollup, "__init__", _remember_bench),
         patch.object(monitoring.RequestRollup, "__init__", _remember_bench),

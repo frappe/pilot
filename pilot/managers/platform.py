@@ -86,7 +86,7 @@ def add_mysqlclient_flags(env: dict) -> None:
 def _read_command(argv: list[str]) -> str | None:
     """Stripped stdout of a short-lived probe, or None if it could not run."""
     from pilot.exceptions import CommandError
-    from pilot.utils import run_command
+    from pilot.internal.command import run_command
 
     try:
         return run_command(argv, timeout=5).stdout.decode().strip()
@@ -220,7 +220,7 @@ _HOSTS_PATH = Path("/etc/hosts")
 
 def add_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
     """Best-effort noninteractive /etc/hosts entry for local dev."""
-    from pilot.utils import hosts_line_contains
+    from pilot.internal.hostnames import hosts_line_contains
 
     entry = f"127.0.0.1 {hostname}"
     for line in hosts_path.read_text().splitlines():
@@ -243,7 +243,7 @@ def add_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
 
 def remove_hosts_entry(hostname: str, hosts_path: Path = _HOSTS_PATH) -> None:
     """Remove any 127.0.0.1 entry for `hostname` from /etc/hosts, if present."""
-    from pilot.utils import hosts_line_contains
+    from pilot.internal.hostnames import hosts_line_contains
 
     try:
         lines = hosts_path.read_text().splitlines()

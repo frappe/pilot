@@ -11,8 +11,8 @@ from admin.backend.api.v1.benches.support import bench_resource, target_bench_di
 from admin.backend.providers.bench import BenchProvider
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.server import Server
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
-from pilot.utils import cli_root
 
 
 def create_bench_locked(
@@ -79,9 +79,10 @@ def _validate_bench_creation(new_dir: Path, name: str, admin_domain: str, produc
 
 def _validate_admin_domain(new_dir: Path, name: str, admin_domain: str):
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import host_owner, matches_wildcard, normalize_host
+    from pilot.core.bench.directory import BenchDirectory
+    from pilot.internal.hostnames import matches_wildcard, normalize_host
 
-    owner = host_owner(new_dir, admin_domain)
+    owner = BenchDirectory.siblings_of(new_dir).get_host_owner(admin_domain)
     if owner:
         return error_response(
             "admin_domain_conflict",
@@ -165,7 +166,7 @@ def _process_manager(bench: Bench):
 
 
 def _start_standalone_setup_wizard(new_dir: Path, name: str, new_port: int):
-    root = cli_root()
+    root = Server().root
     spawn_env = {
         key: value
         for key, value in os.environ.items()

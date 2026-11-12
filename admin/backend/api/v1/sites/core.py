@@ -116,7 +116,7 @@ def detail(name: str):
 def wildcard_domains():
     """Wildcard domain suffixes (no leading '*') new site names may be built from."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import wildcard_suffix
+    from pilot.internal.hostnames import wildcard_suffix
 
     try:
         patterns = DomainRouteProvider.wildcard_domains()

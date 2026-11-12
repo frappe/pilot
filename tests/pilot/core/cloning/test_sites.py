@@ -72,7 +72,7 @@ def test_clone_does_not_clean_database_before_import_starts(source, monkeypatch)
     def fail(*args):
         raise OSError("config write failed")
 
-    monkeypatch.setattr("pilot.core.site.clone.write_private_text", fail)
+    monkeypatch.setattr("pilot.internal.private_files.PrivateFile.write_text", fail)
     monkeypatch.setattr(
         SiteDatabaseClone, "cleanup", lambda database: cleaned.append(database.config["db_name"])
     )

@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CronError
 from pilot.internal.atomic_file import exchange_paths, exclusive_file_lock, replace_private_text_locked
-from pilot.utils import make_private_directory, normalize_host
+from pilot.internal.hostnames import normalize_host
+from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy, SiteConfig
@@ -44,7 +45,7 @@ class SiteRename:
         return self.bench.config_path / "site-renames" / f"{self.old_name}.json"
 
     def run(self, on_progress: Callable[[str], None]) -> None:
-        make_private_directory(self.progress_path.parent, parents=True)
+        PrivateDirectory(self.progress_path.parent).create(parents=True)
         with exclusive_file_lock(self.progress_path.parent / "operations"):
             self._prepare()
             on_progress(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
@@ -133,7 +134,7 @@ class SiteRename:
         self.progress_path.unlink()
 
     def validate(self) -> None:
-        from pilot.utils import host_owner
+        from pilot.core.bench.directory import BenchDirectory
 
         if self.new_name == self.old_name:
             raise BenchError("New name is the same as the current name.")
@@ -155,7 +156,7 @@ class SiteRename:
                 f"'{self.new_name}' is already a domain of this bench's site '{claimed_by}'. "
                 f"All benches share one nginx, so hostnames must be unique."
             )
-        owner = host_owner(self.bench.path, self.new_name)
+        owner = BenchDirectory.siblings_of(self.bench.path).get_host_owner(self.new_name)
         if owner:
             raise BenchError(
                 f"'{self.new_name}' is already used by bench '{owner}' (as a site or its admin domain). "

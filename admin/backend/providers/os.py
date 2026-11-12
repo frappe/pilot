@@ -7,9 +7,9 @@ from pathlib import Path
 
 from pilot.config import BenchConfig
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.command import run_command
 from pilot.managers.platform import which
 from pilot.managers.redis import redis_server_binary
-from pilot.utils import run_command
 
 
 class OSProvider:

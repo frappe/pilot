@@ -10,10 +10,10 @@ from pathlib import Path
 
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.private_files import PrivateDirectory
 from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.state import parse_task_status, validate_task_transition
-from pilot.utils import make_private_directory
 
 HOST_RESOURCE_PREFIX = "host:"
 _HOST_RESOURCE_LOCK = ".host-resources"
@@ -45,7 +45,7 @@ class TaskStore:
         resource_handoff_from: str | None = None,
     ) -> Path:
         keys = self._normalize_keys(resource_key)
-        make_private_directory(self.tasks_root, parents=True)
+        PrivateDirectory(self.tasks_root).create(parents=True)
         with (
             self._host_resource_lock(keys),
             exclusive_file_lock(self._lock_target),
@@ -67,7 +67,7 @@ class TaskStore:
         resource_key: str | list[str] | None = None,
     ) -> TaskCreation:
         keys = self._normalize_keys(resource_key)
-        make_private_directory(self.tasks_root, parents=True)
+        PrivateDirectory(self.tasks_root).create(parents=True)
         with (
             self._host_resource_lock(keys),
             exclusive_file_lock(self._lock_target),
@@ -230,14 +230,14 @@ class TaskStore:
 
     @contextmanager
     def locked(self) -> Iterator[None]:
-        make_private_directory(self.tasks_root, parents=True)
+        PrivateDirectory(self.tasks_root).create(parents=True)
         with exclusive_file_lock(self._lock_target):
             yield
 
     @contextmanager
     def reserve(self, resource_key: str) -> Iterator[None]:
         """Hold a resource outside a task. Submissions that need it fail until the block exits."""
-        make_private_directory(self.tasks_root, parents=True)
+        PrivateDirectory(self.tasks_root).create(parents=True)
         with self._reservation_locks([resource_key]):
             with exclusive_file_lock(self._lock_target):
                 self._reject_active_resource_locked([resource_key])

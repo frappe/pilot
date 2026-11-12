@@ -7,8 +7,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.core.server import Server
 from pilot.internal.atomic_file import atomic_write_private_text
-from pilot.utils import cli_root, directory_bytes, iter_sibling_benches
+from pilot.internal.host_resources import DiskUsage
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -77,7 +78,7 @@ class SiteStorageCollector:
         """One server-wide query covers every site. SQLite has no server to
         ask - each site owns a file under its own directory."""
         if self.bench.config.db_type == "sqlite":
-            return {site.config.name: directory_bytes(site.path / "db") for site in sites}
+            return {site.config.name: DiskUsage(site.path / "db").bytes for site in sites}
         sizes = self.bench.db.get_schema_sizes()
         return {
             site.config.name: sizes.get(site.config_file.read().get("db_name", ""), 0)
@@ -86,8 +87,8 @@ class SiteStorageCollector:
 
     @staticmethod
     def get_usage(site: "Site", database_bytes: int) -> SiteStorageUsage:
-        private_bytes = directory_bytes(site.path / "private")
-        public_bytes = directory_bytes(site.path / "public")
+        private_bytes = DiskUsage(site.path / "private").bytes
+        public_bytes = DiskUsage(site.path / "public").bytes
         return SiteStorageUsage(
             name=site.config.name,
             private_bytes=private_bytes,
@@ -102,9 +103,7 @@ def collect_all_benches() -> None:
     must not cost the others their refresh."""
     from pilot.core.bench import Bench
     from pilot.core.bench.uploads import BackupUpload
-
-    sentinel = cli_root() / "benches" / ".site-storage-placeholder"
-    for bench_path, bench_config in iter_sibling_benches(sentinel):
+    for bench_path, bench_config in Server().benches.iter_configs():
         bench = Bench(bench_config, bench_path)
         try:
             # Otherwise only a new upload removes abandoned ones.

@@ -1374,7 +1374,7 @@ def _is_locked(lock_file: Path) -> bool:
 def test_a_config_change_holds_the_host_lock_until_nginx_accepts_it(tmp_path: Path, monkeypatch) -> None:
     """Every bench shares one nginx, so no bench may test or reload while another writes."""
     monkeypatch.setattr(NginxManager, "config_lock", _REAL_CONFIG_LOCK)
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: tmp_path / "benches")
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path / "benches")
     manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
     lock_file = tmp_path / "benches" / ".nginx.lock"
     locked_at_reload: list[bool] = []
@@ -1537,7 +1537,7 @@ def test_removing_a_bench_from_nginx_does_not_ask_the_domain_provider(tmp_path: 
     from pilot.exceptions import DomainProviderError
 
     monkeypatch.setattr(NginxManager, "config_lock", _REAL_CONFIG_LOCK)
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: tmp_path / "benches")
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path / "benches")
     manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
 
     with (

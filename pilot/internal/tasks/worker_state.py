@@ -15,7 +15,7 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
     replace_private_text_locked,
 )
-from pilot.utils import make_private_directory, open_private
+from pilot.internal.private_files import PrivateDirectory, PrivateFile
 
 
 class WorkerLock:
@@ -24,7 +24,7 @@ class WorkerLock:
 
     @classmethod
     def try_acquire(cls, path: Path) -> WorkerLock | None:
-        handle = open_private(path, "a")
+        handle = PrivateFile(path).open("a")
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -75,8 +75,8 @@ class WorkerStore:
         self.intent_path = self.tasks_root / "worker-control.json"
 
     def ensure_layout(self) -> None:
-        make_private_directory(self.tasks_root, parents=True)
-        with open_private(self.lock_path, "a"):
+        PrivateDirectory(self.tasks_root).create(parents=True)
+        with PrivateFile(self.lock_path).open("a"):
             pass
 
     def try_acquire(self) -> WorkerLock | None:

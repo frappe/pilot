@@ -115,7 +115,7 @@ class LogProvider:
     @staticmethod
     def count_lines(path: Path) -> int:
         from pilot.exceptions import CommandError
-        from pilot.utils import run_command
+        from pilot.internal.command import run_command
 
         try:
             return int(run_command(["wc", "-l", str(path)]).stdout.split()[0])

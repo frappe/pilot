@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from pilot.utils import make_private_directory
+from pilot.internal.private_files import PrivateDirectory
 
 
 class SiteCreationOwner:
@@ -19,7 +19,7 @@ class SiteCreationOwner:
 
     @contextlib.contextmanager
     def locked(self) -> Iterator[SiteCreationOwner]:
-        make_private_directory(self.path.parent, parents=True)
+        PrivateDirectory(self.path.parent).create(parents=True)
         with exclusive_file_lock(self.path):
             yield self
 

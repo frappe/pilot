@@ -52,9 +52,9 @@ class Bench:
         if isinstance(path_or_name, Path) or path.is_absolute() or path.parent != Path("."):
             return path.absolute()
 
-        from pilot.utils import benches_dir
+        from pilot.core.server import Server
 
-        return benches_dir() / path
+        return Server().benches_dir / path
 
     @classmethod
     def create_at(
@@ -373,9 +373,9 @@ class Bench:
     @property
     def has_python_reloader(self) -> bool:
         """Whether dev processes reload on Python changes: `reload_python` is on and watchdog is installed."""
-        from pilot.utils import installed_app_version
+        from pilot.internal.host_resources import InstalledPackages
 
-        return self.config.reload_python and bool(installed_app_version(self.env_path, "watchdog"))
+        return self.config.reload_python and bool(InstalledPackages(self.env_path).get_version("watchdog"))
 
     @property
     def is_lite_mode(self) -> bool:
@@ -502,7 +502,7 @@ class Bench:
 
     def site_claiming(self, host: str, ignoring: str = "") -> str | None:
         """Return the site claiming host, excluding one optional site."""
-        from pilot.utils import normalize_host
+        from pilot.internal.hostnames import normalize_host
 
         target = normalize_host(host)
         if not target:
@@ -524,20 +524,22 @@ class Bench:
 
     def certificate_name(self, site: "SiteConfig") -> str:
         """Return the certbot lineage this site may use."""
-        from pilot.utils import host_owner, normalize_host
+        from pilot.core.bench.directory import BenchDirectory
+        from pilot.internal.hostnames import normalize_host
 
         pinned = site.certificate_name
         if pinned == site.name:
             return pinned
         if normalize_host(pinned) == normalize_host(self.config.admin.domain):
             return site.name
-        if self.site_claiming(pinned, ignoring=site.name) or host_owner(self.path, pinned):
+        siblings = BenchDirectory.siblings_of(self.path)
+        if self.site_claiming(pinned, ignoring=site.name) or siblings.get_host_owner(pinned):
             return site.name
         return pinned
 
     def clear_cache(self) -> None:
         """Drop Frappe's cached config and assets for every site in this bench."""
-        from pilot.utils import run_command
+        from pilot.internal.command import run_command
 
         if not self.sites():
             return
@@ -551,10 +553,9 @@ class Bench:
     @property
     def admin_internal_endpoint(self) -> str:
         """The loopback admin URL a site stores as `pilot_endpoint`."""
-        from pilot.utils import admin_url
 
         if not self.config.production.enabled:
-            return admin_url(self.config)
+            return self.config.admin_url
         return f"http://127.0.0.1:{self.config.admin.internal_port}"
 
     @property
@@ -591,10 +592,10 @@ class Bench:
     def admin_endpoint(self) -> str:
         """The public admin URL that a browser on a site reaches."""
         from pilot.core.adapters.domain_provider import DomainRouteProvider
-        from pilot.utils import admin_url, matches_wildcard
+        from pilot.internal.hostnames import matches_wildcard
 
         admin = self.config.admin
-        url = admin_url(self.config)
+        url = self.config.admin_url
         if admin.route or not self.config.production.enabled or not admin.domain:
             return url
         patterns = DomainRouteProvider.wildcard_domains()

@@ -11,7 +11,7 @@ from typing import IO, TYPE_CHECKING
 
 from pilot.exceptions import BenchError, UploadOffsetError
 from pilot.internal.atomic_file import atomic_write_private_text, exclusive_file_lock
-from pilot.utils import make_private_directory, open_private
+from pilot.internal.private_files import PrivateDirectory, PrivateFile
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -49,12 +49,12 @@ class BackupUpload:
     def start(cls, bench: Bench, site: str, files: dict[str, dict]) -> BackupUpload:
         """`files` maps each part to its `filename` and `size` in bytes."""
         cls.remove_stale(bench)
-        make_private_directory(bench.uploads_path, parents=True)
+        PrivateDirectory(bench.uploads_path).create(parents=True)
         if shutil.disk_usage(bench.uploads_path).free < sum(file["size"] for file in files.values()):
             raise BenchError("The server does not have enough free disk space for these files.")
 
         upload = cls(bench, secrets.token_hex(8))
-        make_private_directory(upload.path)
+        PrivateDirectory(upload.path).create()
         names = {part: upload_file_name(part, file["filename"]) for part, file in files.items()}
         manifest = {"site": site, "files": {part: {"name": names[part], "size": file["size"]} for part, file in files.items()}}
         atomic_write_private_text(upload.manifest_path, json.dumps(manifest))
@@ -117,7 +117,7 @@ class BackupUpload:
             if offset > received:
                 raise UploadOffsetError(received)
             if not path.exists():
-                with open_private(path, "wb"):
+                with PrivateFile(path).open("wb"):
                     pass
             with path.open("r+b") as target:
                 target.seek(offset)

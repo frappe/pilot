@@ -13,10 +13,10 @@ from datetime import UTC, datetime
 
 from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.notification.events import raise_event, record_alert
+from pilot.core.server import Server
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.task import TaskReader
-from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -166,11 +166,9 @@ class UptimeMonitor:
 
 def _production_uptime_monitors() -> list[UptimeMonitor]:
     from pilot.core.bench import Bench
-
-    sentinel = cli_root() / "benches" / ".uptime-placeholder"
     return [
         UptimeMonitor(Bench(bench_config, bench_path))
-        for bench_path, bench_config in iter_sibling_benches(sentinel)
+        for bench_path, bench_config in Server().benches.iter_configs()
         if bench_config.production.enabled
     ]
 

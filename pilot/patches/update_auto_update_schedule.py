@@ -19,6 +19,6 @@ def run(benches_root: Path) -> None:
 
 
 if __name__ == "__main__":
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

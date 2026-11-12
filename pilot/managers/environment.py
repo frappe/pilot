@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import PACKAGE_MANAGERS, YARN, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.command import run_command
 from pilot.managers.platform import add_mysqlclient_flags, is_macos, which
 from pilot.managers.python_assets import PythonAssetBuilder
-from pilot.utils import run_command
 
 MINIMUM_NODE_MAJOR = 24
 

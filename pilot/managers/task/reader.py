@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
+from pilot.internal.private_files import PrivateFile
 from pilot.internal.tasks.args import redact_task_args
 from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.queue import TaskQueue
@@ -17,7 +18,6 @@ from pilot.managers.task.models import (
     TaskInfo,
     TaskStatus,
 )
-from pilot.utils import open_private
 
 _TASK_POLL_SECONDS = 0.5
 # A write is the only way to see that a client went away, so a quiet stream still writes.
@@ -234,7 +234,7 @@ class TaskReader:
         last_state = (task.status, task.queue_position)
         yield status_event(task)
 
-        open_private(output_path, "a").close()
+        PrivateFile(output_path).open("a").close()
         with open(output_path, "r", errors="replace", newline="") as log_file:
             cur = ""
             last_write = time.monotonic()

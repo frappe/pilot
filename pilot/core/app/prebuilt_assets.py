@@ -109,9 +109,9 @@ class PrebuiltAssets:
 
     def _swap_in(self, archive: Path, extracted: Path, commit: str) -> None:
         """Replace each published path whole, so files a newer build dropped do not linger."""
-        from pilot.utils import extract_tar_archive
+        from pilot.internal.archive import TarArchive
 
-        extract_tar_archive(archive, extracted)
+        TarArchive(archive).extract_to(extracted)
         manifest = json.loads((extracted / "manifest.json").read_text())
         if manifest.get("app") != self.app.config.name or manifest.get("commit") != commit:
             raise BenchError(f"Prebuilt assets for {self.app.config.name} were built for another commit.")

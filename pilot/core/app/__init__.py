@@ -16,7 +16,8 @@ from pilot.core.app.install_result import AppInstallResult
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError
-from pilot.utils import installed_app_version, run_command
+from pilot.internal.command import run_command
+from pilot.internal.host_resources import InstalledPackages
 
 if TYPE_CHECKING:
     from pilot.core.app.processes import AppProcesses
@@ -142,7 +143,7 @@ class App:
     @property
     def installed_version(self) -> str:
         """The version pip installed for this app, read from dist-info metadata."""
-        return installed_app_version(self.bench.env_path, self.config.name)
+        return InstalledPackages(self.bench.env_path).get_version(self.config.name)
 
     @property
     def _repository(self) -> AppRepository:

@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CommandError, MigrateError
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from pilot.core.site import Site

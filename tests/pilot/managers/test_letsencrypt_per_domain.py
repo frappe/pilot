@@ -204,7 +204,7 @@ def test_the_renewal_timer_is_installed_once_for_the_host(tmp_path: Path) -> Non
 
     root, unit_dir = tmp_path / "pilot", tmp_path / "systemd"
     with (
-        patch("pilot.utils.cli_root", return_value=root),
+        patch("pilot.core.server.Server.root", root),
         patch("pilot.managers.systemd_user.user_unit_dir", return_value=unit_dir),
         patch("pilot.managers.systemd_user.run_command") as run_command,
         patch.object(AdminEnvManager, "python", new=root / ".admin-venv" / "bin" / "python"),
@@ -243,8 +243,11 @@ def test_the_daily_renewal_refreshes_every_eligible_bench(tmp_path: Path, renew_
     from pilot.managers import letsencrypt
 
     with (
-        patch("pilot.utils.cli_root", return_value=tmp_path),
-        patch("pilot.utils.iter_sibling_benches", return_value=_renewal_benches(True, False, True)),
+        patch("pilot.core.server.Server.root", tmp_path),
+        patch(
+            "pilot.core.bench.directory.BenchDirectory.iter_configs",
+            return_value=_renewal_benches(True, False, True),
+        ),
         patch("pilot.core.bench.Bench", side_effect=lambda config, path: SimpleNamespace(path=path)),
         patch.object(letsencrypt, "LetsEncryptManager") as manager,
     ):
@@ -300,7 +303,7 @@ def test_a_provider_failure_does_not_stop_a_later_bench_with_explicit_routes(tmp
     _site(later, "known.example.com", route=RoutePolicy("https", "https", "x_forwarded_for").to_dict())
     with (
         patch(
-            "pilot.utils.iter_sibling_benches",
+            "pilot.core.bench.directory.BenchDirectory.iter_configs",
             return_value=[(first.path, first.config), (later.path, later.config)],
         ),
         patch(

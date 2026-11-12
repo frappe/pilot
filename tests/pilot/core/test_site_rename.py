@@ -207,7 +207,7 @@ def test_primary_hostname_waits_until_nginx_accepts_the_new_site(tmp_path: Path)
 
 
 def test_unfinished_move_reserves_both_names_across_benches(tmp_path: Path) -> None:
-    from pilot.utils import host_owner
+    from pilot.core.bench.directory import BenchDirectory
 
     bench = _bench(tmp_path)
     other = _bench(tmp_path, "other")
@@ -217,8 +217,8 @@ def test_unfinished_move_reserves_both_names_across_benches(tmp_path: Path) -> N
         pytest.raises(OSError, match="disk full"),
     ):
         _rename(bench)
-    assert host_owner(other.path, OLD) == bench.config.name
-    assert host_owner(other.path, NEW) == bench.config.name
+    assert BenchDirectory.siblings_of(other.path).get_host_owner(OLD) == bench.config.name
+    assert BenchDirectory.siblings_of(other.path).get_host_owner(NEW) == bench.config.name
     assert bench.resolve_site_name(NEW) == OLD
 
 

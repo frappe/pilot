@@ -663,7 +663,7 @@ def test_bypass_patch_rejects_patch_other_than_diagnosed_patch(tmp_path: Path) -
     operation.diagnosis = {"patch": "frappe.patches.expected"}
 
     with (
-        patch("pilot.utils.run_command") as run_command,
+        patch("pilot.internal.command.run_command") as run_command,
         pytest.raises(MigrationStateError, match="diagnosed failing patch"),
     ):
         operation.bypass_patch("frappe.patches.other")
@@ -821,7 +821,7 @@ def test_bypass_patch_records_audit(tmp_path: Path) -> None:
     operation.diagnosis = {"patch": "frappe.patches.expected"}
 
     mock_bench.audit_action.reset_mock()
-    with patch("pilot.utils.run_command", return_value=MagicMock(returncode=0)):
+    with patch("pilot.internal.command.run_command", return_value=MagicMock(returncode=0)):
         operation.bypass_patch("frappe.patches.expected")
 
     mock_bench.audit_action.assert_called_once()
@@ -849,7 +849,7 @@ def test_bypass_patch_auto_resumes_migration(tmp_path: Path) -> None:
     operation.return_state = "migrating"
     operation.diagnosis = {"patch": "frappe.patches.expected"}
 
-    with patch("pilot.utils.run_command", return_value=MagicMock(returncode=0)):
+    with patch("pilot.internal.command.run_command", return_value=MagicMock(returncode=0)):
         operation.bypass_patch("frappe.patches.expected")
 
     assert operation.state == "migrating"

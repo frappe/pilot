@@ -20,7 +20,7 @@ def test_logs_install_writes_config_parsers_lua_and_unit(tmp_path: Path) -> None
     config = TelemetryConfig(endpoint="https://datum.internal/v1/logs/ingest", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
         patch(
@@ -66,7 +66,7 @@ def test_logs_output_batches_within_datum_limits(tmp_path: Path) -> None:
     config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
     ):
         conf = configurator._render_files(config)["fluent-bit.conf"]
@@ -86,7 +86,7 @@ def test_logs_output_reads_one_stream(tmp_path: Path) -> None:
     config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
     ):
         conf = configurator._render_files(config)["fluent-bit.conf"]
@@ -103,7 +103,7 @@ def test_python_input_tails_bench_dir_only(tmp_path: Path) -> None:
     config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
         patch("pilot.managers.fluentbit.install_user_service"),
@@ -122,7 +122,7 @@ def test_logs_install_disables_tls_for_http_endpoint(tmp_path: Path) -> None:
     config = TelemetryConfig(endpoint="http://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
         patch("pilot.managers.fluentbit.install_user_service"),
@@ -140,7 +140,7 @@ def test_logs_install_restarts_when_already_installed(tmp_path: Path) -> None:
     config = TelemetryConfig(endpoint="https://datum.internal", token="test-token")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=True),
         patch("pilot.managers.fluentbit.install_user_service") as install,
@@ -161,7 +161,7 @@ def test_logs_install_falls_back_to_default_binary_path(tmp_path: Path) -> None:
     config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value=None),
         patch("pilot.managers.fluentbit.Path.exists", return_value=True),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
@@ -179,7 +179,7 @@ def test_logs_install_fails_loudly_when_binary_not_found(tmp_path: Path) -> None
     config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value=None),
         patch("pilot.managers.fluentbit.Path.exists", return_value=False),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
@@ -284,7 +284,7 @@ def _sync(tmp_path: Path, config: TelemetryConfig, *, binary: str | None, active
     """Run sync with install reduced to writing the files, and return the install mock."""
     configurator = _configurator(tmp_path)
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch.object(LogsConfigurator, "binary_path", binary),
         patch("pilot.managers.fluentbit.subprocess.run", return_value=MagicMock(returncode=0 if active else 3)),
         patch.object(LogsConfigurator, "install", autospec=True, side_effect=LogsConfigurator._write_configs) as install,
@@ -354,7 +354,7 @@ def test_worker_input_tails_the_pool_of_every_worker_group(tmp_path: Path) -> No
     config = TelemetryConfig(endpoint="https://datum.internal", token="secret")
 
     with (
-        patch("pilot.managers.fluentbit.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
         patch("pilot.managers.fluentbit.user_service_installed", return_value=False),
         patch("pilot.managers.fluentbit.install_user_service"),

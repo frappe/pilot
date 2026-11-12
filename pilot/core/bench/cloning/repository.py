@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pilot.core.bench.artifacts import BenchArtifacts
 from pilot.exceptions import CommandError
+from pilot.internal.command import run_command
 from pilot.internal.git import git_env
-from pilot.utils import run_command
 
 
 def clone_repository(source: Path, destination: Path) -> None:

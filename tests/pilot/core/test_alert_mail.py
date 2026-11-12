@@ -491,7 +491,7 @@ def test_the_webhook_body_is_fixed_and_links_to_the_dashboard(tmp_path: Path) ->
     bench = _bench(tmp_path, MailConfig())
     payload = {**PAYLOAD, "title": "a.test is down", "site": "a.test", "action_route": "/sites/a.test"}
 
-    with patch("pilot.utils.admin_url", return_value="https://admin.example.com"):
+    with patch("pilot.config.bench.BenchConfig.admin_url", "https://admin.example.com"):
         body = get_webhook_body(bench, payload)
 
     assert body["event"] == "site_down"

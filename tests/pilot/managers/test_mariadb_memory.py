@@ -43,7 +43,7 @@ def test_real_manager_resizes_at_boot_and_preserves_custom_variables(
         patch.object(manager, "_require_linux_managed_server"),
         patch.object(manager, "_total_memory_mb", return_value=2048),
         patch.object(MariaDBMemory, "boot_id", new_callable=PropertyMock, return_value="test-boot"),
-        patch("pilot.managers.database.memory.benches_dir", return_value=benches),
+        patch("pilot.core.server.Server.benches_dir", benches),
         patch("pilot.managers.database.memory.run_command") as memory_commands,
         patch("pilot.managers.database.mariadb.run_command") as manager_commands,
     ):
@@ -93,7 +93,7 @@ def test_memory_split_limits_survive_an_unchanged_ram_reboot(
         patch.object(manager, "_has_released_memory", return_value=released),
         patch.object(manager, "_set_runtime_memory_limits") as apply_limits,
         patch.object(MariaDBMemory, "boot_id", new_callable=PropertyMock, return_value="new-boot"),
-        patch("pilot.managers.database.memory.benches_dir", return_value=benches),
+        patch("pilot.core.server.Server.benches_dir", benches),
         patch("pilot.managers.database.mariadb.run_command"),
     ):
         manager.unit_path.write_text(manager._render_unit(previous))
@@ -174,7 +174,7 @@ def memory(tmp_path: Path):
     (tmp_path / "benches").mkdir()
     with (
         patch.object(MariaDBMemory, "boot_id", new_callable=PropertyMock, return_value="boot-two"),
-        patch("pilot.managers.database.memory.benches_dir", return_value=tmp_path / "benches"),
+        patch("pilot.core.server.Server.benches_dir", tmp_path / "benches"),
         patch("pilot.managers.database.memory.run_command"),
     ):
         yield memory

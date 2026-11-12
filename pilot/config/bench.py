@@ -378,6 +378,13 @@ class BenchConfig:
     # -- derived data --
 
     @property
+    def admin_url(self) -> str:
+        """Where the Admin UI answers: its public domain in production, localhost otherwise."""
+        if self.production.enabled:
+            return f"{self.admin.route_policy.public_scheme}://{self.admin.domain}"
+        return f"http://localhost:{self.admin.port}"
+
+    @property
     def framework_app(self) -> AppConfig:
         if not self.apps:
             return AppConfig(name="frappe", repo="", branch="")

@@ -22,12 +22,12 @@ def cron_module_command(module: str, arguments: list, log_file: Path) -> str:
     a job such as the S3 backup upload needs its packages. A source checkout without it uses
     the current interpreter.
     """
+    from pilot.core.server import Server
     from pilot.managers.environment import AdminEnvManager
-    from pilot.utils import cli_root
 
-    admin_python = AdminEnvManager(cli_root()).python
+    admin_python = AdminEnvManager(Server().root).python
     parts = [
-        f"PYTHONPATH={shlex.quote(str(cli_root()))}",
+        f"PYTHONPATH={shlex.quote(str(Server().root))}",
         shlex.quote(str(admin_python) if admin_python.exists() else sys.executable),
         "-m",
         module,
@@ -99,10 +99,10 @@ class CronManager:
     @contextmanager
     def _lock(self) -> Iterator[None]:
         """Every bench and the registry cache share the host user's one crontab."""
+        from pilot.core.server import Server
         from pilot.internal.atomic_file import exclusive_file_lock
-        from pilot.utils import cli_root
 
-        lock_target = cli_root() / "system" / "crontab"
+        lock_target = Server().root / "system" / "crontab"
         lock_target.parent.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(lock_target):
             yield

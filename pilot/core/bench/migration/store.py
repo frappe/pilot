@@ -14,7 +14,7 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
     replace_private_text_locked,
 )
-from pilot.utils import make_private_directory
+from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -81,7 +81,7 @@ class MigrationStore:
         return operation
 
     def save(self, operation: MigrationOperation) -> None:
-        make_private_directory(self.root, parents=True)
+        PrivateDirectory(self.root).create(parents=True)
         atomic_write_private_text(
             self.root / f"{operation.id}.json", json.dumps(operation.to_dict(), indent=2)
         )

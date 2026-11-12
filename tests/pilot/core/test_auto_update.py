@@ -18,7 +18,7 @@ def benches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for name in ("b-bench", "a-bench"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "bench.toml").write_text(BenchConfig.from_flat(name, {}).dumps())
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path)
     monkeypatch.setattr(pilot, "is_dev_build", False)
     return tmp_path
 
@@ -150,7 +150,7 @@ def test_a_fresh_release_install_enables_updates_without_a_bench(tmp_path, monke
     from pilot.patches.update_auto_update_schedule import run
 
     root = tmp_path / "new-install" / "benches"
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: root)
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", root)
     monkeypatch.setattr(pilot, "is_dev_build", False)
     with patch("pilot.core.server.auto_update.CronManager") as cron:
         run(root)

@@ -7,8 +7,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.server import Server
 from pilot.exceptions import BenchError, ConfigError
-from pilot.utils import benches_dir
 
 if TYPE_CHECKING:
     from pilot.config import BenchConfig
@@ -100,9 +100,9 @@ class Workspace:
         from pilot.core.bench import Bench
 
         name = self.recorded_bench_name
-        if name and self.is_linked_by(benches_dir() / name):
-            return Bench(benches_dir() / name)
-        for toml_path in sorted(benches_dir().glob("*/bench.toml")):
+        if name and self.is_linked_by(Server().benches_dir / name):
+            return Bench(Server().benches_dir / name)
+        for toml_path in sorted(Server().benches_dir.glob("*/bench.toml")):
             try:
                 if self.is_linked_by(toml_path.parent):
                     return Bench(toml_path.parent)
@@ -205,7 +205,11 @@ class Workspace:
         name = self.next_bench_name
         on_progress(f"Creating bench '{name}' ({db_type}, frappe {frappe_branch}) for {self.root}")
         return Bench.create_at(
-            benches_dir() / name, name, db_type=db_type, frappe_branch=frappe_branch, configure=configure
+            Server().benches_dir / name,
+            name,
+            db_type=db_type,
+            frappe_branch=frappe_branch,
+            configure=configure,
         )
 
     @property
@@ -213,7 +217,7 @@ class Workspace:
         slug = re.sub(r"[^a-z0-9]+", "-", self.root.name.lower()).strip("-") or "app"
         name = base = f"dev-{slug}"
         suffix = 2
-        while (benches_dir() / name).exists():
+        while (Server().benches_dir / name).exists():
             name = f"{base}-{suffix}"
             suffix += 1
         return name

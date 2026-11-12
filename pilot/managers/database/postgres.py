@@ -7,9 +7,9 @@ from pathlib import Path
 
 from pilot.config import PostgresConfig
 from pilot.exceptions import DatabaseError
+from pilot.internal.command import run_command
 from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.platform import is_macos, which
-from pilot.utils import cli_root, run_command
 
 _CLIENT_TIMEOUT = 5
 _DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
@@ -31,7 +31,9 @@ class PostgresManager(UserOwnedDBManager):
     @property
     def state_dir(self) -> Path:
         """One rootless PostgreSQL server per host, shared by all its benches."""
-        return cli_root() / "databases" / "postgres"
+        from pilot.core.server import Server
+
+        return Server().root / "databases" / "postgres"
 
     @property
     def config_dir(self) -> Path:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pilot.internal.command import run_command
 from pilot.managers.platform import _privileged
-from pilot.utils import run_command
 
 
 def stage_and_copy(stage_dir: Path, content: str, target: Path, validate: list[str] | None = None) -> None:

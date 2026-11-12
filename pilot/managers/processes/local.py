@@ -16,7 +16,6 @@ from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder, ProcessState
-from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -132,9 +131,11 @@ class ProcessManager:
         return ProcessDefinitionBuilder(self.bench, self.python, self.watch_admin_js)
 
     def write_config(self) -> None:
+        from pilot.core.server import Server
+
         definitions = self._process_definitions()
         if any(pd.name == "admin" for pd in definitions):
-            AdminEnvManager(cli_root()).ensure()
+            AdminEnvManager(Server().root).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         lines = [f"{pd.name}: {shlex.join(pd.argv_with_hooks)}\n" for pd in definitions]

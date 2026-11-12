@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pilot.utils import write_private_text
+from pilot.internal.private_files import PrivateFile
 
 CREDENTIALS_FILENAME = ".bench.git.info"
 GITHUB_APP_AUTH_TYPE = "github_app"
@@ -60,4 +60,4 @@ class GitCredentialStore:
         self.path.unlink(missing_ok=True)
 
     def _write(self, record: dict) -> None:
-        write_private_text(self.path, json.dumps(record, indent=2))
+        PrivateFile(self.path).write_text(json.dumps(record, indent=2))

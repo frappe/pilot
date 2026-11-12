@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.utils import make_private_directory, run_command
+from pilot.internal.command import run_command
+from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
@@ -212,7 +213,7 @@ class SiteMigrationBackup:
 
     def _reset_directory(self) -> None:
         self.discard()
-        make_private_directory(self.directory, parents=True)
+        PrivateDirectory(self.directory).create(parents=True)
 
     def _s3(self) -> "S3":
         from pilot.integrations.s3.base import S3

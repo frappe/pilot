@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
-from pilot.utils import PRIVATE_FILE_MODE, open_private
+from pilot.internal.private_files import PrivateFile
 
 
 def exchange_paths(first: Path, second: Path) -> None:
@@ -40,7 +40,7 @@ def _lock_path(path: Path) -> Path:
 @contextmanager
 def exclusive_file_lock(path: Path, *, blocking: bool = True) -> Iterator[None]:
     """Hold a process-wide advisory lock associated with ``path``."""
-    with open_private(_lock_path(path), mode="a") as lock_file:
+    with PrivateFile(_lock_path(path)).open(mode="a") as lock_file:
         existing = _existing_file_metadata(path)
         lock_metadata = os.fstat(lock_file.fileno())
         if existing is not None and lock_metadata.st_uid != existing.st_uid:
@@ -74,7 +74,7 @@ def replace_private_text_locked(path: Path, content: str) -> None:
         )
         temporary_path = Path(temporary_name)
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as temporary_file:
-            os.fchmod(temporary_file.fileno(), PRIVATE_FILE_MODE)
+            os.fchmod(temporary_file.fileno(), PrivateFile.mode)
             _preserve_owner(temporary_file.fileno(), existing)
             temporary_file.write(content)
             temporary_file.flush()

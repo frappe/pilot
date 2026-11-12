@@ -83,8 +83,8 @@ def site_name_failure(message: str):
 
 def host_resource_key(host: str) -> str:
     """Return the host-wide task resource key for a hostname."""
+    from pilot.internal.hostnames import normalize_host
     from pilot.internal.tasks.store import HOST_RESOURCE_PREFIX
-    from pilot.utils import normalize_host
 
     return f"{HOST_RESOURCE_PREFIX}{normalize_host(host)}"
 
@@ -92,7 +92,8 @@ def host_resource_key(host: str) -> str:
 def new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before its task starts."""
     from pilot.config import BenchConfig
-    from pilot.utils import host_owner, normalize_host
+    from pilot.core.bench.directory import BenchDirectory
+    from pilot.internal.hostnames import normalize_host
 
     sites_path = bench_root / "sites"
     if sites_path.is_symlink():
@@ -101,7 +102,7 @@ def new_site_name_error(bench_root: Path, name: str) -> str | None:
     if site_path.is_symlink() or (site_path / "site_config.json").exists():
         return f"Site '{name}' already exists."
 
-    owner = host_owner(bench_root, name)
+    owner = BenchDirectory.siblings_of(bench_root).get_host_owner(name)
     if owner:
         return f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). All benches share one nginx, so hostnames must be unique."
 
@@ -116,7 +117,7 @@ def new_site_name_error(bench_root: Path, name: str) -> str | None:
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
 
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import matches_wildcard
+    from pilot.internal.hostnames import matches_wildcard
 
     patterns = DomainRouteProvider.wildcard_domains()
     if patterns and not matches_wildcard(name, patterns):

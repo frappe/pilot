@@ -38,10 +38,10 @@ def _is_replacement_needed() -> bool:
 def _replace_timers() -> None:
     import subprocess
 
+    from pilot.core.server import Server
     from pilot.core.server.monitoring_config import MonitorConfigurator
     from pilot.exceptions import BenchError
     from pilot.managers.systemd_user import systemctl, systemctl_env, user_unit_dir
-    from pilot.utils import cli_root
 
     env = systemctl_env()
     subprocess.run(systemctl("disable", "--now", *LEGACY_TIMERS), capture_output=True, env=env, check=False)
@@ -52,9 +52,9 @@ def _replace_timers() -> None:
 
     # The pilot-monitor.service link stays, so a failed install below is retried on the next run.
     unit_files = [
-        cli_root() / "system" / "monitor" / "pilot-monitor.timer",
-        cli_root() / "system" / "uptime" / "pilot-uptime.timer",
-        cli_root() / "system" / "uptime" / LEGACY_UPTIME_SERVICE,
+        Server().root / "system" / "monitor" / "pilot-monitor.timer",
+        Server().root / "system" / "uptime" / "pilot-uptime.timer",
+        Server().root / "system" / "uptime" / LEGACY_UPTIME_SERVICE,
         *(user_unit_dir() / name for name in (*LEGACY_TIMERS, LEGACY_UPTIME_SERVICE)),
     ]
     for path in unit_files:
@@ -94,6 +94,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

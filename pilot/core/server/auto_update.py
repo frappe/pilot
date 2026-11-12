@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 import pilot
 from pilot.config.common import CommonConfig
+from pilot.core.server import Server
 from pilot.managers.cron import CronManager, cron_module_command
-from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.server import Server
@@ -25,19 +25,19 @@ class AutoUpdate:
         return CommonConfig.read(self.server.benches_dir).updates.auto_pilot_update
 
     def enable(self) -> None:
-        log_file = cli_root() / "system" / "logs" / "auto-update.log"
+        log_file = Server().root / "system" / "logs" / "auto-update.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         # A UTC guard works on cron implementations without per-job timezone support.
         command = r'[ "$(date -u +\%H\%M)" = 0000 ] && ' + cron_module_command(
             "pilot.core.server.auto_update", [], log_file
         )
         with CommonConfig.open(self.server.benches_dir) as config:
-            CronManager(cli_root()).set_schedule(CRON_JOB_KEY, CRON_SCHEDULE, command)
+            CronManager(Server().root).set_schedule(CRON_JOB_KEY, CRON_SCHEDULE, command)
             config.updates.auto_pilot_update = True
 
     def disable(self) -> None:
         with CommonConfig.open(self.server.benches_dir) as config:
-            CronManager(cli_root()).remove_schedule(CRON_JOB_KEY)
+            CronManager(Server().root).remove_schedule(CRON_JOB_KEY)
             config.updates.auto_pilot_update = False
 
     def set_enabled(self, enabled: bool) -> None:

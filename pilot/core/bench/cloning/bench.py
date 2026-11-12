@@ -10,7 +10,7 @@ from pilot.core.bench.artifacts import BenchArtifacts
 from pilot.core.bench.cloning.branches import clone_branch, validate_branches
 from pilot.exceptions import BenchError
 from pilot.integrations.git import auth_config_for
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 
 class BenchClone:

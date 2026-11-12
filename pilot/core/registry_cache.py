@@ -13,9 +13,9 @@ from pathlib import Path
 
 from pilot.exceptions import CommandError, RegistryUnavailableError
 from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.command import run_command
 from pilot.internal.git import GitRepo
 from pilot.managers.cron import CronManager, cron_module_command
-from pilot.utils import run_command
 
 REGISTRY_URL = "https://github.com/frappe/marketplace"
 
