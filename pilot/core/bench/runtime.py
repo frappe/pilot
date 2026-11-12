@@ -166,11 +166,20 @@ class BenchRuntime:
             self._start_wizard(on_progress)
             return
         self._warn_fixed_dev_site(on_progress)
+        self._warn_missing_python_reloader(on_progress)
         manager = ProcessManager(self.bench)
         self._rebuild_manager_config(manager)
         if self.bench.config.admin.enabled and not manager.watch_admin_js:
             self._ensure_admin_dist(on_progress)
         manager.start()
+
+    def _warn_missing_python_reloader(self, on_progress: Callable[[str], None]) -> None:
+        bench = self.bench
+        if bench.is_lite_mode and bench.config.reload_python and not bench.has_python_reloader:
+            on_progress(
+                "Python auto-reload is off: watchdog is not installed. "
+                f"Install it with: uv pip install --python {bench.env_path / 'bin' / 'python'} watchdog"
+            )
 
     def _warn_fixed_dev_site(self, on_progress: Callable[[str], None]) -> None:
         from pilot.config.common_site_config import read_common_site_config

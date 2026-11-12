@@ -239,16 +239,21 @@ class ProcessDefinitionBuilder:
             f"--request-drain-seconds={lite_mode.request_drain_seconds}",
             f"--job-drain-seconds={lite_mode.job_drain_seconds}",
         ]
+        # One threaded process: capping the glibc arenas keeps the heap from
+        # fragmenting across them, and preloading only pays off before a fork.
+        env = {**self.python_env(), "MALLOC_ARENA_MAX": "2", "FRAPPE_PRELOAD_MODULES": "0"}
         if dev:
-            argv.append("--dev")
             argv.append("--verbose")
+        if dev and self.bench.has_python_reloader:
+            argv.append("--dev")
+        elif dev:
+            # --dev also serves assets, but refuses to start without watchdog.
+            env["FRAPPE_SERVE_ASSETS"] = "1"
         return ProcessDefinition(
             name="web",
             argv=argv,
             log_file=self.bench.logs_path / "web.log",
-            # One threaded process: capping the glibc arenas keeps the heap from
-            # fragmenting across them, and preloading only pays off before a fork.
-            env={**self.python_env(), "MALLOC_ARENA_MAX": "2", "FRAPPE_PRELOAD_MODULES": "0"},
+            env=env,
             working_dir=self.bench.sites_path,
             stop_timeout=lite_mode.stop_timeout,
             listen_address=(
