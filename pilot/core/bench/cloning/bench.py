@@ -138,7 +138,7 @@ class BenchClone:
             "workers",
             "socketio_backend",
             "install_dev_extra",
-            "allow_developer_mode",
+            "enable_code_editor",
         ):
             setattr(destination.config, name, copy.deepcopy(getattr(self.source.config, name)))
         destination.config.apps = [copy.deepcopy(app.config) for app in self.source.apps()]
