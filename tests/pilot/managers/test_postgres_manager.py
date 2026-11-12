@@ -26,9 +26,12 @@ def test_existing_is_not_inferred_from_host() -> None:
 
 
 def test_is_installed_checks_binaries() -> None:
-    with patch(f"{MODULE}.which", side_effect=lambda n: "/usr/bin/psql" if n == "psql" else None):
+    with patch(
+        "pilot.managers.platform.HostPlatform.get_executable_path",
+        side_effect=lambda n: "/usr/bin/psql" if n == "psql" else None,
+    ):
         assert _mgr().is_installed() is True
-    with patch(f"{MODULE}.which", return_value=None):
+    with patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None):
         assert _mgr().is_installed() is False
 
 
@@ -46,7 +49,7 @@ def test_install_raises_when_missing_on_linux() -> None:
     m = _mgr()
     with (
         patch.object(m, "is_installed", return_value=False),
-        patch(f"{BASE_MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         pytest.raises(DatabaseError, match=r"install\.sh"),
     ):
         m.install()
@@ -56,7 +59,7 @@ def test_install_uses_brew_formula_on_macos() -> None:
     m, pkg = _mgr(), MagicMock()
     with (
         patch.object(m, "is_installed", return_value=False),
-        patch(f"{BASE_MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "_installed_brew_formula", return_value=None),
         patch(f"{BASE_MODULE}.get_package_manager", return_value=pkg),
     ):
@@ -122,7 +125,7 @@ def test_has_valid_credentials_uses_pgpassword_and_tcp() -> None:
         return MagicMock(returncode=0)
 
     with (
-        patch(f"{MODULE}.which", return_value="/usr/bin/psql"),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value="/usr/bin/psql"),
         patch(f"{MODULE}.subprocess.run", side_effect=fake_run),
     ):
         assert m.has_valid_credentials() is True
@@ -137,15 +140,15 @@ def test_has_valid_credentials_uses_pgpassword_and_tcp() -> None:
 
 def test_has_valid_credentials_false_without_psql() -> None:
     with (
-        patch(f"{MODULE}.which", return_value=None),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
     ):
         assert _mgr(root_password="pw").has_valid_credentials() is False
 
 
 def test_has_valid_credentials_times_out() -> None:
     with (
-        patch(f"{MODULE}.which", return_value="/usr/bin/psql"),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value="/usr/bin/psql"),
         patch(
             f"{MODULE}.subprocess.run",
             side_effect=subprocess.TimeoutExpired("psql", 5),
@@ -157,7 +160,7 @@ def test_has_valid_credentials_times_out() -> None:
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _mgr()
     with (
-        patch(f"{BASE_MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch(f"{BASE_MODULE}.run_command") as rc,
     ):
         m.start()
@@ -167,7 +170,7 @@ def test_start_targets_systemctl_user_on_linux() -> None:
 def test_start_targets_brew_on_macos() -> None:
     m = _mgr()
     with (
-        patch(f"{BASE_MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "_installed_brew_formula", return_value="postgresql@16"),
         patch(f"{BASE_MODULE}.run_command") as rc,
     ):
@@ -178,7 +181,7 @@ def test_start_targets_brew_on_macos() -> None:
 def test_provision_orchestrates_steps_on_linux() -> None:
     m = _mgr(root_password="pw")
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(m, "install") as ins,
         patch.object(m, "_provision_user_owned") as prov,
         patch.object(m, "_wait_until_reachable"),
@@ -194,18 +197,18 @@ def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
     """macOS provisioning state comes from the live secured server."""
     m = _mgr()
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "is_running", return_value=False),
     ):
         assert m.is_provisioned() is False  # not running yet
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "is_running", return_value=True),
         patch.object(m, "is_unsecured", return_value=True),
     ):
         assert m.is_provisioned() is False  # up but still passwordless
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "is_running", return_value=True),
         patch.object(m, "is_unsecured", return_value=False),
     ):
@@ -216,7 +219,7 @@ def test_is_unsecured_targets_own_socket_dir_on_linux() -> None:
     m = _mgr(port=5440)
     with (
         patch.object(m, "_psql", return_value="/usr/bin/psql"),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch(f"{MODULE}.subprocess.run") as run,
     ):
         m.is_unsecured()
@@ -348,7 +351,7 @@ def test_is_provisioned_false_when_data_dir_wiped_but_unit_still_exists(tmp_path
     """A stale systemd unit outliving a deleted state dir must not look provisioned."""
     m = _mgr()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(m), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch(f"{BASE_MODULE}.UserOwnedDBManager.is_provisioned", return_value=True),
     ):
@@ -386,7 +389,7 @@ def test_run_sql_as_superuser_targets_own_socket_dir_on_linux() -> None:
     m = _mgr(port=5440)
     with (
         patch.object(m, "_psql", return_value="/usr/bin/psql"),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch(f"{MODULE}.subprocess.run") as run,
     ):
         m._run_sql_as_superuser("SELECT 1;")
@@ -398,7 +401,7 @@ def test_run_sql_as_superuser_uses_default_socket_on_macos() -> None:
     m = _mgr(port=5440)
     with (
         patch.object(m, "_psql", return_value="/usr/bin/psql"),
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch(f"{MODULE}.subprocess.run") as run,
     ):
         m._run_sql_as_superuser("SELECT 1;")
@@ -407,7 +410,7 @@ def test_run_sql_as_superuser_uses_default_socket_on_macos() -> None:
 
 
 def test_server_binary_prefers_path() -> None:
-    with patch(f"{MODULE}.which", return_value="/usr/bin/initdb"):
+    with patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value="/usr/bin/initdb"):
         assert _mgr()._server_binary("initdb") == "/usr/bin/initdb"
 
 
@@ -417,7 +420,7 @@ def test_server_binary_falls_back_to_newest_debian_versioned_dir(tmp_path) -> No
         bin_dir.mkdir(parents=True)
         (bin_dir / "initdb").touch()
     with (
-        patch(f"{MODULE}.which", return_value=None),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None),
         patch(f"{MODULE}._DEBIAN_POSTGRES_ROOT", tmp_path),
     ):
         assert _mgr()._server_binary("initdb") == str(tmp_path / "17" / "bin" / "initdb")
@@ -425,7 +428,7 @@ def test_server_binary_falls_back_to_newest_debian_versioned_dir(tmp_path) -> No
 
 def test_server_binary_returns_bare_name_when_missing(tmp_path) -> None:
     with (
-        patch(f"{MODULE}.which", return_value=None),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None),
         patch(f"{MODULE}._DEBIAN_POSTGRES_ROOT", tmp_path / "missing"),
     ):
         assert _mgr()._server_binary("initdb") == "initdb"
@@ -459,7 +462,10 @@ def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> Non
             return_value=tmp_path / "pilot-postgres.service",
         ),
         patch.object(type(m), "user_unit_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.which", return_value="/usr/lib/postgresql/bin/postgres"),
+        patch(
+            "pilot.managers.platform.HostPlatform.get_executable_path",
+            return_value="/usr/lib/postgresql/bin/postgres",
+        ),
         patch(f"{MODULE}.run_command"),
     ):
         m._install_unit()
@@ -490,8 +496,8 @@ def test_client_binary_resolves_versioned_homebrew_install(tmp_path, name) -> No
     binary.parent.mkdir()
     binary.touch()
     with (
-        patch(f"{MODULE}.which", return_value=None),
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value=None),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch(f"{MODULE}.subprocess.run", return_value=MagicMock(returncode=0, stdout=str(tmp_path))),
     ):
         assert _mgr().client_binary(name) == str(binary)

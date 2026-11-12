@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 
 from pilot.core.bench.directory import BenchDirectory
-from pilot.internal.hostnames import hosts_line_contains, normalize_host
+from pilot.internal.hostnames import normalize_host
 from pilot.internal.toml import Toml
+from pilot.managers.platform import HostsFile
 
 
 @pytest.mark.parametrize(
@@ -21,8 +22,8 @@ from pilot.internal.toml import Toml
         ("::1 site.localhost", False),
     ],
 )
-def test_hosts_line_contains_exact_hostname_token(line: str, expected: bool) -> None:
-    assert hosts_line_contains(line, "site.localhost") is expected
+def test_hosts_entry_line_matches_exact_hostname_token(line: str, expected: bool) -> None:
+    assert HostsFile.is_entry_line(line, "site.localhost") is expected
 
 
 def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:

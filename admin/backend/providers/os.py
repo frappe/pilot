@@ -8,7 +8,7 @@ from pathlib import Path
 from pilot.config import BenchConfig
 from pilot.exceptions import BenchError, CommandError
 from pilot.internal.command import run_command
-from pilot.managers.platform import which
+from pilot.managers.platform import HostPlatform
 from pilot.managers.redis import redis_server_binary
 
 
@@ -34,7 +34,7 @@ class OSProvider:
         return {label: value for label, value in versions.items() if value}
 
     def get_flag_version(self, binary: str, args: list[str], pattern: str) -> str:
-        path = which(binary) if binary else None
+        path = HostPlatform().get_executable_path(binary) if binary else None
         if path is None:
             return ""
         try:

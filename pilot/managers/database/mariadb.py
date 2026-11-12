@@ -36,7 +36,7 @@ from pilot.internal.atomic_file import (
 from pilot.internal.command import run_command
 from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.database.memory import MariaDBMemory
-from pilot.managers.platform import is_macos, which
+from pilot.managers.platform import HostPlatform
 
 _CLIENT_TIMEOUT = 5
 _IMPORT_CHUNK_BYTES = 1024 * 1024
@@ -129,11 +129,13 @@ class MariaDBManager(UserOwnedDBManager):
         return str(self.run_dir / "mysqld.sock")
 
     def is_installed(self) -> bool:
-        # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
-        return bool(which("mysqld") or which("mariadbd"))
+        # HostPlatform().get_executable_path() searches sbin too; mysqld/mariadbd live in /usr/sbin.
+        return bool(
+            HostPlatform().get_executable_path("mysqld") or HostPlatform().get_executable_path("mariadbd")
+        )
 
     def is_provisioned(self) -> bool:
-        if is_macos():
+        if HostPlatform().is_macos:
             return self.is_running() and not self.is_unsecured()
         return super().is_provisioned() and self.my_cnf_path.exists()
 
@@ -146,7 +148,7 @@ class MariaDBManager(UserOwnedDBManager):
     def provision(self) -> None:
         """Install, start and secure the shared MariaDB server."""
         self.install()
-        if is_macos():
+        if HostPlatform().is_macos:
             return self._provision_macos()
 
         if not self.is_provisioned():
@@ -352,7 +354,7 @@ class MariaDBManager(UserOwnedDBManager):
     def size_for_host(self) -> MariaDBMemorySizing | None:
         """Size the server again before it starts when the host memory or the unit limits no
         longer match the sizing. Run by the sizing unit."""
-        if is_macos() or self.config.existing or not self.my_cnf_path.exists():
+        if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
             return None
         sized_for = self.sized_for_memory_mb
         if sized_for is not None and abs(self._total_memory_mb() - sized_for) < _RESIZE_THRESHOLD_MB:
@@ -419,7 +421,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def size_aria_pagecache(self) -> None:
         """Write the sized Aria cache for the next start."""
-        if is_macos() or self.config.existing or not self.my_cnf_path.exists():
+        if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
             return
         if "aria-pagecache-buffer-size" in self.my_cnf_path.read_text():
             return
@@ -428,7 +430,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def write_log_files(self) -> None:
         """Write the error and slow log settings for the next start. Deadlocks and slow queries are read from those files."""
-        if is_macos() or self.config.existing or not self.my_cnf_path.exists():
+        if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
             return
         if "slow-query-log-file" in self.my_cnf_path.read_text():
             return
@@ -437,7 +439,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def keep_out_of_swap(self) -> None:
         """Set MemorySwapMax to 0, live first and then in the unit file, so a failed attempt can retry."""
-        if is_macos() or self.config.existing or not self.unit_path.exists():
+        if HostPlatform().is_macos or self.config.existing or not self.unit_path.exists():
             return
         env = self._systemctl_env()
         run_command(self._systemctl("set-property", "--runtime", self._UNIT_NAME, "MemorySwapMax=0"), env=env)
@@ -450,7 +452,7 @@ class MariaDBManager(UserOwnedDBManager):
     def raise_memory_high(self) -> bool:
         """Raise the unit's MemoryHigh to `memory_high_for` its MemoryMax, on disk and live.
         Never lowers a limit or restarts the server. Returns whether anything changed."""
-        if is_macos() or self.config.existing or not self.unit_path.exists():
+        if HostPlatform().is_macos or self.config.existing or not self.unit_path.exists():
             return False
         current_high = self._unit_memory_mb("MemoryHigh")
         current_max = self._unit_memory_mb("MemoryMax")
@@ -518,7 +520,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Persist, restart, verify, and roll back a Performance Schema change."""
         if type(enabled) is not bool:
             raise DatabaseError("Performance Schema must be either enabled or disabled.")
-        if is_macos():
+        if HostPlatform().is_macos:
             raise DatabaseError("Pilot-managed MariaDB configuration actions require Linux.")
         self._require_managed_server()
 
@@ -553,7 +555,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def variable_limits(self) -> MariaDBVariableLimits:
         limits = calculate_mariadb_variable_limits(self._total_memory_mb(), self.config.memory_share)
-        if is_macos() or self.config.existing:
+        if HostPlatform().is_macos or self.config.existing:
             return limits
         maximum = self._unit_memory_mb("MemoryMax")
         if maximum is None:
@@ -887,7 +889,7 @@ class MariaDBManager(UserOwnedDBManager):
             raise DatabaseError(f"Pilot cannot change MariaDB variable '{variable}'.")
 
     def _require_linux_managed_server(self) -> None:
-        if is_macos():
+        if HostPlatform().is_macos:
             raise DatabaseError("Pilot-managed MariaDB configuration actions require Linux.")
         self._require_managed_server()
 
@@ -927,7 +929,7 @@ class MariaDBManager(UserOwnedDBManager):
             raise DatabaseError("Pilot's MariaDB server has not been provisioned.")
 
     def _restart_and_wait_healthy(self) -> None:
-        if not is_macos():
+        if not HostPlatform().is_macos:
             self._reset_failed_state()
         self.restart()
         self._wait_until_healthy()
@@ -984,7 +986,11 @@ class MariaDBManager(UserOwnedDBManager):
             run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def _render_unit(self, sizing: MariaDBMemorySizing) -> str:
-        mariadbd = which("mariadbd") or which("mysqld") or "/usr/sbin/mariadbd"
+        mariadbd = (
+            HostPlatform().get_executable_path("mariadbd")
+            or HostPlatform().get_executable_path("mysqld")
+            or "/usr/sbin/mariadbd"
+        )
         return (
             "[Unit]\n"
             "Requires=pilot-mariadb-sizing.service\n"
@@ -1007,7 +1013,7 @@ class MariaDBManager(UserOwnedDBManager):
     def is_reachable(self) -> bool:
         if not self.is_running():
             return False
-        if is_macos():
+        if HostPlatform().is_macos:
             # Homebrew owns the socket location here, not socket_path() (our
             # own state_dir, only ever created for the Linux systemd unit) -
             # is_running() is the only signal we have.
@@ -1017,7 +1023,7 @@ class MariaDBManager(UserOwnedDBManager):
     def is_unsecured(self) -> bool:
         """True when the admin account is still reachable without a password."""
         cmd = ["mariadb"]
-        if not is_macos():
+        if not HostPlatform().is_macos:
             cmd.append(f"--socket={self.socket_path}")
         cmd += ["-u", self.config.admin_user, "--batch", "--skip-column-names", "-e", "SELECT 1"]
         try:
@@ -1058,7 +1064,7 @@ class MariaDBManager(UserOwnedDBManager):
         socket_path = self._detect_socket()
         if socket_path:
             cmd.append(f"--socket={socket_path}")
-        elif self.config.existing or not is_macos():
+        elif self.config.existing or not HostPlatform().is_macos:
             cmd += ["-h", self.config.host, "-P", str(self.config.port)]
         return cmd
 
@@ -1153,7 +1159,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def _run_sql_as_superuser(self, sql: str) -> None:
         cmd = ["mariadb"]
-        if not is_macos():
+        if not HostPlatform().is_macos:
             # mariadb-install-db grants this OS user unix_socket admin access.
             cmd.append(f"--socket={self.socket_path}")
         # macOS uses Homebrew's default socket, not our Linux state dir.
@@ -1201,7 +1207,7 @@ class MariaDBManager(UserOwnedDBManager):
             return self.config.socket_path
         if self.config.existing:
             return ""
-        if not is_macos() and Path(self.socket_path).exists():
+        if not HostPlatform().is_macos and Path(self.socket_path).exists():
             return self.socket_path
         return ""
 

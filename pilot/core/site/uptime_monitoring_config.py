@@ -4,7 +4,7 @@ import typing
 from pathlib import Path
 
 from pilot.exceptions import BenchError
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -22,7 +22,7 @@ class UptimeMonitorConfigurator:
         return self._require_bench().logs_path / "uptime.json.log"
 
     def setup(self) -> None:
-        if not is_linux():
+        if not HostPlatform().is_linux:
             raise BenchError("Uptime monitoring is only supported on linux based machines.")
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)

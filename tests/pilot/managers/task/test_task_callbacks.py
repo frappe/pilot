@@ -8,6 +8,7 @@ import pytest
 
 from pilot.internal.tasks import callbacks as callbacks
 from pilot.managers import platform
+from pilot.managers.platform import HostsFile
 
 
 def owned_meta(root: Path) -> dict:
@@ -24,7 +25,7 @@ def test_remove_failed_site_operation_uses_json_args(
 ) -> None:
     site_path = tmp_path / "sites" / "new.localhost"
     site_path.mkdir(parents=True)
-    monkeypatch.setattr(callbacks, "_remove_from_hosts", lambda site: None)
+    monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
     callbacks.run_callback(
         {"operation": "remove-failed-site", "args": {"site": "new.localhost"}},
@@ -48,7 +49,7 @@ def test_remove_failed_site_attempts_database_drop_before_file_cleanup(
         return True
 
     monkeypatch.setattr(callbacks, "_drop_failed_site", drop_failed_site)
-    monkeypatch.setattr(callbacks, "_remove_from_hosts", lambda site: None)
+    monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
     callbacks.run_callback(
         {"operation": "remove-failed-site", "args": {"site": "new.localhost"}},
@@ -67,7 +68,7 @@ def test_remove_failed_site_preserves_files_when_database_drop_fails(
     site_path.mkdir(parents=True)
     (site_path / "site_config.json").write_text('{"db_name":"recoverable"}')
     monkeypatch.setattr(callbacks, "_drop_failed_site", lambda *args: False)
-    monkeypatch.setattr(callbacks, "_remove_from_hosts", lambda site: None)
+    monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
     with pytest.raises(RuntimeError, match="preserved for recovery"):
         callbacks.run_callback(
@@ -103,7 +104,7 @@ def test_drop_failed_site_skips_the_backup(
     assert drops == [("new.localhost", {"no_backup": True})]
 
 
-def test_remove_from_hosts_matches_address_and_hostname_tokens(
+def test_hosts_file_remove_matches_address_and_hostname_tokens(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -112,14 +113,13 @@ def test_remove_from_hosts_matches_address_and_hostname_tokens(
         "127.0.0.1 keep.localhost\n127.0.0.1 failed.localhost\n127.0.0.1 failed.localhost.example\n"
     )
     captured = {}
-    monkeypatch.setattr(callbacks, "_HOSTS_PATH", hosts_path)
     monkeypatch.setattr(
         platform.subprocess,
         "run",
         lambda argv, **kwargs: captured.update(argv=argv, **kwargs),
     )
 
-    callbacks._remove_from_hosts("failed.localhost")
+    HostsFile(hosts_path).remove("failed.localhost")
 
     assert captured["argv"] == ["sudo", "-n", "tee", str(hosts_path)]
     assert captured["input"].decode() == ("127.0.0.1 keep.localhost\n127.0.0.1 failed.localhost.example\n")
@@ -154,7 +154,7 @@ def test_cleanup_site_restore_removes_contained_uploads(
     (upload_dir / "backup.sql").write_text("backup")
     site_path = tmp_path / "sites" / "new.localhost"
     site_path.mkdir(parents=True)
-    monkeypatch.setattr(callbacks, "_remove_from_hosts", lambda site: None)
+    monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
     callbacks.run_callback(
         {

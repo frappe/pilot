@@ -11,7 +11,7 @@ from pilot.internal.atomic_file import atomic_write_private_text
 from pilot.internal.command import run_command
 from pilot.internal.template import Template
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import (
     SystemdUserMixin,
     install_user_service,
@@ -72,7 +72,7 @@ class LogsConfigurator(SystemdUserMixin):
         self.state_dir = self.conf_dir / "state"
 
     def setup(self) -> None:
-        if not is_linux():
+        if not HostPlatform().is_linux:
             raise BenchError("Log shipping is only supported on linux based machines.")
         if self.binary_path is None:
             get_package_manager().install("fluent-bit")

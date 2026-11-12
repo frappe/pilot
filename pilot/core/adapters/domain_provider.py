@@ -16,7 +16,7 @@ from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.hostnames import normalize_host
-from pilot.managers.platform import which
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -121,7 +121,7 @@ class DomainRouteProvider:
     @staticmethod
     def _host_query(verb: str) -> list[str]:
         """Run a host-level provider verb that returns a JSON list."""
-        exe = which(_PROVIDER_BIN)
+        exe = HostPlatform().get_executable_path(_PROVIDER_BIN)
         if not exe:
             return []
         result = _run_provider([exe, verb])
@@ -181,7 +181,7 @@ class DomainRouteProvider:
         self, action: str, domain: str | None = None, *, site: str | None = None
     ) -> tuple[bool, object]:
         """Run bench-domain-provider when installed."""
-        exe = which(_PROVIDER_BIN)
+        exe = HostPlatform().get_executable_path(_PROVIDER_BIN)
         if not exe:
             return False, None
         argv = [exe, action, *([site] if site else []), *([domain] if domain else [])]

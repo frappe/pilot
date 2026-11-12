@@ -13,7 +13,7 @@ from pilot.config.monitor import (
 from pilot.core.server import Server
 from pilot.exceptions import BenchError
 from pilot.internal.command import run_command
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import SystemdUserMixin, install_user_service, user_service_installed
 
 if typing.TYPE_CHECKING:
@@ -84,7 +84,7 @@ class MonitorConfigurator(SystemdUserMixin):
         return slow_query_log_path()
 
     def setup(self) -> None:
-        if not is_linux():
+        if not HostPlatform().is_linux:
             raise BenchError("Monitoring is only supported on linux based machines.")
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)

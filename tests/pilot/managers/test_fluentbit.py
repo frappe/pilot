@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -193,7 +193,7 @@ def test_logs_setup_installs_fluent_bit_when_missing(tmp_path: Path) -> None:
     manager = MagicMock()
 
     with (
-        patch("pilot.managers.fluentbit.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.fluentbit.shutil.which", return_value=None),
         patch("pilot.managers.fluentbit.Path.exists", return_value=False),
         patch("pilot.managers.fluentbit.get_package_manager", return_value=manager),
@@ -210,7 +210,7 @@ def test_logs_setup_skips_install_when_fluent_bit_present(tmp_path: Path) -> Non
     manager = MagicMock()
 
     with (
-        patch("pilot.managers.fluentbit.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.fluentbit.shutil.which", return_value="/usr/bin/fluent-bit"),
         patch("pilot.managers.fluentbit.get_package_manager", return_value=manager),
         patch("pilot.managers.fluentbit.run_command"),
@@ -225,7 +225,7 @@ def test_logs_setup_skips_install_when_fluent_bit_is_only_in_opt(tmp_path: Path)
     manager = MagicMock()
 
     with (
-        patch("pilot.managers.fluentbit.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.fluentbit.shutil.which", return_value=None),
         patch("pilot.managers.fluentbit.Path.exists", return_value=True),
         patch("pilot.managers.fluentbit.get_package_manager", return_value=manager),
@@ -239,7 +239,7 @@ def test_logs_setup_fails_off_linux(tmp_path: Path) -> None:
     configurator = _configurator(tmp_path)
 
     with (
-        patch("pilot.managers.fluentbit.is_linux", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=False),
         pytest.raises(Exception, match="linux"),
     ):
         configurator.setup()

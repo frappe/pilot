@@ -357,9 +357,9 @@ class SiteRename:
     def _add_to_hosts(self) -> None:
         if self.bench.config.production.process_manager != "none":
             return
-        from pilot.managers.platform import add_hosts_entry
+        from pilot.managers.platform import HostsFile
 
-        add_hosts_entry(self.new_name)
+        HostsFile().add(self.new_name)
 
     def _reload_nginx(self) -> None:
         from pilot.managers.nginx import NginxManager

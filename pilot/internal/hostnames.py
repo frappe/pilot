@@ -24,9 +24,3 @@ def matches_wildcard(domain: str, patterns: list[str]) -> bool:
     return any(
         domain != (suffix := wildcard_suffix(pattern)) and domain.endswith(suffix) for pattern in patterns
     )
-
-
-def hosts_line_contains(line: str, hostname: str, address: str = "127.0.0.1") -> bool:
-    """Whether an /etc/hosts line maps the hostname to the address."""
-    tokens = line.split("#", 1)[0].split()
-    return bool(tokens) and tokens[0] == address and hostname in tokens[1:]

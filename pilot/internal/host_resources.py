@@ -38,9 +38,9 @@ class LocalPort:
 
     def get_first_free(self) -> int:
         """This port or the first free one after it. macOS keeps the port as it is."""
-        from pilot.managers.platform import is_macos
+        from pilot.managers.platform import HostPlatform
 
-        if is_macos():
+        if HostPlatform().is_macos:
             return self.number
         number = self.number
         while LocalPort(number).is_listening:

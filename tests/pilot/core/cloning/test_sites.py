@@ -259,7 +259,7 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
         if cleanup_failure == "database":
             raise RuntimeError("database cleanup failed")
 
-    def remove_hosts(name):
+    def remove_hosts(self, name):
         events.append("hosts removed")
         if cleanup_failure == "hosts":
             raise RuntimeError("hosts cleanup failed")
@@ -268,7 +268,7 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
     monkeypatch.setattr(SiteCommands, "set_admin_password", lambda *args: None)
     monkeypatch.setattr(SiteProvisioner, "write_pilot_communication_config", lambda *args: None)
     monkeypatch.setattr(SiteProvisioner, "add_to_hosts", lambda *args: events.append("hosts added"))
-    monkeypatch.setattr("pilot.managers.platform.remove_hosts_entry", remove_hosts)
+    monkeypatch.setattr("pilot.managers.platform.HostsFile.remove", remove_hosts)
     monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
 
     def reload(self):

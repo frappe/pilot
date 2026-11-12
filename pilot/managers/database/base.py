@@ -7,7 +7,7 @@ from pathlib import Path
 from pilot.exceptions import DatabaseError
 from pilot.internal.command import run_command
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_macos
+from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import SystemdUserMixin
 
 
@@ -37,7 +37,7 @@ class UserOwnedDBManager(SystemdUserMixin):
     def install(self) -> None:
         if self.is_installed():
             return
-        if is_macos():
+        if HostPlatform().is_macos:
             get_package_manager().install(self._brew_package())
             return
         raise DatabaseError(
@@ -55,7 +55,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         return self.unit_path.exists()
 
     def is_running(self) -> bool:
-        if is_macos():
+        if HostPlatform().is_macos:
             return self._is_brew_service_running()
         result = subprocess.run(
             self._systemctl("is-active", self._UNIT_NAME),
@@ -81,7 +81,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
 
     def _control(self, action: str) -> None:
-        if is_macos():
+        if HostPlatform().is_macos:
             run_command(["brew", "services", action, self._brew_package()])
         else:
             run_command(self._systemctl(action, self._UNIT_NAME), env=self._systemctl_env())

@@ -214,9 +214,9 @@ class ProductionSetup:
                 common.letsencrypt.email = self._email_arg
 
     def _require_linux(self) -> None:
-        from pilot.managers.platform import is_linux
+        from pilot.managers.platform import HostPlatform
 
-        if not is_linux():
+        if not HostPlatform().is_linux:
             print(
                 "Error: pilot setup production only runs on Linux servers.\nOn macOS, use 'pilot start' for local development.",
                 file=sys.stderr,
@@ -228,11 +228,15 @@ class ProductionSetup:
         The installer's scoped nginx/certbot grants are enough and need no tty;
         only fall back to a password prompt when they are absent."""
         from pilot.managers.nginx import NginxManager
-        from pilot.managers.platform import has_passwordless_sudo, is_root, which
+        from pilot.managers.platform import HostPlatform
 
-        if is_root() or has_passwordless_sudo() or NginxManager(self.bench).has_passwordless_sudo:
+        if (
+            HostPlatform().is_root
+            or HostPlatform().has_passwordless_sudo
+            or NginxManager(self.bench).has_passwordless_sudo
+        ):
             return
-        if which("sudo") is None:
+        if HostPlatform().get_executable_path("sudo") is None:
             raise BenchError(
                 "sudo is required to deploy to production (nginx, certbot, systemd) but is not installed."
             )

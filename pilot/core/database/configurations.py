@@ -16,7 +16,7 @@ from pilot.core.database.quick_actions import DatabaseQuickActions
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
 from pilot.managers.database.memory import MEMORY_LIMIT_NAMES, MEMORY_LIMIT_READ_ONLY_REASON
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.config import BenchConfig
@@ -369,7 +369,7 @@ class DatabaseConfigurations:
             return _MARIADB_ONLY
         if self.config.mariadb.existing:
             return _EXTERNAL_READ_ONLY
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return "MariaDB configuration changes are available only on Linux."
         if require_reachable:
             return self._read_reason()

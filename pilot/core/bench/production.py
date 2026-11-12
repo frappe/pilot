@@ -77,9 +77,9 @@ class BenchProduction:
         self.remove_production(on_progress)
         self._release_admin_domain()
 
-        from pilot.managers.platform import unmount_legacy_bind_mount
+        from pilot.managers.platform import LegacyBindMount
 
-        unmount_legacy_bind_mount(self.bench.path)
+        LegacyBindMount(self.bench.path).remove()
         on_progress(f"Deleting {self.bench.path}...")
         shutil.rmtree(self.bench.path, ignore_errors=True)
         on_progress(f"\nBench '{name}' dropped.")
@@ -208,9 +208,9 @@ class BenchProduction:
             DomainRouteProvider(self.bench).release(domain)
 
     def _install_waf(self) -> None:
-        from pilot.managers.platform import is_linux
+        from pilot.managers.platform import HostPlatform
 
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return
         import sys
 

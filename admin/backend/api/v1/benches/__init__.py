@@ -175,10 +175,14 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
         )
     if target_config.production.enabled:
         from pilot.managers.nginx import NginxManager
-        from pilot.managers.platform import has_passwordless_sudo, is_root
+        from pilot.managers.platform import HostPlatform
 
         bench = Bench(target_config, target_dir)
-        if not (is_root() or has_passwordless_sudo() or NginxManager(bench).has_passwordless_sudo):
+        if not (
+            HostPlatform().is_root
+            or HostPlatform().has_passwordless_sudo
+            or NginxManager(bench).has_passwordless_sudo
+        ):
             return error_response(
                 "privileged_operation_unavailable",
                 "Dropping a production bench requires non-interactive system privileges.",
@@ -186,9 +190,9 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
             )
 
     try:
-        from pilot.managers.platform import noninteractive_privileges
+        from pilot.managers.platform import Privileges
 
-        with noninteractive_privileges():
+        with Privileges.without_prompts():
             Bench(target_config, target_dir).drop()
     except Exception:
         return error_response("bench_drop_failed", "Could not drop the bench.", 500)

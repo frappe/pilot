@@ -113,13 +113,13 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     def _is_realtime_stale(self, definitions: list[ProcessDefinition]) -> bool:
         """Whether realtime code changed after the running socketio started. Lite runs realtime in web."""
-        from pilot.managers.platform import get_process_start_time
+        from pilot.managers.platform import HostPlatform
 
         socketio = [pd for pd in definitions if pd.name == "socketio"]
         if not socketio:
             return False
         state = self.get_process_states(socketio).get("socketio")
-        started = get_process_start_time(state.pid) if state and state.pid else None
+        started = HostPlatform.get_process_start_time(state.pid) if state and state.pid else None
         return started is None or self.bench.processes.is_realtime_changed_since(started)
 
     @staticmethod

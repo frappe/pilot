@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -77,7 +77,7 @@ class WafManager:
         return cls.module_available() and cls.crs_available()
 
     def install(self) -> None:
-        if not is_linux():
+        if not HostPlatform().is_linux:
             raise RuntimeError("The WAF (ModSecurity) is only supported on Linux production hosts.")
         if not self.module_available():
             get_package_manager().install(self.MODULE_PACKAGE)

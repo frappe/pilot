@@ -151,7 +151,7 @@ def get_waf_analytics():
 @stats_bp.get("/system")
 def system_info():
     from admin.backend.providers.os import OSProvider
-    from pilot.managers.platform import kernel_version, os_version
+    from pilot.managers.platform import HostPlatform
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config = BenchConfig.read(bench_root)
@@ -163,8 +163,8 @@ def system_info():
             "cpu_count": os.cpu_count(),
             "memory_total": mem.total,
             "swap_total": swap.total,
-            "kernel_version": kernel_version(),
-            "os_version": os_version(),
+            "kernel_version": HostPlatform().kernel_version,
+            "os_version": HostPlatform().os_version,
             "runtime": OSProvider(bench_root, config).get_versions(),
         }
     )
