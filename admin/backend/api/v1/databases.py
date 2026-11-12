@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
@@ -436,11 +437,26 @@ def get_lock_wait_rows():
 @database_bp.get("/deadlocks")
 def get_deadlocks():
     try:
-        return jsonify(_provider().get_deadlocks(request.args.get("site", "")))
+        since, until = _moment_arg("since"), _moment_arg("until")
+    except ValueError as exc:
+        return error_response("invalid_filter", str(exc), 422)
+    try:
+        return jsonify(_provider().get_deadlocks(request.args.get("site", ""), since, until))
     except DatabaseError as exc:
         return error_response("deadlocks_unavailable", str(exc), 422)
     except Exception:
         return error_response("deadlocks_unavailable", "Could not read database deadlocks.", 500)
+
+
+def _moment_arg(name: str) -> datetime | None:
+    """An ISO time with an offset, so the browser's timezone never reaches the server unstated."""
+    value = request.args.get(name)
+    if not value:
+        return None
+    moment = datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        raise ValueError(f"{name} must include a timezone offset.")
+    return moment
 
 
 @database_bp.get("/slow-queries")

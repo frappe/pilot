@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from datetime import datetime
 from pathlib import Path
 
 from pilot.config import BenchConfig
@@ -62,8 +63,9 @@ class DatabaseDiagnosticsProvider:
         rows = self._call(self._require_server().get_lock_wait_rows, self._database_for(site))
         return [asdict(row) for row in rows]
 
-    def get_deadlocks(self, site: str = "") -> dict:
-        return asdict(self._call(self._require_server().get_deadlocks, self._database_for(site)))
+    def get_deadlocks(self, site: str = "", since: datetime | None = None, until: datetime | None = None) -> dict:
+        server = self._require_server()
+        return asdict(self._call(server.get_deadlocks, self._database_for(site), 50, since, until))
 
     def get_slow_queries(self, site: str = "") -> dict:
         return asdict(self._call(self._require_server().get_slow_queries, self._database_for(site)))

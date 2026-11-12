@@ -736,7 +736,21 @@ def test_deadlocks_pass_the_site_and_return_the_report(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.get_json() == report
-    provider.get_deadlocks.assert_called_once_with("one.local")
+    provider.get_deadlocks.assert_called_once_with("one.local", None, None)
+
+
+def test_deadlocks_take_a_range_with_an_offset(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    patcher, provider = _patched_provider(**{"get_deadlocks.return_value": {"deadlocks": []}})
+    with patcher:
+        ok = client.get("/api/v1/database/deadlocks?since=2026-11-12T07:00:00.000Z")
+        naive = client.get("/api/v1/database/deadlocks?since=2026-11-12T07:00:00")
+
+    since = provider.get_deadlocks.call_args.args[1]
+    assert ok.status_code == 200
+    assert since.isoformat() == "2026-11-12T07:00:00+00:00"
+    assert naive.status_code == 422
+    assert naive.get_json()["error"]["code"] == "invalid_filter"
 
 
 def test_kill_process_succeeds(tmp_path: Path) -> None:

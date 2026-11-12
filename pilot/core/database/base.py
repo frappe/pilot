@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from pilot.core.database.deadlocks import DeadlockReport
     from pilot.core.database.slow_log import SlowQueryReport
 
@@ -209,7 +211,9 @@ class Database(ABC):
         """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
-    def get_deadlocks(self, database: str = "", limit: int = 50) -> DeadlockReport:
+    def get_deadlocks(
+        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+    ) -> DeadlockReport:
         raise NotImplementedError
 
     def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:

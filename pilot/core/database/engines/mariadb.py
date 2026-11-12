@@ -325,13 +325,15 @@ class MariaDB(Database):
             for row in rows
         ]
 
-    def get_deadlocks(self, database: str = "", limit: int = 50) -> DeadlockReport:
+    def get_deadlocks(
+        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+    ) -> DeadlockReport:
         """Deadlocks InnoDB printed to the error log, which must be a file on this host."""
         print_all = str(self.get_scalar("SELECT @@innodb_print_all_deadlocks")) in ("1", "ON")
         path = self.get_error_log_path()
         if path is None:
             return DeadlockReport(log_path=None, print_all_deadlocks=print_all)
-        return DeadlockReport(str(path), print_all, DeadlockLog(path).get_deadlocks(database, limit))
+        return DeadlockReport(str(path), print_all, DeadlockLog(path).get_deadlocks(database, limit, since, until))
 
     def get_error_log_path(self) -> Path | None:
         """None when errors go to stderr (the journal) or the file is out of reach."""

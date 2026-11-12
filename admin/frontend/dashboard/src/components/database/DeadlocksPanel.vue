@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Dialog, ErrorMessage } from 'frappe-ui'
+import { Badge, DateTimePicker, Dialog, ErrorMessage } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -31,6 +31,13 @@ const report = ref<DeadlockReport | null>(null)
 const loading = ref(false)
 const error = ref('')
 const opened = ref<Deadlock | null>(null)
+const since = ref('')
+const until = ref('')
+
+// DateTimePicker gives browser-local 'YYYY-MM-DD HH:mm:ss'; the API takes UTC ISO and the log is server time.
+const toIsoTime = (value: string) =>
+  value ? new Date(value.replace(' ', 'T')).toISOString() : undefined
+const localTime = (iso: string) => (iso ? new Date(iso).toLocaleString() : '—')
 
 const columns = computed(() => [
   { key: 'time', label: 'Time', class: 'w-[16%]' },
@@ -49,7 +56,7 @@ const rows = computed(() =>
     return {
       id: index,
       deadlock,
-      time: deadlock.time,
+      time: localTime(deadlock.time),
       site: props.siteByDatabase[first?.database] || first?.database || '—',
       table: [...new Set(deadlock.transactions.map((item) => item.table).filter(Boolean))].join(', ') || '—',
       victim: victimOf(deadlock)?.query || '—',
@@ -69,6 +76,8 @@ const emptyState = computed(() => {
       title: 'Deadlock logging is off',
       description: 'Set innodb_print_all_deadlocks to ON so InnoDB writes each deadlock to the error log.',
     }
+  if (since.value || until.value)
+    return { title: 'No deadlocks', description: 'None in this time range' }
   return { title: 'No deadlocks', description: 'None in the recent error log' }
 })
 
@@ -81,7 +90,10 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const result = await databaseApi.deadlocks(props.site)
+    const result = await databaseApi.deadlocks(props.site, {
+      since: toIsoTime(since.value),
+      until: toIsoTime(until.value),
+    })
     if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Could not load deadlocks.'))
     report.value = result
   } catch (caught) {
@@ -99,6 +111,23 @@ watch(
 
 <template>
   <DatabasePanel :active="active" :badge="badge" :loading="loading" @open="load" @refresh="load">
+    <template #actions>
+      <DateTimePicker
+        v-model="since"
+        class="w-44"
+        placeholder="From"
+        clearable
+        @update:modelValue="load"
+      />
+      <DateTimePicker
+        v-model="until"
+        class="w-44"
+        placeholder="To"
+        clearable
+        @update:modelValue="load"
+      />
+    </template>
+
     <ErrorMessage v-if="error" :message="error" />
 
     <Table v-else-if="rows.length" :columns="columns" :rows="rows" height="flex-1">
@@ -126,7 +155,7 @@ watch(
 
   <Dialog
     :model-value="Boolean(opened)"
-    :title="`Deadlock at ${opened?.time ?? ''}`"
+    :title="`Deadlock at ${localTime(opened?.time ?? '')}`"
     size="2xl"
     @update:model-value="opened = null"
   >

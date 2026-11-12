@@ -37,8 +37,14 @@ export const databaseApi = {
   lockWaitRows: (site = ''): Promise<LockWaitRow[]> =>
     request.get('database/lockwaits', { searchParams: site ? { site } : {} }).json(),
 
-  deadlocks: (site = ''): Promise<DeadlockReport> =>
-    request.get('database/deadlocks', { searchParams: site ? { site } : {} }).json(),
+  deadlocks: (site = '', range: { since?: string; until?: string } = {}): Promise<DeadlockReport> =>
+    request
+      .get('database/deadlocks', {
+        searchParams: Object.fromEntries(
+          Object.entries({ site, ...range }).filter(([, value]) => value),
+        ) as Record<string, string>,
+      })
+      .json(),
 
   slowQueries: (site = ''): Promise<SlowQueryReport> =>
     request.get('database/slow-queries', { searchParams: site ? { site } : {} }).json(),

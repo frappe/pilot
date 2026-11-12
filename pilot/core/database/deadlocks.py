@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Deadlocks are wanted recent, and the log can be large, so only its end is read.
@@ -36,12 +37,28 @@ class DeadlockTransaction:
 
 @dataclass
 class Deadlock:
+    """`time` is UTC ISO, or empty when the dump had no timestamp."""
+
     time: str
     transactions: list[DeadlockTransaction] = field(default_factory=list)
 
     @property
     def databases(self) -> set[str]:
         return {transaction.database for transaction in self.transactions if transaction.database}
+
+    @property
+    def moment(self) -> datetime | None:
+        return datetime.fromisoformat(self.time) if self.time else None
+
+    def is_match(self, database: str = "", since: datetime | None = None, until: datetime | None = None) -> bool:
+        if database and database not in self.databases:
+            return False
+        if not since and not until:
+            return True
+        moment = self.moment
+        if moment is None:
+            return False
+        return not (since and moment < since) and not (until and moment > until)
 
 
 @dataclass
@@ -59,10 +76,11 @@ class DeadlockLog:
     def __init__(self, path: Path) -> None:
         self.path = path
 
-    def get_deadlocks(self, database: str = "", limit: int = 50) -> list[Deadlock]:
+    def get_deadlocks(
+        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+    ) -> list[Deadlock]:
         deadlocks = DeadlockParser().parse(self.read_tail())
-        if database:
-            deadlocks = [deadlock for deadlock in deadlocks if database in deadlock.databases]
+        deadlocks = [deadlock for deadlock in deadlocks if deadlock.is_match(database, since, until)]
         return deadlocks[::-1][:limit]
 
     def read_tail(self) -> str:
@@ -87,7 +105,7 @@ class DeadlockParser:
             stamp = _PREFIX.match(raw)
             line = (raw[stamp.end() :] if stamp else raw).strip()
             if _START in line:
-                self.current = Deadlock(time=stamp[1] if stamp else "")
+                self.current = Deadlock(time=server_time_to_utc(stamp[1]) if stamp else "")
                 self.deadlocks.append(self.current)
             elif self.current is not None:
                 self.read_dump_line(self.current, line)
@@ -120,3 +138,8 @@ class DeadlockParser:
         elif self.waiting_section and not transaction.table and (match := _LOCK.search(line)):
             index, transaction.database, transaction.table, transaction.lock_mode = match.groups()
             transaction.index = index or ""
+
+
+def server_time_to_utc(stamp: str) -> str:
+    """The error log stamps the server's local time; a naive astimezone() reads it in the host zone."""
+    return datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").astimezone(UTC).isoformat()
