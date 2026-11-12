@@ -23,7 +23,7 @@ def _config() -> BenchConfig:
 def _accepting_server():
     """Saving mail settings opens a session against the server; these tests are
     about what gets stored, not about reaching a relay."""
-    return patch("admin.backend.api.v1.settings.config.check_mail_credentials")
+    return patch("pilot.core.notification.mail.AlertMail.check_credentials", autospec=True)
 
 
 def _client(bench_root: Path):
@@ -260,7 +260,7 @@ def test_patch_asks_for_the_password_again_when_the_server_changes(tmp_path: Pat
 
     assert response.status_code == 422
     assert not any(
-        call.args[0].server == "smtp2.example.com" for call in check.call_args_list
+        call.args[0].mail.server == "smtp2.example.com" for call in check.call_args_list
     )
     stored = MailConfig.read(sites)
     assert (stored.server, stored.password) == ("smtp.example.com", "secret")
@@ -342,7 +342,7 @@ def test_patch_checks_the_mail_credentials_before_storing_them(tmp_path: Path) -
     client = _client(benches_root / "current")
 
     with patch(
-        "admin.backend.api.v1.settings.config.check_mail_credentials",
+        "pilot.core.notification.mail.AlertMail.check_credentials",
         side_effect=smtplib.SMTPAuthenticationError(535, b"Bad credentials"),
     ):
         response = client.patch(
@@ -365,7 +365,7 @@ def test_a_save_that_leaves_mail_alone_does_not_dial_the_relay(tmp_path: Path) -
     benches_root = tmp_path / "benches"
     client = _client(benches_root / "current")
 
-    with patch("admin.backend.api.v1.settings.config.check_mail_credentials") as check:
+    with patch("pilot.core.notification.mail.AlertMail.check_credentials") as check:
         client.patch("/api/v1/settings", json={"resource_limits": {"cpu_usage_limit": 85}})
 
     check.assert_not_called()

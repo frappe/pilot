@@ -248,7 +248,7 @@ def test_systemd_start_links_units_an_upgrade_added(bench) -> None:
 
 
 def test_settings_restart_reopens_the_web_socket_on_its_new_port(bench) -> None:
-    from pilot.core.bench.settings import _restart_systemd
+    from pilot.core.bench.settings import BenchSettings
 
     manager = SystemdProcessManager(bench)
     calls = []
@@ -262,7 +262,7 @@ def test_settings_restart_reopens_the_web_socket_on_its_new_port(bench) -> None:
             side_effect=lambda argv, **kwargs: calls.append(argv[2]),
         ),
     ):
-        assert _restart_systemd(manager)
+        assert BenchSettings.restart_systemd(manager)
 
     assert calls == ["link", "daemon-reload", "reopen", "restart"]
 

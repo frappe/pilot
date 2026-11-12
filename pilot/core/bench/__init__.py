@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pilot.core.bench.site_aliases import SiteAliases
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
+    from pilot.core.notification.notifier import Notifier
     from pilot.core.site import Site
     from pilot.core.site.storage import SiteStorageCollector
     from pilot.tasks import TaskRunner
@@ -170,6 +171,13 @@ class Bench:
     def staging_path(self) -> Path:
         """Where apps are cloned and validated before they enter apps/."""
         return self.path / ".staging"
+
+    @property
+    def notifier(self) -> Notifier:
+        """Sends this bench's events to its webhooks, mail and Central."""
+        from pilot.core.notification.notifier import Notifier
+
+        return Notifier(self)
 
     @property
     def sites_path(self) -> Path:

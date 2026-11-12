@@ -10,8 +10,9 @@ import pytest
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, notify
 from pilot.core.bench import Bench
+from pilot.core.notification.notifier import Notifier
+from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.notification.webhooks import WEBHOOK_TIMEOUT_SECONDS, WebhookDelivery, send_webhook
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
 from pilot.core.server.monitoring_proc import CPU_STAT_FIELDS
@@ -316,7 +317,7 @@ def _alerting_monitor(tmp_path: Path, **limits: int) -> Monitor:
 @contextmanager
 def _captured_alerts():
     """Collect what reaches the webhook sink. Central is not enrolled on a bare
-    test config, so notify() falls through to the webhooks alone."""
+    test config, so Notifier.send() falls through to the webhooks alone."""
     payloads: list[dict] = []
 
     def capture(endpoint, body):
@@ -444,7 +445,7 @@ def _age_alerts(monitor: Monitor) -> None:
     """Push every recorded breach back past the sustain window."""
     state = json.loads(monitor.alerts_path.read_text())
     for entry in state.values():
-        entry["since"] -= ALERT_SUSTAINED_SECONDS + 1
+        entry["since"] -= SustainedAlerts.window_seconds + 1
     monitor.alerts_path.write_text(json.dumps(state))
 
 
@@ -539,7 +540,7 @@ def test_alert_reaches_every_webhook_even_when_one_is_down(tmp_path: Path) -> No
         return WebhookDelivery(200, "")
 
     with patch("pilot.core.notification.webhooks.send_webhook", fake_send):
-        delivered = notify(bench, {"event": "x", "message": "m", "context": {}})
+        delivered = Notifier(bench).send({"event": "x", "message": "m", "context": {}})
 
     assert reached == ["https://up.example.com"]
     assert delivered is True, "one sink answering is a delivered alert"
@@ -555,7 +556,7 @@ def test_an_alert_no_sink_accepted_is_not_delivered(tmp_path: Path) -> None:
         raise urllib.error.URLError("connection refused")
 
     with patch("pilot.core.notification.webhooks.send_webhook", refuse):
-        delivered = notify(bench, {"event": "x", "message": "m", "context": {}})
+        delivered = Notifier(bench).send({"event": "x", "message": "m", "context": {}})
 
     assert delivered is False
 

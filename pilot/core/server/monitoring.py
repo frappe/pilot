@@ -12,9 +12,9 @@ from pathlib import Path
 
 import psutil
 
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.bench.telemetry import DatumCredential
 from pilot.core.notification.events import raise_event, record_alert
+from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import MetricShipper
@@ -172,7 +172,7 @@ class Monitor:
             "context": {
                 "bench": self.bench.config.name,
                 "time": system_record["time"],
-                "sustained_seconds": ALERT_SUSTAINED_SECONDS,
+                "sustained_seconds": SustainedAlerts.window_seconds,
                 "breached_limits": crossed,
             },
         }
@@ -194,7 +194,7 @@ class Monitor:
         if not due:
             return
 
-        if notify(self.bench, self._alert_payload(due, system_record)):
+        if self.bench.notifier.send(self._alert_payload(due, system_record)):
             alerts.mark_notified(due)
 
     def announce_recovered(self, names: list[str]) -> None:

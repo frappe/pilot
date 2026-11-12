@@ -3,7 +3,7 @@
 The feed is the bench's own record of what went wrong - failed tasks, sustained
 resource alerts, sites that stopped answering. It is written and read entirely on
 this machine, so a bench that never enrolls with Central still has one. Forwarding
-an event onward is a separate concern that lives in `pilot.core.alerts`.
+an event onward is a separate concern that lives in `pilot.core.notification.notifier`.
 """
 
 from __future__ import annotations

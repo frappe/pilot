@@ -113,9 +113,7 @@ def raise_event(bench: "Bench", *, feed: bool = True, **event: typing.Any) -> No
             logging.warning("Notification skipped for %s: %s", event.get("event"), exc)
     payload = {**event, "title": title, "message": event.get("message") or title, "context": context}
     try:
-        from pilot.core.alerts import notify
-
-        notify(bench, payload)
+        bench.notifier.send(payload)
     except Exception as exc:
         logging.warning("Alert sinks skipped for %s: %s", event.get("event"), exc)
 
@@ -184,7 +182,7 @@ def _task_event(bench_root: Path, meta: dict, **event: typing.Any) -> None:
 def record_alert(bench: "Bench", payload: dict) -> bool:
     """Record a sustained alert in the bench's own feed, reporting whether it landed.
 
-    The caller still hands the same payload to `alerts.notify` for the webhook and
+    The caller still hands the same payload to `Notifier.send` for the webhook and
     Central fan-out; this is the copy that stays on the bench. A write that failed
     returns False so the caller leaves the condition unrecorded and tries again on
     the next tick, rather than losing the incident until it clears and recurs."""

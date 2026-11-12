@@ -18,21 +18,8 @@ from pilot.config import (
 from pilot.config.mail import MailConfig
 from pilot.config.monitor import bench_log_path, system_log_path
 from pilot.core.bench import Bench
-from pilot.core.bench.settings import (
-    SettingsApplyFailed,
-    firewall_payload,
-    is_restart_needed,
-    llm_payload,
-    mail_payload,
-    proxy_payload,
-    resource_limits_payload,
-    restart_trigger_values,
-    s3_payload,
-    waf_payload,
-    webhook_endpoints_payload,
-    webhook_events_payload,
-    worker_groups_payload,
-)
+from pilot.core.bench.settings import SettingsApplyFailed
+from pilot.core.bench.settings.payload import SettingsPayload
 from pilot.exceptions import MalformedSiteConfig
 from pilot.integrations.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.internal.validators import validate_external_url
@@ -48,18 +35,8 @@ __all__ = [
     "ConfigPatcher",
     "audit_bp",
     "build_settings_response",
-    "firewall_payload",
-    "is_restart_needed",
-    "llm_payload",
-    "mail_payload",
     "network_bp",
-    "resource_limits_payload",
-    "restart_trigger_values",
-    "s3_payload",
     "settings_bp",
-    "waf_payload",
-    "webhook_endpoints_payload",
-    "webhook_events_payload",
 ]
 
 
@@ -77,6 +54,7 @@ def lite_mode_payload(config: BenchConfig, bench_root: Path | None) -> dict:
 
 
 def build_settings_response(config: BenchConfig, bench_root: Path | None = None) -> dict:
+    payload = SettingsPayload(config)
     return {
         "is_linux": HostPlatform().is_linux,
         "native_process_manager": HostPlatform.native_process_manager,
@@ -107,11 +85,11 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "queue_port": config.redis.queue_port,
             "version": RedisManager.installed_version() or config.redis.version or "",
         },
-        "workers": worker_groups_payload(config),
-        "firewall": firewall_payload(config),
-        "proxy": proxy_payload(config),
+        "workers": payload.worker_groups,
+        "firewall": payload.firewall,
+        "proxy": payload.proxy,
         "waf": {
-            **waf_payload(config),
+            **payload.waf,
             "installed": WafManager.is_installed(),
             "modes": list(WAF_MODES),
             "rule_fields": list(WAF_RULE_FIELDS),
@@ -131,17 +109,19 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "public_tls": config.admin.route_policy.public_tls,
         },
         "letsencrypt": {"email": config.letsencrypt.email},
-        "s3": s3_payload(config),
+        "s3": payload.s3,
         "s3_providers": s3_provider_options(config),
         "llm": {
-            **llm_payload(config),
+            **payload.llm,
             "system_prompt": read_system_prompt(bench_root) if bench_root else "",
         },
         "llm_providers": llm_provider_options(),
-        "resource_limits": resource_limits_payload(config),
-        "webhook_endpoints": webhook_endpoints_payload(config),
-        "webhook_events": webhook_events_payload(),
-        "mail": mail_payload(MailConfig.read(bench_root / "sites") if bench_root else MailConfig()),
+        "resource_limits": payload.resource_limits,
+        "webhook_endpoints": payload.webhook_endpoints,
+        "webhook_events": payload.webhook_events,
+        "mail": SettingsPayload.get_mail(
+            MailConfig.read(bench_root / "sites") if bench_root else MailConfig()
+        ),
         "monitor": {
             "system_log_path": str(system_log_path()),
             "log_path": str(bench_log_path(config.name)),
@@ -410,11 +390,12 @@ def update_settings():
 def _save_settings_update(bench_root: Path, data: dict) -> dict:
     mail = MailConfig.read(bench_root / "sites")
     with BenchConfig.open(bench_root) as config:
-        old_restart = restart_trigger_values(config)
-        old_firewall = firewall_payload(config)
-        old_waf = waf_payload(config)
-        old_s3_config = s3_payload(config)
-        old_proxy = proxy_payload(config)
+        payload = SettingsPayload(config)
+        old_restart = payload.restart_triggers
+        old_firewall = payload.firewall
+        old_waf = payload.waf
+        old_s3_config = payload.s3
+        old_proxy = payload.proxy
 
         patcher = ConfigPatcher(config, data, mail)
         if error := patcher.apply():
@@ -446,7 +427,7 @@ def _apply_system_prompt(bench_root: Path, llm: dict) -> None:
 
 
 def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
-    if s3_payload(config) == old_s3_config or not config.s3.access_key:
+    if SettingsPayload(config).s3 == old_s3_config or not config.s3.access_key:
         return
 
     from pilot.integrations.s3.base import S3, S3IntegrationError
