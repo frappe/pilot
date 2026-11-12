@@ -55,7 +55,7 @@ def release(tmp_path: Path, monkeypatch):
     handler = functools.partial(SimpleHTTPRequestHandler, directory=str(directory))
     handler.log_message = lambda *args: None
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     monkeypatch.setattr(PrebuiltAssets, "release_url", f"http://127.0.0.1:{server.server_port}")
     yield directory
     server.shutdown()

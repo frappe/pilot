@@ -48,12 +48,27 @@ jobs:
           sudo systemctl disable --now mariadb
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
 
       - name: Install yarn and Pilot
         run: |
           npm install -g yarn
-          pip install -e ".[test,admin]"
+          uv pip install --system -e ".[test,admin]"
+
+      - name: Get cache week
+        id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache yarn packages
+        # pilot runs yarn install for the framework app; the key rolls weekly so the cache tracks yarn.lock.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/yarn
+          key: yarn-${{ runner.os }}-${{ steps.week.outputs.week }}
+          restore-keys: yarn-${{ runner.os }}-
 
       - name: Create bench
         run: |
