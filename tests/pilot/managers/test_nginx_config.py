@@ -1572,13 +1572,44 @@ def test_only_the_admin_is_kept_out_of_search_engines(tmp_path: Path) -> None:
     assert "robots.txt" not in site_block
 
 
-def test_a_site_server_follows_no_symlinks_below_the_bench(tmp_path: Path) -> None:
+def _location_bodies(config: str, opening: str) -> list[str]:
+    """The body of every `location` block whose first line starts with `opening`."""
+    bodies = []
+    start = config.find(opening)
+    while start != -1:
+        depth, end = 0, start
+        for end in range(config.index("{", start), len(config)):
+            depth += {"{": 1, "}": -1}.get(config[end], 0)
+            if depth == 0:
+                break
+        bodies.append(config[start:end])
+        start = config.find(opening, end)
+    return bodies
+
+
+def test_the_locations_that_read_sites_follow_no_symlinks_below_the_bench(tmp_path: Path) -> None:
     """nginx runs as the bench user, so a link that a workload makes in sites/ could reach any of its files."""
     renderer = _renderer(tmp_path)
     config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+    rule = f"disable_symlinks on from={renderer.bench.path};"
 
-    assert f"disable_symlinks on from={renderer.bench.path};" in config
-    assert config.count("disable_symlinks on") == config.count(f"root {renderer.bench.path}/sites;")
+    for opening in ("location /assets {", "location /files/ {", "location ~* ^/files/"):
+        bodies = _location_bodies(config, opening)
+        assert bodies, opening
+        assert all(rule in body for body in bodies), opening
+
+
+def test_acme_and_the_embed_still_follow_symlinks(tmp_path: Path) -> None:
+    """Their folders are outside the bench, so a workload cannot plant a link there. A server-wide rule would
+    check the whole path from /, and a webroot behind a link would fail certificate renewal."""
+    renderer = _renderer(tmp_path)
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    assert "\n    disable_symlinks" not in config
+    for opening in ("location /.well-known/acme-challenge/ {", "location ^~ /_pilot/embed/"):
+        bodies = _location_bodies(config, opening)
+        assert bodies, opening
+        assert not any("disable_symlinks" in body for body in bodies), opening
 
 
 def _app_folder(renderer, name: str = "frappe") -> Path:
