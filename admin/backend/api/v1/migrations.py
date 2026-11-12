@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
+from flask import Blueprint, jsonify, request, url_for
 
-from flask import Blueprint, current_app, jsonify, request, url_for
-
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import (
     accepted_response,
     error_response,
@@ -22,10 +21,6 @@ from pilot.tasks.retry_update import RetryUpdateTask
 from pilot.tasks.revert_migration import RevertMigrationTask
 
 migrations_bp = Blueprint("migrations", __name__)
-
-
-def _bench() -> Bench:
-    return Bench(Path(current_app.config["BENCH_ROOT"]))
 
 
 def _summary(operation: MigrationOperation) -> dict:
@@ -102,7 +97,7 @@ def _accepted(operation: MigrationOperation, task_id: str):
 
 @migrations_bp.post("/updates")
 def create_update():
-    bench = _bench()
+    bench = ApiRequest.get_bench()
     body = request.get_json(silent=True) or {}
     apps = body.get("apps") or None
     operation = bench.migrations.create_update(set(apps) if apps else None)
@@ -130,7 +125,7 @@ def list_migrations():
     site = request.args.get("site")
     operations = [
         _summary(operation)
-        for operation in _bench().migrations.get_all()
+        for operation in ApiRequest.get_bench().migrations.get_all()
         if _matches(operation, status, kind, site)
     ]
     return paginated_response(lambda count: operations[:count], limit, offset)
@@ -148,7 +143,7 @@ def _matches(operation: MigrationOperation, status, kind, site) -> bool:
 
 @migrations_bp.get("/migrations/current")
 def current_migration():
-    operation = _bench().migrations.current()
+    operation = ApiRequest.get_bench().migrations.current()
     return jsonify(_summary(operation) if operation else None)
 
 
@@ -231,7 +226,7 @@ def _queue_action(operation: MigrationOperation, task_type, role: str, **task_ar
 
 def _load(operation_id: str) -> MigrationOperation | None:
     try:
-        return _bench().migrations.get(operation_id)
+        return ApiRequest.get_bench().migrations.get(operation_id)
     except MigrationNotFoundError:
         return None
 

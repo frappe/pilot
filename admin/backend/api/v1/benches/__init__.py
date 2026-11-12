@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response, no_content_response
 from admin.backend.api.v1.benches.create import create_bench_locked
 from admin.backend.api.v1.benches.readiness import bench_readiness_bp
@@ -32,7 +33,7 @@ benches_bp.before_request(guard_bench_management)
 
 @benches_bp.get("")
 def list_benches():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     benches_dir = bench_root.parent
     benches = []
     for bench_dir in sorted(benches_dir.iterdir()):
@@ -49,7 +50,7 @@ def list_benches():
 def get_bench(name: str):
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         bench_dir = target_bench_dir(bench_root, name)
     except ValueError:
@@ -78,7 +79,7 @@ def restart_bench(name: str):
 
 
 def _run_action(name: str, action: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
 
@@ -130,7 +131,7 @@ def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str
 
 @benches_bp.delete("/<name>")
 def delete_bench(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
 
@@ -214,7 +215,7 @@ def get_domain_options():
 
 @benches_bp.post("")
 def create_bench():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
     request_data, response = _create_bench_request(data)

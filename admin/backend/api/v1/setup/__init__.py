@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.api.v1.setup.config import (
     apply_existing_local_database,
@@ -40,7 +41,7 @@ __all__ = [
 
 @setup_bp.get("/configuration")
 def get_configuration():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     return jsonify(read_defaults(bench_root))
 
 
@@ -51,10 +52,8 @@ def get_framework_branches():
 
 @setup_bp.put("/configuration")
 def update_configuration():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
     if error := validate_settable_keys(data):
         return error_response("invalid_setup_configuration", error, 422)
 
@@ -104,12 +103,10 @@ def _update_configuration(bench_root: Path, data: dict):
 
 @setup_bp.post("/database-validations")
 def validate_database():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    data = ApiRequest.get_json_body()
     try:
         engine, manager, password, existing = database_validation(
-            bench_root=Path(current_app.config["BENCH_ROOT"]),
+            bench_root=ApiRequest.get_bench_root(),
             data=data,
         )
         state = database_validation_state(manager, password, existing)
@@ -130,8 +127,8 @@ def validate_database():
 
 @setup_bp.post("/actions/start")
 def start_setup():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    idempotency_key = request.headers.get("Idempotency-Key")
+    bench_root = ApiRequest.get_bench_root()
+    idempotency_key = ApiRequest.get_idempotency_key()
     if not idempotency_key:
         return error_response(
             "idempotency_key_required",
@@ -179,10 +176,8 @@ def finish_setup():
     import signal
     import threading
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
 
     task_id = data.get("task_id")
     if not isinstance(task_id, str) or not task_id:

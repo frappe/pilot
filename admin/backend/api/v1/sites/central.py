@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import TypedDict
 
-from flask import current_app, jsonify, request
+from flask import jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import malformed_body, site_name
 from admin.backend.middleware import require_scope
-from pilot.core.bench import Bench
 from pilot.integrations.central import CentralClient, CentralClientError
 
 # Cloud Settings matches this text to hide the panels that need Central. Keep it in step with request.ts.
@@ -54,7 +53,7 @@ def central_proxy(name: str, method_path: str):
         return error_response(
             "central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403
         )
-    if not Bench(Path(current_app.config["BENCH_ROOT"])).config.central.enabled:
+    if not ApiRequest.get_bench().config.central.enabled:
         return error_response("central_not_configured", NOT_CONNECTED_MESSAGE, 503)
     data = request.get_json(silent=True) if request.method == "POST" else None
     if data is not None and not isinstance(data, dict):

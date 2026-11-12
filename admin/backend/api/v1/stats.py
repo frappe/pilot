@@ -6,8 +6,9 @@ from datetime import UTC
 from pathlib import Path
 
 import psutil
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from pilot.config import BenchConfig
 
@@ -87,7 +88,7 @@ def _log_file_info(description: str, path: Path) -> dict:
 def get_monitor_status():
     from pilot.config.monitor import bench_log_path, system_log_path
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
         return jsonify(
@@ -108,7 +109,7 @@ def get_monitor_status():
 def get_monitor_history():
     from admin.backend.providers.system_monitoring import SystemMonitoringProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "1h")
     try:
         return jsonify(SystemMonitoringProvider(bench_root, window).get_history())
@@ -124,7 +125,7 @@ def get_monitor_history():
 def get_db_history():
     from admin.backend.providers.database_monitoring import DatabaseMonitoringProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "1h")
     try:
         return jsonify(DatabaseMonitoringProvider(bench_root, window).get_history())
@@ -140,7 +141,7 @@ def get_db_history():
 def get_waf_analytics():
     from admin.backend.providers.waf import WafProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "24h")
     try:
         return jsonify(WafProvider(bench_root, window).get_analytics())
@@ -153,7 +154,7 @@ def system_info():
     from admin.backend.providers.os import OSProvider
     from pilot.managers.platform import HostPlatform
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
@@ -199,7 +200,7 @@ def storage_breakdown():
 
     from admin.backend.providers.storage import StorageProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     disk = psutil.disk_usage("/")
     try:
         breakdown = StorageProvider(bench_root).get_breakdown(disk.total, disk.used)

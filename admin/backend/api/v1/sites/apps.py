@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from flask import current_app, jsonify, request, url_for
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_response, accepted_task_response, error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
@@ -48,7 +49,7 @@ _COMMAND_FAILURE = re.compile(r"^Command '.+' (?:failed with exit code -?\d+|tim
 @sites_bp.get("/<name>/apps")
 @require_scope(site_name)
 def site_apps(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -103,7 +104,7 @@ def site_apps(name: str):
 def site_marketplace(name: str):
     """The bench app catalog, read-only. Scoped to a site because the bench-wide
     /marketplace/apps needs a bench token, which a managed site does not hold."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -120,7 +121,7 @@ def site_marketplace(name: str):
 @sites_bp.post("/<name>/apps")
 @require_scope(site_name)
 def install_site_app(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     requested, request_error = _requested_install()
@@ -223,7 +224,7 @@ def _cloned_app(bench: Bench, app: str, repo: str) -> "App | None":
 @require_scope(site_name)
 def update_site_apps(name: str):  # noqa: C901
     """Update apps installed on this site through Pilot's safeguarded migration flow."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
 
@@ -286,7 +287,7 @@ def _requested_update_apps():
 def site_task(name: str, task_id: str):
     """Poll a task this site started. Scoped because the bench-wide /tasks/<id>
     needs a bench token, and ownership is checked so one site can't read another's."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     reader = TaskReader(bench_root)
     try:
         task = reader.read_task(task_id)
@@ -328,7 +329,7 @@ def _operation_task_data(data: dict, state: str) -> dict:
 @sites_bp.delete("/<name>/apps/<app>")
 @require_scope(site_name)
 def delete_site_app(name: str, app: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     err = validate_app_name(app)

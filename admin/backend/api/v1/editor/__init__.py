@@ -3,8 +3,9 @@ from __future__ import annotations
 from functools import wraps
 from pathlib import Path
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.core.editor.workspace import (
     BinaryFileError,
@@ -24,7 +25,7 @@ def with_workspace(view):
 
     @wraps(view)
     def wrapper(*args, **kwargs):
-        bench_root = Path(current_app.config["BENCH_ROOT"])
+        bench_root = ApiRequest.get_bench_root()
         config = _read_config(bench_root)
         if config is None or not config.enable_code_editor:
             return error_response("editor_disabled", "Code editor is turned off. Turn it on in Settings.", 403)

@@ -4,8 +4,9 @@ import logging
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.setup import wizard_marker_path
 from admin.backend.middleware import allow_unauthenticated, is_request_authenticated
@@ -58,7 +59,7 @@ def health():
 @core_bp.get("/bootstrap")
 @allow_unauthenticated
 def bootstrap():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
     except Exception:

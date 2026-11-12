@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
+from flask import jsonify, request
 
-from flask import current_app, jsonify, request
-
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import malformed_body, site_name, site_not_found
@@ -82,7 +81,7 @@ def _call(name: str, action):
     """Run `action` on the site's Frappe Cloud link. Frappe Cloud's own message explains a refusal."""
     if not is_bench_scoped():
         return error_response("forbidden", "Restoring from Frappe Cloud needs a bench session.", 403)
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:

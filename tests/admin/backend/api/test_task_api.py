@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from flask import Flask
 
+from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.tasks.store import TaskStore
@@ -20,6 +21,7 @@ def client(bench_root: Path):
     app.config["BENCH_ROOT"] = bench_root
     app.register_blueprint(tasks_bp, url_prefix="/api/v1/tasks")
     app.register_blueprint(task_worker_bp, url_prefix="/api/v1")
+    install_api_error_handlers(app)
     return app.test_client()
 
 

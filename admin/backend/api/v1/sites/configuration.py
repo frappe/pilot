@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
+from flask import jsonify, request
 
-from flask import current_app, jsonify, request
-
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
@@ -22,7 +21,7 @@ from pilot.internal.site_paths import site_config_path
 @sites_bp.get("/<name>/configuration")
 @require_scope(site_name)
 def get_configuration(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if site_config_path(bench_root, name) is None:
         return site_not_found()
     try:
@@ -34,7 +33,7 @@ def get_configuration(name: str):
 @sites_bp.patch("/<name>/configuration")
 @require_scope(site_name)
 def update_configuration(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if site_config_path(bench_root, name) is None:
         return site_not_found()
 
