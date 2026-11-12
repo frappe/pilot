@@ -135,6 +135,7 @@ def test_asset_cache_failure_keeps_completed_build(source, monkeypatch, caplog, 
 
 
 def test_dependency_copy_seeds_changed_lockfile_without_reusing_install_stamp(tmp_path):
+    from pilot.core.app.node_packages import NodePackages
     from pilot.managers.node_dependencies import NodeDependencies
 
     original, copied = tmp_path / "source", tmp_path / "target"
@@ -154,8 +155,9 @@ def test_dependency_copy_seeds_changed_lockfile_without_reusing_install_stamp(tm
     (copied / "yarn.lock").write_text("different dependencies")
     assert NodeDependencies.copy(original, copied)
     assert (copied / "node_modules/dependency.js").read_text() == "original"
-    assert not (copied / "node_modules/.pilot-install-key").exists()
+    assert (copied / "node_modules/.pilot-install-key").read_text() == ""
     assert not NodeDependencies.has_matching_install(copied, NodeDependencies.get_key(copied))
+    assert not NodePackages(copied).is_installed
     assert (modules / ".pilot-install-key").exists()
     (copied / ".yarnrc").write_text("ignore-scripts true\n")
     assert not NodeDependencies.copy(original, copied)

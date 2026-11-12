@@ -133,13 +133,17 @@ class NodePackages:
 
     @property
     def is_installed(self) -> bool:
-        """Whether node_modules matches the dependency inputs."""
+        """Whether node_modules matches the dependency inputs.
+
+        Yarn installs stamped by Pilot compare contents; older unstamped installs keep the lockfile mtime rule.
+        """
         manager = self.package_manager
-        marker = self.install_path / "node_modules" / manager.install_marker
+        modules = self.install_path / "node_modules"
+        marker = modules / manager.install_marker
         lockfile = self.lockfile
         if not marker.exists():
             return False
-        if manager == YARN and lockfile is not None:
+        if manager == YARN and lockfile is not None and (modules / ".pilot-install-key").exists():
             from pilot.managers.node_dependencies import NodeDependencies
 
             return NodeDependencies.has_matching_install(

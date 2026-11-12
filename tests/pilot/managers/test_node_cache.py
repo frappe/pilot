@@ -119,7 +119,7 @@ def test_changed_install_inputs_do_not_restore_cache(install, monkeypatch, chang
     source, target, cache = install
     capture_install(source, cache)
     if changed == "environment":
-        monkeypatch.setenv("NODE_OPTIONS", "--max-old-space-size=1024")
+        monkeypatch.setenv("YARN_IGNORE_OPTIONAL", "true")
     elif changed == "ancestor-config":
         (target.parents[1] / ".yarnrc").write_text("--ignore-optional true\n")
     else:
