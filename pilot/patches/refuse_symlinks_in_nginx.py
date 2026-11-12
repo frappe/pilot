@@ -6,8 +6,8 @@ PATCH_NAME = Path(__file__).stem
 
 
 def run(benches_root: Path) -> None:
-    """Rewrite the nginx config of production benches, so nginx follows no symlinks below a bench and
-    serves app assets from their real folders."""
+    """Rewrite the nginx config of sandboxed benches, so nginx follows no symlinks below a bench and
+    serves app assets from their real folders. A bench without the sandbox keeps its config."""
     from pilot.core.bench import Bench
     from pilot.internal.patch_state import is_applied, mark_applied
     from pilot.managers.nginx import NginxManager
@@ -17,7 +17,9 @@ def run(benches_root: Path) -> None:
             continue
         if is_applied(bench_dir, PATCH_NAME):
             continue
-        NginxManager(Bench(bench_dir)).reload_for_site_change()
+        bench = Bench(bench_dir)
+        if bench.config.production.is_sandboxed:
+            NginxManager(bench).reload_for_site_change()
         mark_applied(bench_dir, PATCH_NAME)
 
 

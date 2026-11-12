@@ -71,6 +71,7 @@ class BenchRuntime:
         if not self.bench.config.production.enabled:
             raise BenchError(_DEV_RESTART_MESSAGE)
 
+        from pilot.managers.nginx import NginxManager
         from pilot.managers.processes.local import ProcessManager
 
         manager = cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
@@ -81,6 +82,8 @@ class BenchRuntime:
         # Links app units added since the last setup, and unlinks removed ones.
         manager.install_config()
         manager.reload_manager_config()
+        # nginx refuses links in sites/ only on a sandboxed bench, and `sandbox` takes effect here.
+        NginxManager(self.bench).reload_for_asset_change()
         manager.restart()
         self.bench.site_aliases.release_expired()
         if include_admin:

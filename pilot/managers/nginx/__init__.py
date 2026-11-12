@@ -232,11 +232,18 @@ class NginxConfigRenderer:
                     locations.append((f"{url}{link.name}/", target, unchecked))
         return locations
 
+    @property
+    def refuses_symlinks(self) -> bool:
+        """Only a sandboxed workload gains from a link in sites/: one without the sandbox already reads
+        everything the bench user can. So a bench without it keeps links, such as a storage folder."""
+        return self.bench.config.production.is_sandboxed
+
     def render_asset_locations(self) -> str:
+        rule = "        disable_symlinks on from={unchecked};\n" if self.refuses_symlinks else ""
         return "".join(
             f"    location ^~ {url} {{\n"
             f"        alias {folder}/;\n"
-            f"        disable_symlinks on from={unchecked};\n"
+            f"{rule.format(unchecked=unchecked)}"
             f"        expires 1y;\n"
             f'        add_header Cache-Control "public, immutable";\n'
             f"    }}\n\n"
@@ -369,6 +376,7 @@ class NginxConfigRenderer:
             ),
             "sites_root": f"{self.bench.path}/sites",
             "bench_root": str(self.bench.path),
+            "refuse_symlinks": self.refuses_symlinks,
             "asset_locations": self.render_asset_locations(),
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
@@ -495,9 +503,11 @@ class NginxManager:
         self.apply_config()
 
     def reload_for_asset_change(self) -> None:
-        """Write the config again when an app's assets are not in it, such as after an install or an update."""
+        """Write the config again when an app's assets are not in it, such as after an install or an update,
+        or when the sandbox was turned on or off since nginx last got it."""
         current = self.include_path.read_text() if self.include_path.is_file() else ""
-        if self._renderer.render_asset_locations() not in current:
+        is_stale = self._renderer.render_asset_locations() not in current
+        if is_stale or ("disable_symlinks" in current) != self._renderer.refuses_symlinks:
             self.reload_for_site_change()
 
     def _write_error_pages(self, nginx_dir: Path) -> None:
