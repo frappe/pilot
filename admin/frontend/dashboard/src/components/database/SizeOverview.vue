@@ -299,7 +299,7 @@ const updatedLabel = computed(() => {
 <template>
   <section class="flex xl:flex-row flex-col xl:h-[calc(100dvh-93px)] text-sm tabular-nums fade-in">
     <aside
-      class="flex flex-col order-last p-5 xl:overflow-y-auto border-t xl:border-t-0 xl:border-l border-outline-gray-1 w-full xl:w-[19rem] shrink-0"
+      class="flex flex-col order-last p-5 xl:pb-2 xl:overflow-y-auto border-t xl:border-t-0 xl:border-l border-outline-gray-1 w-full xl:w-[19rem] shrink-0"
     >
       <Badge :label="site || 'Server-wide'" size="sm" class="self-start" />
 
