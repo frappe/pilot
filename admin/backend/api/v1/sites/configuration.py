@@ -15,23 +15,8 @@ from admin.backend.api.v1.sites.shared import (
 )
 from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
-from pilot.core.site.config import (
-    PROTECTED_CONFIG_KEYS as _PROTECTED_CONFIG_KEYS,
-)
-from pilot.core.site.config import (
-    config_patch_error as _config_patch_error,
-)
-from pilot.core.site.config import (
-    merge_public_config as _merge_public_config,
-)
-from pilot.core.site.config import (
-    public_config as _public_config,
-)
 from pilot.exceptions import BenchError
 from pilot.internal.site_paths import site_config_path
-
-PROTECTED_CONFIG_KEYS = _PROTECTED_CONFIG_KEYS
-_CONFIG_ALIASES = (_config_patch_error, _merge_public_config, _public_config)
 
 
 @sites_bp.get("/<name>/configuration")
@@ -41,7 +26,7 @@ def get_configuration(name: str):
     if site_config_path(bench_root, name) is None:
         return site_not_found()
     try:
-        return jsonify(Bench(bench_root).site(name).public_config())
+        return jsonify(Bench(bench_root).site(name).config_file.read_public())
     except Exception:
         return internal_error("Could not read site configuration.")
 
@@ -60,7 +45,7 @@ def update_configuration(name: str):
         return refused
 
     try:
-        public = Bench(bench_root).site(name).update_public_config(data)
+        public = Bench(bench_root).site(name).config_file.update_public(data)
     except BenchError as error:
         return error_response("protected_configuration", str(error), 422)
     except Exception:

@@ -88,7 +88,7 @@ class SiteProvisioner:
         self.reload_nginx()
 
     def write_email_sender_name(self, site: "Site") -> None:
-        site.set_config_values({"email_sender_name": email_sender_name(site.config.name)})
+        site.config_file.set_values({"email_sender_name": email_sender_name(site.config.name)})
 
     def write_route_policy(self, site: "Site") -> None:
         """Persist provider route metadata after site creation."""

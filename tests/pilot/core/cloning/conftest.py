@@ -8,6 +8,7 @@ import pytest
 
 from pilot.config import AppConfig, BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.site.config.database_state import SiteDatabaseState
 from pilot.managers.environment import PythonEnvManager
 
 from .git_repository import git
@@ -62,5 +63,5 @@ def source(tmp_path, monkeypatch):
     monkeypatch.setattr(PythonEnvManager, "install_apps", lambda self, apps: None)
     monkeypatch.setattr(PythonEnvManager, "install_node_dependencies", lambda self: None)
     monkeypatch.setattr(PythonEnvManager, "build_assets", lambda self: None)
-    monkeypatch.setattr("pilot.core.site.clone.query_installed_apps_via_db", lambda *args: ["frappe"])
+    monkeypatch.setattr(SiteDatabaseState, "installed_apps", ["frappe"])
     return bench

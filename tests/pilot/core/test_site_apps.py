@@ -11,6 +11,7 @@ from pilot.core.app import App
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 from pilot.core.site.apps import SiteApps
+from pilot.core.site.config.database_state import SiteDatabaseState
 from pilot.exceptions import BenchError, CommandError
 from tests.pilot.marketplace_registry import publish
 
@@ -102,7 +103,7 @@ def test_failed_install_after_frappe_lists_the_app_is_marked_unfinished(tmp_path
     with (
         patch("pilot.core.site.apps.run_command", side_effect=_fail_on_install),
         patch.object(SiteApps, "get_committed_apps", side_effect=[["frappe"], ["frappe", "erpnext"]]),
-        patch.object(SiteApps, "has_module_rows", return_value=False),
+        patch.object(SiteDatabaseState, "has_module_rows", return_value=False),
         pytest.raises(CommandError, match="after_install failed"),
     ):
         site.install_app(app)
@@ -117,7 +118,7 @@ def test_failed_install_before_frappe_lists_the_app_is_not_marked(tmp_path: Path
     with (
         patch("pilot.core.site.apps.run_command", side_effect=_fail_on_install),
         patch.object(SiteApps, "get_committed_apps", return_value=["frappe"]),
-        patch.object(SiteApps, "has_module_rows", return_value=False),
+        patch.object(SiteDatabaseState, "has_module_rows", return_value=False),
         pytest.raises(CommandError),
     ):
         site.install_app(app)
@@ -147,7 +148,7 @@ def test_retry_after_a_failed_sync_forces_past_leftover_module_rows(tmp_path: Pa
     with (
         patch("pilot.core.site.apps.run_command") as mock_rc,
         patch.object(SiteApps, "get_committed_apps", return_value=["frappe"]),
-        patch.object(SiteApps, "has_module_rows", return_value=True),
+        patch.object(SiteDatabaseState, "has_module_rows", return_value=True),
     ):
         site.install_app(app)
 
@@ -186,7 +187,7 @@ def test_uninstall_puts_back_the_committed_app_list(tmp_path: Path, committed, e
 
     with (
         patch("pilot.core.site.apps.run_command"),
-        patch("pilot.core.site.config.query_installed_apps_setting_via_db", return_value=committed),
+        patch.object(SiteDatabaseState, "committed_apps", committed),
         patch.object(Bench, "reload_workers"),
     ):
         site.uninstall_app(app)

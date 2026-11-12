@@ -264,7 +264,7 @@ class Workspace:
         without --site use."""
         from pilot.config.common_site_config import update_common_site_config
 
-        self.site.set_config_values({"developer_mode": 1})
+        self.site.config_file.set_values({"developer_mode": 1})
         with update_common_site_config(self.bench.sites_path) as config:
             config["default_site"] = self.site.config.name
 

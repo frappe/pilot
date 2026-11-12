@@ -11,7 +11,6 @@ from contextlib import suppress
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-from pilot.core.site.config import read_site_config
 from pilot.exceptions import BenchError
 from pilot.utils import make_private_directory, run_command
 
@@ -95,7 +94,7 @@ class SiteMigrationBackup:
     @property
     def is_stored_in_s3(self) -> bool:
         """Whether a new backup of this site goes to the bench bucket instead of the local disk."""
-        engine = read_site_config(self.site.path).get("db_type", "mariadb")
+        engine = self.site.config_file.read().get("db_type", "mariadb")
         return engine == "mariadb" and self.site.bench.config.s3.stores_migration_backups
 
     @property
@@ -121,7 +120,7 @@ class SiteMigrationBackup:
         """
         self._validate_owner(operation_id)
         self._reset_directory()
-        config = read_site_config(self.site.path)
+        config = self.site.config_file.read()
         database_engine = config.get("db_type", "mariadb")
         if database_engine in {"sqlite", "postgres"}:
             self._create_full_database_backup()
@@ -181,7 +180,7 @@ class SiteMigrationBackup:
         if self.database_backup_path.is_file():
             self.site.restore(str(self.database_backup_path))
             return
-        config = read_site_config(self.site.path)
+        config = self.site.config_file.read()
         db_name = config["db_name"]
         previous = set(self.previous_tables)
         for dump in self.get_restore_dumps(tables, previous):

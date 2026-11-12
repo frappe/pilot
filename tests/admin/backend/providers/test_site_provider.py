@@ -84,7 +84,7 @@ def test_site_provider_reads_setup_complete_for_postgres_site(
         },
     )
     monkeypatch.setattr(
-        "pilot.core.site.config.make_site_database",
+        "pilot.core.site.config.database_state.make_site_database",
         lambda *args, **kwargs: _FakeDatabase([["1"]]),
     )
 
