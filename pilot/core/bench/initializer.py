@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 # `tasks` is left out: the task store creates it.
-_BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin")
 
 
 class BenchInitializer:
@@ -106,7 +105,7 @@ class BenchInitializer:
         """Create the bench directories that do not exist yet."""
         self._created_directories = [
             name
-            for name in _BENCH_DIRS
+            for name in ("apps", "sites", "logs", "config", "pids", "env", "admin")
             if not (self.bench.path / name).exists() and not (self.bench.path / name).is_symlink()
         ]
         self._rollback_actions.append(("bench directories", self._remove_bench_dirs))

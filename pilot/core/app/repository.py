@@ -14,22 +14,22 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.internal.git import GitRepo
 
-_FETCH_TIMEOUT_SECONDS = 30
-# Changes `frappe migrate` syncs into the database, as Frappe Cloud decides a migrate deploy.
-_MIGRATE_PATHS = tuple(
-    re.compile(pattern)
-    for pattern in (
-        r"\w+/patches\.txt",
-        r"\w+/hooks\.py",
-        r"\w+/fixtures/",
-        r"\w+/\w+/custom/",
-        r"frappe/geo/languages\.json",
-        r"\w+/\w+/\w+/(.+)/\1\.json",
-    )
-)
-
 
 class AppRepository:
+    fetch_timeout_seconds = 30
+    # Changes `frappe migrate` syncs into the database, as Frappe Cloud decides a migrate deploy.
+    migrate_paths = tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"\w+/patches\.txt",
+            r"\w+/hooks\.py",
+            r"\w+/fixtures/",
+            r"\w+/\w+/custom/",
+            r"frappe/geo/languages\.json",
+            r"\w+/\w+/\w+/(.+)/\1\.json",
+        )
+    )
+
     def __init__(self, app: "App") -> None:
         self.app = app
 
@@ -82,7 +82,7 @@ class AppRepository:
         files = self.repo.get_changed_files(self.installed_hash, pin.ref)
         if files is None:
             return True
-        return any(pattern.match(path) for pattern in _MIGRATE_PATHS for path in files)
+        return any(pattern.match(path) for pattern in self.migrate_paths for path in files)
 
     def fetch_missing_commit(self, commit: str) -> None:
         """Fetch `commit` unless it is local. A shallow clone takes it without history,
@@ -92,7 +92,7 @@ class AppRepository:
             return
         self._sync_remote_url()
         depth = ["--depth=1"] if repo.is_shallow else []
-        repo.fetch(*depth, commit, timeout=_FETCH_TIMEOUT_SECONDS)
+        repo.fetch(*depth, commit, timeout=self.fetch_timeout_seconds)
 
     @property
     def marketplace_entry(self) -> dict | None:
@@ -334,7 +334,7 @@ class AppRepository:
         self._sync_remote_url()
         # A named refspec creates origin/<branch> even in a single-branch clone.
         refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
-        if not repo.fetch(*self.depth_flags, refspec, timeout=_FETCH_TIMEOUT_SECONDS * 10):
+        if not repo.fetch(*self.depth_flags, refspec, timeout=self.fetch_timeout_seconds * 10):
             raise BenchError(f"Could not fetch branch '{branch}' of '{self.app.config.name}'.")
         repo.abort_merge_rebase()
         stashed = repo.stash_all()

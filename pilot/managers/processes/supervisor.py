@@ -22,11 +22,8 @@ from pilot.managers.processes.base import (
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
 
-_BOOT_JOB = "supervisord-boot"
 # Above the longest stop timeout a program gets, the lite runner's job drain.
 _SHUTDOWN_TIMEOUT = 900
-# `group:program   RUNNING   pid 123, uptime 0:01:02`
-_STATUS_LINE = re.compile(r"^(?P<program>\S+)\s+(?P<state>\S+)(?:\s+pid (?P<pid>\d+),)?")
 
 
 def is_redis(pd: ProcessDefinition) -> bool:
@@ -136,6 +133,10 @@ class SupervisorRenderer(ServiceRenderer):
 class SupervisorProcessManager(ManagedProcessManager):
     """Manages bench processes via a bench-owned supervisord instance (no sudo required)."""
 
+    boot_job = "supervisord-boot"
+    # `group:program   RUNNING   pid 123, uptime 0:01:02`
+    status_line = re.compile(r"^(?P<program>\S+)\s+(?P<state>\S+)(?:\s+pid (?P<pid>\d+),)?")
+
     @property
     def supervisor_dir(self) -> Path:
         """The supervisor directory."""
@@ -211,7 +212,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         """Install the cron job that starts supervisord at boot."""
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         # The bench owns its supervisord, so nothing else starts it after a reboot.
-        CronManager(self.bench.path).set_schedule(_BOOT_JOB, "@reboot", self._boot_command())
+        CronManager(self.bench.path).set_schedule(self.boot_job, "@reboot", self._boot_command())
 
     def _boot_command(self) -> str:
         """The command that starts supervisord at boot."""
@@ -275,7 +276,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         result = subprocess.run([*self._supervisorctl(), "status", *programs], capture_output=True, text=True)
         states = {}
         for line in result.stdout.splitlines():
-            match = _STATUS_LINE.match(line)
+            match = self.status_line.match(line)
             if match and match["program"] in programs:
                 pid = int(match["pid"]) if match["pid"] else None
                 states[programs[match["program"]]] = ProcessState(match["state"], pid)
@@ -318,7 +319,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     def shutdown(self) -> None:
         """Tear down everything, including the admin group and the daemon."""
-        CronManager(self.bench.path).remove_schedule(_BOOT_JOB)
+        CronManager(self.bench.path).remove_schedule(self.boot_job)
         if not self.is_alive():
             return
 

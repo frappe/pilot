@@ -16,14 +16,13 @@ if TYPE_CHECKING:
     from pilot.managers.processes.local import ProcessManager
 
 
-_DEV_RESTART_MESSAGE = (
-    "Restart is available only for production benches managed by\n"
-    "systemd or Supervisor.\n\n"
-    "For development, stop the runner and execute `pilot start` again."
-)
 
 
 class BenchRuntime:
+    dev_restart_message = "Restart is available only for production benches managed by\n"
+    "systemd or Supervisor.\n\n"
+    "For development, stop the runner and execute `pilot start` again."
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
@@ -94,7 +93,7 @@ class BenchRuntime:
     def restart_workload(self, include_admin: bool, on_progress: Callable[[str], None]) -> None:
         """Restart production processes. Fails when there is nothing to restart."""
         if not self.bench.config.production.enabled:
-            raise BenchError(_DEV_RESTART_MESSAGE)
+            raise BenchError(self.dev_restart_message)
 
         from pilot.managers.processes.local import ProcessManager
 

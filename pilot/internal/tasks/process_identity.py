@@ -11,11 +11,7 @@ from typing import Protocol
 
 from pilot.managers.platform import HostPlatform
 
-_BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
-_PROC_ROOT = Path("/proc")
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
-_CAPTURE_POLL_SECONDS = 0.01
-_CAPTURE_TIMEOUT_SECONDS = 1.0
 
 
 class ProcessOwnership(StrEnum):
@@ -132,9 +128,12 @@ class _ProcessBackend(Protocol):
 class _ProcSysBackend:
     """Reads process identity from /proc, as found on Linux."""
 
+    boot_id_path = Path("/proc/sys/kernel/random/boot_id")
+    proc_root = Path("/proc")
+
     def read_process(self, pid: int) -> _ProcessSnapshot:
         """The process snapshot, read from /proc/<pid>/stat and status."""
-        process_dir = _PROC_ROOT / str(pid)
+        process_dir = self.proc_root / str(pid)
         stat_text = (process_dir / "stat").read_text(encoding="utf-8")
         fields = stat_text[stat_text.rfind(")") + 2 :].split()
         if len(fields) < 20:
@@ -150,12 +149,12 @@ class _ProcSysBackend:
 
     def read_boot_id(self) -> str:
         """The kernel boot id from /proc."""
-        return _BOOT_ID_PATH.read_text(encoding="utf-8").strip()
+        return self.boot_id_path.read_text(encoding="utf-8").strip()
 
     def has_launch_id(self, pid: int, launch_id: str) -> bool:
         """Whether /proc/<pid>/environ holds this launch id."""
         expected = f"{_LAUNCH_ID_ENV}={launch_id}".encode()
-        environment = (_PROC_ROOT / str(pid) / "environ").read_bytes().split(b"\0")
+        environment = (self.proc_root / str(pid) / "environ").read_bytes().split(b"\0")
         return expected in environment
 
     def argv_hash(self, argv: list[str]) -> str:
@@ -166,14 +165,14 @@ class _ProcSysBackend:
     def iter_pids(self) -> list[int]:
         """Every numeric entry in /proc."""
         try:
-            entries = _PROC_ROOT.iterdir()
+            entries = self.proc_root.iterdir()
         except OSError as error:
             raise OSError from error
         return [int(entry.name) for entry in entries if entry.name.isdigit()]
 
     def command_line(self, pid: int) -> str:
         """/proc/<pid>/cmdline with NUL separators turned into spaces."""
-        raw = (_PROC_ROOT / str(pid) / "cmdline").read_bytes()
+        raw = (self.proc_root / str(pid) / "cmdline").read_bytes()
         return os.fsdecode(raw.replace(b"\0", b" "))
 
 
@@ -284,14 +283,14 @@ class ProcessInspector:
         launch_id: str,
     ) -> ProcessIdentity:
         """The identity of a just-started task wrapper, retried until it has set up its process group."""
-        deadline = time.monotonic() + _CAPTURE_TIMEOUT_SECONDS
+        deadline = time.monotonic() + 1.0
         while True:
             try:
                 return self._capture_once(pid, expected_argv, launch_id)
             except RuntimeError:
                 if time.monotonic() >= deadline:
                     raise
-                time.sleep(_CAPTURE_POLL_SECONDS)
+                time.sleep(0.01)
 
     def _capture_once(
         self,

@@ -7,7 +7,6 @@ from pathlib import Path
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
 MAX_POINTS = 400
-_QUERY_KEYS = ("Com_insert", "Com_update", "Com_delete", "Com_select")
 
 
 class DatabaseMonitoringProvider(WindowedLogProvider):
@@ -52,7 +51,7 @@ class DatabaseMonitoringProvider(WindowedLogProvider):
         (_, before), (t1, after) = prev, cur
         delta = lambda key: max(after.get(key, 0) - before.get(key, 0), 0)  # noqa: E731
 
-        by_type = {key: delta(key) for key in _QUERY_KEYS}
+        by_type = {key: delta(key) for key in ("Com_insert", "Com_update", "Com_delete", "Com_select")}
         other = max(delta("Questions") - sum(by_type.values()), 0)
         read_requests = delta("Innodb_buffer_pool_read_requests")
         reads = delta("Innodb_buffer_pool_reads")

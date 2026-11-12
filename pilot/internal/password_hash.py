@@ -13,13 +13,12 @@ import secrets
 
 ALGORITHM = "pbkdf2-sha256"
 ITERATIONS = 600_000  # OWASP's 2023 floor for PBKDF2-HMAC-SHA256
-_SALT_BYTES = 16
 _PREFIX = f"${ALGORITHM}$"
 
 
 def hash_password(password: str) -> str:
     """Hash a password for storage in bench.toml."""
-    salt = secrets.token_bytes(_SALT_BYTES)
+    salt = secrets.token_bytes(16)
     derived = _derive(password, salt, ITERATIONS)
     return f"{_PREFIX}{ITERATIONS}${_b64(salt)}${_b64(derived)}"
 

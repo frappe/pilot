@@ -16,7 +16,6 @@ from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.state import parse_task_status, validate_task_transition
 
 HOST_RESOURCE_PREFIX = "host:"
-_HOST_RESOURCE_LOCK = ".host-resources"
 
 
 def _host_keys(keys: list[str]) -> set[str]:
@@ -324,7 +323,7 @@ class TaskStore:
         """Serialize hostname claims before taking the bench lock."""
         if not _host_keys(keys):
             return nullcontext()
-        return exclusive_file_lock(self.bench_root.parent / _HOST_RESOURCE_LOCK)
+        return exclusive_file_lock(self.bench_root.parent / ".host-resources")
 
     def _reject_host_resources_elsewhere(self, keys: list[str]) -> None:
         """Reject hostname claims held by an active task on another bench."""

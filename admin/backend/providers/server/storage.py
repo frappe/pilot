@@ -13,10 +13,6 @@ from pilot.core.database.base import StorageComponent
 from pilot.exceptions import CommandError
 from pilot.internal.host_resources import DiskUsage
 
-_SYSTEM_SCHEMAS = {"mysql", "performance_schema", "information_schema", "sys"}
-
-_ENGINES_WITH_SCHEMA_SIZES = {"mariadb", "postgres"}
-
 
 @dataclass
 class DatabaseRow:
@@ -158,6 +154,9 @@ def _site_other_entries(site_path: Path) -> list[StorageItem]:
 class StorageProvider:
     """Disk usage breakdown for a bench's database engine and bench directories."""
 
+    system_schemas = frozenset({"mysql", "performance_schema", "information_schema", "sys"})
+    engines_with_schema_sizes = frozenset({"mariadb", "postgres"})
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
         self._config = BenchConfig.read(bench_root, validate=False)
@@ -193,7 +192,7 @@ class StorageProvider:
     def _database_breakdown(self) -> DatabaseBreakdown:
         """The database storage breakdown."""
         engine = self._config.db_type
-        if engine not in _ENGINES_WITH_SCHEMA_SIZES:
+        if engine not in self.engines_with_schema_sizes:
             return DatabaseBreakdown(engine=engine, supported=False, used_bytes=0, binlog_bytes=0)
 
         database = make_database(self._config)
@@ -221,7 +220,7 @@ class StorageProvider:
             DatabaseRow(
                 schema=schema,
                 site=site_by_db.get(schema),
-                system=schema in _SYSTEM_SCHEMAS,
+                system=schema in self.system_schemas,
                 bytes=size,
             )
             for schema, size in database.get_schema_sizes().items()

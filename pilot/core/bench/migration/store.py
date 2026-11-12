@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
-_CHAIN_RECORD_WAIT_SECONDS = 30
 
 
 class MigrationStore:
@@ -100,7 +99,7 @@ class MigrationStore:
     ) -> MigrationOperation:
         """Wait for registration to avoid overwriting the chain entry.
         Recover the entry if the queuing task stopped before registering it."""
-        deadline = time.monotonic() + _CHAIN_RECORD_WAIT_SECONDS
+        deadline = time.monotonic() + 30
         while True:
             operation = self.get(operation_id)
             if not task_id or any(entry["task_id"] == task_id for entry in operation.chain):

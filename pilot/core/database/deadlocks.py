@@ -11,15 +11,8 @@ from pathlib import Path
 TAIL_BYTES = 8 * 1024 * 1024
 
 _PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) +\d+ \[\w+\] InnoDB: ?")
-_START = "Transactions deadlock detected"
-_TRANSACTION = re.compile(r"^\*\*\* \((\d+)\) TRANSACTION:")
 _TRANSACTION_ID = re.compile(r"^TRANSACTION (\d+),")
 _THREAD = re.compile(r"^MariaDB thread id (\d+),")
-_WAITING = re.compile(r"^\*\*\* (\(\d+\) )?WAITING FOR THIS LOCK")
-_LOCK = re.compile(
-    r"(?:index (\S+) of )?table `([^`]+)`\.`([^`]+)` trx id \d+ lock[ _]mode (.+?)(?: waiting)?$"
-)
-_ROLLBACK = re.compile(r"^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)")
 
 
 @dataclass
@@ -105,6 +98,13 @@ class DeadlockParser:
     """Reads deadlock dumps line by line. A dump runs from 'Transactions deadlock detected'
     to 'WE ROLL BACK TRANSACTION (n)'; other log lines are skipped."""
 
+    transaction = re.compile(r"^\*\*\* \((\d+)\) TRANSACTION:")
+    waiting = re.compile(r"^\*\*\* (\(\d+\) )?WAITING FOR THIS LOCK")
+    lock = re.compile(
+        r"(?:index (\S+) of )?table `([^`]+)`\.`([^`]+)` trx id \d+ lock[ _]mode (.+?)(?: waiting)?$"
+    )
+    rollback = re.compile(r"^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)")
+
     def __init__(self) -> None:
         self.deadlocks: list[Deadlock] = []
         self.current: Deadlock | None = None
@@ -116,7 +116,7 @@ class DeadlockParser:
         for raw in text.splitlines():
             stamp = _PREFIX.match(raw)
             line = (raw[stamp.end() :] if stamp else raw).strip()
-            if _START in line:
+            if "Transactions deadlock detected" in line:
                 self.current = Deadlock(time=server_time_to_utc(stamp[1]) if stamp else "")
                 self.deadlocks.append(self.current)
             elif self.current is not None:
@@ -133,10 +133,10 @@ class DeadlockParser:
     def read_section(self, deadlock: Deadlock, line: str) -> None:
         """Start a new section of the deadlock dump."""
         self.reading_query = False
-        self.waiting_section = bool(_WAITING.match(line))
-        if match := _TRANSACTION.match(line):
+        self.waiting_section = bool(self.waiting.match(line))
+        if match := self.transaction.match(line):
             deadlock.transactions.append(DeadlockTransaction(number=int(match[1])))
-        elif match := _ROLLBACK.match(line):
+        elif match := self.rollback.match(line):
             for transaction in deadlock.transactions:
                 transaction.victim = transaction.number == int(match[1])
             self.current = None
@@ -150,7 +150,7 @@ class DeadlockParser:
             self.reading_query = True
         elif self.reading_query:
             transaction.query = f"{transaction.query}\n{line}".strip()
-        elif self.waiting_section and not transaction.table and (match := _LOCK.search(line)):
+        elif self.waiting_section and not transaction.table and (match := self.lock.search(line)):
             index, transaction.database, transaction.table, transaction.lock_mode = match.groups()
             transaction.index = index or ""
 

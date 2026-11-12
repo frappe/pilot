@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 RESTORE_PARTS = ("database", "public", "private", "config")
 # The end of tar's error output says why it failed.
-_STDERR_TAIL_BYTES = 4096
 # Keys that belong to this site's own database, cache, domains, host or Pilot.
 LOCAL_CONFIG_PREFIXES = ("db_", "redis_", "pilot_", "atlas_")
 LOCAL_CONFIG_KEYS = PublicConfig.PROTECTED_KEYS | {
@@ -182,7 +181,7 @@ class SiteRestore:
                 process.stdin.close()
                 return_code = process.wait()
             if return_code != 0:
-                stderr.seek(max(0, stderr.seek(0, 2) - _STDERR_TAIL_BYTES))
+                stderr.seek(max(0, stderr.seek(0, 2) - 4096))
                 error = stderr.read().decode(errors="replace").strip()
                 raise BenchError(f"Extracting the {part} files failed: {error}")
 

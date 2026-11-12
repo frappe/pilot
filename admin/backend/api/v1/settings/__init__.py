@@ -231,10 +231,6 @@ def get_cloudflare_status():
         return error_response("cloudflare_status_unavailable", str(error), 502)
 
 
-_AUDIT_LOG_DEFAULT_LIMIT = 50
-_AUDIT_LOG_MAX_LIMIT = 500
-
-
 def _audit_filters(entry_type, site, status, jti, since, until) -> dict:
     """`AuditLog.entries` filters from raw query values; `since`/`until` are ISO datetimes with an offset."""
     from datetime import datetime
@@ -260,7 +256,7 @@ def audit_log():
     from pilot.core.bench.audit_log import AuditLog
 
     bench_root = ApiRequest.get_bench_root()
-    limit, offset = parse_pagination(_AUDIT_LOG_DEFAULT_LIMIT, _AUDIT_LOG_MAX_LIMIT)
+    limit, offset = parse_pagination(50, 500)
     try:
         filters = _audit_filters(
             entry_type=request.args.get("type"),

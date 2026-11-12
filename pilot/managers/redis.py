@@ -17,9 +17,6 @@ from pilot.managers.platform import HostPlatform
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_BLOCK_START = "# BEGIN PILOT MANAGED BLOCK. Pilot rewrites this block; add your settings outside it."
-_BLOCK_END = "# END PILOT MANAGED BLOCK"
-_PILOT_DIRECTIVE = re.compile(r"^(port|bind|save)\b")
 
 
 def redis_server_binary() -> str | None:
@@ -28,6 +25,10 @@ def redis_server_binary() -> str | None:
 
 
 class RedisManager:
+    block_start = "# BEGIN PILOT MANAGED BLOCK. Pilot rewrites this block; add your settings outside it."
+    block_end = "# END PILOT MANAGED BLOCK"
+    pilot_directive = re.compile(r"^(port|bind|save)\b")
+
     def __init__(self, config: RedisConfig, bench: "Bench") -> None:
         self.config = config
         self.bench = bench
@@ -111,7 +112,7 @@ class RedisManager:
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
         path = self.bench.config_path / filename
         before, after = self._split_custom_config(path)
-        block = f'{_BLOCK_START}\nport {port}\nbind 127.0.0.1\nsave ""\n{_BLOCK_END}\n'
+        block = f'{self.block_start}\nport {port}\nbind 127.0.0.1\nsave ""\n{self.block_end}\n'
         path.write_text(before + block + after)
 
     @staticmethod
@@ -120,12 +121,12 @@ class RedisManager:
         if not path.exists():
             return "", ""
         text = path.read_text()
-        before, start, rest = text.partition(_BLOCK_START)
+        before, start, rest = text.partition(RedisManager.block_start)
         if not start:
-            return "", "".join(line for line in text.splitlines(keepends=True) if not _PILOT_DIRECTIVE.match(line))
-        _, end, after = rest.partition(_BLOCK_END)
+            return "", "".join(line for line in text.splitlines(keepends=True) if not RedisManager.pilot_directive.match(line))
+        _, end, after = rest.partition(RedisManager.block_end)
         if not end:
-            raise ConfigError(f"{path} has no '{_BLOCK_END}' line. Restore it or delete the file.")
+            raise ConfigError(f"{path} has no '{RedisManager.block_end}' line. Restore it or delete the file.")
         return before, after.removeprefix("\n")
 
 

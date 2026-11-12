@@ -4,8 +4,6 @@ from datetime import date, datetime
 
 from pilot.config import SCHEME_FIFO, BackupConfig
 
-_TS_FORMAT = "%Y%m%d_%H%M%S"
-
 
 class BackupRetentionPolicy:
     """Select backup timestamps to delete under FIFO or GFS retention."""
@@ -73,7 +71,7 @@ class BackupRetentionPolicy:
         runs = []
         for ts in timestamps:
             try:
-                runs.append((datetime.strptime(ts, _TS_FORMAT), ts))
+                runs.append((datetime.strptime(ts, "%Y%m%d_%H%M%S"), ts))
             except ValueError:
                 continue
         return sorted(runs, key=lambda run: run[0], reverse=True)

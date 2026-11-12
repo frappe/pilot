@@ -12,17 +12,18 @@ from pilot.internal.jsonl_log import JsonLines
 _MAX_BUCKETS = 30
 _TOP_LIMIT = 5
 
-_LINE_RE = re.compile(
-    r"^(?P<ip>\S+) \[(?P<time>[^\]]+)\] "
-    r'"(?P<method>\S+) (?P<uri>\S*)" (?P<status>\d{3}) '
-    r'"(?P<host>[^"]*)" (?P<request_time>\S+)\s*$'
-)
 _TIME_FORMAT = "%d/%b/%Y:%H:%M:%S %z"
 
 
 class SiteAccessLogProvider(WindowedLogProvider):
     """Aggregates one site's slice of the shared nginx access log - real,
     non-spoofable client IPs (nginx's own $remote_addr) - for one time window."""
+
+    line_re = re.compile(
+    r"^(?P<ip>\S+) \[(?P<time>[^\]]+)\] "
+    r'"(?P<method>\S+) (?P<uri>\S*)" (?P<status>\d{3}) '
+    r'"(?P<host>[^"]*)" (?P<request_time>\S+)\s*$'
+)
 
     def __init__(self, bench_root: Path, site_name: str, window: str) -> None:
         super().__init__(window)
@@ -44,7 +45,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
         """The access log points in the window."""
         points = []
         for line in JsonLines(self._log_path).read_lines_newest_first():
-            match = _LINE_RE.match(line.decode("utf-8", errors="replace"))
+            match = self.line_re.match(line.decode("utf-8", errors="replace"))
             if match is None:
                 continue
             when = self._parse_time(match["time"])

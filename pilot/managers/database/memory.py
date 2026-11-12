@@ -18,18 +18,21 @@ if TYPE_CHECKING:
 
 MEMORY_LIMIT_NAMES = ("MemoryHigh", "MemoryMax")
 MEMORY_LIMIT_READ_ONLY_REASON = "Pilot computes this limit from host RAM and the database memory split."
-_SIZED_OPTIONS = {
-    "innodb-buffer-pool-size",
-    "innodb-buffer-pool-size-max",
-    "innodb-buffer-pool-size-auto-min",
-    "innodb-log-file-size",
-    "key-buffer-size",
-    "aria-pagecache-buffer-size",
-    "max-connections",
-}
 
 
 class MariaDBMemory:
+    sized_options = frozenset(
+        {
+            "innodb-buffer-pool-size",
+            "innodb-buffer-pool-size-max",
+            "innodb-buffer-pool-size-auto-min",
+            "innodb-log-file-size",
+            "key-buffer-size",
+            "aria-pagecache-buffer-size",
+            "max-connections",
+        }
+    )
+
     def __init__(self, manager: MariaDBManager) -> None:
         self.manager = manager
 
@@ -78,7 +81,7 @@ class MariaDBMemory:
             if state is None or state["total_memory_mb"] != manager._total_memory_mb():
                 manager.ensure_managed_config()
                 options = manager._read_managed_options()
-                options = {name: value for name, value in options.items() if name not in _SIZED_OPTIONS}
+                options = {name: value for name, value in options.items() if name not in self.sized_options}
                 atomic_write_private_text(manager.managed_cnf_path, manager._render_managed_options(options))
                 sizing = manager._write_config()
                 manager._install_unit(sizing, preserve_swap_limit=True, reload_manager=False)

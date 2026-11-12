@@ -11,13 +11,12 @@ _MAX_BUCKETS = 48
 _TOP_LIMIT = 10
 # CRS scoring/correlation rules (949xxx inbound anomaly, 980xxx reporting) are
 # bookkeeping, not attacks - keep them out of the "top rules" breakdown.
-_SUMMARY_RULE_PREFIXES = ("949", "980")
-_INBOUND_ANOMALY_RULE = "949110"
-_TIME_FORMATS = ("%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S")
 
 
 class WafProvider:
     """Aggregates ModSecurity JSON audit logs for one time window."""
+
+    time_formats = ("%a %b %d %H:%M:%S %Y", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S")
 
     def __init__(self, bench_root: Path, window: str) -> None:
         self._log_path = bench_root / "logs" / "modsec_audit.log"
@@ -46,7 +45,7 @@ class WafProvider:
                 continue
             flagged += 1
             is_blocked = self._status_code(transaction) == 403
-            crossed = any(self._rule_id(m) == _INBOUND_ANOMALY_RULE for m in messages)
+            crossed = any(self._rule_id(m) == "949110" for m in messages)
             blocked += is_blocked
             would_block += crossed
             ip = self._first(transaction, "client_ip", "client ip")
@@ -54,7 +53,7 @@ class WafProvider:
                 ips[ip] += 1
             for message in messages:
                 rule_id = self._rule_id(message)
-                if rule_id and not rule_id.startswith(_SUMMARY_RULE_PREFIXES):
+                if rule_id and not rule_id.startswith(("949", "980")):
                     rules[(rule_id, self._rule_label(message))] += 1
             bucket = int(when.timestamp() // bucket_size * bucket_size)
             buckets[bucket] += 1
@@ -127,7 +126,7 @@ class WafProvider:
             return datetime.fromisoformat(text)
         except ValueError:
             pass
-        for fmt in _TIME_FORMATS:
+        for fmt in WafProvider.time_formats:
             try:
                 return datetime.strptime(text, fmt)
             except ValueError:

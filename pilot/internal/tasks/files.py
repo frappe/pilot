@@ -13,11 +13,10 @@ from pilot.exceptions import TaskNotFoundError
 from pilot.internal.atomic_file import replace_private_text_locked
 from pilot.internal.private_files import PrivateFile
 
-_QUEUED_STATUS = "queued"
-_TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
-
 
 class TaskFiles:
+    task_id_pattern = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
+
     def __init__(self, tasks_root: Path) -> None:
         self.tasks_root = Path(tasks_root)
 
@@ -68,7 +67,7 @@ class TaskFiles:
         temporary_dir.chmod(0o700)
         try:
             self.write_staged(temporary_dir / "meta.json", json.dumps(metadata, indent=2))
-            self.write_staged(temporary_dir / "status", _QUEUED_STATUS)
+            self.write_staged(temporary_dir / "status", "queued")
             for name, content in private_files.items():
                 self.validate_private_name(name)
                 self.write_staged(temporary_dir / name, content)
@@ -117,7 +116,7 @@ class TaskFiles:
     @staticmethod
     def is_valid_task_id(task_id: str) -> bool:
         """Whether the text is a valid task id."""
-        return bool(_TASK_ID_PATTERN.match(task_id))
+        return bool(TaskFiles.task_id_pattern.match(task_id))
 
     @staticmethod
     def write_staged(path: Path, content: str) -> None:

@@ -13,7 +13,6 @@ from pilot.managers.platform import HostPlatform
 
 _CLIENT_TIMEOUT = 5
 _DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
-_GENERATED_CONFIG_FILES = ("postgresql.conf", "pg_hba.conf", "pg_ident.conf")
 
 
 class PostgresManager(UserOwnedDBManager):
@@ -125,7 +124,7 @@ class PostgresManager(UserOwnedDBManager):
         the -D data directory regardless of --config-file, so point them at
         their new location explicitly from within postgresql.conf."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        for name in _GENERATED_CONFIG_FILES:
+        for name in ("postgresql.conf", "pg_hba.conf", "pg_ident.conf"):
             (self.data_dir / name).replace(self.config_dir / name)
         postgresql_conf = self.config_dir / "postgresql.conf"
         postgresql_conf.write_text(

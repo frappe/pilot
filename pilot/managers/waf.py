@@ -33,10 +33,6 @@ _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 # against the OWASP CRS PGP signing key (36006F0E0BA167832158821138EEACA1AB8A6E72,
 # security@coreruleset.org) at pin time.
 CRS_VERSION = "4.25.0"
-_CRS_URL = (
-    f"https://github.com/coreruleset/coreruleset/releases/download/"
-    f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
-)
 _CRS_SHA256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
 
@@ -45,6 +41,9 @@ class WafManager:
 
     # Canonical (apt-style) name; per-distro names live in each package manager's
     # package_aliases map.
+    crs_url = "https://github.com/coreruleset/coreruleset/releases/download/"
+    f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
+
     MODULE_PACKAGE = "modsecurity-nginx"
 
     def __init__(self, bench: "Bench | None" = None) -> None:
@@ -93,7 +92,7 @@ class WafManager:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             archive = tmp_path / "crs.tar.gz"
-            urllib.request.urlretrieve(_CRS_URL, archive)
+            urllib.request.urlretrieve(self.crs_url, archive)
             self._verify_checksum(archive)
             with tarfile.open(archive) as tar:
                 tar.extractall(tmp_path, filter="data")

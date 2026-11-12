@@ -7,8 +7,6 @@ from typing import Any
 
 from pilot.exceptions import BenchError
 
-_TIMEOUT_SECONDS = 10
-
 
 class CentralClientError(BenchError):
     """A Central call failed. `status_code` is Central's status when it answered
@@ -117,7 +115,7 @@ class CentralClient:
         request = urllib.request.Request(url, data=body, method=http_method, headers=headers)
 
         try:
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(request, timeout=10) as response:
                 payload = json.loads(response.read().decode())
         except urllib.error.HTTPError as exc:
             detail = _error_detail(exc.read())

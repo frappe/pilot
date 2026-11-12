@@ -29,6 +29,30 @@ FILENAME = "common_config.toml"
 class CommonConfig:
     """Settings shared by every bench in one benches directory."""
 
+    schema = TomlSchema(
+        tables={
+            "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
+            "postgres": TomlSchema(keys=field_names(PostgresConfig)),
+            "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
+            "nginx": TomlSchema(keys=set(NginxConfig().ports)),
+            "central": TomlSchema(
+                keys=field_names(CentralConfig) - {"hostname_aliases"},
+                arrays={"hostname_aliases": TomlSchema(keys=field_names(HostnameAlias))},
+            ),
+            "proxy": TomlSchema(keys=field_names(ProxyConfig)),
+            "telemetry": TomlSchema(keys=field_names(TelemetryConfig)),
+            # webhook_endpoints here is the older place for them; it is read and moved to the top level.
+            "resource_limits": TomlSchema(
+                keys=field_names(ResourceLimitConfig) | {"webhook_endpoints"},
+                arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
+            ),
+            "frappe_cloud": TomlSchema(keys=field_names(FrappeCloudConfig)),
+            "updates": TomlSchema(keys=field_names(UpdatesConfig)),
+            "admin": TomlSchema(keys={"jwks_url", "jwks_audience"}),
+        },
+        arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
+    )
+
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
@@ -60,7 +84,7 @@ class CommonConfig:
     def from_raw_dict(cls, data: dict, *, strict: bool = False) -> "CommonConfig":
         """Build from a parsed TOML dict shaped like common_config.toml (or a
         bench.toml that still carries these tables pre-migration)."""
-        if strict and (unknown := _SCHEMA.get_unknown_paths(data)):
+        if strict and (unknown := cls.schema.get_unknown_paths(data)):
             raise ConfigError(f"common_config.toml has unrecognized fields: {', '.join(unknown)}")
 
         admin = data.get("admin", {})
@@ -196,31 +220,6 @@ class CommonConfig:
             "bootstrapped": self.central.bootstrapped,
             "hostname_aliases": [asdict(alias) for alias in self.central.hostname_aliases],
         }
-
-
-_SCHEMA = TomlSchema(
-    tables={
-        "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
-        "postgres": TomlSchema(keys=field_names(PostgresConfig)),
-        "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
-        "nginx": TomlSchema(keys=set(NginxConfig().ports)),
-        "central": TomlSchema(
-            keys=field_names(CentralConfig) - {"hostname_aliases"},
-            arrays={"hostname_aliases": TomlSchema(keys=field_names(HostnameAlias))},
-        ),
-        "proxy": TomlSchema(keys=field_names(ProxyConfig)),
-        "telemetry": TomlSchema(keys=field_names(TelemetryConfig)),
-        # webhook_endpoints here is the older place for them; it is read and moved to the top level.
-        "resource_limits": TomlSchema(
-            keys=field_names(ResourceLimitConfig) | {"webhook_endpoints"},
-            arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
-        ),
-        "frappe_cloud": TomlSchema(keys=field_names(FrappeCloudConfig)),
-        "updates": TomlSchema(keys=field_names(UpdatesConfig)),
-        "admin": TomlSchema(keys={"jwks_url", "jwks_audience"}),
-    },
-    arrays={"webhook_endpoints": TomlSchema(keys=field_names(WebhookEndpoint))},
-)
 
 
 def _known_fields(dataclass_type: type, data: dict) -> dict:

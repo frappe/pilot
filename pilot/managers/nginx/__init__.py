@@ -31,21 +31,12 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
-_PILOT_INCLUDE = Path("/etc/nginx/conf.d/00-pilot.conf")
-_USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
 
-_SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
 
 _TEMPLATES = Path(__file__).parent / "templates"
 ADMIN_CLIENT_MAX_BODY_SIZE = "1024m"
-_BENCH_TEMPLATE = Template.from_path(_TEMPLATES / "bench.conf.template")
-_SERVER_TEMPLATE = Template.from_path(_TEMPLATES / "server.conf.template")
 _ERROR_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "error_page.html.template")
-_STARTUP_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "startup_page.html.template")
-_RECOVERY_TEMPLATE = Template.from_path(_TEMPLATES / "recovery.conf.template")
-_EMBED_TEMPLATE = Template.from_path(_TEMPLATES / "embed.conf.template")
 
-_CORS_PATHS = ["/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish"]
 
 # Cloud hostnames are anchored to the VM's zone, so customer domains do not match.
 CLOUD_ADMIN_PREFIX = "vm-"
@@ -122,6 +113,12 @@ def cert_files_exist(domain: str) -> bool:
 class NginxConfigRenderer:
     """Build nginx template context for a bench."""
 
+    bench_template = Template.from_path(_TEMPLATES / "bench.conf.template")
+    server_template = Template.from_path(_TEMPLATES / "server.conf.template")
+    recovery_template = Template.from_path(_TEMPLATES / "recovery.conf.template")
+    embed_template = Template.from_path(_TEMPLATES / "embed.conf.template")
+    cors_paths = ("/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish")
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
         self._proxy_servers_cache: list[str] | None = None
@@ -133,7 +130,7 @@ class NginxConfigRenderer:
             vhosts.append(self._admin_vhost(admin_ssl))
 
         aliases = self._cloud_aliases(sites, admin_ssl)
-        return _BENCH_TEMPLATE.render(**self._bench_context(vhosts, aliases))
+        return self.bench_template.render(**self._bench_context(vhosts, aliases))
 
     def _cloud_aliases(
         self, sites: list[tuple["SiteConfig", list[str]]], admin_ssl: bool
@@ -201,7 +198,7 @@ class NginxConfigRenderer:
     def generate_server_config(self, error_dir: Path) -> str:
         """The host-wide catch-all vhost, shared by every bench on the box."""
         nginx = self.bench.config.nginx
-        return _SERVER_TEMPLATE.render(
+        return self.server_template.render(
             http_port=nginx.http_port,
             https_port=nginx.https_port,
             error_dir=error_dir,
@@ -340,7 +337,7 @@ class NginxConfigRenderer:
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,
-            "startup_recovery": _RECOVERY_TEMPLATE.render(error_dir=error_dir),
+            "startup_recovery": self.recovery_template.render(error_dir=error_dir),
             "error_codes": list(ERROR_PAGES),
             "proxy_servers": self.get_proxy_servers(),
             "cloudflare_networks": CLOUDFLARE_NETWORKS if config.proxy.cloudflare else (),
@@ -349,9 +346,9 @@ class NginxConfigRenderer:
             "firewall": config.firewall,
             "waf_active": self._is_waf_active(),
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",
-            "cors_paths": _CORS_PATHS,
+            "cors_paths": self.cors_paths,
             "admin_static": _admin_static_dir(),
-            "site_embed": _EMBED_TEMPLATE.render(admin_static=_admin_static_dir()),
+            "site_embed": self.embed_template.render(admin_static=_admin_static_dir()),
             "vhosts": vhosts,
             "aliases": aliases or [],
         }
@@ -359,6 +356,11 @@ class NginxConfigRenderer:
 
 class NginxManager:
     """Installs, configures, and reloads nginx for a bench, via NginxConfigRenderer."""
+
+    pilot_include = Path("/etc/nginx/conf.d/00-pilot.conf")
+    user_directive = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
+    shared_error_dir = Path("/usr/share/nginx/bench-error-pages")
+    startup_page_template = Template.from_path(_TEMPLATES / "startup_page.html.template")
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -471,12 +473,12 @@ class NginxManager:
         error_dir = nginx_dir / "error_pages"
         error_dir.mkdir(parents=True, exist_ok=True)
         (error_dir / "starting.html").write_text(
-            _STARTUP_PAGE_TEMPLATE.render(
+            self.startup_page_template.render(
                 title="Waiting for your site", message="Your site is being prepared."
             )
         )
         (error_dir / "reconnecting.html").write_text(
-            _STARTUP_PAGE_TEMPLATE.render(
+            self.startup_page_template.render(
                 title="Reconnecting", message="The server is starting or recovering."
             )
         )
@@ -495,7 +497,7 @@ class NginxManager:
             return
 
         catchall_conf = HostPlatform.nginx_config_dir / "00-bench-default.conf"
-        content = self._renderer.generate_server_config(_SHARED_ERROR_DIR)
+        content = self._renderer.generate_server_config(self.shared_error_dir)
         previous = catchall_conf.read_text() if catchall_conf.exists() else None
         if content != previous:
             self._install_privileged_default_server(catchall_conf, content, previous)
@@ -522,7 +524,7 @@ class NginxManager:
                         "-m",
                         "644",
                         str(staged),
-                        str(_SHARED_ERROR_DIR / f"{code}.html"),
+                        str(self.shared_error_dir / f"{code}.html"),
                     ]
                 )
             )
@@ -599,7 +601,7 @@ class NginxManager:
         """True when the installer's 00-pilot.conf already globs this bench in,
         so publishing a vhost needs no privileges at all."""
         try:
-            directives = _PILOT_INCLUDE.read_text()
+            directives = self.pilot_include.read_text()
         except OSError:
             return False
         patterns = re.findall(r"^\s*include\s+([^;]+);", directives, re.MULTILINE)
@@ -697,8 +699,8 @@ class NginxManager:
         owner = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
         directive = f"user {owner};"
         original = _NGINX_CONF.read_text()
-        if _USER_DIRECTIVE.search(original):
-            updated = _USER_DIRECTIVE.sub(directive, original, count=1)
+        if self.user_directive.search(original):
+            updated = self.user_directive.sub(directive, original, count=1)
         else:
             updated = directive + "\n" + original
         if updated == original:

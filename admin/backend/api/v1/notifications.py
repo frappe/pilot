@@ -29,9 +29,6 @@ class NotificationPage(TypedDict):
 
 notifications_bp = Blueprint("notifications", __name__)
 
-_DEFAULT_LIMIT = 20
-_MAX_LIMIT = 100
-
 
 def _store() -> NotificationStore:
     """The notification store."""
@@ -44,7 +41,7 @@ def list_notifications():
 
     The count rides along on every page so the sidebar badge and the feed can never
     disagree about what is unread."""
-    limit, offset = parse_pagination(_DEFAULT_LIMIT, _MAX_LIMIT)
+    limit, offset = parse_pagination(20, 100)
     category = request.args.get("category") or None
     if category and category not in CATEGORIES:
         return error_response("invalid_category", f"Unknown category: {category}.", 400)

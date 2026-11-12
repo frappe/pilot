@@ -39,20 +39,9 @@ from pilot.managers.database.memory import MariaDBMemory
 from pilot.managers.platform import HostPlatform
 
 _CLIENT_TIMEOUT = 5
-_IMPORT_CHUNK_BYTES = 1024 * 1024
-_MEMORY_RELEASE_TIMEOUT = 60
 # A host whose memory moved by less than this keeps its sizing.
-_RESIZE_THRESHOLD_MB = 100
-_SIZED_FOR = re.compile(r"^# pilot-sized-for-memory-mb = (\d+)$", re.M)
-_SIZING_UNIT_NAME = "pilot-mariadb-sizing.service"
-_MANAGED_CONFIG_HEADER = "# Managed by Pilot's database variable editor.\n"
 _OPTION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _MEBIBYTE = 1024 * 1024
-_GLOBAL_INTEGER_VARIABLES = {
-    "innodb_buffer_pool_size",
-    "innodb_buffer_pool_size_max",
-    "max_connections",
-}
 
 
 class _ManagedCnfParser(configparser.ConfigParser):
@@ -62,6 +51,15 @@ class _ManagedCnfParser(configparser.ConfigParser):
 
 
 class MariaDBManager(UserOwnedDBManager):
+    sized_for = re.compile(r"^# pilot-sized-for-memory-mb = (\d+)$", re.M)
+    global_integer_variables = frozenset(
+        {
+            "innodb_buffer_pool_size",
+            "innodb_buffer_pool_size_max",
+            "max_connections",
+        }
+    )
+
     _UNIT_NAME = "pilot-mariadb.service"
     _DISPLAY_NAME = "MariaDB"
     _SYSTEM_PACKAGE = "mariadb-server"
@@ -279,7 +277,7 @@ class MariaDBManager(UserOwnedDBManager):
     @staticmethod
     def _render_managed_options(options: dict[str, str]) -> str:
         """The managed config text."""
-        lines = [_MANAGED_CONFIG_HEADER.rstrip(), "[mysqld]"]
+        lines = ["# Managed by Pilot's database variable editor.\n".rstrip(), "[mysqld]"]
         lines.extend(f"{name} = {options[name]}" for name in sorted(options))
         return "\n".join(lines) + "\n"
 
@@ -370,7 +368,7 @@ class MariaDBManager(UserOwnedDBManager):
     @property
     def sized_for_memory_mb(self) -> int | None:
         """The host memory my.cnf was sized for, or None when it is not recorded."""
-        match = _SIZED_FOR.search(self.my_cnf_path.read_text()) if self.my_cnf_path.exists() else None
+        match = self.sized_for.search(self.my_cnf_path.read_text()) if self.my_cnf_path.exists() else None
         return int(match.group(1)) if match else None
 
     def size_for_host(self) -> MariaDBMemorySizing | None:
@@ -379,7 +377,7 @@ class MariaDBManager(UserOwnedDBManager):
         if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
             return None
         sized_for = self.sized_for_memory_mb
-        if sized_for is not None and abs(self._total_memory_mb() - sized_for) < _RESIZE_THRESHOLD_MB:
+        if sized_for is not None and abs(self._total_memory_mb() - sized_for) < 100:
             # tune_to_host leaves the old unit when a shrink must wait.
             sized_unit = self._render_unit(calculate_mariadb_memory(sized_for, self.config.memory_share))
             if self.unit_path.exists() and self.unit_path.read_text() == sized_unit:
@@ -395,7 +393,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Install the startup hook and the memory limits."""
         self.memory.install_startup_hook()
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
-        run_command(self._systemctl("enable", _SIZING_UNIT_NAME), env=self._systemctl_env())
+        run_command(self._systemctl("enable", "pilot-mariadb-sizing.service"), env=self._systemctl_env())
 
     def _drop_oversized_buffer_pool_override(self) -> None:
         """A buffer pool size saved on a larger host does not fit this one, so the sizing takes over."""
@@ -432,7 +430,7 @@ class MariaDBManager(UserOwnedDBManager):
     def _has_released_memory(self, sizing: MariaDBMemorySizing) -> bool:
         """Wait until MariaDB uses less than the new soft limit, so a lower hard limit cannot
         kill it. False when the memory stays high or cannot be read."""
-        deadline = time.monotonic() + _MEMORY_RELEASE_TIMEOUT
+        deadline = time.monotonic() + 60
         while (usage := self._unit_memory_mb("MemoryCurrent")) is None or usage >= sizing.memory_high_mb:
             if time.monotonic() >= deadline:
                 logging.getLogger(__name__).warning(
@@ -930,7 +928,7 @@ class MariaDBManager(UserOwnedDBManager):
     @staticmethod
     def _require_supported_integer_variable(variable: str) -> None:
         """Raise unless Pilot can change the variable."""
-        if variable not in _GLOBAL_INTEGER_VARIABLES:
+        if variable not in MariaDBManager.global_integer_variables:
             raise DatabaseError(f"Pilot cannot change MariaDB variable '{variable}'.")
 
     def _require_linux_managed_server(self) -> None:
@@ -1155,7 +1153,7 @@ class MariaDBManager(UserOwnedDBManager):
         )
         assert process.stdin is not None and process.stderr is not None
         try:
-            while chunk := dump.read(_IMPORT_CHUNK_BYTES):
+            while chunk := dump.read(1024 * 1024):
                 process.stdin.write(chunk)
         except BrokenPipeError:
             pass  # the client exited; its stderr says why

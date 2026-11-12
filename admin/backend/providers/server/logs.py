@@ -10,16 +10,6 @@ from pathlib import Path
 from pilot.internal.jsonl_log import JsonLines
 from pilot.managers.task.reader import HEARTBEAT_SECONDS
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
-
-_MAX_STREAM_LINES = 5000  # cap on lines a single log tail-stream connection emits
-# Error lines from Python logging, gunicorn, nginx and tracebacks. Servers log INFO to stderr,
-# so a *.error.log file name alone says nothing.
-_ERROR_LINE_RE = re.compile(
-    r"\b(ERROR|CRITICAL|FATAL)\b|\[(error|crit|alert|emerg)\]|Traceback \(most recent call last\)"
-)
-_ERROR_SCAN_BYTES = 64 * 1024
-
 
 @dataclass
 class LogFileInfo:
@@ -32,6 +22,13 @@ class LogFileInfo:
 
 
 class LogProvider:
+    ansi_re = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
+    # Error lines from Python logging, gunicorn, nginx and tracebacks. Servers log INFO to stderr,
+    # so a *.error.log file name alone says nothing.
+    error_line_re = re.compile(
+        r"\b(ERROR|CRITICAL|FATAL)\b|\[(error|crit|alert|emerg)\]|Traceback \(most recent call last\)"
+    )
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
 
@@ -63,7 +60,7 @@ class LogProvider:
             raise FileNotFoundError(f"Log file not found: {filename}")
 
         tail = JsonLines(log_path).read_tail_text(max(lines, 0)).splitlines()
-        return [_ANSI_RE.sub("", line) for line in tail[-lines:]] if lines > 0 else []
+        return [self.ansi_re.sub("", line) for line in tail[-lines:]] if lines > 0 else []
 
     def get_file_path(self, filename: str) -> Path:
         """The validated path of a log file."""
@@ -81,10 +78,10 @@ class LogProvider:
 
         with open(log_path, "r", errors="replace") as file_handle:
             file_handle.seek(0, 2)  # seek to end
-            while yielded < _MAX_STREAM_LINES and not should_stop():
+            while yielded < 5000 and not should_stop():
                 line = file_handle.readline()
                 if line:
-                    yield _ANSI_RE.sub("", line.rstrip("\n"))
+                    yield self.ansi_re.sub("", line.rstrip("\n"))
                     yielded += 1
                     last_write = time.monotonic()
                 elif time.monotonic() - last_write >= HEARTBEAT_SECONDS:
@@ -98,8 +95,8 @@ class LogProvider:
         """Whether the end of the log holds an error line."""
         try:
             with path.open("rb") as handle:
-                handle.seek(max(0, handle.seek(0, 2) - _ERROR_SCAN_BYTES))
-                return bool(_ERROR_LINE_RE.search(handle.read().decode(errors="replace")))
+                handle.seek(max(0, handle.seek(0, 2) - (64 * 1024)))
+                return bool(LogProvider.error_line_re.search(handle.read().decode(errors="replace")))
         except OSError:
             return False
 

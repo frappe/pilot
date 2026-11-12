@@ -25,8 +25,6 @@ from pilot.internal.validators import validate_cron_expression
 from pilot.tasks.backup_site import BackupSiteTask
 from pilot.tasks.delete_backup import DeleteBackupTask
 
-_DEFAULT_BACKUPS_PAGE_SIZE = 20
-
 
 @sites_bp.post("/<name>/backups")
 @require_scope(site_name)
@@ -53,7 +51,7 @@ def list_backups(name: str):
     from admin.backend.providers.backups import BackupProvider
 
     bench_root = ApiRequest.get_bench_root()
-    limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
+    limit = request.args.get("limit", 20, type=int)
     try:
         sets = BackupProvider(bench_root, name).get_all(limit=limit)
     except Exception:

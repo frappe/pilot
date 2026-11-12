@@ -27,7 +27,6 @@ class CentralAccountLink(TypedDict):
 
 # A dotted method name only: `/`, `?` or `#` would let a path reach another Central endpoint.
 _METHOD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+")
-_ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset(
     {
         "central.api.pilot.heartbeat",
@@ -43,7 +42,9 @@ def _is_allowed(method_path: str) -> bool:
     """Whether Central may call the method."""
     if not _METHOD_NAME.fullmatch(method_path):
         return False
-    return method_path in _ALLOWED_EXACT or any(method_path.startswith(p) for p in _ALLOWED_PREFIXES)
+    return method_path in _ALLOWED_EXACT or any(
+        method_path.startswith(p) for p in ("central.billing.api.billing_api.",)
+    )
 
 
 @sites_bp.get("/<name>/central/<path:method_path>")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import ClassVar
 
 from pilot.config.telemetry import TelemetryConfig
 
@@ -12,13 +13,6 @@ except ImportError:
     # Only the admin venv has it; the stdlib-only CLI does not. The logs are written regardless.
     HAS_DATUM_CLIENT = False
 
-# Raw MariaDB counter -> the label that separates it from its siblings.
-_QUERY_KINDS = {
-    "Com_insert": "insert",
-    "Com_update": "update",
-    "Com_delete": "delete",
-    "Com_select": "select",
-}
 
 
 class MetricShipper:
@@ -32,6 +26,14 @@ class MetricShipper:
     Without the datum_client package, or without an endpoint and token, every
     add_* call is a no-op.
     """
+
+    # Raw MariaDB counter -> the label that separates it from its siblings.
+    query_kinds: ClassVar[dict[str, str]] = {
+        "Com_insert": "insert",
+        "Com_update": "update",
+        "Com_delete": "delete",
+        "Com_select": "select",
+    }
 
     def __init__(self, config: TelemetryConfig):
         self.config = config
@@ -89,7 +91,7 @@ class MetricShipper:
             return
         when = _read_time(record)
         batch = Batch("mariadb")
-        for key, kind in _QUERY_KINDS.items():
+        for key, kind in self.query_kinds.items():
             batch.counter("queries", record.get(key, 0), ts=when, kind=kind)
         batch.counter("questions", record.get("Questions", 0), ts=when)
         batch.counter("buffer_pool_reads", record.get("Innodb_buffer_pool_reads", 0), ts=when)

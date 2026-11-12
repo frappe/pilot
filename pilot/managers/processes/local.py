@@ -56,29 +56,29 @@ def _pids_listening(port: int) -> set[int]:
     return {int(m) for m in re.findall(r"pid=(\d+)", result.stdout)}
 
 
-_RELOAD_REQUEST_FILE = "reload.request"
-# Redis holds the job queue, and the admin plane is what issues the reload.
-# Both must survive it, so only app-code processes are restarted.
-_NON_RELOADABLE = frozenset({"admin", "admin-ui", "redis_cache", "redis_queue", "watch"})
 
-# Stopped last, so their clients are already gone and cannot log a lost connection.
-_DATASTORES = frozenset({"redis_cache", "redis_queue"})
-_STOP_GRACE_SECONDS = 5
 
-_COLORS = [
-    "\033[36m",
-    "\033[32m",
-    "\033[33m",
-    "\033[35m",
-    "\033[34m",
-    "\033[96m",
-    "\033[92m",
-    "\033[93m",
-]
-_RESET = "\033[0m"
 
 
 class ProcessManager:
+    # Redis holds the job queue, and the admin plane is what issues the reload.
+    # Both must survive it, so only app-code processes are restarted.
+    non_reloadable = frozenset({"admin", "admin-ui", "redis_cache", "redis_queue", "watch"})
+    # Stopped last, so their clients are already gone and cannot log a lost connection.
+    datastores = frozenset({"redis_cache", "redis_queue"})
+    stop_grace_seconds = 5
+    colors = (
+        "\033[36m",
+        "\033[32m",
+        "\033[33m",
+        "\033[35m",
+        "\033[34m",
+        "\033[96m",
+        "\033[92m",
+        "\033[93m",
+    )
+    reset = "\033[0m"
+
     def __init__(self, bench: "Bench", watch_admin_js: bool | None = None) -> None:
         self.bench = bench
         self.watch_admin_js = bench.config.watch_admin_js if watch_admin_js is None else watch_admin_js
@@ -126,7 +126,7 @@ class ProcessManager:
     @property
     def reload_request_file(self) -> Path:
         """The file that asks pilot start to reload workers."""
-        return self.bench.pids_path / _RELOAD_REQUEST_FILE
+        return self.bench.pids_path / "reload.request"
 
     @property
     def python(self) -> Path:
@@ -261,7 +261,7 @@ class ProcessManager:
         except OSError:
             return
         self.reload_request_file.unlink(missing_ok=True)
-        names = ["web"] if scope == "web" else [n for n in self._procs if n not in _NON_RELOADABLE]
+        names = ["web"] if scope == "web" else [n for n in self._procs if n not in self.non_reloadable]
         for name in names:
             definition = defs_by_name.get(name)
             if definition is None or name not in self._procs:
@@ -275,7 +275,7 @@ class ProcessManager:
         with contextlib.suppress(ProcessLookupError, OSError):
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         try:
-            proc.wait(timeout=_STOP_GRACE_SECONDS)
+            proc.wait(timeout=self.stop_grace_seconds)
         except subprocess.TimeoutExpired:
             with contextlib.suppress(ProcessLookupError, OSError):
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -303,7 +303,7 @@ class ProcessManager:
 
     def _color(self, name: str) -> str:
         """The color of a process name."""
-        return self._colors.setdefault(name, _COLORS[len(self._colors) % len(_COLORS)])
+        return self._colors.setdefault(name, self.colors[len(self._colors) % len(self.colors)])
 
     def _run_processes(self, defs: list[ProcessDefinition]) -> None:
         """Run the processes until one exits or a signal arrives."""
@@ -348,17 +348,17 @@ class ProcessManager:
     def _stream(self, name: str, proc: subprocess.Popen, color: str) -> None:
         """Print the process output with a colored prefix."""
         assert proc.stdout is not None
-        prefix = f"{color}[{name}]{_RESET} "
+        prefix = f"{color}[{name}]{self.reset} "
         for raw in proc.stdout:
-            sys.stdout.write(prefix + raw.decode(errors="replace") + _RESET)
+            sys.stdout.write(prefix + raw.decode(errors="replace") + self.reset)
             sys.stdout.flush()
 
     def _stop_all(self) -> None:
         """Drain the workload before redis. Killing them together leaves the workers
         and the realtime bridge retrying a socket that is already closed."""
         names = list(self._procs)
-        self._stop_group([name for name in names if name not in _DATASTORES])
-        self._stop_group([name for name in names if name in _DATASTORES])
+        self._stop_group([name for name in names if name not in self.datastores])
+        self._stop_group([name for name in names if name in self.datastores])
         self.reload_request_file.unlink(missing_ok=True)
 
     def _stop_group(self, names: list[str]) -> None:
@@ -369,7 +369,7 @@ class ProcessManager:
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         for proc in procs:
             try:
-                proc.wait(timeout=_STOP_GRACE_SECONDS)
+                proc.wait(timeout=self.stop_grace_seconds)
             except subprocess.TimeoutExpired:
                 with contextlib.suppress(ProcessLookupError, OSError):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)

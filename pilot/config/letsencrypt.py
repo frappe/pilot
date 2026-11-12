@@ -4,11 +4,11 @@ from pathlib import Path
 
 from pilot.exceptions import ConfigError
 
-_EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
-
 
 @dataclass
 class LetsEncryptConfig:
+    email_pattern = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
+
     email: str = ""
     webroot_path: Path = field(default_factory=lambda: Path("/var/www/letsencrypt"))
 
@@ -22,5 +22,5 @@ class LetsEncryptConfig:
 
     def validate(self) -> None:
         """Raise when the email is invalid."""
-        if self.email and not _EMAIL_PATTERN.match(self.email):
+        if self.email and not self.email_pattern.match(self.email):
             raise ConfigError(f"letsencrypt.email '{self.email}' is not a valid email address.")

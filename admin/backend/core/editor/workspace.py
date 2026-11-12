@@ -7,8 +7,6 @@ from pathlib import Path, PurePosixPath
 
 from admin.backend.core.editor.git import EditorGit
 
-_FILE_LIST_CAP = 20000
-
 
 class EditorPathError(ValueError):
     """Requested path escapes the workspace root."""
@@ -24,6 +22,8 @@ class BinaryFileError(ValueError):
 
 class EditorWorkspace:
     """One installed app's directory, with path-safe file operations."""
+
+    file_list_cap = 20000
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
@@ -171,7 +171,7 @@ class EditorWorkspace:
     def list_files(self) -> list[str]:
         """Every file in the app."""
         if self.git.is_repo:
-            tracked = self.git.list_files(_FILE_LIST_CAP)
+            tracked = self.git.list_files(self.file_list_cap)
             if tracked is not None:
                 return [path for path in tracked if not _is_hidden(path)]
         out: list[str] = []
@@ -181,7 +181,7 @@ class EditorWorkspace:
                 if name.startswith("."):
                     continue
                 out.append(self.rel(Path(dirpath) / name))
-                if len(out) >= _FILE_LIST_CAP:
+                if len(out) >= self.file_list_cap:
                     return out
         return out
 

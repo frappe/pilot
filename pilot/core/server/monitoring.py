@@ -36,24 +36,24 @@ ROLLUP_INTERVAL = 60.0
 
 ALERT_EVENT = "resource_limit_breached"
 
-# Raw MariaDB status counters/gauges + variables logged per cycle; the provider
-# turns consecutive samples into rates.
-_DB_STATUS_KEYS = (
-    "Com_insert",
-    "Com_update",
-    "Com_delete",
-    "Com_select",
-    "Questions",
-    "Innodb_buffer_pool_reads",
-    "Innodb_buffer_pool_read_requests",
-    "Innodb_row_lock_time",
-    "Innodb_row_lock_waits",
-    "Threads_connected",
-)
-_DB_VARIABLE_KEYS = ("innodb_buffer_pool_size", "max_connections")
 
 
 class Monitor:
+    # Raw MariaDB status counters/gauges + variables logged per cycle; the provider
+    # turns consecutive samples into rates.
+    db_status_keys = (
+        "Com_insert",
+        "Com_update",
+        "Com_delete",
+        "Com_select",
+        "Questions",
+        "Innodb_buffer_pool_reads",
+        "Innodb_buffer_pool_read_requests",
+        "Innodb_row_lock_time",
+        "Innodb_row_lock_waits",
+        "Threads_connected",
+    )
+
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._configurator = MonitorConfigurator(bench)
@@ -274,9 +274,9 @@ class Monitor:
         except Exception:
             return None
         record: dict[str, typing.Any] = {"time": datetime.now(UTC).isoformat()}
-        for key in _DB_STATUS_KEYS:
+        for key in self.db_status_keys:
             record[key] = _to_int(status.get(key))
-        for key in _DB_VARIABLE_KEYS:
+        for key in ("innodb_buffer_pool_size", "max_connections"):
             record[key] = _to_int(variables.get(key))
         record["total_ram_bytes"] = self._memory_usage().get("total_bytes")
         self._append(self.db_log_path, record)

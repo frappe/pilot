@@ -10,8 +10,6 @@ from pathlib import Path
 
 from pilot.exceptions import CronError
 
-_MARKER_PREFIX = "# bench-cron:"
-
 
 def cron_module_command(module: str, arguments: list, log_file: Path) -> str:
     """A `python -m <module>` line safe to run from cron.
@@ -98,7 +96,7 @@ class CronManager:
 
     def _marker(self, job_key: str) -> str:
         """The comment line that marks a job."""
-        return f"{_MARKER_PREFIX}{self._bench_root}:{job_key}"
+        return f"# bench-cron:{self._bench_root}:{job_key}"
 
     @contextmanager
     def _lock(self) -> Iterator[None]:

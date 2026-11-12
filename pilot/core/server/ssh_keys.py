@@ -15,8 +15,6 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError
 
-_KEY_TYPE_PREFIXES = ("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-")
-
 
 class SSHKeyError(BenchError):
     """A key was malformed, duplicated, missing, or the last one remaining."""
@@ -47,7 +45,7 @@ class SSHKey:
 
 def _is_key_type(token: str) -> bool:
     """Whether the token is an SSH key type."""
-    return token.startswith(_KEY_TYPE_PREFIXES)
+    return token.startswith(("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-"))
 
 
 def _fingerprint(blob: str) -> str:

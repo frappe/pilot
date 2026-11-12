@@ -17,7 +17,6 @@ from pilot.internal.archive import TarArchive
 RELEASE_REPO = "frappe/pilot"
 _RELEASES_API = f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=1"
 _TARBALL_ASSET = "pilot.tar.gz"
-_OBSOLETE_TOP_LEVEL_ENTRIES = ("bench",)
 
 Progress = Callable[[str], None]
 
@@ -147,7 +146,7 @@ def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
     _reset_dir(backup)
     swapped: list[tuple[str, bool]] = []
     try:
-        for name in _OBSOLETE_TOP_LEVEL_ENTRIES:
+        for name in ("bench",):
             target = root / name
             if target.exists() or target.is_symlink():
                 os.rename(target, backup / name)

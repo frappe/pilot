@@ -5,10 +5,6 @@ from urllib.parse import urlsplit
 from pilot.config.route import RoutePolicy
 from pilot.exceptions import ConfigError
 
-_HOSTNAME_PATTERN = re.compile(
-    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
-)
-
 
 def default_allow_bench_management() -> bool:
     """Managing sibling benches is a development convenience. A release install keeps
@@ -20,6 +16,10 @@ def default_allow_bench_management() -> bool:
 
 @dataclass
 class AdminConfig:
+    hostname_pattern = re.compile(
+        r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+    )
+
     port: int = 7000  # New series not conflicting with sites
     timeout: int = 180  # seconds
     enabled: bool = False
@@ -99,5 +99,5 @@ class AdminConfig:
                     f"'pilot setup production --admin-domain <domain>'."
                 )
             return
-        if not _HOSTNAME_PATTERN.match(self.domain):
+        if not self.hostname_pattern.match(self.domain):
             raise ConfigError(f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}').")
