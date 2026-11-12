@@ -245,9 +245,12 @@ def test_retry_rejects_a_task_that_was_given_a_secret(tmp_path: Path) -> None:
 
 
 def test_retry_failed_new_site_preserves_apps_and_uses_new_password(tmp_path: Path) -> None:
+    from tests.pilot.commands.test_commands import make_bench
+
+    make_bench(tmp_path).config.write(tmp_path)
     original = {
         "name": "site1.localhost",
-        "apps": ["erpnext", "hrms", "csf_tz"],
+        "apps": ["erpnext", "hrms", "custom_app"],
         "admin_password": "[redacted]",
     }
     create_task(tmp_path, status=TaskStatus.FAILED, args=original, command="new-site")
@@ -266,7 +269,7 @@ def test_retry_failed_new_site_preserves_apps_and_uses_new_password(tmp_path: Pa
     assert response.get_json()["task_id"] == RETRY_TASK_ID
     assert response.headers["Location"] == f"/api/v1/tasks/{RETRY_TASK_ID}"
     assert queue.call_args.kwargs["name"] == "site1.localhost"
-    assert queue.call_args.kwargs["apps"] == ["erpnext", "hrms", "csf_tz"]
+    assert queue.call_args.kwargs["apps"] == ["erpnext", "hrms", "custom_app"]
     assert queue.call_args.kwargs["admin_password"] not in ("", "[redacted]")
     assert len(queue.call_args.kwargs["admin_password"]) >= 16
 
