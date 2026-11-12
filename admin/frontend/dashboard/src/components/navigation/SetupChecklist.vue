@@ -488,6 +488,14 @@ onMounted(refresh)
                 </div>
               </template>
 
+              <div
+                v-if="site.registryError && !site.availableApps.length"
+                class="flex justify-between items-center gap-3 mt-5 text-ink-gray-6 text-p-sm"
+              >
+                Could not load the app list.
+                <Button label="Retry" @click="site.reloadApps()" />
+              </div>
+
               <ErrorMessage class="mt-4" :message="site.error" />
             </template>
           </template>

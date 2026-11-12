@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,6 +55,29 @@ def test_ensure_fresh_clones_on_first_use(tmp_path: Path) -> None:
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
     assert cache.index_path.read_text() == '{"apps": []}'
+
+
+def test_parallel_first_use_clones_once_and_all_succeed(tmp_path: Path) -> None:
+    caches = [make_cache(tmp_path) for _ in range(4)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda cache: cache.ensure_fresh(), caches))
+
+    assert caches[0].index_path.read_text() == '{"apps": []}'
+    assert not list(caches[0].path.parent.glob(".registry-cache-*"))
+
+
+def test_failed_clone_leaves_no_partial_cache(tmp_path: Path) -> None:
+    cache = make_cache(tmp_path)
+    with (
+        patch("pilot.core.registry_cache.REGISTRY_URL", str(tmp_path / "missing")),
+        pytest.raises(RegistryUnavailableError, match="Could not clone"),
+    ):
+        cache.ensure_fresh()
+
+    assert not cache.path.exists()
+    assert not list(cache.path.parent.glob(".registry-cache-*"))
+    cache.ensure_fresh()  # the next call clones from the real remote
+    assert cache.index_path.exists()
 
 
 def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point_at_local_remote) -> None:
