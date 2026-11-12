@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from pilot.config.common_site_config import read_common_site_config, update_common_site_config
 from pilot.config.mail import CONFIG_KEYS as MAIL_CONFIG_KEYS
 from pilot.config.worker import FRAPPE_QUEUES
-from pilot.core.site.config import config_patch_error, merge_public_config, public_config
+from pilot.core.site.config.public import PublicConfig
 from pilot.exceptions import BenchError, MalformedSiteConfig
 
 if TYPE_CHECKING:
@@ -92,9 +92,10 @@ class BenchConfigFiles:
         if managed := sorted(set(patch) & MANAGED_COMMON_SITE_CONFIG_KEYS):
             raise BenchError(f"Pilot manages {', '.join(managed)}; change it through its own setting.")
         with update_common_site_config(self.bench.sites_path) as config:
-            if error := config_patch_error(config, patch):
+            public = PublicConfig(config)
+            if error := public.get_patch_error(patch):
                 raise BenchError(error)
-            merged = merge_public_config(config, patch)
+            merged = public.merge(patch)
             config.clear()
             config.update(merged)
         return _editable(merged)
@@ -146,6 +147,6 @@ class BenchConfigFiles:
 def _editable(config: dict) -> dict:
     return {
         key: value
-        for key, value in public_config(config).items()
+        for key, value in PublicConfig(config).visible.items()
         if key not in MANAGED_COMMON_SITE_CONFIG_KEYS
     }

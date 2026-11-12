@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pilot.config import RoutePolicy, SiteConfig
-from pilot.core.site.config import read_site_config
 from pilot.utils import normalize_host
 
 if TYPE_CHECKING:
@@ -22,7 +21,7 @@ class SiteLogin:
     def admin_url(
         self, proxy_tls: bool = False, user: str = "Administrator", full_name: str = ""
     ) -> str | None:
-        site_config = read_site_config(self.site.path)
+        site_config = self.site.config_file.read()
         sid = self.create_session(user, full_name)
         if not sid:
             return None

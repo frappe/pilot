@@ -191,7 +191,7 @@ def test_site_scoped_callers_cannot_set_a_pin(tmp_path: Path) -> None:
     _site(bench, NEW)
 
     with pytest.raises(BenchError):
-        bench.site(NEW).update_public_config({"cert_name": "future.example.com"})
+        bench.site(NEW).config_file.update_public({"cert_name": "future.example.com"})
 
 
 def test_the_admin_reports_http_when_no_certificate_was_issued(tmp_path: Path) -> None:

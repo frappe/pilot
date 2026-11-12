@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-from pilot.core.site.config import PROTECTED_CONFIG_KEYS
+from pilot.core.site.config.public import PublicConfig
 from pilot.exceptions import BenchError
 from pilot.utils import run_command
 
@@ -22,7 +22,7 @@ RESTORE_PARTS = ("database", "public", "private", "config")
 _STDERR_TAIL_BYTES = 4096
 # Keys that belong to this site's own database, cache, domains, host or Pilot.
 LOCAL_CONFIG_PREFIXES = ("db_", "redis_", "pilot_", "atlas_")
-LOCAL_CONFIG_KEYS = PROTECTED_CONFIG_KEYS | {
+LOCAL_CONFIG_KEYS = PublicConfig.PROTECTED_KEYS | {
     "rds_db",
     "maintenance_mode",
     "pause_scheduler",
@@ -131,22 +131,20 @@ class SiteRestore:
             else:
                 on_progress("Restoring the database...")
                 self.site.restore(str(run.files["database"]))
-            self.site.set_config_values(self.get_restored_database_config(run))
+            self.site.config_file.set_values(self.get_restored_database_config(run))
         if "config" in parts:
             on_progress("Restoring the site config...")
             values = run.site_config
             if "database" not in parts:
                 # The key belongs with its database, and this site keeps its own database.
                 values.pop("encryption_key", None)
-            self.site.set_config_values(values)
+            self.site.config_file.set_values(values)
 
     def get_restored_database_config(self, run: BackupRun) -> dict:
         """Frappe's restore leaves the installed_apps mirror stale, and the restored
         passwords need the source site's encryption key."""
-        from pilot.core.site.config import query_installed_apps_via_db
-
         values: dict = {"encryption_key": run.encryption_key} if run.encryption_key else {}
-        apps = query_installed_apps_via_db(self.site.bench.path, self.site.config.name)
+        apps = self.site.database_state.installed_apps
         if apps is not None:
             values["installed_apps"] = apps
         return values

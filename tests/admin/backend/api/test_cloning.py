@@ -7,6 +7,7 @@ from admin.backend.app import create_app
 from admin.backend.internal.session import Session
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.site.config.database_state import SiteDatabaseState
 from pilot.exceptions import BenchError
 
 
@@ -24,7 +25,7 @@ def cloning_client(tmp_path, monkeypatch):
     site.path.mkdir()
     (site.path / "site_config.json").write_text(json.dumps({"db_name": "source_db"}))
     monkeypatch.setattr("pilot.internal.tasks.worker.task_workers.wake", lambda *args: None)
-    monkeypatch.setattr("pilot.core.site.clone.query_installed_apps_via_db", lambda *args: [])
+    monkeypatch.setattr(SiteDatabaseState, "installed_apps", [])
     app = create_app(root)
     app.config["TESTING"] = True
     client = app.test_client()

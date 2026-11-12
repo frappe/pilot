@@ -217,9 +217,7 @@ class Bench:
     @property
     def has_app_disabling(self) -> bool:
         """Whether this bench's Frappe can disable apps instead of uninstalling."""
-        from pilot.core.site.config import has_app_disabling
-
-        return any(has_app_disabling(self.path, site.config.name) for site in self.sites())
+        return any(site.database_state.has_app_disabling for site in self.sites())
 
     def get_db_root_args(self, db_type: str) -> list[str]:
         from pilot.core.bench.config_files import BenchConfigFiles

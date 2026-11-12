@@ -114,11 +114,9 @@ class SiteBackups:
     @property
     def is_streaming_supported(self) -> bool:
         """Streams need S3, and Frappe's encryption pass rereads files a FIFO cannot replay."""
-        from pilot.core.site.config import is_backup_encryption_enabled
-
         if not self.site.bench.config.s3.is_configured:
             return False
-        return not is_backup_encryption_enabled(self.site.bench.path, self.site.config.name)
+        return not self.site.database_state.is_backup_encryption_enabled
 
     def stream(self, with_files: bool = True) -> tuple[str, dict[str, int]]:
         """Back up straight into S3 and return the run's timestamp and file sizes."""

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.core.site.config.file import SiteConfigFile
 from pilot.core.site.migration_backup import SiteMigrationBackup
 from pilot.exceptions import BenchError
 from pilot.integrations.s3.base import S3IntegrationError
@@ -66,6 +67,7 @@ def migration_site(tmp_path: Path, database_engine: str) -> MagicMock:
     site.path = tmp_path / "sites" / "site1.localhost"
     site.path.mkdir(parents=True)
     (site.path / "site_config.json").write_text(f'{{"db_type": "{database_engine}", "db_name": "site_db"}}')
+    site.config_file = SiteConfigFile(site.path.parent, site.path.name)
     site.config.name = "site1.localhost"
     site.bench.sites_path = tmp_path / "sites"
     site.bench.migrations.unresolved_for_site.return_value = [MagicMock(id="operation-1")]
@@ -315,7 +317,7 @@ def test_restore_streams_each_dump_from_the_bucket_into_the_database(tmp_path: P
         patch.object(SiteMigrationBackup, "_s3", return_value=bucket),
         patch.object(SiteMigrationBackup, "_cli", return_value=client),
         patch.object(SiteMigrationBackup, "_conn_args", return_value=[]),
-        patch("pilot.core.site.migration_backup.read_site_config", return_value={"db_name": "site_db"}),
+        patch.object(SiteConfigFile, "read", return_value={"db_name": "site_db"}),
         patch.object(backup, "_list_tables", return_value=["tabUser", "tabRole"]),
     ):
         backup.restore([])
@@ -343,7 +345,7 @@ def test_a_download_that_breaks_stops_the_import(tmp_path: Path) -> None:
         patch.object(SiteMigrationBackup, "_s3", return_value=bucket),
         patch.object(SiteMigrationBackup, "_cli", return_value=client),
         patch.object(SiteMigrationBackup, "_conn_args", return_value=[]),
-        patch("pilot.core.site.migration_backup.read_site_config", return_value={"db_name": "site_db"}),
+        patch.object(SiteConfigFile, "read", return_value={"db_name": "site_db"}),
         pytest.raises(S3IntegrationError, match="connection reset"),
     ):
         backup.restore(["tabUser"])

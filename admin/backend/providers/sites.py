@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.core.site.config import exclude_disabled_apps, is_setup_complete, query_installed_apps_via_db
+from pilot.core.site.config.database_state import SiteDatabaseState
 from pilot.internal.site_paths import resolve_site_path
 from pilot.managers.task import TaskReader
 
@@ -76,7 +76,7 @@ class SiteProvider:
         if exists:
             active, broken = self._read_active_apps(site_config, site_name, is_provisioning)
             if not is_provisioning and not broken:
-                setup_complete = bool(is_setup_complete(self._bench_root, site_name))
+                setup_complete = bool(SiteDatabaseState(self._bench_root, site_name).is_setup_complete)
 
         return SiteInfo(
             name=site_name,
@@ -99,8 +99,9 @@ class SiteProvider:
         apps = site_config.get("installed_apps")
         if is_provisioning:
             return apps if isinstance(apps, list) else [], False
+        state = SiteDatabaseState(self._bench_root, site_name)
         if not isinstance(apps, list):
-            apps = query_installed_apps_via_db(self._bench_root, site_name)
+            apps = state.installed_apps
             if apps is None:
                 return [], True
-        return exclude_disabled_apps(apps, self._bench_root, site_name), False
+        return state.exclude_disabled(apps), False

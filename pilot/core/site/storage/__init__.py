@@ -7,7 +7,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pilot.core.site.config import read_site_config
 from pilot.internal.atomic_file import atomic_write_private_text
 from pilot.utils import cli_root, directory_bytes, iter_sibling_benches
 
@@ -81,7 +80,7 @@ class SiteStorageCollector:
             return {site.config.name: directory_bytes(site.path / "db") for site in sites}
         sizes = self.bench.db.get_schema_sizes()
         return {
-            site.config.name: sizes.get(read_site_config(site.path).get("db_name", ""), 0)
+            site.config.name: sizes.get(site.config_file.read().get("db_name", ""), 0)
             for site in sites
         }
 

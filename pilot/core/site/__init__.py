@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
+    from pilot.core.site.config.database_state import SiteDatabaseState
+    from pilot.core.site.config.file import SiteConfigFile
     from pilot.core.site.console.completions import ConsoleCompletions
     from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
@@ -80,11 +82,21 @@ class Site:
         return SiteMigrationBackup(self)
 
     @property
+    def config_file(self) -> "SiteConfigFile":
+        from pilot.core.site.config.file import SiteConfigFile
+
+        return SiteConfigFile(self.bench.sites_path, self.config.name)
+
+    @property
+    def database_state(self) -> "SiteDatabaseState":
+        from pilot.core.site.config.database_state import SiteDatabaseState
+
+        return SiteDatabaseState(self.bench.path, self.config.name)
+
+    @property
     def db_type(self) -> str:
         """The engine frappe connects this site to, with frappe's own fallback."""
-        from pilot.core.site.config import read_site_config
-
-        return read_site_config(self.path).get("db_type") or "mariadb"
+        return self.config_file.read().get("db_type") or "mariadb"
 
     @property
     def maintenance_mode(self) -> bool:
@@ -92,9 +104,7 @@ class Site:
 
     @property
     def maintenance_settings(self) -> dict[str, int]:
-        from pilot.core.site.config import read_site_config
-
-        config = read_site_config(self.path)
+        config = self.config_file.read()
         return {
             "maintenance_mode": int(bool(config.get("maintenance_mode"))),
             "pause_scheduler": int(bool(config.get("pause_scheduler"))),
@@ -105,16 +115,7 @@ class Site:
         self.set_maintenance_settings({"maintenance_mode": value, "pause_scheduler": value})
 
     def set_maintenance_settings(self, settings: dict[str, int]) -> None:
-        import json
-
-        from pilot.core.site.config import safe_site_config_path
-        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-
-        config_path = safe_site_config_path(self.bench.sites_path, self.config.name)
-        with exclusive_file_lock(config_path):
-            config = json.loads(config_path.read_text())
-            config.update(settings)
-            replace_private_text_locked(config_path, json.dumps(config, indent=1))
+        self.config_file.set_values(settings)
 
     @contextmanager
     def under_maintenance(self) -> Iterator[None]:
@@ -168,12 +169,6 @@ class Site:
         # The restored database decides which apps the site runs.
         if "database" in parts:
             self.bench.processes.apply()
-
-    def set_config_values(self, values: dict) -> None:
-        """Write keys into site_config.json under its lock."""
-        from pilot.core.site.config import set_site_config_values
-
-        set_site_config_values(self.bench.sites_path, self.config.name, values)
 
     def reinstall(self, admin_password: str) -> None:
         from pilot.core.site.commands import SiteCommands
@@ -398,24 +393,7 @@ class Site:
         SiteProvisioner(self.bench, self.config.name, apps, None).finish(self, on_progress)
 
     def set_ssl(self, enabled: bool) -> None:
-        from pilot.core.site.config import set_site_ssl_flag
-
-        set_site_ssl_flag(self.bench.sites_path, self.config.name, enabled)
-
-    def clear_certificate_pin(self) -> None:
-        from pilot.core.site.config import clear_certificate_pin
-
-        clear_certificate_pin(self.bench.sites_path, self.config.name)
-
-    def public_config(self) -> dict:
-        from pilot.core.site.config import read_public_config
-
-        return read_public_config(self.path)
-
-    def update_public_config(self, patch: dict) -> dict:
-        from pilot.core.site.config import update_public_config
-
-        return update_public_config(self.path, patch)
+        self.config_file.set_values({"ssl": enabled})
 
     def admin_login_url(
         self, proxy_tls: bool = False, user: str = "Administrator", full_name: str = ""

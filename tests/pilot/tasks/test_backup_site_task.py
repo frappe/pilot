@@ -111,7 +111,9 @@ def test_backups_stream_only_with_s3_and_encryption_known_off(
 
     task, bench = _task(tmp_path)
     bench.config.s3.is_configured = s3_configured
-    monkeypatch.setattr("pilot.core.site.config._query_site_database", lambda *args: encrypt_backup_rows)
+    monkeypatch.setattr(
+        "pilot.core.site.config.database_state.SiteDatabaseState.query", lambda *args: encrypt_backup_rows
+    )
     monkeypatch.setattr(SiteBackups, "stream", lambda self, with_files: ("20261022_114241", {"streamed": 1}))
     disk_file = tmp_path / "20261022_114241-site1-database.sql.gz"
     disk_file.write_bytes(b"x")

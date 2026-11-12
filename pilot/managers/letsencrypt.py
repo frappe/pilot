@@ -339,7 +339,7 @@ class LetsEncryptManager:
         from dataclasses import replace
 
         self.obtain(replace(site.config, cert_name=""))
-        site.clear_certificate_pin()
+        site.config_file.clear_certificate_pin()
 
     def obtain_admin(self) -> None:
         from pilot.managers.nginx import NginxManager

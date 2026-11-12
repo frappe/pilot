@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from pilot.core.bench.artifacts import BenchArtifacts
-from pilot.core.site.config import query_installed_apps_via_db
 from pilot.core.site.provisioning import (
     SiteProvisioner,
     register_with_provider,
@@ -44,7 +43,7 @@ class SiteClone:
             raise BenchError("Administrator password must not be empty.")
         if (self.bench.sites_path / self.name).exists():
             raise BenchError("Destination site directory already exists.")
-        apps = query_installed_apps_via_db(self.source.bench.path, self.source.config.name)
+        apps = self.source.database_state.installed_apps
         if apps is None:
             raise BenchError("Could not read the source site's installed apps.")
         return validate_new_site(self.bench, self.name, apps)
