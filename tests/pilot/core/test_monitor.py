@@ -680,10 +680,10 @@ def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -
     monitoring.main()
 
     assert all(event.wait(timeout=5) for event in started.values())
-    assert sorted(loops, key=lambda loop: loop[1]) == [
-        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
+    assert sorted(loops, key=lambda loop: loop[0]) == [
         ("MainThread", monitoring.METRICS_INTERVAL, monitoring.collect_metrics),
         ("rollups", monitoring.ROLLUP_INTERVAL, monitoring.update_site_rollups),
+        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
     ]
 
 

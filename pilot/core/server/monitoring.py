@@ -31,7 +31,7 @@ if typing.TYPE_CHECKING:
 CPU_SAMPLE_INTERVAL = 1.0
 # Seconds from the end of one tick to the start of the next.
 METRICS_INTERVAL = 10.0
-UPTIME_INTERVAL = 5.0
+UPTIME_INTERVAL = 60.0
 ROLLUP_INTERVAL = 60.0
 
 ALERT_EVENT = "resource_limit_breached"

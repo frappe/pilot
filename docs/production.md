@@ -143,7 +143,7 @@ Node.js builds get a heap of 75% of the cap through `NODE_OPTIONS=--max-old-spac
 
 ## Monitoring
 
-`pilot setup production` installs `pilot-monitor.service`, one user service for the host. It collects host, database and bench metrics every 10 seconds, and it pings every production site every 5 seconds on a separate thread, so a slow metrics tick does not delay the pings. Its output goes to `system/logs/monitor.log` and `system/logs/monitor.error.log`. The service runs for the life of the host, so a Pilot upgrade restarts it to load the new code. Check it with `systemctl --user status pilot-monitor.service`.
+`pilot setup production` installs `pilot-monitor.service`, one user service for the host. It collects host, database and bench metrics every 10 seconds, and it pings every production site once a minute on a separate thread, so a slow metrics tick does not delay the pings. Its output goes to `system/logs/monitor.log` and `system/logs/monitor.error.log`. The service runs for the life of the host, so a Pilot upgrade restarts it to load the new code. Check it with `systemctl --user status pilot-monitor.service`.
 
 ## Operational Notes
 
