@@ -50,7 +50,9 @@ class Deadlock:
     def moment(self) -> datetime | None:
         return datetime.fromisoformat(self.time) if self.time else None
 
-    def is_match(self, database: str = "", since: datetime | None = None, until: datetime | None = None) -> bool:
+    def is_match(
+        self, database: str = "", since: datetime | None = None, until: datetime | None = None
+    ) -> bool:
         if database and database not in self.databases:
             return False
         if not since and not until:
@@ -77,7 +79,11 @@ class DeadlockLog:
         self.path = path
 
     def get_deadlocks(
-        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+        self,
+        database: str = "",
+        limit: int = 50,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[Deadlock]:
         deadlocks = DeadlockParser().parse(self.read_tail())
         deadlocks = [deadlock for deadlock in deadlocks if deadlock.is_match(database, since, until)]

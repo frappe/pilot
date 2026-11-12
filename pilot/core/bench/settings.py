@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -93,10 +94,14 @@ class BenchSettings:
         from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         domains = sorted({domain for site in self.bench.sites() for domain in site.config.all_domains})
+        # Each lookup can wait on an upstream resolver, so they run side by side, not one after another.
+        with ThreadPoolExecutor(max_workers=min(16, len(domains) or 1)) as pool:
+            behind = list(pool.map(is_behind_cloudflare, domains))
         return {
             "has_edge_proxy": bool(DomainRouteProvider.proxy_servers()),
             "domains": [
-                {"domain": domain, "is_behind_cloudflare": is_behind_cloudflare(domain)} for domain in domains
+                {"domain": domain, "is_behind_cloudflare": proxied}
+                for domain, proxied in zip(domains, behind, strict=True)
             ],
         }
 

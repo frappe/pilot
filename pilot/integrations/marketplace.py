@@ -9,7 +9,6 @@ from typing import Literal
 from pilot._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
 from pilot._vendor.packaging.version import InvalidVersion, Version
 from pilot.exceptions import AppNotFoundError, DependencyResolutionError
-from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -131,13 +130,8 @@ class Marketplace:
         return RegistryCache(cli_root()).load()
 
     def get_current_frappe_version(self) -> str:
-        cmd = [
-            str(self.bench.env_path / "bin" / "python"),
-            "-c",
-            "import frappe; print(frappe.__version__)",
-        ]
-        result = run_command(cmd)
-        return result.stdout.strip().decode()
+        """From pip's dist-info; importing frappe in a subprocess cost ~160 ms per request."""
+        return self.bench.app("frappe").installed_version
 
     @staticmethod
     def registry() -> list[dict]:

@@ -8,9 +8,7 @@ from pilot.config import BenchConfig
 from pilot.core.database import Database, make_database, make_site_database, site_database_name
 from pilot.exceptions import DatabaseError
 
-NO_DATABASE_SERVER = (
-    "SQLite is a per-site database file, not a shared server"
-)
+NO_DATABASE_SERVER = "SQLite is a per-site database file, not a shared server"
 NOT_SUPPORTED = "The selected engine does not support this operation"
 
 
@@ -46,9 +44,7 @@ class DatabaseDiagnosticsProvider:
             "active_connections": self._call(database.get_active_connections),
             "lock_waits": asdict(self._call(database.get_lock_waits)),
             "binlog": asdict(binlog) if binlog is not None else None,
-            "performance_schema_enabled": self._optional(
-                lambda: database.is_performance_schema_enabled
-            )
+            "performance_schema_enabled": self._optional(lambda: database.is_performance_schema_enabled)
             or False,
         }
 
@@ -63,7 +59,9 @@ class DatabaseDiagnosticsProvider:
         rows = self._call(self._require_server().get_lock_wait_rows, self._database_for(site))
         return [asdict(row) for row in rows]
 
-    def get_deadlocks(self, site: str = "", since: datetime | None = None, until: datetime | None = None) -> dict:
+    def get_deadlocks(
+        self, site: str = "", since: datetime | None = None, until: datetime | None = None
+    ) -> dict:
         server = self._require_server()
         return asdict(self._call(server.get_deadlocks, self._database_for(site), 50, since, until))
 
