@@ -72,6 +72,7 @@ class LogsConfigurator(SystemdUserMixin):
         self.state_dir = self.conf_dir / "state"
 
     def setup(self) -> None:
+        """Install fluent-bit and start shipping logs; raise unless the host runs Linux."""
         if not HostPlatform().is_linux:
             raise BenchError("Log shipping is only supported on linux based machines.")
         if self.binary_path is None:
@@ -95,6 +96,7 @@ class LogsConfigurator(SystemdUserMixin):
 
     @property
     def is_running(self) -> bool:
+        """Whether the fluent-bit service runs."""
         result = subprocess.run(
             self._systemctl("is-active", "--quiet", self.unit_name), env=self._systemctl_env()
         )
@@ -113,6 +115,7 @@ class LogsConfigurator(SystemdUserMixin):
             self._restart_service()
 
     def remove(self) -> None:
+        """Stop and remove the fluent-bit service."""
         env = self._systemctl_env()
         run_command(self._systemctl("stop", self.unit_name), env=env)
         run_command(self._systemctl("disable", self.unit_name), env=env)
@@ -122,6 +125,7 @@ class LogsConfigurator(SystemdUserMixin):
                 target.unlink()
 
     def _write_configs(self, config: TelemetryConfig) -> None:
+        """Write the fluent-bit config files."""
         self.conf_dir.mkdir(parents=True, exist_ok=True)
         files = self._render_files(config)
         atomic_write_private_text(self.conf_dir / "token.env", files.pop("token.env"))
@@ -129,6 +133,7 @@ class LogsConfigurator(SystemdUserMixin):
             (self.conf_dir / name).write_text(text)
 
     def _render_files(self, config: TelemetryConfig) -> dict[str, str]:
+        """The fluent-bit config files by name."""
         from pilot.core.server import Server
 
         conf = _CONF_TEMPLATE.render(
@@ -148,10 +153,12 @@ class LogsConfigurator(SystemdUserMixin):
         }
 
     def _read_files(self) -> dict[str, str]:
+        """The installed config files by name."""
         names = ("fluent-bit.conf", "parsers.conf", "pilot.lua", "token.env", self.unit_name)
         return {name: path.read_text() for name in names if (path := self.conf_dir / name).exists()}
 
     def _render_unit(self) -> str:
+        """The fluent-bit service unit; raise when the binary is missing."""
         from pilot.core.server import Server
 
         if not (binary := self.binary_path):
@@ -167,11 +174,13 @@ class LogsConfigurator(SystemdUserMixin):
         return str(default_path) if default_path.exists() else None
 
     def _restart_service(self) -> None:
+        """Restart the fluent-bit service."""
         env = self._systemctl_env()
         run_command(self._systemctl("restart", self.unit_name), env=env)
 
     @staticmethod
     def _host(endpoint: str) -> str:
+        """The host of an endpoint URL."""
         from urllib.parse import urlparse
 
         parsed = urlparse(endpoint)
@@ -179,6 +188,7 @@ class LogsConfigurator(SystemdUserMixin):
 
     @staticmethod
     def _port(endpoint: str) -> str:
+        """The port of an endpoint URL."""
         from urllib.parse import urlparse
 
         parsed = urlparse(endpoint)

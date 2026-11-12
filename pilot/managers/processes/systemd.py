@@ -41,10 +41,12 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @property
     def systemd_conf_dir(self) -> Path:
+        """The unit files directory."""
         return self.bench.config_path / "services"
 
     @override
     def write_config(self) -> None:
+        """Write the unit files."""
         from pilot.core.server import Server
 
         service_before, socket_before = self._admin_unit_text()
@@ -82,6 +84,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return f"pilot-{database}.service"
 
     def _remove_units(self) -> None:
+        """Remove the old unit files."""
         target_file = self._target_name()
         for path in list(self.systemd_conf_dir.iterdir()):
             if path.is_file() and (path.suffix in (".service", ".socket") or path.name == target_file):
@@ -105,6 +108,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return workload_units
 
     def _write_central_bootstrap(self, renderer: SystemdRenderer) -> None:
+        """Write the Central bootstrap unit."""
         from pilot.core.server import Server
 
         (self.systemd_conf_dir / self._central_bootstrap_name()).write_text(
@@ -130,6 +134,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def install_config(self) -> None:
+        """Link and enable the units."""
         units = self.link_units()
         self._ensure_linger()
 
@@ -218,15 +223,18 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def reload_manager_config(self) -> None:
+        """Make systemd reread the units."""
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     @override
     def ensure_ready(self) -> None:
+        """Install the units."""
         # Links the units an upgrade added, such as the web socket a web unit requires.
         self.install_config()
 
     @override
     def restart(self) -> None:
+        """Restart the workload units, keeping sockets open."""
         # A target restart also restarts the sockets, which drops the requests waiting in them.
         if not self.is_running():
             return super().restart()
@@ -236,6 +244,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def apply_unit_action(self, action: str, role: UnitGroup) -> None:
+        """Run an action on a group of units."""
         env = self._systemctl_env()
         if role is UnitGroup.ADMIN:
             self._control_admin(action, env)
@@ -244,6 +253,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def are_units_running(self, role: UnitGroup) -> bool:
+        """Whether a group of units runs."""
         env = self._systemctl_env()
         if role is UnitGroup.ADMIN:
             # A listening socket counts as reachable (socket-activated).
@@ -264,15 +274,18 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             return False
 
     def enable_admin_at_boot(self) -> None:
+        """Start the Admin at boot."""
         run_command(self._systemctl("enable", self._unit_name("admin")), env=self._systemctl_env())
 
     @override
     def wake_admin(self) -> None:
+        """Start the Admin without waiting."""
         run_command(
             self._systemctl("start", "--no-block", self._unit_name("admin")), env=self._systemctl_env()
         )
 
     def start_admin(self) -> None:
+        """Write and install the units, then start the Admin."""
         # Base start_admin only daemon-reloads; we need full install for a new bench.
         self.bench.logs_path.mkdir(parents=True, exist_ok=True)
         self.write_config()
@@ -280,6 +293,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def get_process_states(self, definitions: list[ProcessDefinition]) -> dict[str, ProcessState]:
+        """The state of each process."""
         units = {self._unit_name(definition.name): definition.name for definition in definitions}
         result = subprocess.run(
             self._systemctl("show", *units, "--property=Id,ActiveState,SubState,MainPID"),
@@ -298,6 +312,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     @override
     def restart_processes(self, definitions: list[ProcessDefinition]) -> None:
+        """Restart the processes."""
         units = [self._unit_name(definition.name) for definition in definitions]
         # A restart waits for the slowest unit to stop, then for the units to start.
         timeout = _SYSTEMCTL_TIMEOUT + max(
@@ -306,6 +321,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         run_command(self._systemctl("restart", *units), env=self._systemctl_env(), timeout=timeout)
 
     def is_configured(self) -> bool:
+        """Whether the bench target is enabled."""
         result = subprocess.run(
             self._systemctl("is-enabled", self._target_name()),
             capture_output=True,
@@ -333,27 +349,34 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         subprocess.run(self._systemctl("daemon-reload"), capture_output=True, env=env)
 
     def _unit_name(self, service_name: str) -> str:
+        """The unit name of a process."""
         return f"{self.bench.config.name}-{service_name}.service"
 
     def _central_bootstrap_name(self) -> str:
+        """The Central bootstrap unit name."""
         return f"{self.bench.config.name}-central-bootstrap.service"
 
     def _central_bootstrap_units(self) -> set[str]:
+        """The Central bootstrap units, if Central is on."""
         if not self.bench.config.central.enabled:
             return set()
         return {self._central_bootstrap_name()}
 
     def _enable_central_bootstrap(self, env: dict) -> None:
+        """Enable and start the Central bootstrap unit."""
         for unit in self._central_bootstrap_units():
             run_command(self._systemctl("enable", "--now", unit), env=env)
 
     def _admin_socket_name(self) -> str:
+        """The Admin socket unit name."""
         return f"{self.bench.config.name}-admin.socket"
 
     def _target_name(self) -> str:
+        """The bench target name."""
         return f"{self.bench.config.name}.target"
 
     def _admin_service_text(self) -> str:
+        """The Admin service unit."""
         from pilot.core.server import Server
 
         root = Server().root
@@ -374,6 +397,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return SystemdRenderer(self.bench.config.name).render_admin_service(pd, self._admin_socket_name())
 
     def _control_admin(self, action: str, env: dict) -> None:
+        """Run an action on the Admin units."""
         if action == "start":
             self._activate_admin(env)
         elif action == "stop":
@@ -398,6 +422,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         self.admin_service_changed = self.admin_socket_changed = False
 
     def _activate_admin_socket(self, env: dict) -> None:
+        """Start the Admin through its socket."""
         # Stop the service first: a stale port hold would make the new socket 502.
         socket = self._admin_socket_name()
         service = self._unit_name("admin")
@@ -407,6 +432,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
 
     def _installed_bench_units(self) -> set[str]:
+        """The installed units of this bench."""
         result = subprocess.run(
             self._systemctl(
                 "list-units",
@@ -428,6 +454,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         return units
 
     def _reap_stale_units(self, desired: set[str]) -> None:
+        """Stop and remove units that are no longer wanted."""
         env = self._systemctl_env()
         for unit in self._installed_bench_units() - desired:
             subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)

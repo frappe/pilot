@@ -17,5 +17,6 @@ class RestartProcesses(Command):
     ]
 
     def run(self) -> None:
+        """Restart the processes."""
         restarted = self.bench.processes.restart(self.names)
         self.report(f"Restarted {', '.join(restarted)}.")

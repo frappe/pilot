@@ -66,6 +66,7 @@ class SlowLogFile:
         self.path = path
 
     def get_entries(self, tail_bytes: int = TAIL_BYTES) -> list[SlowLogEntry]:
+        """The entries at the end of the slow log."""
         with self.path.open("rb") as log:
             size = log.seek(0, 2)
             log.seek(max(0, size - tail_bytes))
@@ -112,6 +113,7 @@ def parse_slow_log(text: str) -> list[SlowLogEntry]:
 
 
 def _read_line(entry: SlowLogEntry, line: str, lines: list[str]) -> None:
+    """Read one slow log line into the entry."""
     if match := _THREAD.match(line):
         entry.thread_id, entry.database = int(match[1]), match[2]
     elif match := _STATS.match(line):

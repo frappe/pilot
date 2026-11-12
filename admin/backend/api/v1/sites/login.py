@@ -10,6 +10,7 @@ __all__ = ["no_store", "origin", "primary_host", "unreachable_host_hint"]
 
 
 def no_store(response):
+    """The response with caching turned off."""
     response = make_response(response)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"

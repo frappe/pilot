@@ -15,6 +15,7 @@ class ListCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
+        """Print the benches with their state and address."""
         from pilot.core.server import Server
 
         benches_dir = Server().root / "benches"
@@ -42,6 +43,7 @@ class ListCommand(Command):
             )
 
     def _collect(self, benches_dir: Path) -> list[dict]:
+        """A row for each bench."""
         if not benches_dir.is_dir():
             return []
         rows = []
@@ -53,6 +55,7 @@ class ListCommand(Command):
         return rows
 
     def _describe(self, bench_dir: Path, toml_path: Path) -> dict:
+        """The row for one bench."""
         from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 
@@ -82,6 +85,7 @@ class ListCommand(Command):
 
     def _address(self, bench) -> str:
 
+        """The Admin address of a bench."""
         admin = bench.config.admin
         if not admin.domain:
             return bench.config.admin_url
@@ -116,12 +120,15 @@ class ListCommand(Command):
 
 
 def _ok(text: str) -> str:
+    """The text in green."""
     return f"\033[32m{text}\033[0m"
 
 
 def _warn(text: str) -> str:
+    """The text in yellow."""
     return f"\033[33m{text}\033[0m"
 
 
 def _dim(text: str) -> str:
+    """The text in grey."""
     return f"\033[90m{text}\033[0m"

@@ -22,6 +22,7 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 def system_prompt_path(bench_root: Path) -> Path:
+    """The system prompt file."""
     return bench_root / SYSTEM_PROMPT_FILENAME
 
 
@@ -34,8 +35,10 @@ def read_system_prompt(bench_root: Path) -> str:
 
 
 def write_system_prompt(bench_root: Path, text: str) -> None:
+    """Save the system prompt."""
     atomic_write_private_text(system_prompt_path(bench_root), text)
 
 
 def clear_system_prompt(bench_root: Path) -> None:
+    """Delete the system prompt."""
     system_prompt_path(bench_root).unlink(missing_ok=True)

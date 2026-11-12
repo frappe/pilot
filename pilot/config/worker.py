@@ -31,6 +31,7 @@ class WorkerGroup:
     timeout: int | None = None
 
     def to_dict(self) -> dict:
+        """The worker group as a TOML table."""
         return {"queues": list(self.queues), "count": self.count, "timeout": self.timeout}
 
     @property
@@ -72,6 +73,7 @@ class WorkerConfig:
 
     @classmethod
     def from_dict(cls, data: list) -> "WorkerConfig":
+        """The worker config from its TOML tables."""
         # [[workers]] array-of-tables: each group lists queues and a count.
         if not isinstance(data, list) or not data:
             return cls()
@@ -86,6 +88,7 @@ class WorkerConfig:
         return cls(groups=groups)
 
     def validate(self) -> None:
+        """Raise when the worker config is invalid."""
         if not self.groups:
             raise ConfigError("workers.groups must contain at least one worker group.")
         for i, group in enumerate(self.groups):
@@ -94,6 +97,7 @@ class WorkerConfig:
 
     @staticmethod
     def validate_group(prefix: str, group: WorkerGroup) -> None:
+        """Raise when a worker group is invalid."""
         if not isinstance(group.queues, list) or not group.queues:
             raise ConfigError(f"{prefix}.queues must be a non-empty list.")
         for queue in group.queues:

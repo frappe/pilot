@@ -33,6 +33,7 @@ benches_bp.before_request(guard_bench_management)
 
 @benches_bp.get("")
 def list_benches():
+    """List the benches."""
     bench_root = ApiRequest.get_bench_root()
     benches_dir = bench_root.parent
     benches = []
@@ -48,6 +49,7 @@ def list_benches():
 
 @benches_bp.get("/<name>")
 def get_bench(name: str):
+    """Show one bench."""
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
     bench_root = ApiRequest.get_bench_root()
@@ -65,20 +67,24 @@ def get_bench(name: str):
 
 @benches_bp.post("/<name>/actions/start")
 def start_bench(name: str):
+    """Start a bench."""
     return _run_action(name, "start")
 
 
 @benches_bp.post("/<name>/actions/stop")
 def stop_bench(name: str):
+    """Stop a bench."""
     return _run_action(name, "stop")
 
 
 @benches_bp.post("/<name>/actions/restart")
 def restart_bench(name: str):
+    """Restart a bench."""
     return _run_action(name, "restart")
 
 
 def _run_action(name: str, action: str):
+    """Run a lifecycle action on a bench."""
     bench_root = ApiRequest.get_bench_root()
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
@@ -102,6 +108,7 @@ def _run_action(name: str, action: str):
 
 
 def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str):
+    """Run a lifecycle action while holding the bench lock."""
     if not toml_path.exists():
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
     try:
@@ -131,6 +138,7 @@ def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str
 
 @benches_bp.delete("/<name>")
 def delete_bench(name: str):
+    """Delete a bench."""
     bench_root = ApiRequest.get_bench_root()
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
@@ -156,6 +164,7 @@ def delete_bench(name: str):
 
 
 def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
+    """Delete a bench while holding its lock."""
     if not toml_path.exists():
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
     sites = BenchProvider(target_dir).site_count
@@ -215,6 +224,7 @@ def get_domain_options():
 
 @benches_bp.post("")
 def create_bench():
+    """Create a bench."""
     bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
@@ -235,6 +245,7 @@ def create_bench():
 
 
 def _create_bench_request(data):
+    """The bench creation fields, or an error response."""
     if not isinstance(data, dict):
         return {}, error_response("malformed_request", "Expected a JSON object.", 400)
     if any(
@@ -284,6 +295,7 @@ def _create_bench_request(data):
 
 
 def _admin_domain_request(data):
+    """The admin domain field, or an error response."""
     admin_domain = (data.get("admin_domain") or "").strip()
     if not admin_domain:
         return "", error_response(
@@ -297,6 +309,7 @@ def _admin_domain_request(data):
 
 
 def _process_manager_request(data):
+    """The process manager field, or an error response."""
     from pilot.config import VALID_PROCESS_MANAGERS
 
     process_manager = (data.get("process_manager") or "").strip().lower()

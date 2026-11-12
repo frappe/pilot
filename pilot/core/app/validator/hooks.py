@@ -186,6 +186,7 @@ class HooksCheck:
     """
 
     def run(self, app: "App") -> None:
+        """Raise when hooks.py points at missing modules or attributes."""
         hooks_path = module_path(app) / "hooks.py"
         if not hooks_path.is_file():
             return  # RepoStructureCheck owns this when it runs; updates skip it
@@ -201,6 +202,7 @@ class HooksCheck:
 
     @classmethod
     def _validate_hooks(cls, app: "App", hooks_path: Path) -> list[str]:
+        """The problems found in hooks.py."""
         data = cls._extract_hooks_data(app, hooks_path)
         targets = {path: _hook_target(app, path) for _, path, _ in data.path_hooks}
         modules = {target[0] for target in targets.values() if target and target[0] and target[1]}
@@ -214,6 +216,7 @@ class HooksCheck:
 
     @classmethod
     def _extract_hooks_data(cls, app: "App", hooks_path: Path) -> _HooksData:
+        """The hooks data read by the bench Python."""
         bench_python = get_bench_python(app)
         payload = {
             "path": str(hooks_path),
@@ -232,12 +235,14 @@ class HooksCheck:
 
 
 def _resolve_package(app: "App", app_module: str) -> Path:
+    """The package directory of an app module."""
     if app_module == app.module_name:
         return module_path(app)
     return app.bench.apps_path / app_module / app_module
 
 
 def _hook_target(app: "App", dotted: str) -> tuple[Path | None, list[str]] | None:
+    """The module file and attributes a dotted hook path names."""
     app_module, *rest = dotted.rsplit(":", 1)[-1].split(".")  # jenv-style "alias:path"
     package = _resolve_package(app, app_module)
     if not package.is_dir():
@@ -251,6 +256,7 @@ def _path_error(
     target: tuple[Path | None, list[str]] | None,
     symbols: dict[Path, set[str] | str | None],
 ) -> str | None:
+    """The problem with a hook path, if any."""
     if target is None:
         return None
     module_file, attributes = target
@@ -263,6 +269,7 @@ def _path_error(
 
 
 def _check_module_attribute(module_file: Path, attribute: str, result: set[str] | str | None) -> str | None:
+    """The problem with a module attribute, if any."""
     if isinstance(result, str):
         return f"cannot parse '{module_file.name}': {result}"
     if result is None or attribute in result:
@@ -289,6 +296,7 @@ def _find_module(package: Path, parts: list[str]) -> tuple[Path | None, list[str
 
 
 def _package_init(package: Path) -> Path | None:
+    """The package's __init__.py, if any."""
     init = package / "__init__.py"
     return init if init.is_file() else None
 

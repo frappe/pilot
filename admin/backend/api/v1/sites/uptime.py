@@ -31,6 +31,7 @@ class SiteUptime(TypedDict):
 @sites_bp.get("/<name>/uptime")
 @require_scope(site_name)
 def get_uptime(name: str):
+    """Show the site uptime."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()

@@ -32,6 +32,7 @@ class NewAppCommand(Command):
     github_workflow: Annotated[bool, Arg(help="Add a GitHub Actions unittest workflow.")] = False
 
     def run(self) -> None:
+        """Create a new app in the bench."""
         from pilot.core.app import App
 
         if not App.is_available_on_bench(self.bench, self.app_name):
@@ -40,6 +41,7 @@ class NewAppCommand(Command):
         self.bench.reload_workers()
 
     def _collect_options(self) -> "NewAppOptions":
+        """The new app options, asking for the ones not given."""
         from pilot.core.app import NewAppOptions
 
         default_title = self.app_name.replace("-", " ").replace("_", " ").title()
@@ -54,6 +56,7 @@ class NewAppCommand(Command):
         )
 
     def _ask(self, prompt: str, value: str, default: str, *, required: bool = False) -> str:
+        """The value, the answer to a prompt, or the default."""
         if value:
             return value
         if not sys.stdin.isatty():
@@ -67,11 +70,13 @@ class NewAppCommand(Command):
                 return answer
 
     def _confirm(self, prompt: str, value: bool) -> bool:
+        """The flag, or the answer to a yes or no prompt."""
         if value or not sys.stdin.isatty():
             return value
         return input(f"{prompt} [y/N]: ").strip().lower() in ("y", "yes")
 
     def _git_config(self, key: str) -> str:
+        """A git config value, or an empty string."""
         try:
             return run_command(["git", "config", "--get", key]).stdout.decode().strip()
         except CommandError:

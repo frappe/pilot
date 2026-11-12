@@ -23,6 +23,7 @@ def run(benches_root: Path) -> None:
 
 
 def _hash_password(bench_dir: Path) -> None:
+    """Hash the plain Admin password in bench.toml."""
     from pilot.config import BenchConfig
     from pilot.internal.password_hash import hash_password, is_hashed
 

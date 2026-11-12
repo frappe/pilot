@@ -24,6 +24,7 @@ class DropSiteCommand(Command):
     skip_confirm: bool = False
 
     def run(self) -> None:
+        """Drop the site after the user confirms."""
         site = self.bench.site(self.site_name)
         site.ensure_exists()
         with site.reserve():

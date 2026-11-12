@@ -15,11 +15,13 @@ _HINT_NAMESPACE = {"Bench": object}
 
 
 def add_command_arguments(cls: type[Command], parser: argparse.ArgumentParser) -> None:
+    """Add one argparse argument per CLI field of the command."""
     for cli_field in command_fields(cls):
         add_argument(parser, cli_field)
 
 
 def command_from_args(cls: type[Command], args: argparse.Namespace, bench: Bench | None) -> Command:
+    """Build the command from parsed arguments, leaving defaults to the dataclass."""
     kwargs = {}
     for cli_field in command_fields(cls):
         value = value_from_namespace(args, cli_field)
@@ -34,6 +36,7 @@ def command_from_args(cls: type[Command], args: argparse.Namespace, bench: Bench
 
 
 def command_fields(cls: type[Command]) -> list:
+    """The command's dataclass fields that appear on the command line."""
     return [
         field
         for field in arg_fields(cls, exclude=_EXCLUDED_FIELDS, hint_namespace=_HINT_NAMESPACE)

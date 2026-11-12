@@ -31,6 +31,7 @@ class GetAppCommand(Command):
         self.installed_dependencies: list[App] = []
 
     def run(self) -> None:
+        """Get the app into the bench."""
         result = self.app.install(
             install_dependencies=self.install_dependencies,
             skip_assets=self.skip_assets,

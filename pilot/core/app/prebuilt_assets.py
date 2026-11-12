@@ -23,6 +23,7 @@ _CHUNK_BYTES = 1024 * 1024
 
 
 def _asset_tables(app: App) -> list[dict]:
+    """The asset tables from the app's bench config."""
     from pilot.core.app.validator.base import bench_table
 
     assets = bench_table(app).get("assets", [])
@@ -30,6 +31,7 @@ def _asset_tables(app: App) -> list[dict]:
 
 
 def _build_dir(spa: dict) -> str:
+    """The normalized build directory of an asset table."""
     return posixpath.normpath(str(spa.get("build_dir", "")) or ".")
 
 
@@ -93,6 +95,7 @@ class PrebuiltAssets:
 
     @property
     def release_url(self) -> str | None:
+        """The release download URL for the prebuilt assets, if any."""
         from pilot.integrations.git.base import GitProviderError
         from pilot.integrations.git.github import parse_github_owner_repo
         from pilot.internal.git import GitRepo
@@ -146,9 +149,11 @@ class PrebuiltAssets:
 
     @property
     def has_other_page_islands(self) -> bool:
+        """Whether another app uses page islands."""
         return any(app.has_page_islands for app in self.app.bench.apps() if app.config.name != "frappe")
 
     def _asset_maps(self, manifest: dict) -> dict[str, dict[str, str]] | None:
+        """The asset maps from the manifest, or None when it has none."""
         names = [name for name in ("assets.json", "assets-rtl.json") if name in manifest]
         if not names:
             return None
@@ -166,6 +171,7 @@ class PrebuiltAssets:
 
     @staticmethod
     def _replace(source: Path, target: Path) -> None:
+        """Replace the target with the source, keeping the old copy until it succeeds."""
         previous = target.with_name(f".{target.name}.previous")
         shutil.rmtree(previous, ignore_errors=True)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +190,7 @@ class PrebuiltAssets:
 
     @staticmethod
     def _download(url: str, destination: Path) -> str:
+        """Download the URL to the file and return its SHA-256."""
         digest = hashlib.sha256()
         with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, destination.open("wb") as file:
             while chunk := response.read(_CHUNK_BYTES):

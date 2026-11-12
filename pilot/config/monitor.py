@@ -9,16 +9,20 @@ def monitor_log_dir() -> Path:
 
 
 def system_log_path() -> Path:
+    """The system metrics log."""
     return monitor_log_dir() / "system-stats.log"
 
 
 def db_log_path() -> Path:
+    """The database metrics log."""
     return monitor_log_dir() / "db-stats.log"
 
 
 def slow_query_log_path() -> Path:
+    """The slow query log."""
     return monitor_log_dir() / "slow-queries.json"
 
 
 def bench_log_path(bench_name: str) -> Path:
+    """The bench metrics log."""
     return monitor_log_dir() / f"{bench_name}-stats.log"

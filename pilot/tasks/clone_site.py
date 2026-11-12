@@ -15,6 +15,7 @@ class CloneSiteTask(Task):
 
     @step("clone", lambda self: f"Clone {self.site} into {self.name}")
     def run(self) -> None:
+        """Clone the site to the target bench."""
         from pilot.core.bench import Bench
 
         destination = Bench(self.bench.path.parent / self.target_bench)

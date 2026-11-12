@@ -49,12 +49,15 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def _derive(password: str, salt: bytes, iterations: int) -> bytes:
+    """The PBKDF2-SHA256 key for the password."""
     return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
 
 
 def _b64(raw: bytes) -> str:
+    """Standard base64 text."""
     return base64.b64encode(raw).decode()
 
 
 def _unb64(value: str) -> bytes:
+    """Bytes from strict base64 text."""
     return base64.b64decode(value, validate=True)

@@ -21,6 +21,7 @@ class ProcessResolver:
         self.admin_service_name = f"{self.bench.config.name}-admin"
 
     def resolve(self) -> dict[str, int]:
+        """The PID of each production process."""
         production_config = self.bench.config.production
         if not production_config.enabled:
             return {}
@@ -33,6 +34,7 @@ class ProcessResolver:
         return monitor_func() if monitor_func else {}
 
     def systemd_processes(self) -> dict[str, int]:
+        """The PID of each systemd service."""
         from pilot.managers.processes.systemd import SystemdProcessManager
 
         bench_process_manager = SystemdProcessManager(self.bench)
@@ -55,6 +57,7 @@ class ProcessResolver:
         return self._systemd_pids(services, output)
 
     def supervisord_processes(self) -> dict[str, int]:
+        """The PID of each supervisor program."""
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
         bench_process_manager = SupervisorProcessManager(self.bench)
@@ -67,6 +70,7 @@ class ProcessResolver:
         return self._supervisor_pids(supervised_processes)
 
     def _systemd_pids(self, services: list[str], output: str) -> dict[str, int]:
+        """The PIDs from systemctl output."""
         pids = {}
         for service, match in zip(services, SYSTEMD_PID_PATTERN.finditer(output), strict=False):
             pid = int(match.group("pid"))
@@ -75,6 +79,7 @@ class ProcessResolver:
         return pids
 
     def _supervisor_pids(self, output: str) -> dict[str, int]:
+        """The PIDs from supervisorctl output."""
         pids = {}
         for match in SUPERVISOR_PROCESS_PATTERN.finditer(output):
             service_name = match.group("service")

@@ -25,6 +25,7 @@ class RotatingCredential:
 
     @property
     def expires_at(self) -> datetime | None:
+        """When the token expires, if known."""
         return get_jwt_expiry(self.token)
 
     def is_expiring(self, now: datetime | None = None) -> bool:

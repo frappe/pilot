@@ -33,6 +33,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
         self._start_ms = self.to_epoch_ms(self.cutoff)
 
     def get_analytics(self) -> dict:
+        """The request, job, report and query timelines."""
         entries = list(self._entries_in_window())
         request_points = self._points(entries, "request", self.get_non_ping_path)
         job_points = self._points(entries, "job", self._job_method)
@@ -60,6 +61,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
         }
 
     def _slow_query_timeline(self, by: str) -> dict:
+        """The slow query timeline of the site."""
         from pilot.config.monitor import slow_query_log_path
         from pilot.core.database.slow_queries import SlowQueryLog
 
@@ -79,6 +81,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def _read_db_name(bench_root: Path, site_name: str) -> str | None:
+        """The site's database name, if any."""
         config_path = site_config_path(bench_root, site_name)
         if not config_path:
             return None
@@ -88,6 +91,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
             return None
 
     def _top_ips(self, entries: list[dict]) -> dict:
+        """The top client IPs."""
         if self._access_log.is_available():
             return self._access_log.get_top_ips()
         return self._timeline(entries, "request", self._request_ip, "count")
@@ -95,12 +99,14 @@ class SiteMonitoringProvider(WindowedLogProvider):
     def _timeline(
         self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None], by: str
     ) -> dict:
+        """The top categories of one transaction type over time."""
         points = self._points(entries, transaction_type, category)
         return build_timeline(points, _TOP_LIMIT, self._bucket_seconds, by, self._start_ms, self.now_ms())
 
     def _points(
         self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None]
     ) -> list[TimelinePoint]:
+        """The timeline points of one transaction type."""
         points = []
         for entry in entries:
             if entry.get("transaction_type") != transaction_type:
@@ -141,19 +147,23 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def _request_ip(entry: dict) -> str | None:
+        """The client IP of a request, skipping uptime pings."""
         path = SiteMonitoringProvider._request_path(entry)
         return None if path == PING_PATH else (entry.get("request") or {}).get("ip")
 
     @staticmethod
     def _job_method(entry: dict) -> str | None:
+        """The method of a job."""
         return (entry.get("job") or {}).get("method")
 
     @staticmethod
     def _report_name(entry: dict) -> str | None:
+        """The name of a report."""
         report = entry.get("report")
         return report if isinstance(report, str) and report else None
 
     def _entries_in_window(self):
+        """Yield the site's monitor entries in the window."""
         for record in self.records_in_window(self._log_path, time_key="timestamp"):
             if record.get("site") == self._site_name:
                 yield record

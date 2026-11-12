@@ -18,6 +18,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         self._bench_root = bench_root
 
     def get_history(self) -> dict:
+        """The system and process metrics history."""
         from pilot.config import BenchConfig
         from pilot.config.monitor import bench_log_path, system_log_path
 
@@ -33,6 +34,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         }
 
     def get_system_metrics(self, path: Path) -> dict:
+        """The system metrics in the window."""
         rows = self.get_records_in_window(path)
         return {
             "earliest": self.get_earliest(path),
@@ -43,6 +45,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def get_latest_memory_total(rows: list) -> float | None:
+        """The newest total memory, if any."""
         for _, metrics in reversed(rows):
             total = (metrics.get("memory") or {}).get("total_bytes")
             if total is not None:
@@ -50,6 +53,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         return None
 
     def build_system_point(self, when: datetime, metrics: dict) -> dict:
+        """One system chart point."""
         storage = metrics.get("storage") or {}
         disk = storage.get("disk")
         load = metrics["load_avg"]
@@ -80,6 +84,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def get_latest_storage(rows: list) -> dict | None:
+        """The newest disk usage, if any."""
         for _, metrics in reversed(rows):
             disk = (metrics.get("storage") or {}).get("disk")
             if disk:
@@ -93,6 +98,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         return None
 
     def get_application_metrics(self, path: Path, bench_name: str) -> dict:
+        """The process metrics in the window."""
         rows = self.get_records_in_window(path)
         return {
             "earliest": self.get_earliest(path),
@@ -107,6 +113,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         }
 
     def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:
+        """The records in the window, with their times."""
         rows = [
             (when, record)
             for record in self.records_in_window(path)
@@ -120,6 +127,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         return rows[::step]
 
     def get_service_names(self, rows: list, bench_name: str) -> list[str]:
+        """The service names in the records."""
         names: list[str] = []
         for _, metrics in rows:
             for process in metrics.get("processes", []):
@@ -129,6 +137,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
         return sorted(names)
 
     def build_service_row(self, when: datetime, metrics: dict, bench_name: str, key: str) -> dict:
+        """One service chart row."""
         row = {"time": self.to_epoch_ms(when)}
         for process in metrics.get("processes", []):
             if not process.get("missing"):
@@ -137,4 +146,5 @@ class SystemMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def get_short_name(service: str, bench_name: str) -> str:
+        """The service name without the bench prefix and unit suffix."""
         return service.removeprefix(f"{bench_name}-").removesuffix(".service")

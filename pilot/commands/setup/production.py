@@ -41,6 +41,7 @@ class SetupProductionCommand(Command):
     best_effort_tls: Annotated[bool, Arg(cli=False)] = False
 
     def run(self) -> None:
+        """Deploy the bench to production."""
         self.bench.setup_production(
             process_manager=self.process_manager,
             admin_domain=self.admin_domain,

@@ -36,6 +36,7 @@ def _is_replacement_needed() -> bool:
 
 
 def _replace_timers() -> None:
+    """Replace the monitor timers with the monitor service."""
     import subprocess
 
     from pilot.core.server import Server

@@ -154,6 +154,7 @@ def task_succeeded(bench_root: Path, meta: dict) -> None:
 
 
 def _task_event(bench_root: Path, meta: dict, **event: typing.Any) -> None:
+    """Add a notification for a task event; log a failure."""
     from pilot.core.bench import Bench
 
     command = str(meta.get("command") or "")

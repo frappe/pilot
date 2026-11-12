@@ -45,12 +45,14 @@ class BackupProvider:
         self._site = self._bench.site(site_name)
 
     def get_all(self, limit: int | None = None) -> list[Backup]:
+        """The local and offsite backups, newest first."""
         backups = self.merge_backups(self.local_backups, self.get_offsite_backups(limit))
         ordered = sorted(backups.values(), key=lambda backup: backup.timestamp, reverse=True)
         return ordered[:limit] if limit is not None else ordered
 
     @property
     def local_backups(self) -> dict[str, Backup]:
+        """The local backups by timestamp."""
         if not self._site.backups.directory.is_dir():
             return {}
 
@@ -68,6 +70,7 @@ class BackupProvider:
         return backups
 
     def get_offsite_backups(self, limit: int | None) -> dict[str, Backup]:
+        """The offsite backups by timestamp."""
         if not self._bench.config.s3.is_configured:
             return {}
 
@@ -101,6 +104,7 @@ class BackupProvider:
         return backups
 
     def get_local_file(self, path: Path) -> BackupFile:
+        """A local backup file."""
         stat = path.stat()
         name = path.name
         timestamp = parse_backup_timestamp(name) or "unknown"
@@ -117,6 +121,7 @@ class BackupProvider:
         )
 
     def get_offsite_file(self, timestamp: str, file_type: str, filename: str, size_bytes: int) -> BackupFile:
+        """An offsite backup file."""
         return BackupFile(
             filename=filename,
             path="",
@@ -128,6 +133,7 @@ class BackupProvider:
 
     @staticmethod
     def get_file_kind(filename: str) -> str:
+        """The kind of a backup file."""
         if "private-files" in filename:
             return "private-file"
         if "files" in filename:
@@ -138,6 +144,7 @@ class BackupProvider:
 
     @staticmethod
     def get_timestamp(timestamp: str) -> datetime | None:
+        """The time of a backup timestamp, or None."""
         try:
             return datetime.strptime(timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=UTC)
         except ValueError:
@@ -145,4 +152,5 @@ class BackupProvider:
 
     @classmethod
     def _get_timestamp_or_now(cls, timestamp: str) -> datetime:
+        """The time of a backup timestamp, or now."""
         return cls.get_timestamp(timestamp) or datetime.now(UTC)

@@ -28,6 +28,7 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def _validate_new_password(bench: Bench, new_password: str) -> str | None:
+    """The error with a new password, or None."""
     from pilot.internal.validators import validate_admin_password
 
     if bench.config.admin.verify_password(new_password):
@@ -51,6 +52,7 @@ def _second_factor_error(bench: Bench, otp: str):
 @auth_bp.get("/session")
 @allow_unauthenticated
 def get_session():
+    """Show the current session."""
     bench_root = ApiRequest.get_bench_root()
     try:
         bench = Bench(bench_root)
@@ -73,6 +75,7 @@ def get_session():
 @allow_unauthenticated
 @rate_limit(5, 60, user_ip=True)
 def create_session():
+    """Log in and create a session."""
     bench_root = ApiRequest.get_bench_root()
     try:
         bench = Bench(bench_root)
@@ -194,6 +197,7 @@ def change_admin_password():
 
 
 def two_factor_payload(bench: Bench) -> dict:
+    """The two-factor state for the API."""
     two_factor = TwoFactorAuthentication(bench)
     return {
         "enabled": two_factor.is_enabled,
@@ -205,6 +209,7 @@ def two_factor_payload(bench: Bench) -> dict:
 
 @auth_bp.get("/two-factor")
 def get_two_factor():
+    """Show the two-factor state."""
     return jsonify(two_factor_payload(ApiRequest.get_bench()))
 
 
@@ -274,6 +279,7 @@ def remove_two_factor_credential(name: str):
 
 @auth_bp.get("/sessions")
 def list_sessions():
+    """List the active sessions."""
     bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)

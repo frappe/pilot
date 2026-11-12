@@ -39,6 +39,7 @@ class ProxyConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ProxyConfig":
+        """The proxy config from its TOML table."""
         return cls(
             protocol_v2=bool(data.get("protocol_v2", False)),
             cloudflare=bool(data.get("cloudflare", False)),
@@ -46,5 +47,6 @@ class ProxyConfig:
 
 
 def is_cloudflare_address(address: str) -> bool:
+    """Whether the address belongs to Cloudflare."""
     ip = ipaddress.ip_address(address)
     return any(ip in ipaddress.ip_network(network) for network in CLOUDFLARE_NETWORKS)

@@ -15,6 +15,7 @@ class DismissMigrationTask(Task):
     operation_id: str
 
     def run(self) -> None:
+        """Dismiss the migration and restore the sites."""
         operation = self.bench.migrations.get(self.operation_id)
         if self.running_task_id:
             operation.task_ids["dismiss"] = self.running_task_id

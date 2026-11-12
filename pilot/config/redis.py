@@ -16,6 +16,7 @@ class RedisConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "RedisConfig":
+        """The Redis config from its TOML table."""
         return cls(
             cache_port=data.get("cache_port", 13000),
             queue_port=data.get("queue_port", 11000),
@@ -23,6 +24,7 @@ class RedisConfig:
         )
 
     def validate(self) -> None:
+        """Raise when a port is invalid."""
         for name, port in (
             ("redis.cache_port", self.cache_port),
             ("redis.queue_port", self.queue_port),

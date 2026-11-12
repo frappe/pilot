@@ -30,6 +30,7 @@ class CentralSetup:
         self.rebootstrap = rebootstrap
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Enable Central management and set up the site and Admin aliases."""
         site = self.check()
         on_progress("Enabling Central management")
         self.enable()
@@ -68,6 +69,7 @@ class CentralSetup:
         return self._alias_site()
 
     def enable(self) -> None:
+        """Turn Central management on for every bench on the host."""
         from pilot.config.common import CommonConfig
 
         central = self.bench.config.central
@@ -78,6 +80,7 @@ class CentralSetup:
             central.enabled, central.bootstrapped = common.central.enabled, common.central.bootstrapped
 
     def _alias_site(self) -> "Site | None":
+        """The site that the site alias pattern points at, if any."""
         if not self.site_pattern:
             return None
         sites = self.bench.sites()

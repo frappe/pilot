@@ -43,6 +43,7 @@ class SiteDatabaseClone:
         self.config = config
 
     def run(self) -> None:
+        """Copy the source database into the new database."""
         import json
 
         original = json.loads((self.source.path / "site_config.json").read_text())
@@ -65,12 +66,14 @@ class SiteDatabaseClone:
 
     @property
     def generated_database_name(self) -> str:
+        """The new database name; raise unless this clone generated it."""
         name = self.config["db_name"]
         if not re.fullmatch(r"_[0-9a-f]{16}", name):
             raise BenchError("Refusing to modify a database not generated for this clone.")
         return name
 
     def mariadb(self, original: dict) -> None:
+        """Create the MariaDB database and user, and stream the data."""
         from pilot.managers.database import MariaDBManager
 
         manager = MariaDBManager(self.destination.bench.config.mariadb)
@@ -113,6 +116,7 @@ class SiteDatabaseClone:
 
     @staticmethod
     def get_parallel_schema(original: dict, source: list[str]) -> tuple[list[str], list[str]] | None:
+        """The tables and sequences to copy in parallel, or None when that is not safe."""
         query = (
             "SELECT (SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS "
             "WHERE CONSTRAINT_SCHEMA = DATABASE()) + "
@@ -144,6 +148,7 @@ class SiteDatabaseClone:
 
     @staticmethod
     def parse_parallel_schema(output: list[str]) -> tuple[list[str], list[str]] | None:
+        """The tables and sequences from the schema query, or None when not safe."""
         if not output or output[0] != "0" or len(output) < 17:
             return None
         tables: list[str] = []
@@ -157,6 +162,7 @@ class SiteDatabaseClone:
 
     @staticmethod
     def is_parallel_table(fields: list[str]) -> bool:
+        """Whether a schema row is a plain table or sequence that can be copied alone."""
         return (
             len(fields) == 3
             and fields[1] in ("BASE TABLE", "SEQUENCE")
@@ -165,6 +171,7 @@ class SiteDatabaseClone:
         )
 
     def stream_mariadb(self, original, source, target, options=(), tables=()) -> None:
+        """Pipe mariadb-dump of the source into the target."""
         stream_database(
             [
                 "mariadb-dump",
@@ -184,6 +191,7 @@ class SiteDatabaseClone:
 
     @staticmethod
     def mysql_args(config: dict, bench) -> list[str]:
+        """The MariaDB client connection arguments."""
         args = ["--user", config.get("db_user") or config["db_name"]]
         socket = config.get("db_socket")
         if not socket and not (config.get("db_host") or config.get("db_port")):
@@ -199,6 +207,7 @@ class SiteDatabaseClone:
         ]
 
     def postgres(self, original: dict) -> None:
+        """Create the PostgreSQL database and role, and stream the data."""
         from pilot.managers.database import PostgresManager
 
         name = self.generated_database_name
@@ -219,6 +228,7 @@ class SiteDatabaseClone:
         )
 
     def postgres_admin_sql(self, sql: str) -> None:
+        """Run SQL as the PostgreSQL admin user."""
         from pilot.managers.database import PostgresManager
 
         settings = self.destination.bench.config.postgres
@@ -245,6 +255,7 @@ class SiteDatabaseClone:
 
     @staticmethod
     def pg_args(config: dict, bench) -> list[str]:
+        """The PostgreSQL client connection arguments."""
         return [
             "-h",
             config.get("db_host") or bench.config.postgres.host,

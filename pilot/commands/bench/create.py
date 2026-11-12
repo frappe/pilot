@@ -43,6 +43,7 @@ class NewCommand(Command):
         self.target_directory = Server().root / "benches" / self.bench_name
 
     def run(self) -> None:
+        """Create a bench."""
         from pilot.core.bench import Bench
 
         Bench.create_at(

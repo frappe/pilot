@@ -29,6 +29,7 @@ _RUNNER_CLASS: type | None = None
 
 
 def generate_task_id() -> str:
+    """A new task id: the local time and a random suffix."""
     return datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
 
 
@@ -66,6 +67,7 @@ class TaskRunner:
         resource_key: str | list[str] | None = None,
         resource_handoff_from: str | None = None,
     ) -> str:
+        """Submit the task and return its id."""
         return self.submit(
             command,
             args,
@@ -84,6 +86,7 @@ class TaskRunner:
         resource_key: str | list[str] | None = None,
         resource_handoff_from: str | None = None,
     ) -> SubmissionResult:
+        """Queue the task, reusing an active task with the same idempotency key."""
         payload = self._payloads.build(command, args, callbacks)
         if idempotency_key is None:
             self._store.create_queued(
@@ -109,6 +112,7 @@ class TaskRunner:
         return submission
 
     def find_idempotent_task(self, command: str, args: dict, key: str | None) -> str | None:
+        """The active task queued with this idempotency key, if any."""
         if key is None:
             return None
         digest = self._idempotency_digest(key)
@@ -116,6 +120,7 @@ class TaskRunner:
         return self._store.find_idempotent_task(digest, payload.request_fingerprint)
 
     def _run_post_submission_housekeeping(self) -> None:
+        """Wake the worker and purge old tasks; a failure here does not fail the submit."""
         for operation in (
             TaskWorkerControl(self._bench_root).wake,
             lambda: self._store.purge_terminal(TASK_RETENTION_LIMIT),
@@ -126,6 +131,7 @@ class TaskRunner:
                 logging.debug("Post-submission housekeeping step failed: %s", exc)
 
     def kill(self, task_id: str) -> None:
+        """Cancel a queued task or stop a running one."""
         status = self._store.read_status(task_id)
         if not status.is_active:
             raise TaskNotRunningError(f"Task is not active: {task_id} (status={status.value})")
@@ -153,12 +159,14 @@ class TaskRunner:
 
     @staticmethod
     def _idempotency_digest(key: str) -> str:
+        """SHA-256 of a valid idempotency key."""
         if not isinstance(key, str) or not key or len(key) > 255:
             raise ValueError("Idempotency-Key must contain between 1 and 255 characters")
         return hashlib.sha256(key.encode()).hexdigest()
 
 
 def runner_class() -> type:
+    """The TaskRunner subclass bound to the discovered task registry."""
     global _RUNNER_CLASS
     if _RUNNER_CLASS is not None:
         return _RUNNER_CLASS
@@ -173,6 +181,7 @@ def runner_class() -> type:
 
 
 def task_registry() -> tuple[dict[str, type[Task]], dict[str, list[str]]]:
+    """Every task class by command, with each command's required arguments."""
     global _REGISTRY
     if _REGISTRY is None:
         tasks = discover_tasks()
@@ -198,6 +207,7 @@ def is_command_listed(command: str) -> bool:
 
 
 def discover_tasks() -> list[type[Task]]:
+    """Every Task subclass in the pilot.tasks modules."""
     tasks = []
     for module_info in pkgutil.iter_modules([str(_TASK_PACKAGE_DIR)], prefix="pilot.tasks."):
         if module_info.name.rsplit(".", 1)[-1] in _NOT_A_TASK_MODULE:

@@ -47,11 +47,13 @@ class Server:
 
     @property
     def auto_update(self) -> "AutoUpdate":
+        """The Pilot auto update."""
         from pilot.core.server.auto_update import AutoUpdate
 
         return AutoUpdate(self)
 
     def bench(self, path_or_name: str | Path) -> "Bench":
+        """The bench at a path, or with a name under the benches directory."""
         from pilot.core.bench import Bench
 
         path = Path(path_or_name).expanduser()
@@ -61,6 +63,7 @@ class Server:
 
     @property
     def ssh_keys(self) -> AuthorizedKeysStore:
+        """The SSH authorized keys."""
         return AuthorizedKeysStore()
 
 

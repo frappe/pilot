@@ -87,6 +87,7 @@ def restart_admin(bench_path: Path) -> None:
 
 
 def _upgrade_dev(on_progress: Progress) -> None:
+    """Upgrade a dev checkout."""
     from admin.backend.frontend import ensure_admin_frontend
     from pilot.core.server import Server
     from pilot.internal.command import run_command
@@ -102,6 +103,7 @@ def _upgrade_dev(on_progress: Progress) -> None:
 
 
 def _upgrade_release(on_progress: Progress) -> None:
+    """Upgrade to the latest release."""
     from pilot.core.server import Server
     from pilot.managers.environment import AdminEnvManager
 
@@ -169,11 +171,13 @@ def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
 
 
 def _reset_dir(path: Path) -> None:
+    """Remove the path and create an empty directory."""
     _remove(path)
     path.mkdir(parents=True)
 
 
 def _remove(path: Path) -> None:
+    """Remove a file, link or directory."""
     if path.is_symlink() or path.is_file():
         path.unlink()
     elif path.is_dir():

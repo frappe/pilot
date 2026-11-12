@@ -26,6 +26,7 @@ class WafProvider:
         self._cutoff = datetime.now() - timedelta(seconds=WINDOW_SECONDS[self._window])
 
     def get_analytics(self) -> dict:
+        """The WAF event counts, top rules and top IPs."""
         flagged = blocked = would_block = 0
         rules: Counter = Counter()
         ips: Counter = Counter()
@@ -78,6 +79,7 @@ class WafProvider:
         }
 
     def _mode(self) -> str:
+        """The WAF mode."""
         from pilot.config import BenchConfig
 
         try:
@@ -87,6 +89,7 @@ class WafProvider:
 
     @staticmethod
     def _first(data: dict, *keys: str):
+        """The first non-empty value of the keys."""
         for key in keys:
             if isinstance(data, dict) and data.get(key) not in (None, ""):
                 return data[key]
@@ -94,16 +97,19 @@ class WafProvider:
 
     @classmethod
     def _rule_id(cls, message: dict) -> str:
+        """The rule ID of a message."""
         details = cls._first(message, "details", "data") or {}
         return str(cls._first(details, "ruleId", "id") or "")
 
     @classmethod
     def _rule_label(cls, message: dict) -> str:
+        """The rule label of a message."""
         details = cls._first(message, "details", "data") or {}
         return str(cls._first(details, "msg") or cls._first(message, "message") or "")
 
     @classmethod
     def _status_code(cls, transaction: dict) -> int | None:
+        """The response status of a transaction, if any."""
         response = cls._first(transaction, "response") or {}
         code = cls._first(response, "http_code", "http_status", "status")
         try:
@@ -113,6 +119,7 @@ class WafProvider:
 
     @staticmethod
     def _parse_time(value) -> datetime | None:
+        """The time of a log value, or None."""
         if not value:
             return None
         text = str(value).strip()

@@ -19,6 +19,7 @@ class DatabaseMonitoringProvider(WindowedLogProvider):
         self._bench_root = bench_root
 
     def get_history(self) -> dict:
+        """The database metrics history."""
         from admin.backend.providers.database.slow_queries import SlowQueryProvider
         from pilot.config.monitor import db_log_path
 
@@ -34,6 +35,7 @@ class DatabaseMonitoringProvider(WindowedLogProvider):
         }
 
     def _rows(self, path: Path) -> list[tuple[datetime, dict]]:
+        """The records in the window, with their times."""
         rows = [
             (when, record)
             for record in self.records_in_window(path)
@@ -46,6 +48,7 @@ class DatabaseMonitoringProvider(WindowedLogProvider):
         return rows[::step]
 
     def _point(self, prev: tuple[datetime, dict], cur: tuple[datetime, dict]) -> dict:
+        """One chart point from two records."""
         (_, before), (t1, after) = prev, cur
         delta = lambda key: max(after.get(key, 0) - before.get(key, 0), 0)  # noqa: E731
 

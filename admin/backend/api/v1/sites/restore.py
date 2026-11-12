@@ -100,6 +100,7 @@ def _restore_from_chunked_upload(bench_root: Path, name: str, parts: list[str], 
 
 
 def _restore_from_bench_site(bench_root: Path, name: str, parts: list[str], data: dict):
+    """Queue a restore from a site on this host."""
     source = data.get("source_site") or name
     timestamp = data.get("backup_timestamp") or ""
     # A site token may read its own backups only. Checked first, so it cannot probe for sites.
@@ -139,6 +140,7 @@ def list_remote_backups(name: str):
 
 
 def _restore_from_remote(bench_root: Path, name: str, parts: list[str], data: dict):
+    """Queue a restore from a remote site."""
     timestamp = data.get("backup_timestamp")
     if not isinstance(timestamp, str) or not _TIMESTAMP_RE.fullmatch(timestamp):
         return _invalid("Get the backups of the remote site first.")
@@ -221,6 +223,7 @@ def _skips_failing_patches() -> bool:
 
 
 def _parts(value) -> list[str] | None:
+    """The valid restore parts, or None."""
     if not isinstance(value, list) or not value:
         return None
     if any(not isinstance(part, str) or part not in RESTORE_PARTS for part in value):
@@ -229,4 +232,5 @@ def _parts(value) -> list[str] | None:
 
 
 def _invalid(message: str):
+    """A 422 response with the message."""
     return error_response("invalid_restore", message, 422)

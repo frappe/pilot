@@ -24,6 +24,7 @@ migrations_bp = Blueprint("migrations", __name__)
 
 
 def _summary(operation: MigrationOperation) -> dict:
+    """The migration for the API, with compare links."""
     data = operation.to_dict()
     for app, revision in zip(data["apps"], operation.apps, strict=True):
         app["compare_url"] = revision.compare_url
@@ -89,6 +90,7 @@ def _task_status(store: TaskStore, task_id: str) -> str | None:
 
 
 def _accepted(operation: MigrationOperation, task_id: str):
+    """A 202 response with the migration and its task."""
     return accepted_response(
         {"operation": _summary(operation), "task_id": task_id},
         url_for("migrations.get_migration", operation_id=operation.id),
@@ -97,6 +99,7 @@ def _accepted(operation: MigrationOperation, task_id: str):
 
 @migrations_bp.post("/updates")
 def create_update():
+    """Start an update migration."""
     bench = ApiRequest.get_bench()
     body = request.get_json(silent=True) or {}
     apps = body.get("apps") or None
@@ -119,6 +122,7 @@ def _begin(bench: Bench, operation: MigrationOperation):
 
 @migrations_bp.get("/migrations")
 def list_migrations():
+    """List the migrations."""
     limit, offset = parse_pagination(20, 100)
     status = request.args.get("status")
     kind = request.args.get("kind")
@@ -132,6 +136,7 @@ def list_migrations():
 
 
 def _matches(operation: MigrationOperation, status, kind, site) -> bool:
+    """Whether the migration matches the filters."""
     if status and operation.state != status:
         return False
     if kind and operation.kind != kind:
@@ -143,12 +148,14 @@ def _matches(operation: MigrationOperation, status, kind, site) -> bool:
 
 @migrations_bp.get("/migrations/current")
 def current_migration():
+    """Show the current migration."""
     operation = ApiRequest.get_bench().migrations.current()
     return jsonify(_summary(operation) if operation else None)
 
 
 @migrations_bp.get("/migrations/<operation_id>")
 def get_migration(operation_id: str):
+    """Show one migration."""
     operation = _load(operation_id)
     if operation is None:
         return _not_found()
@@ -157,6 +164,7 @@ def get_migration(operation_id: str):
 
 @migrations_bp.post("/migrations/<operation_id>/actions/retry")
 def retry_action(operation_id: str):
+    """Retry the failed step."""
     operation = _load(operation_id)
     if operation is None:
         return _not_found()
@@ -167,6 +175,7 @@ def retry_action(operation_id: str):
 
 @migrations_bp.post("/migrations/<operation_id>/actions/restore")
 def restore_action(operation_id: str):
+    """Revert the migration."""
     operation = _load(operation_id)
     if operation is None:
         return _not_found()
@@ -192,6 +201,7 @@ def dismiss_action(operation_id: str):
 
 @migrations_bp.post("/migrations/<operation_id>/actions/bypass-patch")
 def bypass_patch_action(operation_id: str):
+    """Skip the failed patch."""
     operation = _load(operation_id)
     if operation is None:
         return _not_found()
@@ -211,6 +221,7 @@ def bypass_patch_action(operation_id: str):
 
 
 def _queue_action(operation: MigrationOperation, task_type, role: str, **task_args):
+    """Queue a migration action task."""
     try:
         task_id = task_type.queue(
             operation.bench,
@@ -225,6 +236,7 @@ def _queue_action(operation: MigrationOperation, task_type, role: str, **task_ar
 
 
 def _load(operation_id: str) -> MigrationOperation | None:
+    """The migration, or None when it does not exist."""
     try:
         return ApiRequest.get_bench().migrations.get(operation_id)
     except MigrationNotFoundError:
@@ -232,10 +244,12 @@ def _load(operation_id: str) -> MigrationOperation | None:
 
 
 def _not_found():
+    """A 404 response for a missing migration."""
     return error_response("migration_not_found", "Migration operation not found.", 404)
 
 
 def _invalid_state(operation: MigrationOperation):
+    """A 409 response for an action the state does not allow."""
     return error_response(
         "invalid_operation_state",
         f"Action is not allowed while the operation is {operation.state}.",

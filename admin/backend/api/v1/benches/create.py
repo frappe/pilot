@@ -23,6 +23,7 @@ def create_bench_locked(
     admin_domain: str,
     admin_tls: bool | None,
 ):
+    """Create a bench while holding the management lock."""
     try:
         new_dir = target_bench_dir(bench_root, name)
     except ValueError:
@@ -69,6 +70,7 @@ def create_bench_locked(
 
 
 def _validate_bench_creation(new_dir: Path, name: str, admin_domain: str, production_parent: bool):
+    """The error response for an invalid bench, or None."""
     response = _validate_admin_domain(new_dir, name, admin_domain)
     if response is not None:
         return response
@@ -78,6 +80,7 @@ def _validate_bench_creation(new_dir: Path, name: str, admin_domain: str, produc
 
 
 def _validate_admin_domain(new_dir: Path, name: str, admin_domain: str):
+    """The error response for an unusable admin domain, or None."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.core.bench.directory import BenchDirectory
     from pilot.internal.hostnames import matches_wildcard, normalize_host
@@ -107,6 +110,7 @@ def _validate_admin_domain(new_dir: Path, name: str, admin_domain: str):
 
 
 def _validate_production_privileges():
+    """The error response when production needs root access, or None."""
     from pilot.managers.platform import HostPlatform
     from pilot.managers.sudoers import has_passwordless_sudo_for
 
@@ -125,6 +129,7 @@ def _validate_production_privileges():
 
 
 def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
+    """Start the setup wizard of a production bench."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     try:
@@ -158,6 +163,7 @@ def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
 
 
 def _process_manager(bench: Bench):
+    """The process manager of the bench."""
     from pilot.managers.processes.base import ManagedProcessManager
 
     configured_pm = bench.config.production.process_manager
@@ -170,6 +176,7 @@ def _process_manager(bench: Bench):
 
 
 def _start_standalone_setup_wizard(new_dir: Path, name: str, new_port: int):
+    """Start the setup wizard of a standalone bench."""
     root = Server().root
     spawn_env = {
         key: value

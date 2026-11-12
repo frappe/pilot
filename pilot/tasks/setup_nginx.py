@@ -9,10 +9,12 @@ class SetupNginxTask(Task):
     command: ClassVar[str] = "setup-nginx"
 
     def run(self) -> None:
+        """Install the nginx config."""
         self.setup_nginx()
 
     @step("nginx", "Set up Nginx")
     def setup_nginx(self) -> None:
+        """Install the nginx config."""
         self.bench.setup_nginx(on_progress=self.report)
 
 

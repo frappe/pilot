@@ -44,15 +44,18 @@ class Deadlock:
 
     @property
     def databases(self) -> set[str]:
+        """The databases the deadlock touched."""
         return {transaction.database for transaction in self.transactions if transaction.database}
 
     @property
     def moment(self) -> datetime | None:
+        """The time of the deadlock, if known."""
         return datetime.fromisoformat(self.time) if self.time else None
 
     def is_match(
         self, database: str = "", since: datetime | None = None, until: datetime | None = None
     ) -> bool:
+        """Whether the deadlock matches the database and time filters."""
         if database and database not in self.databases:
             return False
         if not since and not until:
@@ -85,11 +88,13 @@ class DeadlockLog:
         since: datetime | None = None,
         until: datetime | None = None,
     ) -> list[Deadlock]:
+        """The matching deadlocks from the error log, newest first."""
         deadlocks = DeadlockParser().parse(self.read_tail())
         deadlocks = [deadlock for deadlock in deadlocks if deadlock.is_match(database, since, until)]
         return deadlocks[::-1][:limit]
 
     def read_tail(self) -> str:
+        """The end of the error log."""
         with self.path.open("rb") as log:
             size = log.seek(0, 2)
             log.seek(max(0, size - TAIL_BYTES))
@@ -107,6 +112,7 @@ class DeadlockParser:
         self.waiting_section = False
 
     def parse(self, text: str) -> list[Deadlock]:
+        """The deadlocks in the error log text."""
         for raw in text.splitlines():
             stamp = _PREFIX.match(raw)
             line = (raw[stamp.end() :] if stamp else raw).strip()
@@ -118,12 +124,14 @@ class DeadlockParser:
         return [deadlock for deadlock in self.deadlocks if deadlock.transactions]
 
     def read_dump_line(self, deadlock: Deadlock, line: str) -> None:
+        """Read one line of a deadlock dump."""
         if line.startswith("***"):
             self.read_section(deadlock, line)
         elif deadlock.transactions:
             self.read_transaction_line(deadlock.transactions[-1], line)
 
     def read_section(self, deadlock: Deadlock, line: str) -> None:
+        """Start a new section of the deadlock dump."""
         self.reading_query = False
         self.waiting_section = bool(_WAITING.match(line))
         if match := _TRANSACTION.match(line):
@@ -134,6 +142,7 @@ class DeadlockParser:
             self.current = None
 
     def read_transaction_line(self, transaction: DeadlockTransaction, line: str) -> None:
+        """Read one line of a transaction in the dump."""
         if match := _TRANSACTION_ID.match(line):
             transaction.transaction_id = match[1]
         elif match := _THREAD.match(line):

@@ -30,6 +30,7 @@ def validate_settable_keys(data: dict) -> str | None:
 
 
 def validate_configuration(data: dict) -> str | None:
+    """The error with the setup fields, or None."""
     if error := _validate_field_types(data):
         return error
     if error := _validate_required_fields(data):
@@ -40,6 +41,7 @@ def validate_configuration(data: dict) -> str | None:
 
 
 def _validate_field_types(data: dict) -> str | None:
+    """The error when a field has the wrong type, or None."""
     text_fields = (
         "app_branch",
         "app_repo",
@@ -67,6 +69,7 @@ def _validate_field_types(data: dict) -> str | None:
 
 
 def _validate_required_fields(data: dict) -> str | None:
+    """The error when a required field is missing, or None."""
     db_type = data.get("db_type", "mariadb")
     if db_type not in ("mariadb", "postgres"):
         return "db_type must be 'mariadb' or 'postgres'"
@@ -78,6 +81,7 @@ def _validate_required_fields(data: dict) -> str | None:
 
 
 def _validate_existing_database(data: dict) -> str | None:
+    """The error with existing database settings, or None."""
     db_type = data.get("db_type", "mariadb")
     if data.get(f"{db_type}_existing"):
         if not data.get(f"{db_type}_host"):
@@ -88,6 +92,7 @@ def _validate_existing_database(data: dict) -> str | None:
 
 
 def _validate_app_source(data: dict) -> str | None:
+    """The error with the app repository or branch, or None."""
     if "app_repo" in data and (error := validate_repo_url(data["app_repo"])):
         return error
     if "app_branch" in data and (error := validate_branch_name(data["app_branch"])):
@@ -116,6 +121,7 @@ def apply_existing_local_database(bench_root: Path, data: dict) -> dict:
 
 
 def read_defaults(bench_root: Path) -> dict:
+    """The setup fields with their defaults."""
     from pilot.managers.platform import HostPlatform
 
     # This is a read endpoint the wizard polls before login - it must never echo

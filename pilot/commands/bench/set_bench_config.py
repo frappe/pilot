@@ -16,6 +16,7 @@ class SetBenchConfigCommand(Command):
     value: Annotated[str, Arg(help="New value: true/false, a number, or a string.", metavar="value")]
 
     def run(self) -> None:
+        """Set one bench config value."""
         from pilot.config import BenchConfig
         from pilot.config.bench import FLAT_KEYS
 

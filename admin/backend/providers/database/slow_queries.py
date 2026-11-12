@@ -22,6 +22,7 @@ class SlowQueryProvider(WindowedLogProvider):
         self._bench_root = Path(bench_root)
 
     def get_overview(self) -> dict:
+        """The slow query overview."""
         from pilot.config import BenchConfig
         from pilot.config.monitor import slow_query_log_path
         from pilot.core.database import make_database
@@ -59,12 +60,14 @@ class SlowQueryProvider(WindowedLogProvider):
         }
 
     def _bucket_starts(self, bucket_seconds: int) -> list[int]:
+        """The bucket start times in the window."""
         bucket_ms = bucket_seconds * 1000
         start = self.to_epoch_ms(self.cutoff) // bucket_ms * bucket_ms
         end = self.now_ms() // bucket_ms * bucket_ms
         return list(range(start, end + bucket_ms, bucket_ms))
 
     def _bucketed(self, records: list[dict], keys: list[str], field: str, buckets: list[int], bucket_seconds: int, value_of) -> list[dict]:
+        """The bucketed values for each key."""
         bucket_ms = bucket_seconds * 1000
         totals = {(bucket, key): 0.0 for bucket in buckets for key in keys}
         for record in records:
@@ -79,9 +82,11 @@ class SlowQueryProvider(WindowedLogProvider):
 
     @staticmethod
     def _label(query: str) -> str:
+        """The query, cut to the label length."""
         return query if len(query) <= _QUERY_LABEL_LEN else query[: _QUERY_LABEL_LEN - 1] + "…"
 
     def _site_by_db(self) -> dict[str, str]:
+        """The site name of each database."""
         mapping: dict[str, str] = {}
         sites_dir = self._bench_root / "sites"
         if not sites_dir.is_dir():

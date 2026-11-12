@@ -57,6 +57,7 @@ class MariaDB(Database):
         self._connect_timeout = connect_timeout
 
     def _connect(self):
+        """A new connection."""
         import pymysql
         import pymysql.cursors
 
@@ -74,9 +75,11 @@ class MariaDB(Database):
         )
 
     def quote_identifier(self, name: str) -> str:
+        """The name quoted as an identifier."""
         return "`{}`".format(name.replace("`", ""))
 
     def execute(self, query: str, read_only: bool = True) -> QueryResult:
+        """Run the query, read-only by default, and return its result."""
         import pymysql
         import pymysql.cursors
 
@@ -114,6 +117,7 @@ class MariaDB(Database):
             conn.close()
 
     def get_tables(self) -> list[str]:
+        """The table names."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -123,6 +127,7 @@ class MariaDB(Database):
             conn.close()
 
     def get_table_columns(self, table: str) -> list[dict]:
+        """The columns of a table."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -132,6 +137,7 @@ class MariaDB(Database):
             conn.close()
 
     def get_schema(self) -> list[dict]:
+        """Every table with its columns."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -150,12 +156,15 @@ class MariaDB(Database):
             conn.close()
 
     def get_global_status(self) -> dict[str, str]:
+        """The global status values."""
         return self._name_value_pairs("SHOW GLOBAL STATUS")
 
     def get_global_variables(self) -> dict[str, str]:
+        """The global variables."""
         return self._name_value_pairs("SHOW GLOBAL VARIABLES")
 
     def is_slow_log_enabled(self) -> bool:
+        """Whether the slow query log is on."""
         return self.get_global_variables().get("slow_query_log") == "ON"
 
     def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:
@@ -178,6 +187,7 @@ class MariaDB(Database):
         return [row for row in rows if since is None or slow_row_key(row) > since]
 
     def get_slow_log_path(self) -> Path | None:
+        """The slow log file, or None when it is not written to a file here."""
         if "FILE" not in str(self.get_scalar("SELECT @@log_output")):
             return None
         return self.get_local_log_path("@@slow_query_log_file")
@@ -217,6 +227,7 @@ class MariaDB(Database):
             conn.close()
 
     def _name_value_pairs(self, query: str) -> dict[str, str]:
+        """The name and value pairs a SHOW query returns."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -226,6 +237,7 @@ class MariaDB(Database):
             conn.close()
 
     def get_process_list(self, database: str = "") -> list[DatabaseProcess]:
+        """The open connections, for one database or all."""
         rows = rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
         return [
             DatabaseProcess(
@@ -243,6 +255,7 @@ class MariaDB(Database):
         ]
 
     def get_database_size(self) -> DatabaseSize:
+        """The size of the database, or of every database."""
         breakdown = self._grouped_sizes("table_name" if self._database else "table_schema")
         return DatabaseSize(
             data_bytes=sum(part.data_bytes for part in breakdown),
@@ -253,9 +266,11 @@ class MariaDB(Database):
         )
 
     def get_table_sizes(self) -> list[TableSize]:
+        """The size of each table."""
         return self._grouped_sizes("table_name")
 
     def _grouped_sizes(self, column: str) -> list[TableSize]:
+        """The sizes grouped by table or schema."""
         result = self.execute(
             f"SELECT {column}, COALESCE(SUM(data_length), 0), COALESCE(SUM(index_length), 0), "
             "COALESCE(SUM(data_free), 0) FROM information_schema.TABLES "
@@ -285,9 +300,11 @@ class MariaDB(Database):
         self.execute(f"KILL CONNECTION {validated_process_id(process_id)}", read_only=False)
 
     def get_active_connections(self) -> int:
+        """The number of open connections."""
         return self.get_status_value("Threads_connected")
 
     def get_lock_waits(self) -> LockWaitStatus:
+        """The InnoDB row lock waits."""
         return LockWaitStatus(
             current_waits=self.get_status_value("Innodb_row_lock_current_waits"),
             total_waits=self.get_status_value("Innodb_row_lock_waits"),
@@ -363,23 +380,28 @@ class MariaDB(Database):
     def get_time_consuming_queries(
         self, database: str = "", limit: int = 20, offset: int = 0
     ) -> PerformanceSection:
+        """The queries that use the most time."""
         return MariaDBPerformanceReport(self._connect, database).get_time_consuming_queries(limit, offset)
 
     def get_full_table_scan_queries(
         self, database: str = "", limit: int = 20, offset: int = 0
     ) -> PerformanceSection:
+        """The queries that scan full tables."""
         return MariaDBPerformanceReport(self._connect, database).get_full_table_scan_queries(limit, offset)
 
     def get_unused_indexes(self, database: str = "", limit: int = 20, offset: int = 0) -> PerformanceSection:
+        """The indexes no query uses."""
         return MariaDBPerformanceReport(self._connect, database).get_unused_indexes(limit, offset)
 
     def get_redundant_indexes(
         self, database: str = "", limit: int = 20, offset: int = 0
     ) -> PerformanceSection:
+        """The indexes another index covers."""
         return MariaDBPerformanceReport(self._connect, database).get_redundant_indexes(limit, offset)
 
     @property
     def is_performance_schema_enabled(self) -> bool:
+        """Whether the Performance Schema is on."""
         connection = self._connect()
         try:
             with connection.cursor() as cursor:
@@ -388,6 +410,7 @@ class MariaDB(Database):
             connection.close()
 
     def get_binlog_status(self) -> BinlogStatus:
+        """Whether binary logging is on, with the file count and size."""
         files = self.get_binlog_files()
         if not files:
             return BinlogStatus(enabled=False, file_count=0, size_bytes=0)
@@ -426,11 +449,13 @@ class MariaDB(Database):
         self.execute(f"PURGE BINARY LOGS TO '{up_to}'", read_only=False)
 
     def get_data_directory(self) -> str | None:
+        """The data directory, or None for a remote server."""
         if not is_local_host(self._host, self._socket):
             return None
         return str(self.get_scalar("SELECT @@datadir"))
 
     def get_schema_sizes(self) -> dict[str, int]:
+        """The size of each schema."""
         result = self.execute(
             "SELECT table_schema, COALESCE(SUM(data_length + index_length + data_free), 0) "
             "FROM information_schema.TABLES GROUP BY table_schema"
@@ -438,6 +463,7 @@ class MariaDB(Database):
         return {row[0]: int(row[1]) for row in result.rows if row[0] is not None}
 
     def get_storage_components(self) -> list[StorageComponent]:
+        """The disk use of the binary logs, logs and other server files."""
         data_dir = Path(self.get_data_directory() or ".")
         return [
             StorageComponent("binlog", "binary log", self.get_binlog_status().size_bytes),
@@ -469,6 +495,7 @@ class MariaDB(Database):
             return 0
 
     def get_status_value(self, variable: str) -> int:
+        """One global status value; raise for an unknown one."""
         result = self.execute(f"SHOW GLOBAL STATUS LIKE '{variable}'")
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")

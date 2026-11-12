@@ -42,6 +42,7 @@ _MAX_LINES = 5000
 
 @logs_bp.get("")
 def index():
+    """List the log files."""
     bench_root = ApiRequest.get_bench_root()
     try:
         log_files = LogProvider(bench_root).get_all()
@@ -65,6 +66,7 @@ def index():
 
 @logs_bp.route("/<filename>")
 def viewer(filename: str):
+    """Show the matching lines of a log file."""
     bench_root = ApiRequest.get_bench_root()
     search = request.args.get("search", "").strip()
 
@@ -97,6 +99,7 @@ def viewer(filename: str):
 
 @logs_bp.get("/<filename>/content")
 def download_log(filename: str):
+    """Download a log file."""
     bench_root = ApiRequest.get_bench_root()
     try:
         provider = LogProvider(bench_root)
@@ -116,10 +119,12 @@ def download_log(filename: str):
 
 @logs_bp.get("/<filename>/events")
 def stream_log(filename: str):
+    """Stream new lines of a log file."""
     bench_root = ApiRequest.get_bench_root()
     provider = LogProvider(bench_root)
 
     def generate():
+        """Yield each new line as an event, with heartbeats."""
         try:
             for line in provider.follow_file(filename, should_stop=is_draining):
                 if line is None:

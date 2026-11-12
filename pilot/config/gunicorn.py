@@ -14,6 +14,7 @@ class GunicornConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "GunicornConfig":
+        """The gunicorn config from its TOML table."""
         d = cls()
         return cls(
             workers=data.get("workers", d.workers),
@@ -25,6 +26,7 @@ class GunicornConfig:
         )
 
     def validate(self) -> None:
+        """Raise when the gunicorn config is invalid."""
         if not isinstance(self.workers, int) or self.workers < 1:
             raise ConfigError(f"gunicorn.workers must be a positive integer, got '{self.workers}'.")
         if not isinstance(self.threads, int) or self.threads < 1:

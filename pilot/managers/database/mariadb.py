@@ -57,6 +57,7 @@ _GLOBAL_INTEGER_VARIABLES = {
 
 class _ManagedCnfParser(configparser.ConfigParser):
     def optionxform(self, optionstr: str) -> str:
+        """Keep option names as written."""
         return optionstr
 
 
@@ -72,6 +73,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     @property
     def memory(self) -> MariaDBMemory:
+        """The MariaDB memory sizing."""
         return MariaDBMemory(self)
 
     @property
@@ -83,30 +85,37 @@ class MariaDBManager(UserOwnedDBManager):
 
     @property
     def config_dir(self) -> Path:
+        """The config directory."""
         return self.state_dir / "config"
 
     @property
     def my_cnf_path(self) -> Path:
+        """The main my.cnf."""
         return self.config_dir / "my.cnf"
 
     @property
     def managed_cnf_path(self) -> Path:
+        """The config file Pilot edits."""
         return self.config_dir / "managed.cnf"
 
     @property
     def action_lock_path(self) -> Path:
+        """The lock file for database actions."""
         return self.config_dir / "database-action"
 
     @property
     def data_dir(self) -> Path:
+        """The data directory."""
         return self.state_dir / "data"
 
     @property
     def run_dir(self) -> Path:
+        """The runtime directory."""
         return self.state_dir / "run"
 
     @property
     def pid_file(self) -> Path:
+        """The server PID file."""
         return self.run_dir / "mysqld.pid"
 
     @property
@@ -118,28 +127,33 @@ class MariaDBManager(UserOwnedDBManager):
 
     @property
     def slow_log_path(self) -> Path:
+        """The slow query log."""
         from pilot.core.server import Server
 
         return Server().root / "system" / "logs" / "mariadb-slow.log"
 
     @property
     def socket_path(self) -> str:
+        """The server socket."""
         if self.config.socket_path:
             return self.config.socket_path
         return str(self.run_dir / "mysqld.sock")
 
     def is_installed(self) -> bool:
+        """Whether the MariaDB server is installed."""
         # HostPlatform().get_executable_path() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(
             HostPlatform().get_executable_path("mysqld") or HostPlatform().get_executable_path("mariadbd")
         )
 
     def is_provisioned(self) -> bool:
+        """Whether the server is set up and secured."""
         if HostPlatform().is_macos:
             return self.is_running() and not self.is_unsecured()
         return super().is_provisioned() and self.my_cnf_path.exists()
 
     def _provision_macos(self):
+        """Start and secure the Homebrew server."""
         if not self.is_running():
             self.start()
         self._wait_until_reachable()
@@ -162,6 +176,7 @@ class MariaDBManager(UserOwnedDBManager):
         return None
 
     def _initialize_data_dir(self) -> None:
+        """Create the data directory with mariadb-install-db."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         run_command(
             [
@@ -235,6 +250,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     @property
     def _managed_include_line(self) -> str:
+        """The my.cnf line that includes the managed config."""
         return f"!include {self.managed_cnf_path}"
 
     def ensure_managed_config(self) -> None:
@@ -255,17 +271,20 @@ class MariaDBManager(UserOwnedDBManager):
         atomic_write_private_text(self.my_cnf_path, migrated)
 
     def _ensure_managed_cnf(self) -> None:
+        """Create an empty managed config if it is missing."""
         if self.managed_cnf_path.exists():
             return
         atomic_write_private_text(self.managed_cnf_path, self._render_managed_options({}))
 
     @staticmethod
     def _render_managed_options(options: dict[str, str]) -> str:
+        """The managed config text."""
         lines = [_MANAGED_CONFIG_HEADER.rstrip(), "[mysqld]"]
         lines.extend(f"{name} = {options[name]}" for name in sorted(options))
         return "\n".join(lines) + "\n"
 
     def _read_managed_options(self) -> dict[str, str]:
+        """The options in the managed config."""
         parser = _ManagedCnfParser(
             interpolation=None,
             strict=True,
@@ -291,9 +310,11 @@ class MariaDBManager(UserOwnedDBManager):
         return options
 
     def _write_managed_option(self, name: str, value: str) -> None:
+        """Save one managed option."""
         self._write_managed_options({name: value})
 
     def _write_managed_options(self, changes: dict[str, str]) -> None:
+        """Save managed options."""
         options = self._read_managed_options()
         options.update(changes)
         atomic_write_private_text(self.managed_cnf_path, self._render_managed_options(options))
@@ -311,6 +332,7 @@ class MariaDBManager(UserOwnedDBManager):
             yield
 
     def restart_managed_server(self) -> None:
+        """Restart the managed server and wait until it is healthy."""
         self._require_managed_server()
         with self.database_action_lock():
             self._restart_and_wait_healthy()
@@ -370,6 +392,7 @@ class MariaDBManager(UserOwnedDBManager):
         return sizing
 
     def install_sizing_unit(self) -> None:
+        """Install the startup hook and the memory limits."""
         self.memory.install_startup_hook()
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
         run_command(self._systemctl("enable", _SIZING_UNIT_NAME), env=self._systemctl_env())
@@ -390,6 +413,7 @@ class MariaDBManager(UserOwnedDBManager):
         atomic_write_private_text(self.managed_cnf_path, self._render_managed_options(options))
 
     def _apply_live_sizing(self, sizing: MariaDBMemorySizing) -> None:
+        """Apply the memory sizing to the running server."""
         overrides = set(self._read_managed_options())
         connection = self.connect()
         try:
@@ -474,6 +498,7 @@ class MariaDBManager(UserOwnedDBManager):
         return True
 
     def _set_runtime_memory_limits(self, sizing: MariaDBMemorySizing) -> None:
+        """Set the unit memory limits until the next restart."""
         run_command(
             self._systemctl(
                 "set-property",
@@ -487,6 +512,7 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     def _unit_memory_mb(self, name: str) -> int | None:
+        """A unit memory property in MB, or None when unset."""
         result = run_command(
             self._systemctl("show", self._UNIT_NAME, f"--property={name}", "--value"),
             env=self._systemctl_env(),
@@ -497,6 +523,7 @@ class MariaDBManager(UserOwnedDBManager):
         return int(value) // _MEBIBYTE if value.isdigit() else None
 
     def performance_schema_enabled(self) -> bool:
+        """Whether the Performance Schema is on."""
         connection = None
         try:
             connection = self.connect()
@@ -551,9 +578,11 @@ class MariaDBManager(UserOwnedDBManager):
 
     @property
     def host_memory_mb(self) -> int:
+        """The host memory in MB."""
         return self._total_memory_mb()
 
     def variable_limits(self) -> MariaDBVariableLimits:
+        """The allowed range of each sized variable."""
         limits = calculate_mariadb_variable_limits(self._total_memory_mb(), self.config.memory_share)
         if HostPlatform().is_macos or self.config.existing:
             return limits
@@ -570,12 +599,15 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     def innodb_buffer_pool_size_mb(self) -> int:
+        """The InnoDB buffer pool size in MB."""
         return self._read_global_integer("innodb_buffer_pool_size") // _MEBIBYTE
 
     def innodb_buffer_pool_size_max_mb(self) -> int:
+        """The largest InnoDB buffer pool size in MB."""
         return self._read_global_integer("innodb_buffer_pool_size_max") // _MEBIBYTE
 
     def max_connections(self) -> int:
+        """The max_connections value."""
         return self._read_global_integer("max_connections")
 
     def set_innodb_buffer_pool_size(self, size_mb: int) -> bool:
@@ -735,6 +767,7 @@ class MariaDBManager(UserOwnedDBManager):
             return True
 
     def _read_configuration_variable(self, name: str) -> MariaDBValue:
+        """The server value of a config variable."""
         spec = self._configuration_variable_spec(name)
         raw_value = self.global_variable_values((name,)).get(name)
         if raw_value is None:
@@ -745,6 +778,7 @@ class MariaDBManager(UserOwnedDBManager):
             raise DatabaseError(str(exc)) from exc
 
     def _set_configuration_variable(self, name: str, value: MariaDBValue) -> None:
+        """Set a config variable on the running server."""
         spec = self._configuration_variable_spec(name)
         try:
             validated = MariaDBVariableValidator(spec).validate_input(value)
@@ -763,6 +797,7 @@ class MariaDBManager(UserOwnedDBManager):
                 connection.close()
 
     def _verify_configuration_variable(self, name: str, expected: MariaDBValue) -> None:
+        """Raise when the server did not apply the value."""
         if self._read_configuration_variable(name) != expected:
             raise DatabaseError(f"MariaDB did not apply the requested value for '{name}'.")
 
@@ -773,6 +808,7 @@ class MariaDBManager(UserOwnedDBManager):
         previous_value: MariaDBValue,
         apply_error: Exception,
     ) -> NoReturn:
+        """Restore the previous config and value after a failed change."""
         try:
             atomic_write_private_text(self.managed_cnf_path, previous_content)
             self._set_configuration_variable(name, previous_value)
@@ -788,11 +824,13 @@ class MariaDBManager(UserOwnedDBManager):
 
     @staticmethod
     def _configuration_variable_spec(name: str):
+        """The spec of an editable variable; raise for others."""
         if name not in GENERIC_EDITABLE_MARIADB_VARIABLE_NAMES:
             raise DatabaseError(f"Pilot cannot change MariaDB variable '{name}'.")
         return mariadb_variable_spec(name)
 
     def _read_global_integer(self, variable: str) -> int:
+        """The server value of an integer variable."""
         self._require_supported_integer_variable(variable)
         connection = None
         try:
@@ -810,6 +848,7 @@ class MariaDBManager(UserOwnedDBManager):
         return row[0]
 
     def _set_global_integer(self, variable: str, value: int) -> None:
+        """Set an integer variable on the running server."""
         self._require_supported_integer_variable(variable)
         connection = None
         try:
@@ -823,6 +862,7 @@ class MariaDBManager(UserOwnedDBManager):
                 connection.close()
 
     def _verify_global_integer(self, variable: str, expected: int, label: str) -> None:
+        """Raise when the server did not apply the value."""
         if self._read_global_integer(variable) != expected:
             raise DatabaseError(f"MariaDB did not apply the requested {label}.")
 
@@ -835,6 +875,7 @@ class MariaDBManager(UserOwnedDBManager):
         restart_required: bool,
         apply_error: Exception,
     ) -> NoReturn:
+        """Restore the previous config and value after a failed change."""
         try:
             atomic_write_private_text(self.managed_cnf_path, previous_content)
             if restart_required:
@@ -856,6 +897,7 @@ class MariaDBManager(UserOwnedDBManager):
         size_mb: int,
         limits: MariaDBVariableLimits,
     ) -> None:
+        """Raise when the buffer pool size is out of range."""
         if size_mb < limits.innodb_buffer_pool_min_mb:
             raise DatabaseError(
                 f"InnoDB Buffer Pool size cannot be less than {limits.innodb_buffer_pool_min_mb} MB."
@@ -871,6 +913,7 @@ class MariaDBManager(UserOwnedDBManager):
         max_connections: int,
         limits: MariaDBVariableLimits,
     ) -> None:
+        """Raise when max_connections is out of range."""
         if max_connections < limits.max_connections_min:
             raise DatabaseError(f"Max DB connections must be at least {limits.max_connections_min}.")
         if max_connections > limits.max_connections_max:
@@ -880,24 +923,29 @@ class MariaDBManager(UserOwnedDBManager):
 
     @staticmethod
     def _require_integer(value: int, label: str) -> None:
+        """Raise unless the value is an int."""
         if type(value) is not int:
             raise DatabaseError(f"{label} must be a whole number.")
 
     @staticmethod
     def _require_supported_integer_variable(variable: str) -> None:
+        """Raise unless Pilot can change the variable."""
         if variable not in _GLOBAL_INTEGER_VARIABLES:
             raise DatabaseError(f"Pilot cannot change MariaDB variable '{variable}'.")
 
     def _require_linux_managed_server(self) -> None:
+        """Raise unless this is a managed server on Linux."""
         if HostPlatform().is_macos:
             raise DatabaseError("Pilot-managed MariaDB configuration actions require Linux.")
         self._require_managed_server()
 
     def _require_healthy_server(self) -> None:
+        """Raise when the server is not reachable."""
         if not self.is_healthy():
             raise DatabaseError("MariaDB is not reachable with Pilot's admin credentials.")
 
     def _verify_performance_schema(self, expected: bool, operation: str) -> None:
+        """Raise when the Performance Schema state does not match."""
         if self.performance_schema_enabled() != expected:
             raise DatabaseError(f"MariaDB did not {operation} Performance Schema state.")
 
@@ -907,6 +955,7 @@ class MariaDBManager(UserOwnedDBManager):
         previous_enabled: bool,
         apply_error: Exception,
     ) -> NoReturn:
+        """Restore the previous config after a failed Performance Schema change."""
         try:
             atomic_write_private_text(self.managed_cnf_path, previous_content)
             self._restart_and_wait_healthy()
@@ -921,6 +970,7 @@ class MariaDBManager(UserOwnedDBManager):
         ) from apply_error
 
     def _require_managed_server(self) -> None:
+        """Raise unless Pilot manages an installed server."""
         if self.config.existing:
             raise DatabaseError("Pilot cannot change an external MariaDB server.")
         if not self.is_installed():
@@ -929,12 +979,14 @@ class MariaDBManager(UserOwnedDBManager):
             raise DatabaseError("Pilot's MariaDB server has not been provisioned.")
 
     def _restart_and_wait_healthy(self) -> None:
+        """Restart the server and wait until it is healthy."""
         if not HostPlatform().is_macos:
             self._reset_failed_state()
         self.restart()
         self._wait_until_healthy()
 
     def _wait_until_healthy(self, timeout: float = 30.0) -> None:
+        """Wait until the server is healthy; raise on timeout."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self.is_healthy():
@@ -943,6 +995,7 @@ class MariaDBManager(UserOwnedDBManager):
         raise DatabaseError(f"MariaDB did not become healthy within {timeout:.0f}s.")
 
     def is_healthy(self) -> bool:
+        """Whether Pilot can connect and run a query."""
         import pymysql
 
         try:
@@ -957,6 +1010,7 @@ class MariaDBManager(UserOwnedDBManager):
             return False
 
     def _total_memory_mb(self) -> int:
+        """The host memory in MB."""
         try:
             pages = os.sysconf("SC_PHYS_PAGES")
             page_size = os.sysconf("SC_PAGE_SIZE")
@@ -970,6 +1024,7 @@ class MariaDBManager(UserOwnedDBManager):
     def _install_unit(
         self, sizing: MariaDBMemorySizing, *, preserve_swap_limit: bool = False, reload_manager: bool = True
     ) -> None:
+        """Write the user systemd unit."""
         self.user_unit_dir.mkdir(parents=True, exist_ok=True)
         content = self._render_unit(sizing)
         if preserve_swap_limit:
@@ -986,6 +1041,7 @@ class MariaDBManager(UserOwnedDBManager):
             run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def _render_unit(self, sizing: MariaDBMemorySizing) -> str:
+        """The user systemd unit text."""
         mariadbd = (
             HostPlatform().get_executable_path("mariadbd")
             or HostPlatform().get_executable_path("mysqld")
@@ -1011,6 +1067,7 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     def is_reachable(self) -> bool:
+        """Whether the server accepts connections."""
         if not self.is_running():
             return False
         if HostPlatform().is_macos:
@@ -1158,6 +1215,7 @@ class MariaDBManager(UserOwnedDBManager):
         self._run_sql_as_superuser("\n".join(statements))
 
     def _run_sql_as_superuser(self, sql: str) -> None:
+        """Run SQL as the database superuser."""
         cmd = ["mariadb"]
         if not HostPlatform().is_macos:
             # mariadb-install-db grants this OS user unix_socket admin access.
@@ -1173,6 +1231,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     @contextmanager
     def snapshot_lock(self):
+        """Hold a global read lock."""
         connection = self.connect()
         try:
             with connection.cursor() as cursor:
@@ -1203,6 +1262,7 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     def _detect_socket(self) -> str:
+        """The server socket path, or an empty string for TCP."""
         if self.config.socket_path:
             return self.config.socket_path
         if self.config.existing:

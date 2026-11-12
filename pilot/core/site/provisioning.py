@@ -37,6 +37,7 @@ class SiteProvisioner:
         self.skip_assets = skip_assets
 
     def provision(self, on_progress: Callable[[str], None], *, schedule_backups: bool = True) -> "Site":
+        """Create the site under its creation lock and return it."""
         with SiteCreationOwner(self.bench.path, self.name).locked() as owner:
             via_wildcard = validate_new_site(self.bench, self.name, self.apps)
             self.bench.site_aliases.release(self.name)
@@ -46,6 +47,7 @@ class SiteProvisioner:
     def _provision(
         self, via_wildcard: bool, on_progress: Callable[[str], None], schedule_backups: bool
     ) -> "Site":
+        """Register the route, create the site, install apps and finish setup."""
         from pilot.core.site import Site
 
         route = None
@@ -88,6 +90,7 @@ class SiteProvisioner:
         self.reload_nginx()
 
     def write_email_sender_name(self, site: "Site") -> None:
+        """Set the email sender name."""
         site.config_file.set_values({"email_sender_name": email_sender_name(site.config.name)})
 
     def write_route_policy(self, site: "Site") -> None:
@@ -103,6 +106,7 @@ class SiteProvisioner:
         PrivateFile(path).write_text(json.dumps(config, indent=1))
 
     def install_apps(self, site: "Site", on_progress: Callable[[str], None]) -> None:
+        """Install each app except the framework app."""
         framework = self.bench.config.framework_app.name
         for app_name in self.apps:
             if app_name == framework:
@@ -111,6 +115,7 @@ class SiteProvisioner:
             site.install_app(self.bench.app(app_name))
 
     def write_pilot_communication_config(self, site: "Site") -> None:
+        """Give the site a token to call Pilot, when the bench allows it."""
         from admin.backend.internal.session import Session
         from pilot.internal.private_files import PrivateFile
 
@@ -128,6 +133,7 @@ class SiteProvisioner:
         PrivateFile(config_path).write_text(json.dumps(config, indent=1))
 
     def build_missing_assets(self) -> None:
+        """Build the assets of apps that have none."""
         from pilot.managers.environment import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
@@ -139,6 +145,7 @@ class SiteProvisioner:
                 manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:
+        """Add the site to /etc/hosts in development."""
         if self.bench.config.production.process_manager != "none":
             return
 
@@ -147,6 +154,7 @@ class SiteProvisioner:
         HostsFile().add(site.config.name)
 
     def reload_nginx(self) -> None:
+        """Reload nginx for the new site."""
         from pilot.managers.nginx import NginxManager
 
         NginxManager(self.bench).reload_for_site_change()
@@ -181,6 +189,7 @@ class SiteProvisioner:
 
 
 def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
+    """Raise when the site cannot be created; return whether a wildcard route serves it."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.core.bench.directory import BenchDirectory
     from pilot.internal.hostnames import matches_wildcard, normalize_host
@@ -226,6 +235,7 @@ def provision_from_backup(
     private_files: str | None = None,
     on_progress: Callable[[str], None] = lambda message: None,
 ) -> "Site":
+    """Create a site and restore it from a backup."""
     if not isinstance(admin_password, str) or not admin_password.strip():
         raise BenchError("Site Administrator password must not be empty.")
     from pilot.core.site import Site
@@ -242,6 +252,7 @@ def provision_from_backup(
 
 
 def should_enable_ssl(bench: "Bench", name: str) -> bool:
+    """Whether the site gets SSL from Let's Encrypt."""
     from pilot.managers.letsencrypt import is_public_domain, letsencrypt_active
 
     return letsencrypt_active(bench) and is_public_domain(name)

@@ -14,6 +14,7 @@ class BackupRetentionPolicy:
         self.config = config
 
     def select_deletions(self, timestamps: list[str], today: date | None = None) -> list[str]:
+        """The backups the retention policy deletes; always keep the newest."""
         runs = self._parse(timestamps)
         if len(runs) <= 1:
             return []
@@ -27,6 +28,7 @@ class BackupRetentionPolicy:
         return [ts for _, ts in runs if ts not in keep]
 
     def _keep_fifo(self, runs: list[tuple[datetime, str]]) -> set[str]:
+        """The newest backups to keep."""
         return {ts for _, ts in runs[: self.config.keep_last]}
 
     def _keep_calendar_gfs(self, runs: list[tuple[datetime, str]], today: date) -> set[str]:
@@ -45,6 +47,7 @@ class BackupRetentionPolicy:
         return keep
 
     def _keep_gfs(self, runs: list[tuple[datetime, str]]) -> set[str]:
+        """The daily, weekly, monthly and yearly backups to keep."""
         config = self.config
         keep: set[str] = set()
         keep |= self._keep_tier(runs, config.keep_daily, lambda d: (d.year, d.month, d.day))

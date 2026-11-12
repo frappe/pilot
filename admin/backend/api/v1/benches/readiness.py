@@ -16,6 +16,7 @@ bench_readiness_bp.before_request(guard_bench_management)
 
 @bench_readiness_bp.post("/bench-readiness-checks")
 def create_readiness_check():
+    """Check whether a domain or port is ready for a new bench."""
     bench_root = ApiRequest.get_bench_root()
     data = ApiRequest.get_json_body()
     if "domain" in data and not isinstance(data["domain"], str):
@@ -36,6 +37,7 @@ def create_readiness_check():
 
 
 def _domain_readiness_response(bench_root: Path, data: dict, domain: str):
+    """The readiness of a domain."""
     if "port" in data:
         return error_response(
             "invalid_readiness_check",
@@ -51,6 +53,7 @@ def _domain_readiness_response(bench_root: Path, data: dict, domain: str):
 
 
 def _port_readiness_response(port):
+    """The readiness of a port."""
     if isinstance(port, bool) or not isinstance(port, int):
         return error_response("invalid_port", "port must be an integer.", 422)
     if not 1 <= port <= 65535:

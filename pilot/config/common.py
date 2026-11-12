@@ -45,10 +45,12 @@ class CommonConfig:
 
     @classmethod
     def path(cls, benches_root: Path) -> Path:
+        """The common_config.toml path."""
         return Path(benches_root) / FILENAME
 
     @classmethod
     def read(cls, benches_root: Path) -> "CommonConfig":
+        """The common config, or defaults when the file is missing."""
         path = cls.path(benches_root)
         if not path.exists():
             return cls()
@@ -81,6 +83,7 @@ class CommonConfig:
         )
 
     def write(self, benches_root: Path) -> None:
+        """Write common_config.toml."""
         path = self.path(benches_root)
         with exclusive_file_lock(path):
             replace_private_text_locked(path, Toml.dumps(self._to_toml_dict()))
@@ -138,6 +141,7 @@ class CommonConfig:
                 replace_private_text_locked(path, Toml.dumps(self._to_toml_dict()))
 
     def _to_toml_dict(self) -> ConfigDict:
+        """The common config as TOML tables."""
         data: ConfigDict = {
             "mariadb": {
                 "host": self.mariadb.host,
@@ -186,6 +190,7 @@ class CommonConfig:
         return data
 
     def _central_table(self) -> ConfigDict:
+        """The [central] table."""
         return {
             "enabled": self.central.enabled,
             "bootstrapped": self.central.bootstrapped,
@@ -219,6 +224,7 @@ _SCHEMA = TomlSchema(
 
 
 def _known_fields(dataclass_type: type, data: dict) -> dict:
+    """The keys of the data that are dataclass fields."""
     known = {f.name for f in fields(dataclass_type)}
     return {key: value for key, value in data.items() if key in known}
 

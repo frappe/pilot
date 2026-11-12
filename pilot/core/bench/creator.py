@@ -42,6 +42,7 @@ class BenchCreator:
         self.configure = configure
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
+        """Create the bench under a lock on its directory and return it."""
         from pilot.internal.atomic_file import exclusive_file_lock
 
         self.target_directory.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +50,7 @@ class BenchCreator:
             return self.create(on_progress)
 
     def create(self, on_progress: Callable[[str], None]) -> "Bench":
+        """Write bench.toml with free ports and initial settings, and return the bench."""
         from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 
@@ -90,6 +92,7 @@ class BenchCreator:
         return Bench(self.target_directory)
 
     def _initial_settings(self) -> dict:
+        """The initial admin, worker and production settings."""
         import secrets
 
         settings = {
@@ -126,6 +129,7 @@ class BenchCreator:
 
     @staticmethod
     def get_configured_ports(config) -> set[int]:
+        """Every port a bench config uses."""
         return {
             config.http_port,
             config.socketio_port,
@@ -136,11 +140,13 @@ class BenchCreator:
         }
 
     def has_ports_in_use(self, bases: list[int], used: set[int], offset: int) -> bool:
+        """Whether any port at this offset is taken by a bench or a live listener."""
         candidates = {base + offset for base in bases}
         return bool(candidates & used) or any(self._port_is_live(port) for port in candidates)
 
     @staticmethod
     def _port_is_live(port: int) -> bool:
+        """Whether something listens on the local port."""
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                 return True

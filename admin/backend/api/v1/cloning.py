@@ -22,6 +22,7 @@ from pilot.tasks.clone_site import CloneSiteTask
 
 
 def clone_source(name: str) -> Bench:
+    """The source bench; raise ValueError when it does not exist."""
     if not BENCH_NAME_RE.fullmatch(name):
         raise ValueError
     path = target_bench_dir(ApiRequest.get_bench_root(), name)
@@ -32,6 +33,7 @@ def clone_source(name: str) -> Bench:
 
 @benches_bp.get("/<name>/clone-apps")
 def clone_apps(name: str):
+    """List the apps of the source bench."""
     try:
         source = clone_source(name)
     except ValueError:
@@ -46,6 +48,7 @@ def clone_apps(name: str):
 
 @benches_bp.get("/<name>/clone-apps/<app>/branches")
 def clone_app_branches(name: str, app: str):
+    """List the branch choices of an app."""
     try:
         source = clone_source(name)
     except ValueError:
@@ -61,6 +64,7 @@ def clone_app_branches(name: str, app: str):
 
 
 def get_clone_bench_name(name: str, data: dict) -> str:
+    """The destination bench name; raise when it is missing."""
     if not isinstance(data.get("name"), str):
         raise BenchError("Enter a destination bench name.")
     target = data["name"].strip()
@@ -71,6 +75,7 @@ def get_clone_bench_name(name: str, data: dict) -> str:
 
 @benches_bp.post("/<name>/actions/clone")
 def clone_bench(name: str):
+    """Queue a bench clone."""
     root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -109,6 +114,7 @@ def clone_bench(name: str):
 
 
 def get_clone_site_names(name: str, data) -> tuple[str, str]:
+    """The new site name and target bench; raise when they are invalid."""
     if not isinstance(data, dict) or not all(
         isinstance(data.get(key), str) for key in ("name", "target_bench")
     ):
@@ -122,6 +128,7 @@ def get_clone_site_names(name: str, data) -> tuple[str, str]:
 
 @sites_bp.post("/<name>/actions/clone")
 def clone_site(name: str):
+    """Queue a site clone."""
     root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     try:

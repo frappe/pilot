@@ -58,6 +58,7 @@ def build_admin_frontend(
 def _build_frontend(
     frontend: Path, dist: Path, label: str, on_progress: Callable[[str], None], *, force: bool = False
 ) -> None:
+    """Build a frontend unless it is built."""
     from pilot.internal.command import run_command
 
     if not force and _is_built(dist):
@@ -83,6 +84,7 @@ def _build_frontend(
 
 
 def _is_built(dist: Path) -> bool:
+    """Whether the build output exists."""
     if not dist.is_dir():
         return False
     # Dashboard/editor write an assets/ folder; the in-app embed ships Desk's IIFE and the SDK's ES runtime.
@@ -92,14 +94,17 @@ def _is_built(dist: Path) -> bool:
 
 
 def _has_frontend_source(root: Path) -> bool:
+    """Whether the frontend source exists."""
     return (root / "admin" / "frontend" / "dashboard" / "package.json").exists()
 
 
 def is_admin_frontend_built(root: Path) -> bool:
+    """Whether the dashboard is built."""
     return _is_built(root / "admin" / "backend" / "static" / "dashboard")
 
 
 def _find_frontend() -> Path:
+    """The dashboard source directory."""
     from pilot.core.server import Server
 
     candidate = Server().root / "admin" / "frontend" / "dashboard"
@@ -112,6 +117,7 @@ def _find_frontend() -> Path:
 
 
 def _find_editor() -> Path:
+    """The editor source directory."""
     from pilot.core.server import Server
 
     candidate = Server().root / "admin" / "frontend" / "editor"
@@ -124,6 +130,7 @@ def _find_editor() -> Path:
 
 
 def _find_in_app_embed() -> Path:
+    """The in-app embed source directory."""
     from pilot.core.server import Server
 
     candidate = Server().root / "admin" / "frontend" / "in-app-embed"
@@ -136,6 +143,7 @@ def _find_in_app_embed() -> Path:
 
 
 def _is_npm_install_stale(frontend: Path) -> bool:
+    """Whether the npm packages are older than the lockfile."""
     install_state = frontend / "node_modules" / ".package-lock.json"
     if not install_state.exists():
         return True
@@ -148,6 +156,7 @@ def _is_npm_install_stale(frontend: Path) -> bool:
 
 
 def _check_node_version() -> None:
+    """Raise when Node.js is missing or too old."""
     from pilot.exceptions import CommandError
     from pilot.internal.command import run_command
 

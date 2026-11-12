@@ -31,6 +31,7 @@ _FILE_NAMES = {
 
 
 def upload_file_name(part: str, filename: str) -> str:
+    """The stored file name for an upload part, compressed or not."""
     plain, compressed = _FILE_NAMES[part]
     return compressed if filename.endswith((".gz", ".tgz")) else plain
 
@@ -72,20 +73,24 @@ class BackupUpload:
 
     @property
     def path(self) -> Path:
+        """The upload directory."""
         return self.bench.uploads_path / self.upload_id
 
     @property
     def manifest_path(self) -> Path:
+        """The upload manifest file."""
         return self.path / MANIFEST_NAME
 
     @property
     def manifest(self) -> dict:
+        """The upload manifest; raise when the upload does not exist."""
         if not self.manifest_path.exists():
             raise BenchError("The upload does not exist.")
         return json.loads(self.manifest_path.read_text())
 
     @property
     def site(self) -> str:
+        """The site the upload is for."""
         return self.manifest["site"]
 
     @property
@@ -98,6 +103,7 @@ class BackupUpload:
 
     @property
     def is_complete(self) -> bool:
+        """Whether every file was received in full."""
         return all(file["received"] == file["size"] for file in self.files.values())
 
     def write_chunk(self, part: str, offset: int, stream: IO[bytes], length: int) -> int:
@@ -150,6 +156,7 @@ class BackupUpload:
 
 
 def _copy(source: IO[bytes], target: IO[bytes], length: int) -> int:
+    """Copy up to length bytes and return the count copied."""
     copied = 0
     while copied < length:
         block = source.read(min(_COPY_BUFFER_SIZE, length - copied))
@@ -161,8 +168,10 @@ def _copy(source: IO[bytes], target: IO[bytes], length: int) -> int:
 
 
 def _size(path: Path) -> int:
+    """The file size, or 0 when it does not exist."""
     return path.stat().st_size if path.exists() else 0
 
 
 def _last_modified(directory: Path) -> float:
+    """The newest modification time in the directory."""
     return max((path.stat().st_mtime for path in directory.iterdir()), default=directory.stat().st_mtime)

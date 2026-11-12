@@ -45,11 +45,13 @@ class AppProcesses:
         }
 
     def get_definitions(self) -> list[ProcessDefinition]:
+        """The process definitions the app declares."""
         return [
             self._get_definition(name, declaration) for name, declaration in self._read_declarations().items()
         ]
 
     def _read_declarations(self) -> dict:
+        """The process declarations in pyproject.toml."""
         pyproject = self.app.path / "pyproject.toml"
         if not pyproject.exists():
             return {}
@@ -65,6 +67,7 @@ class AppProcesses:
         return declarations
 
     def _get_definition(self, name: str, declaration: object) -> ProcessDefinition:
+        """The validated definition of one process."""
         # Values come from a third-party app and end up in unit files, so reject anything unexpected.
         if not NAME_PATTERN.match(name):
             raise self._error(f"process name '{name}' must match {NAME_PATTERN.pattern}.")
@@ -114,6 +117,7 @@ class AppProcesses:
         return [*self.app.bench.frappe_call, "frappe", *arguments], sites_path
 
     def _get_argv(self, name: str, field: str, declaration: dict, working_dir: Path) -> list[str]:
+        """The validated command of a process field."""
         value = declaration.get(field)
         if value is None:
             return []
@@ -127,6 +131,7 @@ class AppProcesses:
         return argv
 
     def _get_env(self, name: str, env: object) -> dict[str, str]:
+        """The validated environment of a process."""
         if not isinstance(env, dict):
             raise self._error(f"process '{name}' env must be a table.")
         values = {}
@@ -140,9 +145,11 @@ class AppProcesses:
         return values
 
     def _get_string(self, name: str, field: str, value: object) -> str:
+        """The value; raise unless it is a string with no control characters."""
         if not isinstance(value, str) or CONTROL_CHARACTER_PATTERN.search(value):
             raise self._error(f"process '{name}' {field} must be a string without control characters.")
         return value
 
     def _error(self, detail: str) -> AppProcessError:
+        """A process error that names the app."""
         return AppProcessError(f"App '{self.app.config.name}': {detail}")

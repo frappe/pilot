@@ -27,6 +27,7 @@ class DependencyResolutionCheck:
     """
 
     def run(self, app: "App") -> None:
+        """Raise when the app's requirements conflict with the bench environment."""
         python = app.bench.env_path / "bin" / "python"
         if not python.exists():
             return  # no environment to resolve against yet
@@ -118,6 +119,7 @@ def _explanation(command_error: str) -> str:
 
 
 def _package_of(constraint_line: str) -> str:
+    """The package name of a constraint line."""
     # rsplit on the exact separator _write_constraints uses: a URL may carry its
     # own '#egg=' fragment, and splitting on that would truncate it.
     return Requirement(constraint_line.rsplit("  # ", 1)[0].strip()).name

@@ -13,6 +13,7 @@ class StopTaskWorkerCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
+        """Ask the task worker to stop."""
         from pilot.managers.task import TaskWorkerControl
 
         TaskWorkerControl(self.bench.path).request_stop()

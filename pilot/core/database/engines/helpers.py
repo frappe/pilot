@@ -15,6 +15,7 @@ DEFAULT_CONNECT_TIMEOUT = 10
 
 
 def rows_as_dicts(result: QueryResult) -> list[dict]:
+    """The result rows as dicts keyed by column."""
     return [dict(zip(result.columns, row, strict=True)) for row in result.rows]
 
 
@@ -37,4 +38,5 @@ def file_modified_ms(path: Path) -> int | None:
 
 
 def is_local_host(host: str, socket: str | None = None) -> bool:
+    """Whether the database runs on this host."""
     return bool(socket) or host in ("localhost", "127.0.0.1", "::1", "")

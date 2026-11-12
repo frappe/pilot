@@ -27,6 +27,7 @@ class TmpEnv:
 
     @property
     def path(self) -> Path:
+        """The environment directory; raise before it is created."""
         if self._dir is None:
             raise BenchError("Temporary environment not created yet.")
         return Path(self._dir)
@@ -53,6 +54,7 @@ class TmpEnv:
         return self
 
     def install_app(self, app: "App", dependency_paths: Iterable[Path] = ()) -> None:
+        """Install the app and its dependencies; raise when that fails."""
         # Installed together so imports across the app and its bench-installed
         # required apps (e.g. erpnext) resolve in one shot.
         try:
@@ -62,15 +64,18 @@ class TmpEnv:
 
     @property
     def python(self) -> Path:
+        """The environment Python."""
         return self.path / "bin" / "python"
 
     def _pip_install(self, arguments: list[str | Path]) -> None:
+        """Install packages with uv pip."""
         python = str(self.python)
         env = os.environ.copy()
         HostPlatform().add_mysqlclient_flags(env)
         run_command([ensure_uv(), "pip", "install", "--python", python, *map(str, arguments)], env=env)
 
     def delete(self) -> None:
+        """Delete the environment."""
         if self._dir is not None:
             shutil.rmtree(self._dir, ignore_errors=True)
             self._dir = None
@@ -117,6 +122,7 @@ def unimportable_modules(python: Path, module_names: list[str]) -> dict[str, str
 
 
 def _probe(python: Path, module_names: list[str], script: str) -> dict[str, str]:
+    """Run a probe script and return the reason for each failed module."""
     try:
         result = run_command([str(python), "-c", script.replace("NAMES", repr(module_names))])
     except CommandError as exc:

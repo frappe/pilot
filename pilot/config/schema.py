@@ -13,6 +13,7 @@ class TomlSchema:
     arrays: dict[str, TomlSchema] = field(default_factory=dict)
 
     def is_known(self, key: str) -> bool:
+        """Whether the key is known."""
         return key in self.keys or key in self.tables or key in self.arrays
 
     def get_unknown_paths(self, data: Mapping, prefix: str = "") -> list[str]:
@@ -32,4 +33,5 @@ class TomlSchema:
 
 
 def field_names(dataclass_type: type) -> set[str]:
+    """The field names of a dataclass."""
     return {item.name for item in fields(dataclass_type)}

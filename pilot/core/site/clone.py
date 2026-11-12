@@ -35,6 +35,7 @@ class SiteClone:
         self.database_started = False
 
     def validate(self) -> bool:
+        """Raise when the clone cannot run."""
         self.validate_names()
         if not self.source.exists:
             raise BenchError("Source site does not exist.")
@@ -50,11 +51,13 @@ class SiteClone:
         return validate_new_site(self.bench, self.name, apps)
 
     def validate_names(self) -> None:
+        """Raise when the source or new site name is invalid."""
         for name in (self.name, self.source.config.name):
             if error := validate_site_name(name):
                 raise BenchError(error)
 
     def run(self, on_progress=print):
+        """Clone the site; roll back what was created when a step fails."""
         from pilot.core.site.clone_database import SiteDatabaseClone
 
         with exclusive_file_lock(self.bench.path.parent / f"clone-site-{self.name}"):
@@ -74,6 +77,7 @@ class SiteClone:
                 raise
 
     def populate(self, site, database, wildcard: bool, on_progress):
+        """Register the route, copy the data and finish the new site."""
         from pilot.core.site.clone_runtime import CloneRuntime
         from pilot.core.site.login import site_url
 
@@ -95,6 +99,7 @@ class SiteClone:
         return site
 
     def prepare(self, site, database, on_progress) -> None:
+        """Copy the database and files in parallel."""
         on_progress("Streaming source database into a new database")
         with ThreadPoolExecutor(max_workers=2) as executor:
             imported = executor.submit(self.import_database, database)
@@ -115,10 +120,12 @@ class SiteClone:
                 raise error
 
     def import_database(self, database) -> None:
+        """Copy the database."""
         self.database_started = True
         database.run()
 
     def rollback(self, site, database, error: BaseException, on_progress) -> None:
+        """Remove the route, database and site that the failed clone created."""
         from pilot.core.site.drop import SiteDropper
 
         if self.route_registered:
@@ -140,6 +147,7 @@ class SiteClone:
             )
 
     def has_cleanup_succeeded(self, operation, error: BaseException, on_progress) -> bool:
+        """Run a cleanup step; on failure note the error and return False."""
         try:
             operation()
         except Exception as cleanup_error:
@@ -150,6 +158,7 @@ class SiteClone:
 
     @property
     def site_config(self) -> dict:
+        """The new site config with a new database name and password."""
         original = json.loads((self.source.path / "site_config.json").read_text())
         database = f"_{secrets.token_hex(8)}"
         engine = self.source.db_type
@@ -173,6 +182,7 @@ class SiteClone:
         return config
 
     def copy_files(self, site) -> None:
+        """Copy the site's files, backups and other directories."""
         for relative in ("public/files", "private/files", "private/backups", "logs", "locks"):
             (site.path / relative).mkdir(parents=True, exist_ok=True)
         for relative in ("public/files", "private/files"):
@@ -184,6 +194,7 @@ class SiteClone:
 
     @staticmethod
     def validate_upload_links(root: Path) -> None:
+        """Raise when the upload directory holds symlinks."""
         if root.is_symlink():
             raise BenchError(f"Source upload directory is a symlink: {root}")
         for directory, directories, files in os.walk(root):
@@ -199,6 +210,7 @@ class SiteClone:
                     raise BenchError(f"Upload symlink escapes its upload directory: {path}")
 
     def finish(self, site, on_progress) -> None:
+        """Set the admin password and finish provisioning the new site."""
         from pilot.core.site.commands import SiteCommands
 
         provisioner = SiteProvisioner(self.bench, self.name, [], self.password)

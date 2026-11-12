@@ -15,8 +15,10 @@ class S3Config:
 
     @property
     def stores_migration_backups(self) -> bool:
+        """Whether migration backups go to S3."""
         return self.is_configured and self.upload_migration_backups
 
     @property
     def is_configured(self) -> bool:
+        """Whether every S3 setting is set."""
         return all([self.access_key, self.secret_key, self.bucket, self.provider, self.region])

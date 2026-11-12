@@ -82,6 +82,7 @@ def get_console_doctype(name: str, doctype: str):
 
 
 def _suggestions_response(name: str, read: Callable[[ConsoleCompletions], object]):
+    """The console suggestions response."""
     bench = Bench(current_app.config["BENCH_ROOT"])
     if not site_exists(bench.path, name):
         return site_not_found()
@@ -94,6 +95,7 @@ def _suggestions_response(name: str, read: Callable[[ConsoleCompletions], object
 
 
 def _stream_script_events(script: SiteScript) -> Iterator[str]:
+    """Yield the script output as events."""
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     try:
         for chunk in script.run(should_stop=is_draining):
@@ -111,4 +113,5 @@ def _stream_script_events(script: SiteScript) -> Iterator[str]:
 
 
 def _format_event(payload: Mapping[str, object]) -> str:
+    """A server-sent event."""
     return f"data: {json.dumps(payload)}\n\n"

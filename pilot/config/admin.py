@@ -50,6 +50,7 @@ class AdminConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "AdminConfig":
+        """The Admin config from its TOML table."""
         return cls(
             port=data.get("port", 7000),
             timeout=data.get("timeout", 180),
@@ -73,6 +74,7 @@ class AdminConfig:
         self.password = password if is_hashed(password) else hash_password(password)
 
     def verify_password(self, password: str) -> bool:
+        """Whether the password matches the saved hash."""
         from pilot.internal.password_hash import verify_password
 
         return verify_password(password, self.password)
@@ -84,9 +86,11 @@ class AdminConfig:
 
     @property
     def route_policy(self) -> RoutePolicy:
+        """The Admin route, or a direct route."""
         return self.route or RoutePolicy.direct(self.tls)
 
     def validate(self, production_enabled: bool, bench_name: str) -> None:
+        """Raise when the Admin config is invalid."""
         if not self.domain:
             if production_enabled:
                 raise ConfigError(

@@ -41,6 +41,7 @@ task_worker_bp = Blueprint("task_worker", __name__)
 
 @tasks_bp.get("")
 def list_tasks():
+    """List the tasks."""
     reader = _reader()
     status_filter = request.args.get("status", "")
     wanted_status = None
@@ -75,6 +76,7 @@ def list_tasks():
 
 @tasks_bp.post("")
 def create_task():
+    """Queue a task."""
     data = ApiRequest.get_json_body()
     command = data.get("command")
     if not isinstance(command, str) or not command.strip():
@@ -101,6 +103,7 @@ def create_task():
 
 @tasks_bp.get("/<task_id>")
 def get_task(task_id: str):
+    """Show one task."""
     try:
         return jsonify(_reader().read_task(task_id).as_dict())
     except TaskNotFoundError as error:
@@ -111,6 +114,7 @@ def get_task(task_id: str):
 
 @tasks_bp.delete("/<task_id>")
 def cancel_task(task_id: str):
+    """Cancel a task."""
     try:
         TaskRunner(ApiRequest.get_bench_root()).kill(task_id)
     except TaskNotFoundError as error:
@@ -126,6 +130,7 @@ def cancel_task(task_id: str):
 
 @tasks_bp.post("/<task_id>/actions/retry")
 def retry_task(task_id: str):
+    """Queue the task again with its arguments."""
     try:
         task = _reader().read_task(task_id)
     except TaskNotFoundError as error:
@@ -158,6 +163,7 @@ def retry_task(task_id: str):
 
 @tasks_bp.get("/<task_id>/events")
 def task_events(task_id: str):
+    """Stream the task events."""
     reader = _reader()
     try:
         reader.read_task(task_id)
@@ -195,6 +201,7 @@ def _task_event_messages(reader: TaskReader, task_id: str, skip: int) -> Iterato
 
 @tasks_bp.get("/<task_id>/output/content")
 def task_output(task_id: str):
+    """Show the task output."""
     reader = _reader()
     try:
         task = reader.read_task(task_id)
@@ -238,6 +245,7 @@ def debug_task(task_id: str):
     refresh = request.args.get("refresh") == "1"
 
     def generate():
+        """Yield the LLM debug text as events."""
         try:
             for text in stream_task_debug(
                 config.llm,
@@ -260,11 +268,13 @@ def debug_task(task_id: str):
 
 @task_worker_bp.get("/task-worker")
 def get_task_worker():
+    """Show the task worker."""
     return jsonify(_worker_resource())
 
 
 @task_worker_bp.post("/task-worker/actions/start")
 def start_task_worker():
+    """Ask the task worker to start."""
     bench_root = ApiRequest.get_bench_root()
     TaskWorkerControl(bench_root).request_start()
     return _accepted_worker()
@@ -272,12 +282,14 @@ def start_task_worker():
 
 @task_worker_bp.post("/task-worker/actions/stop")
 def stop_task_worker():
+    """Ask the task worker to stop."""
     bench_root = ApiRequest.get_bench_root()
     TaskWorkerControl(bench_root).request_stop()
     return _accepted_worker()
 
 
 def _accepted_worker():
+    """A 202 response with the task worker."""
     return accepted_response(
         _worker_resource(),
         url_for("task_worker.get_task_worker"),
@@ -285,6 +297,7 @@ def _accepted_worker():
 
 
 def _worker_resource() -> dict:
+    """The task worker for the API."""
     activity = TaskActivityReader(ApiRequest.get_bench_root()).read()
     return {
         **activity.public_dict,
@@ -294,4 +307,5 @@ def _worker_resource() -> dict:
 
 
 def _reader() -> TaskReader:
+    """The task reader."""
     return TaskReader(ApiRequest.get_bench_root())

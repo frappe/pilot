@@ -61,6 +61,7 @@ class BackupRun:
 
     @classmethod
     def from_paths(cls, paths: list[Path]) -> BackupRun:
+        """The backup run from its file paths."""
         return cls({part: path for path in paths if (part := backup_part(path.name))})
 
     @property
@@ -78,6 +79,7 @@ class BackupRun:
 
 
 def is_local_config_key(key: str) -> bool:
+    """Whether a site config key belongs to this host and survives a restore."""
     return key in LOCAL_CONFIG_KEYS or key.startswith(LOCAL_CONFIG_PREFIXES)
 
 
@@ -94,6 +96,7 @@ class SiteRestore:
         on_progress: Callable[[str], None] = print,
         skip_failing_patches: bool = False,
     ) -> None:
+        """Restore the chosen parts in maintenance mode, then migrate."""
         self.require_parts(run, parts)
         self.site.set_maintenance_mode(True)
         try:
@@ -108,6 +111,7 @@ class SiteRestore:
 
     @staticmethod
     def require_parts(run: BackupRun, parts: list[str]) -> None:
+        """Raise when the parts are invalid or missing from the backup."""
         if not parts or any(part not in RESTORE_PARTS for part in parts):
             raise BenchError(f"Choose what to restore: {', '.join(RESTORE_PARTS)}.")
         available = set(run.files) | set(run.streams)

@@ -118,25 +118,31 @@ class MariaDBPerformanceReport:
         self._database = database
 
     def get_time_consuming_queries(self, limit: int = 20, offset: int = 0) -> PerformanceSection:
+        """The queries that use the most time."""
         return self._section(TIME_CONSUMING_QUERIES, self._time_consuming_query, limit, offset)
 
     def get_full_table_scan_queries(self, limit: int = 20, offset: int = 0) -> PerformanceSection:
+        """The queries that scan full tables."""
         return self._section(FULL_TABLE_SCAN_QUERIES, self._full_table_scan_query, limit, offset)
 
     def get_unused_indexes(self, limit: int = 20, offset: int = 0) -> PerformanceSection:
+        """The indexes no query uses, without framework indexes."""
         return self._section(
             UNUSED_INDEXES, self._unused_index, limit, offset, framework_indexes=FRAMEWORK_INDEXES
         )
 
     def get_redundant_indexes(self, limit: int = 20, offset: int = 0) -> PerformanceSection:
+        """The indexes another index covers."""
         return self._section(REDUNDANT_INDEXES, self._redundant_index, limit, offset)
 
     def is_performance_schema_enabled(self, cursor) -> bool:
+        """Whether the Performance Schema is on."""
         cursor.execute("SELECT @@GLOBAL.performance_schema AS enabled")
         row = cursor.fetchone()
         return bool(row and row["enabled"])
 
     def _section(self, query, build_row, limit: int, offset: int, **parameters) -> PerformanceSection:
+        """One page of a report section."""
         connection = self._connect()
         try:
             with connection.cursor() as cursor:
@@ -151,6 +157,7 @@ class MariaDBPerformanceReport:
 
     @staticmethod
     def _time_consuming_query(row: dict) -> TimeConsumingQuery:
+        """A time consuming query from a row."""
         return TimeConsumingQuery(
             database=row["db"],
             query=row["query"],
@@ -162,6 +169,7 @@ class MariaDBPerformanceReport:
 
     @staticmethod
     def _full_table_scan_query(row: dict) -> FullTableScanQuery:
+        """A full table scan query from a row."""
         return FullTableScanQuery(
             database=row["db"],
             query=row["query"],
@@ -172,10 +180,12 @@ class MariaDBPerformanceReport:
 
     @staticmethod
     def _unused_index(row: dict) -> UnusedIndex:
+        """An unused index from a row."""
         return UnusedIndex(database=row["db"], table=row["table_name"], index=row["index_name"])
 
     @staticmethod
     def _redundant_index(row: dict) -> RedundantIndex:
+        """A redundant index from a row."""
         return RedundantIndex(
             database=row["db"],
             table=row["table_name"],
@@ -186,6 +196,7 @@ class MariaDBPerformanceReport:
         )
 
     def _fetch(self, cursor, query: str, limit: int, offset: int, **parameters) -> list[dict]:
+        """The rows of one page of a report query."""
         cursor.execute(
             query,
             {

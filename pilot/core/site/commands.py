@@ -41,6 +41,7 @@ class SiteCommands:
         )
 
     def create(self, db_type: str | None = None) -> None:
+        """Create the site with bench new-site."""
         if (
             not isinstance(self.site.config.admin_password, str)
             or not self.site.config.admin_password.strip()
@@ -70,6 +71,7 @@ class SiteCommands:
         public_files: str | None = None,
         private_files: str | None = None,
     ) -> None:
+        """Restore the site from a database file and file archives."""
         for directory in ("logs", "locks"):
             (self.site.path / directory).mkdir(exist_ok=True)
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "restore", db_file)
@@ -81,6 +83,7 @@ class SiteCommands:
             run_command(cmd + credentials, cwd=self.site.bench.sites_path, stream_output=True)
 
     def reinstall(self, admin_password: str) -> None:
+        """Reinstall the site with a new admin password."""
         if not isinstance(admin_password, str) or not admin_password.strip():
             raise BenchError("Site Administrator password must not be empty.")
         cmd = self.site._frappe_call(
@@ -122,12 +125,14 @@ class SiteCommands:
         return False
 
     def clear_cache(self) -> None:
+        """Clear the site cache."""
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "clear-cache")
         result = run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
         if result.returncode != 0:
             raise BenchError(f"Failed to clear cache for {self.site.config.name}")
 
     def enable_scheduler(self) -> None:
+        """Turn on the site scheduler."""
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "enable-scheduler")
         result = run_command(cmd, cwd=self.site.bench.sites_path, stream_output=True)
         if result.returncode != 0:
@@ -174,12 +179,14 @@ class SiteCommands:
         return self.mariadb_db_args(socket_path)
 
     def mariadb_db_args(self, socket_path: str) -> list[str]:
+        """The new-site arguments for the MariaDB connection."""
         mariadb = self.site.bench.config.mariadb
         if socket_path:
             return ["--db-socket", socket_path]
         return ["--db-host", mariadb.host, "--db-port", str(mariadb.port)]
 
     def postgres_db_args(self) -> list[str]:
+        """The new-site arguments for the PostgreSQL connection."""
         postgres = self.site.bench.config.postgres
         return [
             "--db-type",

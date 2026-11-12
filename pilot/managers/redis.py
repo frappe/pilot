@@ -33,6 +33,7 @@ class RedisManager:
         self.bench = bench
 
     def is_installed(self) -> bool:
+        """Whether redis-server is installed."""
         return redis_server_binary() is not None
 
     @staticmethod
@@ -55,6 +56,7 @@ class RedisManager:
         return match.group(1) if match else ""
 
     def install(self) -> None:
+        """Install Redis if it is missing."""
         if self.is_installed():
             return
         package_manager = get_package_manager()
@@ -62,6 +64,7 @@ class RedisManager:
         package_manager.install(package)
 
     def _brew_package(self) -> str:
+        """The Homebrew formula to use."""
         if self.config.version:
             return f"redis@{self.config.version}"
         return "redis"
@@ -72,6 +75,7 @@ class RedisManager:
         return {"redis_cache.conf": self.config.cache_port, "redis_queue.conf": self.config.queue_port}
 
     def generate_configs(self) -> None:
+        """Write the Redis configs."""
         for filename, port in self.servers.items():
             self._write_config(filename, port)
 
@@ -103,6 +107,7 @@ class RedisManager:
                 process.wait(timeout=10)
 
     def _write_config(self, filename: str, port: int) -> None:
+        """Write one Redis config."""
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
         path = self.bench.config_path / filename
         before, after = self._split_custom_config(path)
@@ -125,6 +130,7 @@ class RedisManager:
 
 
 def wait_until_serving(port: int, timeout: float = 10.0) -> None:
+    """Wait until the port listens; raise on timeout."""
     deadline = time.monotonic() + timeout
     while not LocalPort(port).is_listening:
         if time.monotonic() > deadline:

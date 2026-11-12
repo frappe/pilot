@@ -30,6 +30,7 @@ class GzipReader:
         self.is_done = False
 
     def read(self, size: int = -1) -> bytes:
+        """Read up to size compressed bytes."""
         while not self.is_done and (size < 0 or len(self.buffer) < size):
             chunk = self.source.read(1 << 20)
             self.buffer += self.compressor.compress(chunk) if chunk else self.compressor.flush()
@@ -48,10 +49,12 @@ class GunzipWriter:
         self.decompressor = zlib.decompressobj(wbits=31)
 
     def write(self, data: bytes) -> int:
+        """Decompress the data into the target and return its length."""
         self.target.write(self.decompressor.decompress(data))
         return len(data)
 
     def flush(self) -> None:
+        """Write the rest of the decompressed data."""
         self.target.write(self.decompressor.flush())
 
 
@@ -70,26 +73,32 @@ class SiteMigrationBackup:
 
     @property
     def directory(self) -> Path:
+        """The directory for the site's migration backup."""
         return self.site.path / ".migrate"
 
     @property
     def previous_tables_path(self) -> Path:
+        """The file with the table list before the migrate."""
         return self.directory / "previous_tables.json"
 
     @property
     def config_backup_path(self) -> Path:
+        """The saved copy of site_config.json."""
         return self.directory / "site_config.json"
 
     @property
     def database_backup_path(self) -> Path:
+        """The full database dump."""
         return self.directory / "database.sql.gz"
 
     @property
     def offsite_path(self) -> Path:
+        """The file with the offsite backup location."""
         return self.directory / "offsite.json"
 
     @property
     def exists(self) -> bool:
+        """Whether a migration backup exists."""
         return self.previous_tables_path.exists() or self.database_backup_path.exists()
 
     @property
@@ -136,6 +145,7 @@ class SiteMigrationBackup:
         return self._create_table_backup(config)
 
     def _create_table_backup(self, config: dict) -> list[str]:
+        """Save the table list and the config, and dump each table; return the tables."""
         db_name = config["db_name"]
         tables = self._list_tables(config, db_name)
         self.previous_tables_path.write_text(json.dumps(tables, indent=2), encoding="utf-8")
@@ -145,6 +155,7 @@ class SiteMigrationBackup:
         return tables
 
     def _create_full_database_backup(self) -> None:
+        """Take a full database backup with bench backup."""
         command = self.site._frappe_call(
             "frappe",
             "--site",
@@ -162,6 +173,7 @@ class SiteMigrationBackup:
 
     @property
     def previous_tables(self) -> list[str]:
+        """The table list before the migrate; raise when it cannot be read."""
         try:
             tables = json.loads(self.previous_tables_path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
@@ -204,6 +216,7 @@ class SiteMigrationBackup:
         return dumps
 
     def discard(self) -> None:
+        """Delete the offsite and local migration backup."""
         if location := self.offsite:
             s3 = self._s3()
             for key in s3.list_objects(location["bucket"], location["prefix"]):
@@ -212,15 +225,18 @@ class SiteMigrationBackup:
             shutil.rmtree(self.directory)
 
     def _reset_directory(self) -> None:
+        """Discard the old backup and create an empty private directory."""
         self.discard()
         PrivateDirectory(self.directory).create(parents=True)
 
     def _s3(self) -> "S3":
+        """The S3 client for the bench."""
         from pilot.integrations.s3.base import S3
 
         return S3.from_config(self.site.bench.config.s3)
 
     def _offsite_names(self) -> set[str]:
+        """The file names in the offsite backup."""
         location = self.offsite or {}
         keys = self._s3().list_objects(location["bucket"], location["prefix"])
         return {key.removeprefix(location["prefix"]) for key in keys}
@@ -231,6 +247,7 @@ class SiteMigrationBackup:
         location = self.offsite or {}
 
         def feed(client_input) -> None:
+            """Stream the offsite dump, decompressed, into the client."""
             writer = GunzipWriter(client_input)
             key = location["prefix"] + dump.name
             self._s3().download_stream(location["bucket"], key, writer, low_memory=True)
@@ -239,6 +256,7 @@ class SiteMigrationBackup:
         self._run_import(config, db_name, dump.name, feed)
 
     def _validate_owner(self, operation_id: str) -> None:
+        """Raise unless this migration is the only unresolved one for the site."""
         owners = self.site.bench.migrations.unresolved_for_site(self.site.config.name)
         if len(owners) != 1 or owners[0].id != operation_id:
             raise BenchError(
@@ -247,9 +265,11 @@ class SiteMigrationBackup:
             )
 
     def _dump_path(self, table: str) -> Path:
+        """The dump file for one table."""
         return self.directory / f"{table}.sql.gz"
 
     def _list_tables(self, config: dict, db_name: str) -> list[str]:
+        """The tables in the site database."""
         output = subprocess.run(
             [
                 self._cli(),
@@ -267,6 +287,7 @@ class SiteMigrationBackup:
         return [line.split("\t")[0] for line in output.splitlines() if line.strip()]
 
     def _dump_table(self, config: dict, db_name: str, table: str) -> None:
+        """Dump one table to a compressed file."""
         argv = [
             self._dump_cli(),
             *self._conn_args(config),
@@ -307,7 +328,10 @@ class SiteMigrationBackup:
             raise BenchError(f"Failed to dump table {table} for {self.site.config.name}")
 
     def _import_dump(self, config: dict, db_name: str, dump: Path) -> None:
+        """Import one compressed table dump."""
+
         def feed(client_input) -> None:
+            """Copy the decompressed dump into the client."""
             with gzip.open(dump, "rb") as compressed:
                 shutil.copyfileobj(compressed, client_input)
 
@@ -337,6 +361,7 @@ class SiteMigrationBackup:
                 raise BenchError(f"Failed to import {name} for {self.site.config.name}: {reason}")
 
     def _drop_tables(self, config: dict, db_name: str, tables: list[str]) -> None:
+        """Drop the tables with foreign key checks off."""
         statements = ";".join(f"DROP TABLE IF EXISTS `{t.replace('`', '')}`" for t in tables)
         subprocess.run(
             [self._cli(), *self._conn_args(config), db_name, "-e", f"SET FOREIGN_KEY_CHECKS=0;{statements}"],
@@ -345,6 +370,7 @@ class SiteMigrationBackup:
 
     @staticmethod
     def _cli() -> str:
+        """The mariadb or mysql client; raise when neither exists."""
         cli = shutil.which("mariadb") or shutil.which("mysql")
         if not cli:
             raise BenchError("No mariadb/mysql client found for migration backup operations.")
@@ -352,12 +378,14 @@ class SiteMigrationBackup:
 
     @staticmethod
     def _dump_cli() -> str:
+        """The mariadb-dump or mysqldump binary; raise when neither exists."""
         cli = shutil.which("mariadb-dump") or shutil.which("mysqldump")
         if not cli:
             raise BenchError("No mariadb-dump/mysqldump found for migration backup operations.")
         return cli
 
     def _conn_args(self, config: dict) -> list[str]:
+        """The client connection arguments for the site database."""
         args = [f"--user={config['db_name']}", f"--password={config['db_password']}"]
         socket = config.get("db_socket") or self.site.bench.config.mariadb.socket_path
         if socket:

@@ -24,6 +24,7 @@ marketplace_bp = Blueprint("marketplace", __name__)
 
 @apps_bp.get("")
 def index():
+    """List the bench apps."""
     bench_root = ApiRequest.get_bench_root()
     try:
         apps = AppProvider(bench_root).get_all()
@@ -34,6 +35,7 @@ def index():
 
 @marketplace_bp.get("/apps")
 def marketplace():
+    """List the marketplace apps."""
     bench_root = ApiRequest.get_bench_root()
     try:
         from pilot.integrations.marketplace import Marketplace
@@ -48,6 +50,7 @@ def marketplace():
 
 @apps_bp.post("")
 def install():
+    """Queue getting an app, and installing it on sites when asked."""
     bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
@@ -64,6 +67,7 @@ def install():
 
 
 def _install_request(data, bench_root: Path):
+    """The install task args and sites, or an error response."""
     if not isinstance(data, dict):
         return {}, [], error_response("malformed_request", "Expected a JSON object.", 400)
     if any(
@@ -102,6 +106,7 @@ def _install_request(data, bench_root: Path):
 
 
 def _queue_install_task(bench_root: Path, task_args: dict, sites: list[str]) -> str:
+    """Queue the install task and return its ID."""
     bench = Bench(bench_root)
     if sites:
         return GetAndInstallAppTask.queue(
@@ -123,6 +128,7 @@ def _queue_install_task(bench_root: Path, task_args: dict, sites: list[str]) -> 
 
 @apps_bp.get("/<name>")
 def detail(name: str):
+    """Show one app."""
     bench_root = ApiRequest.get_bench_root()
     if not (bench_root / "apps" / name / ".git").exists():
         return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
@@ -135,6 +141,7 @@ def detail(name: str):
 
 @apps_bp.patch("/<name>")
 def update(name: str):
+    """Queue an app update."""
     bench_root = ApiRequest.get_bench_root()
     data = ApiRequest.get_json_body()
     if data.get("repo") is not None and not isinstance(data["repo"], str):
@@ -161,6 +168,7 @@ def update(name: str):
 
 @apps_bp.delete("/<name>")
 def remove(name: str):
+    """Queue an app removal."""
     bench_root = ApiRequest.get_bench_root()
 
     if not (bench_root / "apps" / name).exists():
@@ -176,6 +184,7 @@ def remove(name: str):
 
 @apps_bp.post("/<name>/actions/switch-branch")
 def switch_branch(name: str):
+    """Queue an app branch switch."""
     bench_root = ApiRequest.get_bench_root()
     if validate_app_name(name) or not (bench_root / "apps" / name).is_dir():
         return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
@@ -199,6 +208,7 @@ def switch_branch(name: str):
 
 @apps_bp.post("/fetch")
 def fetch_updates():
+    """Queue a check for app updates."""
     bench_root = ApiRequest.get_bench_root()
     try:
         task_id = FetchAppUpdatesTask.queue(Bench(bench_root))

@@ -188,6 +188,7 @@ class SiteBackups:
         return target
 
     def download_file_path(self, timestamp: str, file_id: str) -> Path:
+        """The local path of one backup file; raise when the name does not match the timestamp."""
         from pilot.exceptions import BenchError
 
         if not file_id.startswith(timestamp):
@@ -198,6 +199,7 @@ class SiteBackups:
         return target
 
     def download_links(self, timestamp: str) -> dict:
+        """Download links for the offsite files of one backup."""
         offsite = OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)
         files = offsite.get_backup(self.site.config.name, timestamp)
         if not files:
@@ -208,6 +210,7 @@ class SiteBackups:
         }
 
     def schedule(self) -> dict:
+        """The backup schedule and retention of the site."""
         from pilot.managers.cron import CronManager
 
         schedule = CronManager(self.site.bench.path).get_schedule(self.site.config.name)
@@ -215,6 +218,7 @@ class SiteBackups:
         return {"schedule": schedule, "retention": asdict(retention) if retention else None}
 
     def set_schedule(self, schedule: str, retention: BackupConfig) -> dict:
+        """Save the backup schedule and retention, and return them."""
         from pilot.managers.cron import CronManager
 
         CronManager(self.site.bench.path).set_schedule(
@@ -236,13 +240,16 @@ class SiteBackups:
 
     @property
     def is_default_schedule_enabled(self) -> bool:
+        """Whether the default calendar backup rotation is on."""
         retention = read_retention(self.site.path / "site_config.json")
         return retention is not None and retention.calendar_rotation
 
     def get_recent_backup_history(self, now: datetime) -> list[tuple[datetime, dict]]:
+        """The site's recent backup runs, newest first."""
         return self.site.bench.backups.get_recent_history(now).get(self.site.config.name, [])
 
     def get_failures_since_last_success(self, now: datetime) -> int:
+        """The number of failed backups since the last success."""
         failures = 0
         for _, entry in self.get_recent_backup_history(now):
             if entry["status"] == "success":
@@ -269,6 +276,7 @@ class SiteBackups:
         return {"with_files": not has_file_backup_today}
 
     def queue_scheduled(self, now: datetime, history: list[tuple[datetime, dict]] | None = None) -> None:
+        """Queue a backup when one is due; skip it when one already runs."""
         from pilot.exceptions import TaskConflictError
         from pilot.tasks.backup_site import BackupSiteTask
 
@@ -294,12 +302,14 @@ class SiteBackups:
         CronManager(self.site.bench.path).move_schedule(old_name, self.site.config.name, self._cron_command())
 
     def clear_schedule(self) -> None:
+        """Remove the backup schedule and retention."""
         from pilot.managers.cron import CronManager
 
         CronManager(self.site.bench.path).remove_schedule(self.site.config.name)
         clear_retention(self.site.path / "site_config.json")
 
     def retention_from_payload(self, block: dict | None):
+        """The retention config from an API payload."""
         return retention_from_payload(block)
 
     def _delete_offsite_run(self, offsite, offsite_runs: dict, timestamp: str) -> bool:
@@ -313,6 +323,7 @@ class SiteBackups:
         return True
 
     def _local_timestamps(self) -> list[str]:
+        """The timestamps of the local backups."""
         if not self.directory.is_dir():
             return []
         return [
@@ -322,21 +333,25 @@ class SiteBackups:
         ]
 
     def _delete_local(self, timestamp: str) -> None:
+        """Delete the local files of one backup."""
         if not self.directory.is_dir():
             return
         for file in self.directory.glob(f"{timestamp}-*"):
             file.unlink(missing_ok=True)
 
     def _delete_offsite(self, offsite: OffsiteBackup, timestamp: str, files: dict[str, str]) -> None:
+        """Delete the offsite files of one backup."""
         for filename in list(files.values()):
             offsite.delete(self.site.config.name, timestamp, filename)
 
     def _offsite(self) -> OffsiteBackup | None:
+        """The offsite backup store, or None when S3 is not configured."""
         if not self.site.bench.config.s3.is_configured:
             return None
         return OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)
 
     def _cron_command(self) -> str:
+        """The cron command that runs the site's backup."""
         from pilot.managers.cron import cron_module_command
 
         return cron_module_command(
@@ -347,6 +362,7 @@ class SiteBackups:
 
 
 def retention_from_payload(block: dict | None):
+    """The retention config from an API payload; raise for invalid values."""
     from pilot.config import VALID_SCHEMES, BackupConfig
 
     block = block or {}

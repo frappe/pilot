@@ -37,20 +37,24 @@ class PostgresManager(UserOwnedDBManager):
 
     @property
     def config_dir(self) -> Path:
+        """The config directory."""
         return self.state_dir / "config"
 
     @property
     def data_dir(self) -> Path:
+        """The data directory."""
         return self.state_dir / "data"
 
     @property
     def socket_dir(self) -> Path:
+        """The socket directory."""
         # Postgres' compiled-in default (often /var/run/postgresql) is owned by
         # the 'postgres' OS user/group, not the bench user - pin a directory
         # we actually own so both the server and psql can use it.
         return self.state_dir / "run"
 
     def is_installed(self) -> bool:
+        """Whether PostgreSQL is installed."""
         return bool(
             HostPlatform().get_executable_path("psql")
             or HostPlatform().get_executable_path("postgres")
@@ -58,6 +62,7 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def is_provisioned(self) -> bool:
+        """Whether the server is set up and secured."""
         if HostPlatform().is_macos:
             return self.is_running() and not self.is_unsecured()
         return super().is_provisioned() and (self.config_dir / "postgresql.conf").exists()
@@ -103,6 +108,7 @@ class PostgresManager(UserOwnedDBManager):
         self.secure()
 
     def _provision_user_owned(self) -> None:
+        """Create, start and secure the user-owned server."""
         if not self.is_provisioned():
             self._ensure_port_available()
             self.data_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -142,6 +148,7 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def _install_unit(self) -> None:
+        """Write the user systemd unit."""
         postgres = self._server_binary("postgres")
         content = (
             "[Unit]\n"
@@ -213,6 +220,7 @@ class PostgresManager(UserOwnedDBManager):
         return result.returncode == 0
 
     def _ensure_role_sql(self) -> str:
+        """SQL that creates or updates the admin role."""
         role = self._quote_ident(self.config.admin_user)
         name = self._sql_quote(self.config.admin_user)
         pw = self._sql_quote(self.config.root_password)
@@ -226,6 +234,7 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def _run_sql_as_superuser(self, sql: str) -> None:
+        """Run SQL as the database superuser."""
         # Peer/trust auth lets the bench OS user bootstrap without sudo.
         # Linux needs our socket_dir; Homebrew already uses a user-owned socket.
         cmd = [
@@ -242,6 +251,7 @@ class PostgresManager(UserOwnedDBManager):
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def is_reachable(self) -> bool:
+        """Whether the server accepts connections."""
         ready = HostPlatform().get_executable_path("pg_isready")
         if ready:
             result = subprocess.run(
@@ -251,6 +261,7 @@ class PostgresManager(UserOwnedDBManager):
         return self.is_running()
 
     def _server_binary(self, name: str) -> str:
+        """The path of a server binary; raise when it is missing."""
         found = HostPlatform().get_executable_path(name)
         if found:
             return found
@@ -261,16 +272,20 @@ class PostgresManager(UserOwnedDBManager):
 
     @staticmethod
     def _debian_version_key(binary: Path) -> tuple[int, ...]:
+        """The version of a Debian PostgreSQL binary, for sorting."""
         version = binary.parent.parent.name
         return tuple(int(part) for part in version.split(".") if part.isdigit())
 
     def client_binary(self, name: str) -> str:
+        """The path of a client binary, or its name."""
         return self._client_binary(name) or name
 
     def _psql(self) -> str | None:
+        """The psql path, if found."""
         return self._client_binary("psql")
 
     def _client_binary(self, name: str) -> str | None:
+        """The path of a client binary, if found."""
         found = HostPlatform().get_executable_path(name)
         if found:
             return found

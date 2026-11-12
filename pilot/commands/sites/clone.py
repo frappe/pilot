@@ -18,6 +18,7 @@ class CloneSiteCommand(Command):
     ] = None
 
     def run(self) -> None:
+        """Clone the site."""
         from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 

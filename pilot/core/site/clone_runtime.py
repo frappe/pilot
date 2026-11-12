@@ -39,6 +39,7 @@ class CloneRuntime:
         return self
 
     def start_services(self, binary: str) -> None:
+        """Start the Redis servers the clone needs."""
         ports = (self.bench.config.redis.cache_port, self.bench.config.redis.queue_port)
         if not self.allow_existing or not all(self.has_existing_redis(port) for port in ports):
             RedisManager(self.bench.config.redis, self.bench).generate_configs()
@@ -49,6 +50,7 @@ class CloneRuntime:
             self.start(binary, name, port)
 
     def start(self, binary: str, name: str, port: int) -> None:
+        """Start one Redis server unless an existing one can be used."""
         if self.allow_existing and self.has_existing_redis(port):
             return
         log = self.stack.enter_context((self.bench.logs_path / f"clone-{name}.log").open("a"))
@@ -75,6 +77,7 @@ class CloneRuntime:
 
     @staticmethod
     def has_existing_redis(port: int) -> bool:
+        """Whether a Redis server answers on the local port."""
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.1) as connection:
                 connection.sendall(b"*1\r\n$4\r\nPING\r\n")
@@ -84,6 +87,7 @@ class CloneRuntime:
 
     @staticmethod
     def stop(process) -> None:
+        """Terminate the process, and kill it after five seconds."""
         if process.poll() is None:
             process.terminate()
             try:

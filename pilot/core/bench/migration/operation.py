@@ -44,6 +44,7 @@ _JOBS_WAIT_SECONDS = 300
 
 
 def _load_task(command: str):
+    """The task class for a chain command."""
     module_path, class_name = _CHAIN_TASKS[command].rsplit(".", 1)
     return getattr(importlib.import_module(module_path), class_name)
 
@@ -61,6 +62,7 @@ class AppRevision:
 
     @property
     def compare_url(self) -> str | None:
+        """A link that compares the app's old and new revisions, if the provider supports one."""
         target = self.updated_sha or self.target_sha
         if not target:
             return None
@@ -117,18 +119,22 @@ class MigrationOperation(MigrationRecovery):
 
     @property
     def is_resolved(self) -> bool:
+        """Whether the migration reached a terminal state."""
         return self.state.is_terminal
 
     @property
     def can_revert(self) -> bool:
+        """Whether every site has a backup to revert to."""
         return not self.safeguards_disabled and all(site.backup_status == "backed_up" for site in self.sites)
 
     @property
     def needs_app_update(self) -> bool:
+        """Whether the apps still need to be updated."""
         return bool(self.apps) and not self.apps_updated
 
     @property
     def revision_pins(self) -> dict[str, RevisionPin]:
+        """The target revision of each app that has one."""
         return {
             revision.name: RevisionPin(kind=revision.target_kind, ref=revision.target_sha)
             for revision in self.apps
@@ -187,14 +193,17 @@ class MigrationOperation(MigrationRecovery):
         return task_id
 
     def next_backup_site(self) -> str | None:
+        """The next site that needs a backup."""
         return next((site.name for site in self.sites if site.backup_status == "pending"), None)
 
     def next_migrate_site(self) -> str | None:
+        """The next site that needs a migrate."""
         return next((site.name for site in self.sites if site.migration_status == "pending"), None)
 
     def back_up_site(
         self, name: str, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS
     ) -> None:
+        """Back up one site before the migrate and record the result."""
         site = self.site(name)
         on_step("backup", f"Backing up {name}")
         self.wait_for_background_jobs("backing_up", [name], on_progress)
@@ -254,6 +263,7 @@ class MigrationOperation(MigrationRecovery):
     def migrate_site(
         self, name: str, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS
     ) -> None:
+        """Migrate one site and record the result."""
         site = self.site(name)
         on_step("migrate", f"Migrating {name}")
         self.wait_for_background_jobs("migrating", [name], on_progress)
@@ -298,6 +308,7 @@ class MigrationOperation(MigrationRecovery):
                 self._pause_before_step(phase, name, f"{error} The step did not start. Retry later.")
 
     def _pause_before_step(self, phase: str, name: str, message: str) -> None:
+        """Stop before a step and ask the user to decide."""
         self.diagnosis = {"phase": phase, "message": message, "output_excerpt": ""}
         self._enter_needs_attention(phase, None if phase == "updating" else name)
         if phase == "backing_up":
@@ -322,6 +333,7 @@ class MigrationOperation(MigrationRecovery):
         self._fail_stopped_forward_step(phase, site_name, detail)
 
     def _fail_stopped_forward_step(self, phase: str, site_name: str | None, detail: str) -> None:
+        """Mark the step that a stopped task left unfinished as failed."""
         if self.state != phase or self._is_step_done(phase, site_name):
             # The step finished, but the task stopped before it queued the next task.
             phase, site_name = str(self.state), None
@@ -337,6 +349,7 @@ class MigrationOperation(MigrationRecovery):
             self._lift_maintenance()
 
     def _fail_site_step(self, phase: str, site_name: str) -> None:
+        """Mark the site's backup or migrate step as failed."""
         site = self.site(site_name)
         if phase == "backing_up":
             site.backup_status = "failed"
@@ -346,6 +359,7 @@ class MigrationOperation(MigrationRecovery):
             self._union_touched_tables(site)
 
     def _is_step_done(self, phase: str, site_name: str | None) -> bool:
+        """Whether the step already finished."""
         if phase == "updating":
             return self.apps_updated
         if not site_name:
@@ -356,23 +370,27 @@ class MigrationOperation(MigrationRecovery):
         return site.migration_status == "success"
 
     def site(self, name: str) -> SiteProgress:
+        """The progress of one site in this migration."""
         for site in self.sites:
             if site.name == name:
                 return site
         raise BenchError(f"Site {name!r} is not part of migration {self.id}")
 
     def _enter_first_phase(self) -> None:
+        """Move to the first phase: backups, app update or migrate."""
         if not self.safeguards_disabled and self.sites:
             self._transition("backing_up")
         else:
             self._transition("updating" if self.needs_app_update else "migrating")
 
     def _enter_needs_attention(self, phase: str, site: str | None) -> None:
+        """Move to needs_attention and remember where to return."""
         self.return_state = phase
         self.failed_site = site
         self._transition("needs_attention")
 
     def _prepare_sites(self) -> None:
+        """Save each site's maintenance settings and turn maintenance on."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
             if not site.original_config:
@@ -382,6 +400,7 @@ class MigrationOperation(MigrationRecovery):
         self._save()
 
     def _restore_maintenance(self) -> None:
+        """Restore each site's maintenance settings."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
             # A site dropped after the failure has no config left to restore.
@@ -389,6 +408,7 @@ class MigrationOperation(MigrationRecovery):
                 site_obj.set_maintenance_settings(site.original_config)
 
     def _discard_snapshots(self) -> None:
+        """Discard the migration backups of the sites."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
             if site.backup_status == "backed_up" and site_obj.exists:
@@ -416,6 +436,7 @@ class MigrationOperation(MigrationRecovery):
         self._save()
 
     def complete(self, on_step: OnStep = _NO_STEP) -> None:
+        """Finish a migration whose sites all migrated."""
         if self.state != "migrating" or any(site.migration_status != "success" for site in self.sites):
             raise MigrationStateError("Finish every site migration before completing the update.")
         on_step("restart", "Restarting services")
@@ -430,6 +451,7 @@ class MigrationOperation(MigrationRecovery):
         self._transition("completed")
 
     def _union_touched_tables(self, site: SiteProgress) -> None:
+        """Add the tables a site's migrate touched to its record."""
         path = self.bench.site(site.name).path / "touched_tables.json"
         if not path.exists():
             site.touched_tables_trusted = False
@@ -445,6 +467,7 @@ class MigrationOperation(MigrationRecovery):
         site.touched_tables = sorted(set(site.touched_tables) | {str(t) for t in data})
 
     def _transition(self, target: str) -> None:
+        """Move to the target state and record start and end times."""
         validate_transition(self.state, target)
         self.state = get_state(target)
         if self.state.starts_work and self.started_at is None:
@@ -454,9 +477,11 @@ class MigrationOperation(MigrationRecovery):
         self._save()
 
     def _save(self) -> None:
+        """Save the operation."""
         self.store.save(self)
 
     def to_dict(self) -> dict:
+        """The operation as a JSON-ready dict."""
         return {
             "id": self.id,
             "kind": self.kind,
@@ -482,6 +507,7 @@ class MigrationOperation(MigrationRecovery):
 
     @classmethod
     def from_dict(cls, data: dict, bench: "Bench", store: "MigrationStore") -> "MigrationOperation":
+        """The operation from its saved dict."""
         operation = cls(
             id=data["id"],
             kind=data["kind"],

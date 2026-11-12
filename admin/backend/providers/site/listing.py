@@ -28,6 +28,7 @@ class SiteProvider:
         self._bench_root = bench_root
 
     def get_all(self) -> list[SiteInfo]:
+        """Every site."""
         sites_path = self._bench_root / "sites"
         if sites_path.is_symlink() or not sites_path.is_dir():
             return []
@@ -43,6 +44,7 @@ class SiteProvider:
         ]
 
     def get_one(self, site_name: str) -> SiteInfo:
+        """One site."""
         return self.get_site(site_name, self.provisioning_site_names)
 
     @property
@@ -54,6 +56,7 @@ class SiteProvider:
             return set()
 
     def get_site(self, site_name: str, provisioning: set[str]) -> SiteInfo:
+        """One site, marking it when it is still being created."""
         site_path = resolve_site_path(self._bench_root, site_name)
         if site_path is None:
             raise ValueError("Site path must stay within the bench.")

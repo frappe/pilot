@@ -17,13 +17,16 @@ class GunicornManager:
 
     @property
     def config_path(self) -> Path:
+        """The gunicorn config file."""
         return self.bench.config_path / "gunicorn.conf.py"
 
     @property
     def admin_config_path(self) -> Path:
+        """The Admin gunicorn config file."""
         return self.bench.config_path / "admin-gunicorn.conf.py"
 
     def generate_config(self) -> None:
+        """Write the gunicorn config."""
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.write_text(self._render_config())
 
@@ -47,6 +50,7 @@ class GunicornManager:
         )
 
     def _render_config(self) -> str:
+        """The gunicorn config text."""
         cfg = self.bench.config.gunicorn
         worker_class = cfg.worker_class
         # gthread is required for threads to actually be used.
@@ -63,8 +67,10 @@ class GunicornManager:
         )
 
     def _bind(self) -> str:
+        """The address gunicorn binds to."""
         return f"127.0.0.1:{self.bench.config.http_port}"
 
     @property
     def upstream_server(self) -> str:
+        """The address nginx proxies to."""
         return self._bind()

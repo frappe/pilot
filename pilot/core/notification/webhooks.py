@@ -27,6 +27,7 @@ class WebhookDelivery:
 
     @property
     def is_success(self) -> bool:
+        """Whether the webhook answered with a 2xx status."""
         return 200 <= self.status < 300
 
 
@@ -83,4 +84,5 @@ def ping_webhook(bench: "Bench", endpoint: "WebhookEndpoint") -> WebhookDelivery
 
 
 def _excerpt(response) -> str:
+    """The start of the response body."""
     return response.read(_RESPONSE_EXCERPT_BYTES).decode(errors="replace")

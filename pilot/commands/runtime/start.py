@@ -13,4 +13,5 @@ class RunCommand(Command):
     supports_all_benches: ClassVar[bool] = True
 
     def run(self) -> None:
+        """Start the bench."""
         self.bench.start(on_progress=self.report)

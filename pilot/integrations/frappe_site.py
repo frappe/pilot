@@ -60,12 +60,14 @@ class RemoteFrappeSite:
         return self._open(f"/backups/{urllib.parse.quote(Path(path).name)}", timeout=_DOWNLOAD_READ_TIMEOUT_SECONDS)
 
     def download_backup(self, path: str, directory: Path) -> Path:
+        """Download a backup file into the directory."""
         target = directory / Path(path).name
         with self.open_backup(path) as source, target.open("wb") as destination:
             shutil.copyfileobj(source, destination)
         return target
 
     def _call(self, method: str, **params: str) -> dict:
+        """Call a site method and return its JSON."""
         query = f"?{urllib.parse.urlencode(params)}" if params else ""
         try:
             return self._json(self._open(f"/api/method/{method}{query}")).get("message") or {}
@@ -73,6 +75,7 @@ class RemoteFrappeSite:
             raise RemoteSiteError(f"{self.url} rejected {method}: HTTP {error.code}.") from error
 
     def _open(self, path: str, data: bytes | None = None, timeout: float = _REQUEST_TIMEOUT_SECONDS):
+        """Open a site URL; raise a site error on failure."""
         try:
             return self._opener.open(urllib.request.Request(f"{self.url}{path}", data=data), timeout=timeout)
         except urllib.error.HTTPError:
@@ -81,6 +84,7 @@ class RemoteFrappeSite:
             raise RemoteSiteError(f"Could not reach {self.url}: {error}") from error
 
     def _json(self, response) -> dict:
+        """The response JSON; raise when it is invalid."""
         with response:
             try:
                 return json.loads(response.read() or b"{}")

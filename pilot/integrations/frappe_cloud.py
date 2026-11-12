@@ -27,27 +27,35 @@ class FrappeCloud:
         self.token = token
 
     def request_access(self, domain: str, code: str) -> dict:
+        """Ask for access to the site."""
         return self._call("request_access", data={"domain": domain, "code": code})
 
     def get_status(self) -> dict:
+        """The connection status."""
         return self._call("get_status")
 
     def get_backups(self, start: int = 0) -> list[dict]:
+        """One page of backups."""
         return self._call("get_backups", params={"start": start})
 
     def get_running_backup(self) -> str | None:
+        """The running backup, if any."""
         return self._call("get_running_backup")
 
     def take_backup(self) -> str:
+        """Start a backup and return its name."""
         return self._call("take_backup", data={})
 
     def get_backup_status(self, backup: str) -> dict:
+        """The status of a backup."""
         return self._call("get_backup_status", params={"backup": backup})
 
     def get_download_links(self, backup: str) -> dict[str, str]:
+        """The download links of a backup."""
         return self._call("get_download_links", data={"backup": backup})
 
     def revoke(self) -> None:
+        """Revoke the access."""
         self._call("revoke", data={})
 
     def _call(self, method: str, params: dict | None = None, data: dict | None = None):

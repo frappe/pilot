@@ -33,6 +33,7 @@ class GitRepo:
 
     @property
     def is_cloned(self) -> bool:
+        """Whether the directory holds a git repository."""
         return (self.path / ".git").exists()
 
     @property
@@ -42,6 +43,7 @@ class GitRepo:
 
     @property
     def head_sha(self) -> str:
+        """The full commit SHA of HEAD."""
         return self._text("rev-parse", "HEAD")
 
     def get_commit_sha(self, ref: str) -> str:
@@ -50,13 +52,16 @@ class GitRepo:
 
     @property
     def short_head(self) -> str:
+        """The short commit SHA of HEAD."""
         return self._text("rev-parse", "--short", "HEAD")
 
     @property
     def remote_url(self) -> str:
+        """The origin remote URL."""
         return self._text("remote", "get-url", "origin")
 
     def commit_subject(self, ref: str = "HEAD") -> str:
+        """The subject line of a commit."""
         return self._text("log", "-1", "--format=%s", ref)
 
     def get_commit_time(self, ref: str = "HEAD") -> int:
@@ -90,6 +95,7 @@ class GitRepo:
 
     @property
     def has_unpushed_commits(self) -> bool:
+        """Whether HEAD has commits its upstream does not."""
         return self._text("rev-list", "--count", "@{u}..HEAD") not in ("", "0")
 
     def count(self, range_: str) -> int:
@@ -162,6 +168,7 @@ class GitRepo:
         return "No local changes" not in result.stdout
 
     def stash_pop(self) -> None:
+        """Apply and drop the newest stash."""
         self._run("stash", "pop")
 
     def checkout_new_branch(self, branch: str, start_point: str) -> bool:
@@ -170,6 +177,7 @@ class GitRepo:
 
     @property
     def git_dir(self) -> Path:
+        """The absolute path of the .git directory."""
         return Path(self._text("rev-parse", "--absolute-git-dir"))
 
     def set_remote_url(self, url: str) -> bool:
@@ -183,6 +191,7 @@ class GitRepo:
 
     @property
     def is_shallow(self) -> bool:
+        """Whether the clone is shallow."""
         return self._text("rev-parse", "--is-shallow-repository") == "true"
 
     @property
@@ -192,10 +201,12 @@ class GitRepo:
         return fetch_head.stat().st_mtime if fetch_head.exists() else None
 
     def _text(self, *args: str, timeout: float | None = None) -> str:
+        """Stripped stdout of a git command, or an empty string when it fails."""
         result = self._run(*args, timeout=timeout)
         return result.stdout.strip() if result.returncode == 0 else ""
 
     def _run(self, *args: str, timeout: float | None = None) -> subprocess.CompletedProcess:
+        """Run a git command in the repository."""
         try:
             return subprocess.run(
                 ["git", "-C", str(self.path), *args],

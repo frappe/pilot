@@ -74,10 +74,12 @@ TaskStreamEvent = OutputEvent | StatusEvent | DoneEvent
 
 
 def output_event(line: str, *, overwrite: bool = False) -> OutputEvent:
+    """An output line event."""
     return {"type": "overwrite" if overwrite else "line", "line": line}
 
 
 def status_event(task: "TaskInfo") -> StatusEvent:
+    """A task status event."""
     return {
         "type": "status",
         "status": task.status.value,
@@ -87,6 +89,7 @@ def status_event(task: "TaskInfo") -> StatusEvent:
 
 
 def done_event(status: str, exit_code: int | None, failure: dict | None) -> DoneEvent:
+    """A task done event."""
     return {
         "type": "done",
         "status": status,
@@ -96,12 +99,14 @@ def done_event(status: str, exit_code: int | None, failure: dict | None) -> Done
 
 
 def sse_message(event: TaskStreamEvent, event_id: int | None = None) -> str:
+    """The event as a server-sent event message."""
     prefix = f"id: {event_id}\n" if event_id is not None else ""
     payload = json.dumps(event, separators=(",", ":"))
     return f"{prefix}data: {payload}\n\n"
 
 
 def collapse_cr(line: str) -> str:
+    """The last visible part of a line with carriage returns."""
     if "\r" not in line:
         return line
     parts = line.split("\r")
@@ -109,11 +114,13 @@ def collapse_cr(line: str) -> str:
 
 
 def display_line(raw_line: str) -> str:
+    """The line as shown to the user."""
     stripped = "\r".join(strip_syslog_envelope(segment) for segment in raw_line.split("\r"))
     return collapse_cr(stripped)
 
 
 def strip_syslog_envelope(segment: str) -> str:
+    """The segment without its syslog prefix."""
     match = _SYSLOG_RE.match(segment)
     return match.group(1) if match else segment
 
@@ -133,6 +140,7 @@ class TaskReader:
         self._queue = TaskQueue(bench_root)
 
     def list_tasks(self, limit: int | None = 50, include_unlisted: bool = False) -> list[TaskInfo]:
+        """The newest tasks."""
         from pilot.internal.tasks.runner import is_command_listed
 
         tasks: list[TaskInfo] = []
@@ -160,10 +168,12 @@ class TaskReader:
         }
 
     def read_task(self, task_id: str) -> TaskInfo:
+        """One task; raise when it does not exist."""
         task_dir = self._files.existing_task_dir(task_id)
         return _read_task_dir(self, task_dir, self._queue.positions())
 
     def read_output(self, task_id: str, lines: int | None = None) -> list[str]:
+        """The task output lines, or the last ones."""
         self.read_task(task_id)  # validates task_id and existence
         output_path = self._bench_root / "tasks" / task_id / "output.log"
         if not output_path.exists():
@@ -211,6 +221,7 @@ class TaskReader:
         }
 
     def iter_output(self, task_id: str) -> Generator[str, None, None]:
+        """Yield the task output lines."""
         task = self.read_task(task_id)
         if not task.output_path.exists():
             return
@@ -263,6 +274,7 @@ class TaskReader:
                 time.sleep(_TASK_POLL_SECONDS)
 
     def _stream_chunk(self, chunk: str, cur: str) -> Generator[TaskStreamEvent, None, str]:
+        """Yield an event for each finished line; return the unfinished line."""
         for ch in chunk:
             if ch == "\n":
                 yield output_event(display_line(cur))
@@ -278,6 +290,7 @@ class TaskReader:
         task: TaskInfo,
         cur: str,
     ) -> Generator[TaskStreamEvent, None, None]:
+        """Yield the last line and the done event."""
         if cur:
             yield output_event(display_line(cur))
         failure = task.as_dict()["failure"]
@@ -289,6 +302,7 @@ def _read_task_dir(
     task_dir: Path,
     queue_positions: dict[str, int],
 ) -> TaskInfo:
+    """The task from its directory."""
     meta = json.loads((task_dir / "meta.json").read_text())
 
     pid: int | None = None

@@ -21,6 +21,7 @@ class SiteApps:
         self.site = site
 
     def install_app(self, app: "App", force: bool = False) -> None:
+        """Install the app on the site, or enable it when it is disabled."""
         if app.config.name in self.disabled_apps():
             self.enable_app(app)
             return
@@ -34,6 +35,7 @@ class SiteApps:
         self.run_install(app.config.name, force)
 
     def run_install(self, name: str, force: bool) -> None:
+        """Run install-app, forcing a retry of an unfinished install."""
         unfinished = name in self.get_unfinished_installs()
         was_installed = name in self.get_committed_apps()
         # A failed attempt leaves module rows behind, which a plain install refuses as duplicates.
@@ -66,6 +68,7 @@ class SiteApps:
         return [app for app in apps if isinstance(app, str)] if isinstance(apps, list) else []
 
     def set_unfinished_install(self, app_name: str, unfinished: bool) -> None:
+        """Add or remove the app from the site's unfinished installs."""
         apps = [app for app in self.get_unfinished_installs() if app != app_name]
         if unfinished:
             apps.append(app_name)
@@ -74,6 +77,7 @@ class SiteApps:
             self.site.config_file.set_values({UNFINISHED_INSTALLS_KEY: apps})
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
+        """Install the app, then the apps it requires; return the installed dependencies."""
         self.site.install_app(app)
         required = self.get_required_apps(app)
         dependencies = []
@@ -85,6 +89,7 @@ class SiteApps:
         return dependencies
 
     def uninstall_app(self, app: "App", force: bool) -> None:
+        """Uninstall the app from the site."""
         cmd = self.site._frappe_call(
             "frappe",
             "--site",
@@ -116,6 +121,7 @@ class SiteApps:
             self.site.config_file.set_values({"installed_apps": committed})
 
     def disabled_apps(self) -> list[str]:
+        """The apps disabled on the site."""
         return self.site.database_state.disabled_apps
 
     def enable_app(self, app: "App") -> None:
@@ -187,6 +193,7 @@ class SiteApps:
         )
 
     def _clear_cache(self) -> None:
+        """Clear the site cache."""
         run_command(
             self.site._frappe_call("frappe", "--site", self.site.config.name, "clear-cache"),
             cwd=self.site.bench.sites_path,
@@ -221,6 +228,7 @@ class SiteApps:
         return self.site.database_state.exclude_disabled(self.installed_apps())
 
     def _site_config(self) -> dict:
+        """The parsed site_config.json; raise when the site does not exist."""
         config_path = self.site.path / "site_config.json"
         if not config_path.exists():
             raise BenchError(f"Site '{self.site.config.name}' does not exist.")
@@ -276,6 +284,7 @@ class SiteApps:
         app_name: str,
         on_progress: Callable[[str], None],
     ) -> None:
+        """Remove the app from the bench when no site has it installed."""
         for site in self.site.bench.sites():
             installed_apps = site.list_apps()
             if len(installed_apps) == 0 or app_name in installed_apps:

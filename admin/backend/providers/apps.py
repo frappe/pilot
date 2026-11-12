@@ -28,6 +28,7 @@ class AppProvider:
         self._bench_root = bench_root
 
     def get_all(self) -> list[AppInfo]:
+        """Every cloned app."""
         return [self.get_app(name) for name in self.cloned_app_names]
 
     @property
@@ -39,6 +40,7 @@ class AppProvider:
         return [d.name for d in sorted(apps_path.iterdir()) if d.is_dir() and (d / ".git").exists()]
 
     def get_app(self, name: str) -> AppInfo:
+        """One app with its git state."""
         app_path = self._bench_root / "apps" / name
         repo = GitRepo(app_path)
         title, description = self.get_pyproject_meta(app_path, name)

@@ -43,6 +43,7 @@ class CronManager:
         self._bench_root = bench_root
 
     def get_schedule(self, job_key: str) -> str | None:
+        """The schedule of a job, if it is installed."""
         lines = self._read_crontab()
         try:
             i = lines.index(self._marker(job_key))
@@ -52,6 +53,7 @@ class CronManager:
             return None
 
     def set_schedule(self, job_key: str, cron_expr: str, command: str) -> None:
+        """Install or replace a job with its schedule and command."""
         with self._lock():
             lines = self._read_crontab()
             marker = self._marker(job_key)
@@ -84,6 +86,7 @@ class CronManager:
             self._write_crontab(lines)
 
     def remove_schedule(self, job_key: str) -> None:
+        """Remove a job."""
         with self._lock():
             lines = self._read_crontab()
             marker = self._marker(job_key)
@@ -94,6 +97,7 @@ class CronManager:
             self._write_crontab(lines)
 
     def _marker(self, job_key: str) -> str:
+        """The comment line that marks a job."""
         return f"{_MARKER_PREFIX}{self._bench_root}:{job_key}"
 
     @contextmanager
@@ -108,6 +112,7 @@ class CronManager:
             yield
 
     def _read_crontab(self) -> list[str]:
+        """The crontab lines; empty when there is no crontab."""
         result = self._crontab("-l")
         if result.returncode == 0:
             return result.stdout.splitlines()
@@ -117,6 +122,7 @@ class CronManager:
         raise CronError(f"Could not read the crontab: {result.stderr.strip()}")
 
     def _write_crontab(self, lines: list[str]) -> None:
+        """Write the crontab, or remove it when it is empty."""
         non_empty = [line for line in lines if line.strip()]
         if not non_empty:
             self._crontab("-r")
@@ -127,6 +133,7 @@ class CronManager:
 
     @staticmethod
     def _crontab(*arguments: str, content: str | None = None) -> subprocess.CompletedProcess:
+        """Run crontab; raise when it is missing."""
         if shutil.which("crontab") is None:
             raise CronError("The `crontab` command is missing. Install cron (cronie on Fedora and Arch).")
         return subprocess.run(

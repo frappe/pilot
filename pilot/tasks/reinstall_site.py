@@ -14,10 +14,12 @@ class ReinstallSiteTask(Task):
     admin_password: Annotated[str, Arg(cli=False)]
 
     def run(self) -> None:
+        """Reinstall the site."""
         self.reinstall()
 
     @step("reinstall", lambda self: f"Reinstall site {self.site}")
     def reinstall(self) -> None:
+        """Reinstall the site with the new password."""
         self.bench.site(self.site).reinstall(self.admin_password)
 
 

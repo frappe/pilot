@@ -18,12 +18,14 @@ class BenchArtifacts:
         self.root = root.resolve()
 
     def restore(self, bench, paths: list[str]) -> None:
+        """Copy the saved paths into the bench and repoint links that pointed at the saved copy."""
         for path in paths:
             self.copy_directory(self.root / path, bench.path / path)
             self.relocate_links(self.root, bench.path.resolve(), root=bench.path / path)
 
     @staticmethod
     def copy_directory(source: Path, destination: Path) -> None:
+        """Copy a directory tree; refuse a symlinked destination."""
         if destination.is_symlink():
             raise BenchError(f"Refusing to copy into a symlinked directory: {destination}")
         destination.mkdir(parents=True, exist_ok=True)
@@ -57,6 +59,7 @@ class BenchArtifacts:
 
     @staticmethod
     def relocate_links(source: Path, destination: Path, *, root: Path | None = None) -> None:
+        """Rewrite absolute links under root that point into source so they point into destination."""
         directories = [root or destination]
         while directories:
             with os.scandir(directories.pop()) as entries:

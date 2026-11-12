@@ -121,18 +121,22 @@ _UNKNOWN = {Any, object, dict, list}
 
 
 def _is_union(tp) -> bool:
+    """Whether the type is a union."""
     return isinstance(tp, types.UnionType) or get_origin(tp) is Union
 
 
 def _is_schema(tp) -> bool:
+    """Whether the type is a dataclass or TypedDict."""
     return isinstance(tp, type) and (is_dataclass(tp) or is_typeddict(tp))
 
 
 def _literal(value) -> str:
+    """The value as a TypeScript literal."""
     return f"'{value}'" if isinstance(value, str) else str(value).lower()
 
 
 def _ts_type(tp) -> str:
+    """The TypeScript type of a Python type."""
     origin, args = get_origin(tp), get_args(tp)
     if _is_union(tp):
         return " | ".join(dict.fromkeys(_ts_type(arg) for arg in args))
@@ -147,6 +151,7 @@ def _ts_type(tp) -> str:
 
 
 def _named_type(tp) -> str:
+    """The TypeScript type of a named Python type."""
     if isinstance(tp, type) and issubclass(tp, Enum):
         return " | ".join(_literal(member.value) for member in tp)
     if _is_schema(tp):
@@ -175,6 +180,7 @@ def _fields(schema) -> list[tuple[str, Any, bool]]:
 
 
 def _nested_schemas(tp):
+    """Yield the schemas nested in a type."""
     if _is_schema(tp):
         yield tp
         return
@@ -183,6 +189,7 @@ def _nested_schemas(tp):
 
 
 def _module_schemas(module) -> list:
+    """The schemas a module defines."""
     return [
         value for value in vars(module).values() if _is_schema(value) and value.__module__ == module.__name__
     ]
@@ -197,6 +204,7 @@ class TypeFile:
             self.exports.extend(_module_schemas(root) if isinstance(root, types.ModuleType) else [root])
 
     def render(self, owners: dict[type, TypeFile]) -> str:
+        """The TypeScript file text."""
         seen: set = set()
         order: list = []
         imports: dict[str, set[str]] = {}
@@ -210,6 +218,7 @@ class TypeFile:
         return "\n".join(header) + "\n" + "\n\n".join(_render(schema) for schema in order) + "\n"
 
     def _collect(self, schema, owners, seen, order, imports) -> None:
+        """Add a schema and its nested schemas in order, or import them."""
         owner = owners.get(schema, self)
         if owner is not self:
             imports.setdefault(owner.ts_name, set()).add(schema.__name__)
@@ -224,6 +233,7 @@ class TypeFile:
 
 
 def _render(schema) -> str:
+    """The TypeScript interface of a schema."""
     lines = [f"export interface {schema.__name__} {{"]
     for name, hint, optional in _fields(schema):
         lines.append(f"  {name}{'?' if optional else ''}: {_ts_type(hint)}")
@@ -244,6 +254,7 @@ def render_all(targets) -> dict[str, str]:
 
 
 def main() -> None:
+    """Write the TypeScript type files."""
     output_dir = Path(__file__).resolve().parent.parent / _OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
     for file_name, source in render_all(_TARGETS).items():

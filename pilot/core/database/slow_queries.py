@@ -21,12 +21,14 @@ def normalize(sql: str) -> str:
 
 
 def to_text(value: object) -> str:
+    """The value as text."""
     if isinstance(value, (bytes, bytearray)):
         return value.decode("utf-8", "replace")
     return "" if value is None else str(value)
 
 
 def to_seconds(value: object) -> float:
+    """The value in seconds, or 0.0."""
     if isinstance(value, timedelta):
         return value.total_seconds()
     try:
@@ -36,6 +38,7 @@ def to_seconds(value: object) -> float:
 
 
 def to_iso(value: object) -> str | None:
+    """The value as an ISO time, or None."""
     if isinstance(value, datetime):
         return value.isoformat()
     return value if isinstance(value, str) and value else None
@@ -81,9 +84,11 @@ class SlowQueryLog:
         return (watermark["time"], watermark["sql_text"], watermark["thread_id"]) if watermark else None
 
     def records(self) -> list[dict]:
+        """The saved slow query records."""
         return self._read_all().get("records", [])
 
     def append(self, rows: list[dict]) -> None:
+        """Add new rows, skipping ones already saved."""
         data = self._read_all()
         existing = data.get("records", [])
         # Defense-in-depth: two rows can share the exact keyset cursor value
@@ -119,6 +124,7 @@ class SlowQueryLog:
         self.path.write_text(json.dumps({"watermark": watermark, "records": records[-MAX_RECORDS:]}))
 
     def _read_all(self) -> dict:
+        """The saved data, or an empty dict."""
         if not self.path.exists():
             return {}
         try:

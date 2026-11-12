@@ -23,6 +23,7 @@ class InstallAppCommand(Command):
         self.site: "Site" = self.bench.site(self.site_name)
 
     def run(self) -> None:
+        """Install the app on the site."""
         if not self.site.exists:
             raise BenchError(f"Site '{self.site_name}' does not exist.")
 

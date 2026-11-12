@@ -9,22 +9,27 @@ from pilot.exceptions import InsufficientDiskSpaceError, TaskConflictError
 
 
 def site_name(kwargs: dict) -> str:
+    """The site name from the view arguments."""
     return kwargs["name"]
 
 
 def site_not_found():
+    """A 404 response for a missing site."""
     return error_response("site_not_found", "Site not found.", 404)
 
 
 def malformed_body():
+    """A 400 response for a body that is not a JSON object."""
     return error_response("malformed_body", "Request body must be a JSON object.", 400)
 
 
 def invalid_fields():
+    """A 422 response for invalid fields."""
     return error_response("invalid_fields", "One or more request fields are invalid.", 422)
 
 
 def text_fields(data: dict, *names: str) -> dict[str, str] | None:
+    """The named text fields, or None when one is not a string."""
     fields = {}
     for name in names:
         value = data.get(name, "")
@@ -35,10 +40,12 @@ def text_fields(data: dict, *names: str) -> dict[str, str] | None:
 
 
 def internal_error(message: str):
+    """A 500 response with the message."""
     return error_response("internal_error", message, 500)
 
 
 def task_failure(error: Exception):
+    """The error response for a task that could not be queued."""
     if isinstance(error, TaskConflictError):
         return error_response("task_conflict", "A conflicting task is already active.", 409)
     if isinstance(error, ValueError):
@@ -75,6 +82,7 @@ def server_access_locked_response():
 
 
 def site_name_failure(message: str):
+    """The error response for an invalid or taken site name."""
     if "already" in message or "clashes" in message:
         return error_response("site_name_conflict", "The site name is already in use.", 409)
     return error_response("invalid_site_name", message, 422)

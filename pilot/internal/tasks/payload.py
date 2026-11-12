@@ -36,6 +36,7 @@ class TaskPayload:
 
     @property
     def metadata(self) -> dict:
+        """The task's meta.json content."""
         return {
             "task_id": self.task_id,
             "command": self.command,
@@ -52,6 +53,7 @@ class TaskPayload:
 
     @property
     def private_files(self) -> dict[str, str]:
+        """The private files to write next to meta.json: secrets and callbacks."""
         files = {}
         if self.secret_args:
             files["secrets.json"] = json.dumps(self.secret_args)
@@ -61,6 +63,7 @@ class TaskPayload:
 
     @property
     def request_fingerprint(self) -> str:
+        """A digest of the command and its identifying arguments."""
         request = json.dumps(
             {"command": self.command, "args": fingerprint_task_args(self.command, self.args)},
             sort_keys=True,
@@ -88,6 +91,7 @@ class TaskPayloadBuilder:
         args: dict,
         callbacks: TaskCallbacks | None,
     ) -> TaskPayload:
+        """The payload for a new task."""
         command_argv = self.build_command_argv(command, args)
         return TaskPayload(
             task_id=self._task_id_generator(),
@@ -103,6 +107,7 @@ class TaskPayloadBuilder:
         )
 
     def build_command_argv(self, command: str, args: dict) -> list[str]:
+        """The command line that runs the task module."""
         self.validate_args(command, args)
         return [
             sys.executable,
@@ -113,6 +118,7 @@ class TaskPayloadBuilder:
         ]
 
     def validate_args(self, command: str, args: dict) -> None:
+        """Raise for an unknown command, unsafe values or a missing required argument."""
         if command not in self._required_args:
             raise ValueError(f"Unknown command: {command!r}. Allowed: {sorted(self._required_args)}")
         reject_url_credentials(args)
@@ -126,6 +132,7 @@ class TaskPayloadBuilder:
 
     @staticmethod
     def validate_callbacks(callbacks: TaskCallbacks | None) -> dict:
+        """The validated callbacks by trigger."""
         payload = {}
         for trigger, spec in (callbacks or {}).items():
             if trigger not in ("on_success", "on_failure", "on_cancel"):

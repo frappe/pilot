@@ -87,6 +87,7 @@ class ProcessDefinitionBuilder:
         self.watch_admin_js = watch_admin_js
 
     def prod_process_definitions(self) -> list[ProcessDefinition]:
+        """The production processes: workload, Redis and Admin."""
         defs = [
             *self.workload_definitions(),
             self.redis_definition("redis_cache", "redis_cache.conf"),
@@ -99,6 +100,7 @@ class ProcessDefinitionBuilder:
         return defs
 
     def workload_definitions(self) -> list[ProcessDefinition]:
+        """The web, realtime and worker processes."""
         if self.bench.is_lite_mode:
             # web, realtime and jobs all live in the one lite process.
             return [self.web_definition(), self.admin_definition()]
@@ -123,6 +125,7 @@ class ProcessDefinitionBuilder:
         ]
 
     def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
+        """Make the web process wait for the database."""
         from pilot.core.server import Server
 
         web = next(pd for pd in defs if pd.name == "web")
@@ -147,6 +150,7 @@ class ProcessDefinitionBuilder:
         return defs
 
     def linked_app_dev_definitions(self) -> list[ProcessDefinition]:
+        """The dev processes of linked apps with a dev script."""
         return [
             self.app_dev_definition(app)
             for app in self.bench.apps()
@@ -154,6 +158,7 @@ class ProcessDefinitionBuilder:
         ]
 
     def app_dev_definition(self, app: "App") -> ProcessDefinition:
+        """The dev process of a linked app."""
         # frappe-ui's Vite plugins read these, since a linked app has no bench folder above it.
         name = f"{app.config.name}-dev"
         return ProcessDefinition(
@@ -169,6 +174,7 @@ class ProcessDefinitionBuilder:
         )
 
     def to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
+        """The development form of a process."""
         if pd.name == "admin":
             return (
                 self.watch_admin_definition()
@@ -189,6 +195,7 @@ class ProcessDefinitionBuilder:
         return {"PYTHONUNBUFFERED": "1"}
 
     def web_definition(self, dev: bool = False) -> ProcessDefinition:
+        """The web process."""
         sites = self.bench.sites_path
         if self.bench.is_lite_mode:
             return self.lite_definition(dev=dev)
@@ -265,6 +272,7 @@ class ProcessDefinitionBuilder:
         )
 
     def socketio_definition(self, dev: bool = False) -> ProcessDefinition:
+        """The realtime process."""
         socket = None if dev else self.bench.realtime_socket
         if self.bench.config.socketio_backend == "python":
             argv = [str(self.python), "-m", "frappe.realtime.server"]
@@ -284,6 +292,7 @@ class ProcessDefinitionBuilder:
         )
 
     def watch_definition(self) -> ProcessDefinition:
+        """The asset watch process."""
         # Non-critical: frappe watch dies when the initial esbuild build fails
         # (e.g. unbuilt assets on a fresh bench); the bench must outlive it.
         return ProcessDefinition(
@@ -309,6 +318,7 @@ class ProcessDefinitionBuilder:
         ]
 
     def worker_pool_definition(self, name: str, queues: str, num_workers: int) -> ProcessDefinition:
+        """A worker pool process for the queues."""
         return ProcessDefinition(
             name=name,
             argv=[
@@ -329,6 +339,7 @@ class ProcessDefinitionBuilder:
         )
 
     def worker_definitions(self, queue: str, count: int) -> list[ProcessDefinition]:
+        """The worker processes of one queue."""
         sites = self.bench.sites_path
         slug = queue_slug(queue)
         return [
@@ -361,6 +372,7 @@ class ProcessDefinitionBuilder:
         )
 
     def redis_definition(self, name: str, config_filename: str) -> ProcessDefinition:
+        """A Redis process."""
         from pilot.managers.redis import redis_server_binary
 
         return ProcessDefinition(
@@ -374,6 +386,7 @@ class ProcessDefinitionBuilder:
         )
 
     def admin_definition(self) -> ProcessDefinition:
+        """The Admin process."""
         from pilot.core.server import Server
 
         root = Server().root
@@ -397,9 +410,11 @@ class ProcessDefinitionBuilder:
         )
 
     def watch_admin_definition(self) -> ProcessDefinition:
+        """The Admin frontend watch process."""
         return self.build_admin_definition("--dev")
 
     def build_admin_definition(self, mode_flag: str) -> ProcessDefinition:
+        """The Admin frontend build process in a mode."""
         from pilot.core.server import Server
 
         root = Server().root
@@ -424,6 +439,7 @@ class ProcessDefinitionBuilder:
         )
 
     def admin_frontend_dev_definition(self) -> ProcessDefinition:
+        """The Admin frontend dev server process."""
         from pilot.core.server import Server
 
         frontend_dir = Server().root / "admin" / "frontend"

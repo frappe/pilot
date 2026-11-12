@@ -75,6 +75,7 @@ class DatabaseConfigurations:
         self.quick_actions = quick_actions
 
     def snapshot(self) -> dict:
+        """The MariaDB variables with their values and edit rules."""
         read_reason = self._read_reason()
         managed = self.config.db_type == "mariadb" and not self.config.mariadb.existing
         if read_reason:
@@ -149,6 +150,7 @@ class DatabaseConfigurations:
         }
 
     def prepare_change(self, name: str, value: object) -> DatabaseConfigurationChange:
+        """Validate a variable change and describe it, without applying it."""
         if name in MEMORY_LIMIT_NAMES:
             raise DatabaseError(MEMORY_LIMIT_READ_ONLY_REASON)
         spec = mariadb_variable_spec(name)
@@ -179,6 +181,7 @@ class DatabaseConfigurations:
         }
 
     def set(self, name: str, value: object) -> bool:
+        """Apply a variable change; return whether a restart is needed."""
         if name in MEMORY_LIMIT_NAMES:
             raise DatabaseError(MEMORY_LIMIT_READ_ONLY_REASON)
         spec = mariadb_variable_spec(name)
@@ -194,6 +197,7 @@ class DatabaseConfigurations:
         value: MariaDBValue | None,
         guarded_editors: Mapping[VariableEditAction, GuardedEditor],
     ) -> DatabaseConfigurationEditor | None:
+        """The edit contract for a variable, or None when it is read-only."""
         action = spec.edit_action
         if action is None:
             return None
@@ -213,6 +217,7 @@ class DatabaseConfigurations:
         return guarded_editor["edit"] if guarded_editor is not None else None
 
     def _parse_values(self, raw_values: Mapping[str, object]) -> dict[str, MariaDBValue]:
+        """The server values of the known variables."""
         values: dict[str, MariaDBValue] = {}
         for spec in MARIADB_VARIABLE_SPECS:
             if spec.name not in raw_values:
@@ -227,6 +232,7 @@ class DatabaseConfigurations:
         self,
         values: Mapping[str, MariaDBValue],
     ) -> dict[VariableEditAction, GuardedEditor]:
+        """The edit contracts of the variables that use quick actions."""
         editors: dict[VariableEditAction, GuardedEditor] = {}
         if "performance_schema" in values:
             editors["performance_schema"] = {
@@ -307,6 +313,7 @@ class DatabaseConfigurations:
         dynamic_max: int | None = None,
         requires_restart: bool,
     ) -> DatabaseConfigurationEditor:
+        """One edit contract."""
         return {
             "action": action,
             "value": value,
@@ -325,6 +332,7 @@ class DatabaseConfigurations:
         spec: MariaDBVariableSpec,
         value: object,
     ) -> DatabaseConfigurationChange:
+        """Validate a change that goes through a quick action."""
         actions = self._quick_actions()
         if spec.edit_action == "performance_schema":
             if type(value) is not bool:
@@ -352,6 +360,7 @@ class DatabaseConfigurations:
         }
 
     def _read_reason(self) -> str:
+        """Why the variables cannot be read, or an empty string."""
         if self.config.db_type != "mariadb":
             return _MARIADB_ONLY
         manager = self._manager()
@@ -365,6 +374,7 @@ class DatabaseConfigurations:
         return ""
 
     def _edit_reason(self, *, require_reachable: bool = False) -> str:
+        """Why the variables cannot be edited, or an empty string."""
         if self.config.db_type != "mariadb":
             return _MARIADB_ONLY
         if self.config.mariadb.existing:
@@ -376,11 +386,13 @@ class DatabaseConfigurations:
         return ""
 
     def _manager(self) -> MariaDBManager:
+        """The MariaDB manager; raise when there is none."""
         if self.manager is None:
             raise DatabaseError(_MARIADB_ONLY)
         return self.manager
 
     def _quick_actions(self) -> DatabaseQuickActions:
+        """The quick actions, created on first use."""
         if self.quick_actions is None:
             self.quick_actions = DatabaseQuickActions(self.config, self._manager())
         return self.quick_actions

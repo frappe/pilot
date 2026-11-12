@@ -9,4 +9,5 @@ class UpdatesConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "UpdatesConfig":
+        """The updates config from its TOML table."""
         return cls(auto_pilot_update=bool(data.get("auto_pilot_update", True)))

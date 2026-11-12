@@ -27,6 +27,7 @@ class GetAndInstallAppTask(Task):
             self.sites = [self.site]
 
     def run(self) -> None:
+        """Get the app and install it on the sites."""
         result = self.fetch()
         self.reload_for_new_app()
         self.install_on_sites(result.app)
@@ -38,6 +39,7 @@ class GetAndInstallAppTask(Task):
         self.bench.reload_workers(raises=True)
 
     def fetch(self) -> AppInstallResult:
+        """Get the app into the bench."""
         # Marketplace apps can bring dependency apps; raw repos do not.
         app, commit = self.look_up()
         return app.install(
@@ -58,6 +60,7 @@ class GetAndInstallAppTask(Task):
         return app, resolver.commit
 
     def install_on_sites(self, app: App) -> None:
+        """Install the app on each site."""
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
             with self.step(f"install_{safe_key}_{app.config.name}", f"Install {app.config.name} on {site}"):

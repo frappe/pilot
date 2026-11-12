@@ -12,6 +12,7 @@ _FIELDS = set(BackupConfig().__dict__)
 
 
 def read_retention(site_config_path: Path) -> BackupConfig | None:
+    """The retention in site_config.json, or None."""
     try:
         block = _load(site_config_path).get(_KEY)
     except (json.JSONDecodeError, OSError):
@@ -22,6 +23,7 @@ def read_retention(site_config_path: Path) -> BackupConfig | None:
 
 
 def write_retention(site_config_path: Path, config: BackupConfig) -> None:
+    """Save the retention in site_config.json."""
     with exclusive_file_lock(site_config_path):
         data = _load(site_config_path)
         data[_KEY] = asdict(config)
@@ -29,6 +31,7 @@ def write_retention(site_config_path: Path, config: BackupConfig) -> None:
 
 
 def clear_retention(site_config_path: Path) -> None:
+    """Remove the retention from site_config.json."""
     with exclusive_file_lock(site_config_path):
         data = _load(site_config_path)
         if data.pop(_KEY, None) is not None:

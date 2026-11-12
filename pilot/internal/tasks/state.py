@@ -18,6 +18,7 @@ _FAILURE_MESSAGES = {
 
 
 def parse_task_status(value: str) -> TaskStatus:
+    """The status for a stored value; raise for an unknown one."""
     try:
         return TaskStatus(value)
     except ValueError as error:
@@ -25,11 +26,13 @@ def parse_task_status(value: str) -> TaskStatus:
 
 
 def validate_task_transition(current: TaskStatus, target: TaskStatus) -> None:
+    """Raise when the task may not move from current to target."""
     if target not in _ALLOWED_TASK_TRANSITIONS[current]:
         raise ValueError(f"Invalid task transition: {current.value} -> {target.value}")
 
 
 def safe_task_failure(value: object, status: TaskStatus) -> TaskFailure | None:
+    """The failure code and message safe to show for a failed task."""
     if status != TaskStatus.FAILED:
         return None
     code = value.get("code") if isinstance(value, dict) else None

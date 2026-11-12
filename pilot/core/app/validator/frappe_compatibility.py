@@ -50,6 +50,7 @@ class FrappeCompatibilityCheck:
     """
 
     def run(self, app: "App") -> None:
+        """Raise when the app does not support the bench's Frappe version."""
         declared = (read_pyproject(app) or {}).get("tool", {}).get("bench", {}).get("frappe-dependencies", {})
         if not isinstance(declared, dict):
             return  # DependencyDeclarationsCheck reports a malformed table on install

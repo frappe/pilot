@@ -16,6 +16,7 @@ class MigrateTask(Task):
     site: str
 
     def run(self) -> None:
+        """Migrate one site in the migration."""
         operation = self.bench.migrations.get_for_chain_task(
             self.operation_id, self.running_task_id, self.command, {"site": self.site}
         )

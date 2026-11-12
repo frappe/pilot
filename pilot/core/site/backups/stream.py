@@ -35,6 +35,7 @@ class FifoReader:
         self.file: BinaryIO
 
     def read(self, size: int = -1) -> bytes:
+        """Read from the pipe; raise when it ends before the full size."""
         data = self.file.read(size)
         self.size += len(data)
         if not data and not self.is_complete:

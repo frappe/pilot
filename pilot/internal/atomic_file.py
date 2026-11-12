@@ -34,6 +34,7 @@ def exchange_paths(first: Path, second: Path) -> None:
 
 
 def _lock_path(path: Path) -> Path:
+    """The lock file that guards writes to this path."""
     return path.with_name(f".{path.name}.lock")
 
 
@@ -91,6 +92,7 @@ def replace_private_text_locked(path: Path, content: str) -> None:
 
 
 def _existing_file_metadata(path: Path) -> os.stat_result | None:
+    """The file's lstat result, or None when missing; raise for a symbolic link."""
     try:
         metadata = path.lstat()
     except FileNotFoundError:
@@ -103,6 +105,7 @@ def _existing_file_metadata(path: Path) -> os.stat_result | None:
 
 
 def _preserve_owner(descriptor: int, existing: os.stat_result | None) -> None:
+    """Give the new file the owner of the file it replaces."""
     if existing is None:
         return
     temporary = os.fstat(descriptor)
@@ -111,6 +114,7 @@ def _preserve_owner(descriptor: int, existing: os.stat_result | None) -> None:
 
 
 def _verify_existing_file(path: Path, expected: os.stat_result | None) -> None:
+    """Raise when the target changed since it was first inspected."""
     current = _existing_file_metadata(path)
     if expected is None and current is None:
         return
@@ -130,6 +134,7 @@ def fsync_directory_files(path: Path) -> None:
 
 
 def _fsync_directory(path: Path) -> None:
+    """Flush a directory entry to disk so a rename survives a crash."""
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     directory_descriptor = os.open(path, directory_flags)
     try:

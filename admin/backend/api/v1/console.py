@@ -52,6 +52,7 @@ def get_python_docstring():
 
 @console_bp.errorhandler(LowMemoryError)
 def _low_memory_error(error: LowMemoryError):
+    """Answer 503 when memory is low."""
     return error_response("low_memory", str(error), 503)
 
 
@@ -68,6 +69,7 @@ def _parse_cursor_request(data):
 
 
 def _get_completer() -> PythonCompleter:
+    """The Python completer of the bench, created on first use."""
     root = ApiRequest.get_bench_root()
     with _completers_lock:
         if root not in _completers:

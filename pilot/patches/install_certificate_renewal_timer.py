@@ -24,6 +24,7 @@ def run(benches_root: Path) -> None:
 
 
 def _is_issuing_certificates(config) -> bool:
+    """Whether the bench issues certificates."""
     from pilot.managers.platform import HostPlatform
 
     return HostPlatform().is_linux and config.production.enabled and bool(config.letsencrypt.email)

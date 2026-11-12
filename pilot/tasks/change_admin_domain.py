@@ -16,11 +16,13 @@ class ChangeAdminDomainTask(Task):
     tls: bool | None = None
 
     def run(self) -> None:
+        """Move the Admin to a new domain."""
         self.require_production_privileges()
         self.change_domain()
 
     @step("domain", lambda self: f"Move the admin to {self.domain}")
     def change_domain(self) -> None:
+        """Change the admin domain."""
         self.bench.change_admin_domain(self.domain, self.tls, on_progress=self.report)
 
 
