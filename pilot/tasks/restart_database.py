@@ -14,6 +14,7 @@ class RestartDatabaseTask(Task):
 
     @step("restart", "Restarting MariaDB and checking its health")
     def run(self) -> None:
+        """Restart the database server."""
         DatabaseQuickActions(self.bench.config).restart()
 
 

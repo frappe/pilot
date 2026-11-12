@@ -24,6 +24,7 @@ class NewAppTask(Task):
     github_workflow: bool = False
 
     def run(self) -> None:
+        """Create the app."""
         self.scaffold()
 
     @on_success
@@ -34,6 +35,7 @@ class NewAppTask(Task):
 
     @step("create", lambda self: f"Create {self.name}")
     def scaffold(self) -> None:
+        """Create the app files."""
         options = NewAppOptions(
             title=self.title,
             description=self.description,

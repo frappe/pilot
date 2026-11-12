@@ -36,6 +36,7 @@ class LogProvider:
         self._bench_root = bench_root
 
     def get_all(self) -> list[LogFileInfo]:
+        """The log files."""
         logs_dir = self._bench_root / "logs"
         if not logs_dir.exists():
             return []
@@ -56,6 +57,7 @@ class LogProvider:
         return infos
 
     def tail_file(self, filename: str, lines: int = 200) -> list[str]:
+        """The last lines of a log file."""
         log_path = self._validated_path(filename)
         if not log_path.exists():
             raise FileNotFoundError(f"Log file not found: {filename}")
@@ -64,6 +66,7 @@ class LogProvider:
         return [_ANSI_RE.sub("", line) for line in tail[-lines:]] if lines > 0 else []
 
     def get_file_path(self, filename: str) -> Path:
+        """The validated path of a log file."""
         return self._validated_path(filename)
 
     def follow_file(
@@ -102,6 +105,7 @@ class LogProvider:
 
     @staticmethod
     def count_lines(path: Path) -> int:
+        """The line count of a file."""
         from pilot.exceptions import CommandError
         from pilot.internal.command import run_command
 

@@ -14,6 +14,7 @@ class SlidingWindow:
         self._lock = threading.Lock()
 
     def allow(self, key: str) -> bool:
+        """Whether the key is within its limit; count the hit."""
         now = time.monotonic()
         with self._lock:
             recent = [t for t in self._hits.get(key, []) if now - t < self._window]
@@ -33,6 +34,7 @@ class UsedTokens:
         self._lock = threading.Lock()
 
     def use(self, jti: str, exp: float) -> bool:
+        """Whether the token ID is new; record it until it expires."""
         now = time.time()
         with self._lock:
             self._used = {j: e for j, e in self._used.items() if e > now}

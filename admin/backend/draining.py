@@ -19,6 +19,7 @@ def drain_streams_on_sigterm() -> None:
         return
 
     def handle(signum, frame) -> None:
+        """Mark the Admin as draining and pass the signal to gunicorn."""
         _draining.set()
         gunicorn_handler(signum, frame)
 

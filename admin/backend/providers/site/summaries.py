@@ -16,6 +16,7 @@ class SiteSummaryProvider:
         self.requests = RequestRollup(bench)
 
     def get_all(self, site_names: Iterable[str]) -> dict[str, dict]:
+        """The uptime and request counts of each site."""
         return {
             name: {
                 "uptime_percent": self.uptime.get_percent(name),

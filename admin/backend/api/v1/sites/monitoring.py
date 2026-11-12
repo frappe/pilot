@@ -40,6 +40,7 @@ class SiteAnalytics(TypedDict):
 @sites_bp.get("/<name>/monitoring")
 @require_scope(site_name)
 def get_monitoring(name: str):
+    """Show the site monitoring data."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()

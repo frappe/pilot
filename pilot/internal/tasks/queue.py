@@ -14,13 +14,16 @@ class TaskQueue:
         self._files = TaskFiles(self._store.tasks_root)
 
     def queued_task_ids(self) -> list[str]:
+        """The queued task ids in run order."""
         with self._store.locked():
             return [task_id for _, task_id in self._queued_tasks_locked()]
 
     def positions(self) -> dict[str, int]:
+        """Each queued task's position, starting at 1."""
         return {task_id: position for position, task_id in enumerate(self.queued_task_ids(), start=1)}
 
     def claim_next(self) -> str | None:
+        """Move the first queued task to running and return its id."""
         with self._store.locked():
             queued = self._queued_tasks_locked()
             if not queued:
@@ -36,6 +39,7 @@ class TaskQueue:
             return task_id if claimed else None
 
     def _queued_tasks_locked(self) -> list[tuple[tuple, str]]:
+        """Queued tasks with their sort keys, in run order."""
         queued = []
         for task_dir in self._files.task_dirs():
             task_id = task_dir.name
@@ -51,6 +55,7 @@ class TaskQueue:
 
     @staticmethod
     def _fifo_key(metadata: dict, task_id: str) -> tuple:
+        """The run-order key: sequence number first, then queue time for older tasks."""
         sequence = metadata.get("queue_sequence")
         if isinstance(sequence, int):
             return (1, sequence, task_id)

@@ -34,14 +34,17 @@ class RegistryCache:
 
     @property
     def path(self) -> Path:
+        """The registry clone directory."""
         return self._cli_root / "system" / "registry-cache"
 
     @property
     def index_path(self) -> Path:
+        """The app index file."""
         return self.path / "apps.json"
 
     @property
     def _last_checked_path(self) -> Path:
+        """The file whose time records the last refresh check."""
         return self._cli_root / "system" / "registry-cache.last_checked"
 
     def load(self) -> list[dict]:
@@ -80,6 +83,7 @@ class RegistryCache:
             )
 
     def _read_json(self, path: Path):
+        """The parsed JSON file; raise when it cannot be read."""
         try:
             return json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
@@ -104,6 +108,7 @@ class RegistryCache:
                 self._touch_last_checked()
 
     def _is_cloned(self) -> bool:
+        """Whether the registry is cloned."""
         return (self.path / ".git").is_dir()
 
     def _clone(self) -> None:
@@ -120,6 +125,7 @@ class RegistryCache:
         self.install_daily_refresh_cron()
 
     def _reject_if_tampered(self) -> None:
+        """Raise when the clone has local changes."""
         try:
             result = run_command(["git", "-C", str(self.path), "status", "--porcelain"])
         except CommandError as exc:
@@ -134,12 +140,14 @@ class RegistryCache:
             )
 
     def _refresh_due(self) -> bool:
+        """Whether the refresh interval passed."""
         if not self._last_checked_path.exists():
             return True
         last_checked = self._last_checked_path.stat().st_mtime
         return time.time() - last_checked >= _REFRESH_INTERVAL_SECONDS
 
     def _refresh(self) -> None:
+        """Pull the registry when the remote head moved; keep the clone when offline."""
         remote_head = self._remote_head_sha()
         if remote_head is None:
             return  # offline - keep serving the existing clone
@@ -156,6 +164,7 @@ class RegistryCache:
             return  # local git trouble or network dropped mid-fetch - keep serving the existing clone
 
     def _remote_head_sha(self) -> str | None:
+        """The remote head commit, or None when offline."""
         try:
             result = run_command(
                 ["git", "ls-remote", REGISTRY_URL, "HEAD"], timeout=_LS_REMOTE_TIMEOUT_SECONDS
@@ -168,6 +177,7 @@ class RegistryCache:
         return sha or None
 
     def _touch_last_checked(self) -> None:
+        """Record the refresh check time."""
         self._last_checked_path.touch()
 
     def install_daily_refresh_cron(self) -> None:

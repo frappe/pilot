@@ -43,6 +43,7 @@ class SiteStorageCollector:
 
     @property
     def path(self) -> Path:
+        """The storage report file."""
         return self.bench.logs_path / REPORT_FILE_NAME
 
     def get_report(self) -> SiteStorageReport:
@@ -64,6 +65,7 @@ class SiteStorageCollector:
             return None
 
     def collect(self) -> SiteStorageReport:
+        """Measure each site's storage and save the report."""
         sites = self.bench.sites()
         database_bytes = self.get_database_bytes(sites)
         report = SiteStorageReport(
@@ -87,6 +89,7 @@ class SiteStorageCollector:
 
     @staticmethod
     def get_usage(site: "Site", database_bytes: int) -> SiteStorageUsage:
+        """The site's file and database usage."""
         private_bytes = DiskUsage(site.path / "private").bytes
         public_bytes = DiskUsage(site.path / "public").bytes
         return SiteStorageUsage(

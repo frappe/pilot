@@ -26,6 +26,7 @@ def run(benches_root: Path) -> None:
 
 
 def _has_own_mariadb(config, manager) -> bool:
+    """Whether the bench owns a managed MariaDB on Linux."""
     from pilot.managers.platform import HostPlatform
 
     return (

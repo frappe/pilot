@@ -14,6 +14,7 @@ def wizard_marker_path(bench_root: Path) -> Path:
 
 
 def running_setup_task(bench_root: Path):
+    """The running setup task, if any."""
     return next(
         (
             task
@@ -25,6 +26,7 @@ def running_setup_task(bench_root: Path):
 
 
 def setup_handoff_task(bench_root: Path):
+    """The setup task the wizard handed off, if any."""
     marker = wizard_marker_path(bench_root)
     if not marker.exists():
         return running_setup_task(bench_root)
@@ -50,6 +52,7 @@ def setup_handoff_task(bench_root: Path):
 
 
 def clear_wizard_marker_if_idle(bench_root: Path) -> None:
+    """Remove the wizard marker when no setup task runs."""
     marker = wizard_marker_path(bench_root)
     try:
         with exclusive_file_lock(marker):

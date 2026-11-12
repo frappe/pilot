@@ -50,7 +50,9 @@ def write_backup_upload_chunk(name: str, upload_id: str, part: str):
 @sites_bp.get("/<name>/uploads/<upload_id>")
 @require_scope(site_name)
 def get_backup_upload(name: str, upload_id: str):
+    """Show a backup upload's progress."""
     def status(upload: BackupUpload) -> BackupUploadStatus:
+        """The upload progress."""
         return BackupUploadStatus(files={part: BackupUploadFile(size=file["size"], received=file["received"]) for part, file in upload.files.items()})
 
     return _with_upload(name, upload_id, status)
@@ -59,6 +61,7 @@ def get_backup_upload(name: str, upload_id: str):
 @sites_bp.delete("/<name>/uploads/<upload_id>")
 @require_scope(site_name)
 def cancel_backup_upload(name: str, upload_id: str):
+    """Cancel a backup upload."""
     return _with_upload(name, upload_id, lambda upload: upload.delete() or {})
 
 
@@ -71,6 +74,7 @@ def find_upload(bench_root: Path, name: str, upload_id: str) -> BackupUpload:
 
 
 def _with_upload(name: str, upload_id: str, action):
+    """Run an action on an upload and answer with its result."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -83,6 +87,7 @@ def _with_upload(name: str, upload_id: str, action):
 
 
 def _files(value) -> dict[str, dict] | None:
+    """The valid upload file sizes, or None."""
     if not isinstance(value, dict) or not value or any(part not in RESTORE_PARTS for part in value):
         return None
     for file in value.values():
@@ -94,4 +99,5 @@ def _files(value) -> dict[str, dict] | None:
 
 
 def _invalid(message: str):
+    """A 422 response with the message."""
     return error_response("invalid_upload", message, 422)

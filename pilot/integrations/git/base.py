@@ -69,6 +69,7 @@ class GitProvider(abc.ABC):
     # -- shared helpers --------------------------------------------------------
 
     def _get_json(self, url: str, headers: dict):
+        """The response JSON and headers; raise a provider error on failure."""
         req = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -133,6 +134,7 @@ def same_repository(url_a: str, url_b: str) -> bool:
 
 
 def _repository_key(repo_url: str) -> str:
+    """The host and path of a repository URL, as a key."""
     parsed = urllib.parse.urlsplit(normalize_to_https(repo_url))
     if not parsed.hostname:
         return ""

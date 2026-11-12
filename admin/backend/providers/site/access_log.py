@@ -31,14 +31,17 @@ class SiteAccessLogProvider(WindowedLogProvider):
         self._bucket_seconds = max(60, self.window_seconds // _MAX_BUCKETS)
 
     def is_available(self) -> bool:
+        """Whether the access log exists."""
         return self._log_path.exists()
 
     def get_top_ips(self) -> dict:
+        """The top client IPs over time."""
         return build_timeline(
             self._points(), _TOP_LIMIT, self._bucket_seconds, "count", self.to_epoch_ms(self.cutoff), self.now_ms()
         )
 
     def _points(self) -> list[TimelinePoint]:
+        """The access log points in the window."""
         points = []
         for line in JsonLines(self._log_path).read_lines_newest_first():
             match = _LINE_RE.match(line.decode("utf-8", errors="replace"))
@@ -61,6 +64,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
 
     @staticmethod
     def _parse_time(value: str) -> datetime | None:
+        """The time of a log value, or None."""
         try:
             return datetime.strptime(value, _TIME_FORMAT)
         except ValueError:
@@ -68,6 +72,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
 
     @staticmethod
     def _parse_duration(value: str) -> int:
+        """The duration in microseconds, or 0."""
         try:
             return int(float(value) * 1_000_000)
         except ValueError:

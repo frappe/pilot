@@ -18,6 +18,7 @@ class BackupConfig:
 
     @property
     def counts(self) -> dict[str, int]:
+        """The retention counts by name."""
         return {
             "keep_last": self.keep_last,
             "keep_daily": self.keep_daily,

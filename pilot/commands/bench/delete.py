@@ -20,6 +20,7 @@ class DropBenchCommand(Command):
     skip_confirm: bool = False
 
     def run(self) -> None:
+        """Delete the bench after the user confirms."""
         self.bench.ensure_no_sites()
         self.confirm(
             f"Permanently delete bench '{self.bench.config.name}' and its database?",

@@ -12,11 +12,11 @@ if TYPE_CHECKING:
 
 
 def _no_step(key: str, label: str) -> None:
-    return None
+    """A step callback that does nothing."""
 
 
 def _no_progress(message: str) -> None:
-    return None
+    """A progress callback that does nothing."""
 
 
 class MigrationRecovery:
@@ -36,19 +36,26 @@ class MigrationRecovery:
         bench: Bench
 
         @property
-        def can_revert(self) -> bool: ...
+        def can_revert(self) -> bool:
+            """Whether every site has a backup to revert to."""
 
-        def site(self, name: str) -> SiteProgress: ...
+        def site(self, name: str) -> SiteProgress:
+            """The progress of one site."""
 
-        def _prepare_sites(self) -> None: ...
+        def _prepare_sites(self) -> None:
+            """Save maintenance settings and turn maintenance on."""
 
-        def _transition(self, target: str) -> None: ...
+        def _transition(self, target: str) -> None:
+            """Move to the target state."""
 
-        def _save(self) -> None: ...
+        def _save(self) -> None:
+            """Save the operation."""
 
-        def _restart_services(self) -> None: ...
+        def _restart_services(self) -> None:
+            """Restart the bench services."""
 
-        def _discard_snapshots(self) -> None: ...
+        def _discard_snapshots(self) -> None:
+            """Discard the migration backups."""
 
     def retry(self) -> None:
         """Resume the chain from needs_attention so the failed unit runs again."""
@@ -117,6 +124,7 @@ class MigrationRecovery:
         self._advance_revert()
 
     def next_revert_site(self) -> str | None:
+        """The next site to restore from its backup."""
         return next(
             (
                 site.name
@@ -129,6 +137,7 @@ class MigrationRecovery:
         )
 
     def revert_apps(self, on_step: "OnStep" = _no_step, on_progress: "OnProgress" = _no_progress) -> None:
+        """Check out each app's previous revision."""
         on_step("revert_apps", "Reverting app revisions")
         try:
             for revision in self.apps:
@@ -156,6 +165,7 @@ class MigrationRecovery:
     def revert_site(
         self, name: str, on_step: "OnStep" = _no_step, on_progress: "OnProgress" = _no_progress
     ) -> None:
+        """Restore one site from its migration backup."""
         site = self.site(name)
         on_step("revert_site", f"Recovering {name}")
         site.migration_status = "recovering"
@@ -175,6 +185,7 @@ class MigrationRecovery:
         self._advance_revert()
 
     def restart(self, on_step: "OnStep" = _no_step) -> None:
+        """Restart the services and discard the backups."""
         on_step("restart", "Restarting services")
         try:
             self._restart_services()
@@ -192,6 +203,7 @@ class MigrationRecovery:
             self._transition(phase)
 
     def _next_revert_phase(self) -> str:
+        """The next revert phase that has work left."""
         if self.apps and not self.revert_checkpoints.get("apps"):
             return "reverting_apps"
         if self.next_revert_site() is not None:
@@ -199,6 +211,7 @@ class MigrationRecovery:
         return "restarting"
 
     def _fail_revert(self, error: Exception) -> None:
+        """Record the error and move to revert_failed."""
         self.diagnosis = {"message": f"Revert failed: {error}", "output_excerpt": ""}
         self._transition("revert_failed")
 

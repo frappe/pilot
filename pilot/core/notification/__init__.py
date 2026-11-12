@@ -54,6 +54,7 @@ class ReadMarks:
     names: frozenset[str]
 
     def is_read(self, name: str, created_at: str) -> bool:
+        """Whether the notification is read."""
         return created_at <= self.read_through or name in self.names
 
 
@@ -109,6 +110,7 @@ class ReadState:
             yield
 
     def _write_locked(self, read_through: str, names: frozenset[str]) -> None:
+        """Save the read state; the caller holds the lock."""
         payload = {"read_through": read_through, "names": sorted(names)}
         replace_private_text_locked(self.path, json.dumps(payload))
 
@@ -132,6 +134,7 @@ class NotificationStore:
         task_id: str | None = None,
         action_route: str | None = None,
     ) -> Notification:
+        """Add a notification and return it; raise for an unknown category or severity."""
         if category not in CATEGORIES:
             raise ValueError(f"Unknown notification category: {category!r}")
         if severity not in SEVERITIES:
@@ -195,9 +198,11 @@ class NotificationStore:
         return count
 
     def mark_read(self, name: str) -> None:
+        """Mark one notification as read."""
         self.read_state.add(name)
 
     def mark_all_read(self) -> None:
+        """Mark every notification as read."""
         self.read_state.mark_through()
 
     def _build(self, record: dict, marks: ReadMarks) -> Notification | None:

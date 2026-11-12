@@ -38,9 +38,11 @@ class WebhookEndpoint:
     events: list[str] = field(default_factory=list)
 
     def receives(self, event: str) -> bool:
+        """Whether the endpoint receives the event."""
         return not self.events or event in self.events
 
     def validate(self) -> None:
+        """Raise when the endpoint is invalid."""
         if not self.url.startswith(("http://", "https://")):
             raise ValueError(f"Webhook URL must start with http:// or https://: {self.url!r}.")
         unknown = set(self.events) - WEBHOOK_EVENTS.keys()
@@ -60,6 +62,7 @@ def read_webhook_endpoints(data: dict) -> list[WebhookEndpoint]:
 
 
 def validate_webhook_endpoints(endpoints: list[WebhookEndpoint]) -> None:
+    """Raise when an endpoint is invalid or a URL is used twice."""
     for endpoint in endpoints:
         endpoint.validate()
     urls = [endpoint.url for endpoint in endpoints]

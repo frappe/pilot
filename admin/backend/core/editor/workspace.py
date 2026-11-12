@@ -58,6 +58,7 @@ class EditorWorkspace:
         return self.rel(target)
 
     def rel(self, abs_path: Path) -> str:
+        """The path relative to the app."""
         if abs_path == self.root:
             return "."
         return abs_path.relative_to(self.root).as_posix()
@@ -77,6 +78,7 @@ class EditorWorkspace:
         return blockers
 
     def tree(self, rel: str) -> list[dict]:
+        """The entries of a folder."""
         base = self.safe(rel)
         entries = []
         for item in os.scandir(base):
@@ -96,6 +98,7 @@ class EditorWorkspace:
         return entries
 
     def _mark_ignored(self, entries: list[dict]) -> None:
+        """Mark the entries git ignores."""
         if not self.git.is_repo:
             return
         ignored = self.git.ignored_set([e["path"] for e in entries])
@@ -104,6 +107,7 @@ class EditorWorkspace:
                 entry["ignored"] = True
 
     def read(self, rel: str) -> dict:
+        """The text of a file with its ETag; raise for a binary file."""
         raw = self.safe(rel).read_bytes()
         try:
             content = raw.decode("utf-8")
@@ -112,6 +116,7 @@ class EditorWorkspace:
         return {"path": rel, "content": content, "etag": _etag(raw)}
 
     def save(self, rel: str, content: str, if_match: str) -> tuple[int, dict]:
+        """Save a file if its ETag matches; return the status and result."""
         target = self.safe(rel)
         body = content.encode("utf-8")
         if target.exists():
@@ -128,6 +133,7 @@ class EditorWorkspace:
         return 200, {"etag": _etag(body)}
 
     def create(self, rel: str, kind: str) -> dict:
+        """Create a file or folder."""
         target = self.safe(rel)
         if target.exists():
             raise FileExistsError(rel)
@@ -139,6 +145,7 @@ class EditorWorkspace:
         return {"path": self.rel(target)}
 
     def rename(self, frm: str, to: str) -> dict:
+        """Rename a file or folder."""
         source = self.safe(frm)
         destination = self.safe(to)
         _refuse_hidden_inside(source)
@@ -151,6 +158,7 @@ class EditorWorkspace:
         return {"path": self.rel(destination)}
 
     def delete(self, rel: str) -> None:
+        """Delete a file or folder; refuse the app root."""
         target = self.safe(rel)
         if target == self.root or target.resolve() == self.root_real:
             raise EditorPathError("cannot delete root")
@@ -161,6 +169,7 @@ class EditorWorkspace:
             target.unlink()
 
     def list_files(self) -> list[str]:
+        """Every file in the app."""
         if self.git.is_repo:
             tracked = self.git.list_files(_FILE_LIST_CAP)
             if tracked is not None:
@@ -198,6 +207,7 @@ def _clean_relative(rel: str) -> str:
 
 
 def _is_hidden(rel: str) -> bool:
+    """Whether a path part is hidden."""
     return any(part.startswith(".") for part in PurePosixPath(rel).parts)
 
 
@@ -211,4 +221,5 @@ def _refuse_hidden_inside(path: Path) -> None:
 
 
 def _etag(data: bytes) -> str:
+    """The ETag of the data."""
     return hashlib.sha256(data).hexdigest()[:16]

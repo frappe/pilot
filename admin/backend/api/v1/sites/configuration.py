@@ -21,6 +21,7 @@ from pilot.internal.site_paths import site_config_path
 @sites_bp.get("/<name>/configuration")
 @require_scope(site_name)
 def get_configuration(name: str):
+    """Show the site config."""
     bench_root = ApiRequest.get_bench_root()
     if site_config_path(bench_root, name) is None:
         return site_not_found()
@@ -33,6 +34,7 @@ def get_configuration(name: str):
 @sites_bp.patch("/<name>/configuration")
 @require_scope(site_name)
 def update_configuration(name: str):
+    """Save the site config."""
     bench_root = ApiRequest.get_bench_root()
     if site_config_path(bench_root, name) is None:
         return site_not_found()

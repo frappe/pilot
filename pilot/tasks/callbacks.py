@@ -18,18 +18,22 @@ TaskCallbackTrigger = Literal["on_success", "on_failure", "on_cancel"]
 
 
 def on_success(func):
+    """Run the method's callback when the task succeeds."""
     return _callback_decorator("on_success", func)
 
 
 def on_failure(func):
+    """Run the method's callback when the task fails."""
     return _callback_decorator("on_failure", func)
 
 
 def on_cancel(func):
+    """Run the method's callback when the task is cancelled."""
     return _callback_decorator("on_cancel", func)
 
 
 def task_callbacks_for(task) -> TaskCallbacks:
+    """The callbacks the task's decorated methods declare."""
     callbacks: TaskCallbacks = {}
     for method_name in dir(task):
         method = getattr(task, method_name)
@@ -45,6 +49,7 @@ def task_callbacks_for(task) -> TaskCallbacks:
 
 
 def _set_callback(callbacks: TaskCallbacks, trigger: TaskCallbackTrigger, callback: TaskCallback) -> None:
+    """Set the callback for a trigger."""
     if trigger == "on_success":
         callbacks["on_success"] = callback
     elif trigger == "on_failure":
@@ -54,6 +59,7 @@ def _set_callback(callbacks: TaskCallbacks, trigger: TaskCallbackTrigger, callba
 
 
 def _callback_decorator(trigger: TaskCallbackTrigger, func):
+    """Record a callback trigger on the method."""
     callbacks = list(getattr(func, "_task_callbacks", ()))
     callbacks.append((trigger, func.__name__.replace("_", "-")))
     func._task_callbacks = tuple(callbacks)

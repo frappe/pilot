@@ -84,6 +84,7 @@ class WafConfig:
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "WafConfig":
+        """The WAF config from its TOML table."""
         if not data:
             return cls()
         # Let validate() report non-integers as ConfigError.
@@ -101,6 +102,7 @@ class WafConfig:
 
     @staticmethod
     def _parse_rule(data: dict) -> WafRule:
+        """A custom rule from its TOML table."""
         # Values pass through as strings; validate() is the authoritative check.
         return WafRule(
             name=str(data.get("name", "")),
@@ -119,6 +121,7 @@ class WafConfig:
         )
 
     def validate(self, nginx_max_body_size: str) -> None:
+        """Raise when the WAF config is invalid."""
         if self.mode not in WAF_MODES:
             raise ConfigError(f"waf.mode '{self.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}.")
         if not isinstance(self.paranoia, int) or not 1 <= self.paranoia <= 4:
@@ -151,12 +154,14 @@ class WafConfig:
         self._validate_custom_rules()
 
     def _validate_custom_rules(self) -> None:
+        """Raise when the custom rules are invalid."""
         if len(self.custom_rules) > _WAF_MAX_RULES:
             raise ConfigError(f"waf.custom_rules has too many rules (max {_WAF_MAX_RULES}).")
         for i, rule in enumerate(self.custom_rules):
             self._validate_custom_rule(f"waf.custom_rules[{i}]", rule)
 
     def _validate_custom_rule(self, prefix: str, rule: WafRule) -> None:
+        """Raise when a custom rule is invalid."""
         if rule.action not in WAF_RULE_ACTIONS:
             raise ConfigError(
                 f"{prefix}.action '{rule.action}' is invalid. Must be one of: {', '.join(WAF_RULE_ACTIONS)}."
@@ -172,6 +177,7 @@ class WafConfig:
         self._validate_rule_conditions(prefix, rule.conditions)
 
     def _validate_rule_conditions(self, prefix: str, conditions: list[WafCondition]) -> None:
+        """Raise when a rule's conditions are invalid."""
         if not conditions:
             raise ConfigError(f"{prefix} must have at least one condition.")
         if len(conditions) > _WAF_MAX_CONDITIONS:
@@ -181,6 +187,7 @@ class WafConfig:
 
     @staticmethod
     def _validate_condition(prefix: str, cond: WafCondition) -> None:
+        """Raise when a condition is invalid."""
         if cond.field not in WAF_RULE_FIELDS:
             raise ConfigError(
                 f"{prefix}.field '{cond.field}' is invalid. Must be one of: {', '.join(WAF_RULE_FIELDS)}."
@@ -200,6 +207,7 @@ class WafConfig:
 
 
 def _validate_header_condition(prefix: str, cond: WafCondition) -> None:
+    """Raise when a header condition has an invalid header name."""
     if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
         raise ConfigError(
             f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen)."
@@ -207,6 +215,7 @@ def _validate_header_condition(prefix: str, cond: WafCondition) -> None:
 
 
 def _validate_source_ip_condition(prefix: str, cond: WafCondition) -> None:
+    """Raise when a source IP condition has an invalid address."""
     if cond.field != "source_ip":
         return
 

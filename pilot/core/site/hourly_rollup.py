@@ -30,6 +30,7 @@ class HourlyRollup:
         self.state_path = bench.logs_path / self.state_name
 
     def update(self, now: datetime | None = None) -> None:
+        """Add new log records to the hourly counts and prune old hours."""
         if not self.source.exists():
             return
         state = self.read_state()
@@ -54,9 +55,11 @@ class HourlyRollup:
         )
 
     def add(self, hours: dict, hour: str, record: dict) -> None:
+        """Add one record to the hourly counts."""
         raise NotImplementedError
 
     def read_state(self) -> dict:
+        """The saved state, or an empty state."""
         try:
             state = json.loads(self.state_path.read_text())
         except FileNotFoundError:
@@ -71,12 +74,14 @@ class HourlyRollup:
         return [hours.get(hour) for hour in self.get_hour_keys(now or datetime.now(UTC))]
 
     def get_hour_keys(self, now: datetime) -> list[str]:
+        """The hour keys in the retention window, oldest first."""
         return [
             (now - timedelta(hours=back)).strftime(HOUR_FORMAT)
             for back in range(self.retention_hours - 1, -1, -1)
         ]
 
     def prune(self, sites: dict, now: datetime) -> None:
+        """Remove hours outside the retention window."""
         oldest = self.get_hour_keys(now)[0]
         for site in list(sites):
             sites[site] = {hour: value for hour, value in sites[site].items() if hour >= oldest}
@@ -103,6 +108,7 @@ class UptimeRollup(HourlyRollup):
     state_name = "uptime-hourly.json"
 
     def add(self, hours: dict, hour: str, record: dict) -> None:
+        """Count an up or down ping, skipping maintenance."""
         up = record.get("up")
         if record.get("maintenance") or not isinstance(up, bool):
             return
@@ -111,6 +117,7 @@ class UptimeRollup(HourlyRollup):
         counts[1] += 1
 
     def get_percent(self, site: str, now: datetime | None = None) -> float | None:
+        """The uptime percentage, or None when there are no pings."""
         counts = [value for value in self.get_site_hours(site, now) if value]
         total = sum(value[1] for value in counts)
         return round(sum(value[0] for value in counts) / total * 100, 2) if total else None
@@ -125,6 +132,7 @@ class RequestRollup(HourlyRollup):
     state_name = "requests-hourly.json"
 
     def add(self, hours: dict, hour: str, record: dict) -> None:
+        """Count a request, skipping uptime pings."""
         if record.get("transaction_type") != "request":
             return
         if (record.get("request") or {}).get("path") == PING_PATH:
@@ -132,4 +140,5 @@ class RequestRollup(HourlyRollup):
         hours[hour] = hours.get(hour, 0) + 1
 
     def get_counts(self, site: str, now: datetime | None = None) -> list[int]:
+        """The hourly request counts."""
         return [value or 0 for value in self.get_site_hours(site, now)]

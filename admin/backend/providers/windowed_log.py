@@ -22,6 +22,7 @@ class WindowedLogProvider:
         self.cutoff = datetime.now(UTC) - timedelta(seconds=self.window_seconds)
 
     def now_ms(self) -> int:
+        """The current time in epoch milliseconds."""
         return self.to_epoch_ms(datetime.now(UTC))
 
     def records_in_window(self, path: Path, time_key: str = "time") -> Iterator[dict]:
@@ -47,6 +48,7 @@ class WindowedLogProvider:
 
     @staticmethod
     def to_epoch_ms(when: datetime) -> int:
+        """The time in epoch milliseconds."""
         return int(when.timestamp() * 1000)
 
     @classmethod

@@ -26,10 +26,12 @@ CONFIG_ATTRIBUTES = {
 
 
 def attribute_name() -> str:
+    """The metadata attribute that holds the Central settings."""
     return os.environ.get("PILOT_METADATA_KEY", "pilot-central")
 
 
 def _parse_object(raw: str, source: str) -> dict[str, Any]:
+    """The JSON object; raise when it is not one."""
     try:
         payload = json.loads(raw)
     except ValueError as exc:
@@ -89,6 +91,7 @@ class InstanceMetadata:
         return ConfigPatch(**patches)
 
     def get_attribute(self, name: str) -> str | None:
+        """A metadata attribute, or None when it cannot be read."""
         token = self._token()
         if not token:
             return None
@@ -99,6 +102,7 @@ class InstanceMetadata:
         )
 
     def _token(self) -> str | None:
+        """A metadata session token, or None."""
         return self._read(
             f"{self.base_url}/api/token",
             {"X-metadata-token-ttl-seconds": str(TOKEN_TTL_SECONDS)},
@@ -106,6 +110,7 @@ class InstanceMetadata:
         )
 
     def _read(self, url: str, headers: dict[str, str], method: str = "GET") -> str | None:
+        """The response body, or None when the request fails."""
         request = urllib.request.Request(url, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:

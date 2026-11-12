@@ -35,6 +35,7 @@ def _discover() -> list[type[Command]]:
     found: dict[tuple[str | None, str], type[Command]] = {}
 
     def collect(cls: type[Command]) -> None:
+        """Record every named subclass of the command class, recursively."""
         for sub in cls.__subclasses__():
             if getattr(sub, "name", None):
                 found[(sub.group, sub.name)] = sub
@@ -117,6 +118,7 @@ def _top_level_metavar(commands: list[type[Command]]) -> str:
 
 
 def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
+    """Run the parsed command, or print help when none was chosen."""
     cls: type[Command] | None = getattr(args, "_command_cls", None)
     if cls is None:
         printer = getattr(args, "_help_printer", None)
@@ -126,6 +128,7 @@ def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context:
 
 
 def _resolve_bench(cls: type[Command], context: CliContext):
+    """The bench the command needs, following its bench mode."""
     mode = cls.bench_mode
     if mode is BenchMode.NONE:
         return None

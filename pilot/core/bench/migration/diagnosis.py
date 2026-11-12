@@ -32,16 +32,19 @@ def diagnose(output: str, message: str, database_engine: str = "mariadb") -> dic
 
 
 def _last_patch(output: str) -> str | None:
+    """The last patch the migrate output started, if any."""
     matches = _EXECUTING.findall(output)
     return matches[-1] if matches else None
 
 
 def _column(output: str) -> str | None:
+    """The column a migrate error names, if any."""
     match = _COLUMN.search(output)
     return match.group("column") if match else None
 
 
 def _classify(output: str) -> str:
+    """The failure kind whose signature appears in the output, or "unknown"."""
     for kind, signatures in _SIGNATURES:
         if any(signature in output for signature in signatures):
             return kind

@@ -193,9 +193,11 @@ class LetsEncryptManager:
         self.bench = bench
 
     def is_installed(self) -> bool:
+        """Whether certbot is installed."""
         return shutil.which("certbot") is not None
 
     def install(self) -> None:
+        """Install certbot if it is missing."""
         if not self.is_installed():
             get_package_manager().install("certbot")
 
@@ -242,11 +244,13 @@ class LetsEncryptManager:
         return has_passwordless_sudo_for([certbot, "renew", "--quiet"])
 
     def ensure_webroot(self) -> None:
+        """Create the ACME webroot."""
         # /var/www is root-owned, so create the webroot with sudo. Default 0755
         # lets certbot (root) write ACME challenges and nginx read them.
         run_command(Privileges.get_command(["mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)]))
 
     def obtain(self, site: "SiteConfig") -> None:
+        """Issue or renew the site's certificate."""
         from pilot.managers.nginx import NginxManager
 
         domains = certificate_domains(site)
@@ -342,6 +346,7 @@ class LetsEncryptManager:
         site.config_file.clear_certificate_pin()
 
     def obtain_admin(self) -> None:
+        """Issue or renew the Admin certificate."""
         from pilot.managers.nginx import NginxManager
 
         if not is_admin_certificate_required(self.bench):
@@ -404,12 +409,14 @@ class LetsEncryptManager:
             NginxManager(self.bench).apply_config()
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
+        """Whether the site's certificate is missing or near expiry."""
         from pilot.managers.nginx import NginxManager
 
         nginx_manager = NginxManager(self.bench)
         return self._is_near_expiry_cert(nginx_manager.cert_path(site))
 
     def _is_near_expiry_cert(self, cert_file: Path) -> bool:
+        """Whether the certificate is missing or near expiry."""
         days_left = certificate_days_left(cert_file)
         return days_left is None or days_left < _CERT_EXPIRY_THRESHOLD_DAYS
 
@@ -435,6 +442,7 @@ class LetsEncryptManager:
 
 
 def is_renewal_timer_installed() -> bool:
+    """Whether the certificate renewal timer is installed."""
     from pilot.managers.systemd_user import user_timer_installed
 
     return user_timer_installed("pilot-certificates.timer")

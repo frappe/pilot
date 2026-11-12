@@ -37,12 +37,14 @@ class CertificateRecord:
 
     @property
     def days_left(self) -> int | None:
+        """Whole days until the certificate expires, or None when unknown."""
         if self.expires_at is None:
             return None
         return (datetime.fromisoformat(self.expires_at) - datetime.now(UTC)).days
 
     @property
     def uncovered(self) -> list[str]:
+        """The requested domains the certificate does not cover."""
         return [domain for domain in self.domains if domain not in self.covered]
 
     @property
@@ -64,6 +66,7 @@ class CertificateRecord:
 
     @property
     def is_broken(self) -> bool:
+        """Whether the certificate state needs attention."""
         return self.state in BROKEN_STATES
 
     def get_alert_payload(self, bench_name: str, site: str | None) -> dict[str, typing.Any]:
@@ -94,6 +97,7 @@ class CertificateRecord:
         }
 
     def get_status(self, domain: str | None = None) -> dict[str, typing.Any]:
+        """The certificate status for the API, for the whole certificate or one domain."""
         return {
             "state": self.get_domain_state(domain) if domain else self.state,
             "expires_at": self.expires_at,
@@ -121,6 +125,7 @@ class BenchCertificates:
         self.path = bench.logs_path / "certificates.json"
 
     def get(self, name: str) -> CertificateRecord | None:
+        """The record for a certificate name, if any."""
         return self._read().get(name)
 
     def record_success(self, name: str, domains: list[str], cert_file: Path) -> CertificateRecord:
@@ -129,6 +134,7 @@ class BenchCertificates:
         return self._update(name, domains, expires_at=expires_at, covered=covered, error=None, failed_at=None)
 
     def record_failure(self, name: str, domains: list[str], error: str) -> CertificateRecord:
+        """Record a failed issue or renewal with the end of its error output."""
         return self._update(
             name, domains, error=error.strip()[-500:] or "Certbot failed.", failed_at=utc_now()
         )
@@ -162,11 +168,13 @@ class BenchCertificates:
             self.mark_alerted(file.name, state)
 
     def mark_alerted(self, name: str, state: str | None) -> None:
+        """Record which state the last alert was sent for."""
         with self._open() as records:
             if name in records:
                 records[name].alerted = state
 
     def _update(self, name: str, domains: list[str], **changes: typing.Any) -> CertificateRecord:
+        """Update a record's domains, check time and other fields, and return it."""
         with self._open() as records:
             record = records.setdefault(name, CertificateRecord(name))
             record.domains = sorted(domains)
@@ -176,6 +184,7 @@ class BenchCertificates:
             return record
 
     def _read(self) -> dict[str, CertificateRecord]:
+        """Every stored certificate record by name."""
         if not self.path.exists():
             return {}
         data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -183,6 +192,7 @@ class BenchCertificates:
 
     @contextmanager
     def _open(self) -> typing.Iterator[dict[str, CertificateRecord]]:
+        """Hold the records file lock, yield the records and save them after."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.path):
             records = self._read()

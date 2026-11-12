@@ -8,6 +8,7 @@ try:
 except ImportError:  # Python 3.11
 
     def override(func):
+        """Mark a method that replaces a base method."""
         return func
 
 
@@ -36,6 +37,7 @@ class ManagedProcessManager(ProcessManager, ABC):
     @property
     @override
     def process_definitions(self) -> list[ProcessDefinition]:
+        """The production process definitions."""
         return self._prod_process_definitions()
 
     def check_config(self) -> None:
@@ -43,25 +45,32 @@ class ManagedProcessManager(ProcessManager, ABC):
         self._prod_process_definitions()
 
     @abstractmethod
-    def write_config(self) -> None: ...
+    def write_config(self) -> None:
+        """Write the process manager config."""
 
     @abstractmethod
-    def install_config(self) -> None: ...
+    def install_config(self) -> None:
+        """Install the process manager config."""
 
     @abstractmethod
-    def reload_manager_config(self) -> None: ...
+    def reload_manager_config(self) -> None:
+        """Make the process manager reread its config."""
 
     @abstractmethod
-    def ensure_ready(self) -> None: ...
+    def ensure_ready(self) -> None:
+        """Make the process manager ready to start units."""
 
     @abstractmethod
-    def apply_unit_action(self, action: str, role: UnitGroup) -> None: ...
+    def apply_unit_action(self, action: str, role: UnitGroup) -> None:
+        """Run an action on a group of units."""
 
     @abstractmethod
-    def are_units_running(self, role: UnitGroup) -> bool: ...
+    def are_units_running(self, role: UnitGroup) -> bool:
+        """Whether a group of units runs."""
 
     @override
     def start(self) -> None:
+        """Start the Admin and the workload."""
         self.write_config()
         self.ensure_ready()
         self.apply_unit_action("start", UnitGroup.ADMIN)
@@ -69,32 +78,39 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     @override
     def start_workload(self) -> None:
+        """Start the workload."""
         self.write_config()
         self.ensure_ready()
         self.apply_unit_action("start", UnitGroup.WORKLOAD)
 
     @override
     def stop(self) -> None:
+        """Stop the workload."""
         self.apply_unit_action("stop", UnitGroup.WORKLOAD)
 
     @override
     def stop_admin(self) -> None:
+        """Stop the Admin."""
         self.apply_unit_action("stop", UnitGroup.ADMIN)
 
     @override
     def restart(self) -> None:
+        """Restart the workload."""
         self.apply_unit_action("restart", UnitGroup.WORKLOAD)
 
     @override
     def restart_admin(self) -> None:
+        """Restart the Admin."""
         self.apply_unit_action("restart", UnitGroup.ADMIN)
 
     @override
     def is_running(self) -> bool:
+        """Whether the workload runs."""
         return self.are_units_running(UnitGroup.WORKLOAD)
 
     @override
     def is_admin_running(self) -> bool:
+        """Whether the Admin runs."""
         return self.are_units_running(UnitGroup.ADMIN)
 
     @override
@@ -124,6 +140,7 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     @staticmethod
     def _is_reloaded(pd: ProcessDefinition, web_only: bool, realtime: bool) -> bool:
+        """Whether a reload restarts the process."""
         if pd.name == "web":
             return True
         if web_only or pd.name == "admin" or (pd.app is None and pd.name.startswith("redis")):
@@ -131,6 +148,7 @@ class ManagedProcessManager(ProcessManager, ABC):
         return realtime or pd.name != "socketio"
 
     def start_admin(self) -> None:
+        """Write the config and start the Admin."""
         self.bench.logs_path.mkdir(parents=True, exist_ok=True)
         self.write_config()
         self.ensure_ready()

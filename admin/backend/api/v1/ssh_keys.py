@@ -30,16 +30,19 @@ ssh_keys_bp = Blueprint("ssh_keys", __name__)
 
 
 def _serialize(key: SSHKey) -> dict:
+    """The key for the API."""
     return {"fingerprint": key.fingerprint, "type": key.key_type, "comment": key.comment}
 
 
 @ssh_keys_bp.get("")
 def list_keys():
+    """List the SSH keys."""
     return jsonify({"keys": [_serialize(key) for key in Server().ssh_keys.list()]})
 
 
 @ssh_keys_bp.post("")
 def add_key():
+    """Add an SSH key."""
     data = ApiRequest.get_json_body()
     public_key = data.get("public_key", "")
     if not isinstance(public_key, str):
@@ -59,6 +62,7 @@ def add_key():
 
 @ssh_keys_bp.delete("/<fingerprint>")
 def remove_key(fingerprint: str):
+    """Remove an SSH key."""
     try:
         Server().ssh_keys.remove(fingerprint)
     except SSHKeyNotFoundError:

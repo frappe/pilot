@@ -14,8 +14,10 @@ class SelfHostedIntegration(LLMIntegration):
 
     @classmethod
     def providers(cls) -> dict[str, str]:
+        """The providers this integration serves."""
         return {"self-hosted": "Self-hosted Model"}
 
     @classmethod
     def get_models(cls, provider: str, api_key: str = "", api_base: str = "") -> list[str]:
+        """No models; the user types the model name."""
         return []  # the served model name is entered by hand

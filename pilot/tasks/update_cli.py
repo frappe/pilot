@@ -14,11 +14,13 @@ class UpdateCliTask(Task):
     command: ClassVar[str] = "update-cli"
 
     def run(self) -> None:
+        """Upgrade Pilot and restart the Admins."""
         self.update()
         self.restart_admins()
 
     @step("update", lambda self: f"Update Pilot at {Server().root}")
     def update(self) -> None:
+        """Upgrade Pilot."""
         from pilot.updater import perform_upgrade
 
         perform_upgrade(on_progress=print)

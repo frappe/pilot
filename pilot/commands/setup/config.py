@@ -13,6 +13,7 @@ class UpdateConfigCommand(Command):
     group: ClassVar[str] = "setup"
 
     def run(self) -> None:
+        """Regenerate the runtime configs."""
         self.report("Updating Redis configs...")
         self.report("Updating process manager config...")
         self.report("Updating common_site_config.json...")

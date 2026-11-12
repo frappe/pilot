@@ -67,6 +67,7 @@ class LLMIntegration:
         return f"{self.litellm_provider or self.provider}/{self.model}"
 
     def _cache_key(self, system_prompt: str, prompt: str) -> str:
+        """The cache key of a prompt."""
         return f"{system_prompt}-{prompt}-{self._litellm_model}"
 
     def get_cached_response(self, cache_key: str) -> str | None:

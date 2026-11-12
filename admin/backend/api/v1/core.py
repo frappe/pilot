@@ -51,6 +51,7 @@ core_bp = Blueprint("core", __name__)
 @core_bp.get("/health")
 @allow_unauthenticated
 def health():
+    """Answer that the Admin is up."""
     response = jsonify({"status": "ok"})
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
@@ -59,6 +60,7 @@ def health():
 @core_bp.get("/bootstrap")
 @allow_unauthenticated
 def bootstrap():
+    """The data the frontend loads first."""
     bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
@@ -116,6 +118,7 @@ def _visible_bootstrap(bench_root: Path, payload: dict) -> dict:
 
 
 def _setup_bootstrap(bench_root: Path) -> dict:
+    """The bootstrap data during setup."""
     name = bench_root.name
     try:
         name = BenchConfig.read(bench_root, validate=False).name or name
@@ -125,6 +128,7 @@ def _setup_bootstrap(bench_root: Path) -> dict:
 
 
 def _is_setup_complete(bench_root: Path, config: BenchConfig) -> bool:
+    """Whether bench setup finished."""
     if not Bench(bench_root).is_initialized:
         return False
     if not config.admin.password:

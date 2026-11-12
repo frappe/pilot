@@ -15,6 +15,7 @@ class UpgradeCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.OPTIONAL
 
     def run(self) -> None:
+        """Upgrade Pilot and restart the Admin when asked."""
         from pilot.updater import perform_upgrade, restart_admin_with_new_code
 
         perform_upgrade(on_progress=self.report)

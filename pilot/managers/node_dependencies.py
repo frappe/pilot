@@ -16,6 +16,7 @@ class NodeDependencies:
 
     @staticmethod
     def get_key(path: Path, *, include_dependencies: bool = True) -> str:
+        """A key for the node inputs and the system."""
         system = (platform.system(), platform.machine(), *platform.libc_ver())
         digest = hashlib.sha256(json.dumps(system).encode())
         NodeDependencies.update_file_key(digest, path, include_dependencies=include_dependencies)
@@ -33,6 +34,7 @@ class NodeDependencies:
 
     @staticmethod
     def update_file_key(digest, path: Path, *, include_dependencies: bool) -> None:
+        """Add the input files to the digest."""
         files = (
             ("package.json", "yarn.lock", ".yarnrc", ".npmrc")
             if include_dependencies
@@ -49,6 +51,7 @@ class NodeDependencies:
 
     @classmethod
     def has_matching_install(cls, path: Path, key: str) -> bool:
+        """Whether node_modules was installed from these inputs."""
         stamp = path / "node_modules" / ".pilot-install-key"
         try:
             return stamp.read_text() == key and bool(cls.get_resolved_key(path))
@@ -57,6 +60,7 @@ class NodeDependencies:
 
     @staticmethod
     def get_resolved_key(path: Path) -> str:
+        """A key for the installed yarn packages."""
         integrity = path / "node_modules/.yarn-integrity"
         try:
             installed = json.loads(integrity.read_text())
@@ -69,6 +73,7 @@ class NodeDependencies:
 
     @staticmethod
     def is_portable(path: Path) -> bool:
+        """Whether the packages can be copied: no workspaces or install scripts."""
         package = json.loads((path / "package.json").read_text())
         if package.get("workspaces") or set(package.get("scripts", {})) & {
             "preinstall",
@@ -85,6 +90,7 @@ class NodeDependencies:
 
     @classmethod
     def has_portable_inputs(cls, source: Path, destination: Path) -> bool:
+        """Whether both directories have the same portable inputs."""
         if not all(
             (path / file).is_file()
             for path in (source, destination)
@@ -97,6 +103,7 @@ class NodeDependencies:
 
     @classmethod
     def copy(cls, source: Path, destination: Path) -> bool:
+        """Copy the node packages; return whether that worked."""
         from pilot.managers.node_cache import NodeDependencyCache
 
         if not cls.has_portable_inputs(source, destination):

@@ -21,12 +21,15 @@ class UserOwnedDBManager(SystemdUserMixin):
     _DEFAULT_VERSION: str = ""
 
     def is_installed(self) -> bool:
+        """Whether the database server is installed."""
         raise NotImplementedError
 
     def is_reachable(self) -> bool:
+        """Whether the server accepts connections."""
         raise NotImplementedError
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:
+        """Wait until the server accepts connections; raise on timeout."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self.is_reachable():
@@ -35,6 +38,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         raise DatabaseError(f"{self._DISPLAY_NAME} did not become reachable within {timeout:.0f}s.")
 
     def install(self) -> None:
+        """Install the database server if it is missing."""
         if self.is_installed():
             return
         if HostPlatform().is_macos:
@@ -48,6 +52,7 @@ class UserOwnedDBManager(SystemdUserMixin):
 
     @property
     def unit_path(self) -> Path:
+        """The user systemd unit file."""
         return self.user_unit_dir / self._UNIT_NAME
 
     def is_provisioned(self) -> bool:
@@ -55,6 +60,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         return self.unit_path.exists()
 
     def is_running(self) -> bool:
+        """Whether the server runs."""
         if HostPlatform().is_macos:
             return self._is_brew_service_running()
         result = subprocess.run(
@@ -66,12 +72,15 @@ class UserOwnedDBManager(SystemdUserMixin):
         return result.returncode == 0
 
     def start(self) -> None:
+        """Start the server."""
         self._control("start")
 
     def restart(self) -> None:
+        """Restart the server."""
         self._control("restart")
 
     def stop(self) -> None:
+        """Stop the server."""
         self._control("stop")
 
     def enable_and_start(self) -> None:
@@ -81,6 +90,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
 
     def _control(self, action: str) -> None:
+        """Run a service action with brew or systemctl."""
         if HostPlatform().is_macos:
             run_command(["brew", "services", action, self._brew_package()])
         else:
@@ -100,6 +110,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         )
 
     def _brew_package(self) -> str:
+        """The Homebrew formula to use."""
         return self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
 
     def _installed_brew_formula(self) -> str | None:
@@ -113,6 +124,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         return next((f for f in formulae if f.startswith(f"{self._BREW_FORMULA_BASE}@")), None)
 
     def _is_brew_service_running(self) -> bool:
+        """Whether the Homebrew service runs."""
         result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True, timeout=10)
         for line in result.stdout.splitlines():
             parts = line.split()

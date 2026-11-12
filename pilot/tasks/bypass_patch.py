@@ -15,10 +15,12 @@ class BypassPatchTask(Task):
     patch: str
 
     def run(self) -> None:
+        """Skip the failed patch and resume the migration."""
         self.bypass()
 
     @step("bypass_patch", lambda self: f"Skip patch {self.patch}")
     def bypass(self) -> None:
+        """Skip the failed patch and queue the next step."""
         operation = self.bench.migrations.get(self.operation_id)
         if self.running_task_id:
             operation.task_ids["bypass_patch"] = self.running_task_id
@@ -32,6 +34,7 @@ class BypassPatchTask(Task):
     @on_failure
     @on_cancel
     def fail_migration_step(self) -> dict | None:
+        """The callback args that fail the migration step, if there is a chain."""
         operation = self.bench.migrations.get(self.operation_id)
         if not operation.chain:
             return None

@@ -17,6 +17,7 @@ FILE_TYPE_SUFFIXES = {
 
 
 def _file_type(filename: str) -> str:
+    """The backup file type of a file name."""
     for suffix, file_type in FILE_TYPE_SUFFIXES.items():
         if filename.endswith(suffix):
             return file_type
@@ -30,15 +31,18 @@ class BackupKeys:
     site_name: str
 
     def get_file_key(self, timestamp: str, filename: str) -> str:
+        """The object key of a backup file."""
         date, time = timestamp.split("_")
         return f"sites/{self.site_name}/backups/{date}/{time}/{filename}"
 
     def get_month_key(self, timestamp: str) -> str:
+        """The metadata key for a backup's month."""
         date = timestamp.split("_")[0]
         return f"sites/{self.site_name}/backups_metadata/{date[:4]}-{date[4:6]}.json"
 
     @property
     def month_prefix(self) -> str:
+        """The prefix of the metadata keys."""
         return f"sites/{self.site_name}/backups_metadata/"
 
 
@@ -52,6 +56,7 @@ class Metadata:
         self.lock = lock
 
     def add(self, timestamp: str, filename: str) -> None:
+        """Record a backup file in the month metadata."""
         key = self.keys.get_month_key(timestamp)
         with exclusive_file_lock(self.lock):
             runs = self._read_month(key)
@@ -59,6 +64,7 @@ class Metadata:
             self.s3.write_json(self.bucket, key, runs)
 
     def remove(self, timestamp: str, filename: str) -> None:
+        """Remove a backup file from the month metadata."""
         key = self.keys.get_month_key(timestamp)
         with exclusive_file_lock(self.lock):
             runs = self._read_month(key)
@@ -79,6 +85,7 @@ class Metadata:
                 yield timestamp, runs[timestamp]
 
     def _read_month(self, key: str) -> dict[str, dict[str, str]]:
+        """The backups recorded for a month."""
         if not self.s3.has_object(self.bucket, key):
             return {}
         return self.s3.read_json(self.bucket, key)
@@ -99,6 +106,7 @@ class OffsiteBackup:
         return cls(client, config.bucket, bench_root)
 
     def upload(self, site_name: str, timestamp: str, backup_path: Path, remove_local: bool = True) -> None:
+        """Upload a backup file and record it."""
         keys = BackupKeys(site_name)
         self.s3.upload_file(self.bucket, backup_path, keys.get_file_key(timestamp, backup_path.name))
         self._metadata(keys).add(timestamp, backup_path.name)
@@ -117,6 +125,7 @@ class OffsiteBackup:
             raise
 
     def download(self, site_name: str, timestamp: str, filename: str, destination: Path) -> None:
+        """Download a backup file."""
         self.s3.download_file(self.bucket, BackupKeys(site_name).get_file_key(timestamp, filename), destination)
 
     def presigned_url(self, site_name: str, timestamp: str, filename: str, expires_in: int = 25_000) -> str:
@@ -126,6 +135,7 @@ class OffsiteBackup:
         return self.s3.presigned_url(self.bucket, key, expires_in=expires_in)
 
     def delete(self, site_name: str, timestamp: str, filename: str) -> None:
+        """Delete a backup file and its record."""
         keys = BackupKeys(site_name)
         self.s3.delete_object(self.bucket, keys.get_file_key(timestamp, filename))
         self._metadata(keys).remove(timestamp, filename)
@@ -152,4 +162,5 @@ class OffsiteBackup:
         return self._metadata(keys)._read_month(keys.get_month_key(timestamp)).get(timestamp)
 
     def _metadata(self, keys: BackupKeys) -> Metadata:
+        """The backup metadata store."""
         return Metadata(self.s3, self.bucket, keys, self.bench_root / ".backup-metadata")

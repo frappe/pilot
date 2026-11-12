@@ -15,6 +15,7 @@ class CloneBenchTask(Task):
 
     @step("clone", lambda self: f"Clone {self.source_bench} into {self.name}")
     def run(self) -> None:
+        """Clone the source bench."""
         from pilot.core.bench import Bench
 
         Bench(self.bench.path.parent / self.source_bench).clone(

@@ -34,6 +34,7 @@ _MAX_LIMIT = 100
 
 
 def _store() -> NotificationStore:
+    """The notification store."""
     return NotificationStore(ApiRequest.get_bench_root() / "logs")
 
 
@@ -53,6 +54,7 @@ def list_notifications():
         store = _store()
 
         def fetch_newest(count: int) -> list:
+            """The newest notifications that match the filters."""
             return [asdict(item) for item in store.list(count, category=category, unread_only=unread_only)]
 
         return paginated_response(fetch_newest, limit, offset, {"unread": store.unread_count})
@@ -62,6 +64,7 @@ def list_notifications():
 
 @notifications_bp.post("/notifications/<name>/read")
 def mark_notification_read(name: str):
+    """Mark one notification as read."""
     try:
         _store().mark_read(name)
     except Exception:
@@ -71,6 +74,7 @@ def mark_notification_read(name: str):
 
 @notifications_bp.post("/notifications/read-all")
 def mark_all_notifications_read():
+    """Mark every notification as read."""
     try:
         _store().mark_all_read()
     except Exception:

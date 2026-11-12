@@ -41,6 +41,7 @@ def run_patches(phase: str, on_progress: Progress = lambda message: None) -> Non
 
 
 def _run_one(name: str, on_progress: Progress) -> None:
+    """Run one patch file by name, skipping a missing one."""
     patch_file = PATCHES_DIR / f"{name}.py"
     if not patch_file.exists():
         on_progress(f"Skipping '{name}': no such patch file ({patch_file}).")

@@ -34,16 +34,19 @@ def task_has_secrets(command: str, args: dict | None = None) -> bool:
 
 
 def is_sensitive_key(key: str) -> bool:
+    """Whether an argument name looks like it holds a secret."""
     normalized = key.lower().replace("-", "_")
     return any(part in normalized for part in SENSITIVE_KEY_PARTS)
 
 
 def public_task_args(command: str, args: dict) -> dict:
+    """The arguments safe to store and show, without private paths or secrets."""
     private_args = _PRIVATE_ARGS.get(command, ())
     return redact_task_args({key: value for key, value in args.items() if key not in private_args})
 
 
 def fingerprint_task_args(command: str, args: dict) -> dict:
+    """The arguments that identify a request, with uploaded files reduced to a digest."""
     fingerprint_args = redact_task_args(args)
     if command != "new-site-from-backup":
         return fingerprint_args
@@ -54,6 +57,7 @@ def fingerprint_task_args(command: str, args: dict) -> dict:
 
 
 def redact_task_args(args: dict) -> dict:
+    """The arguments with secret values replaced, recursively."""
     return {key: _redact_value(key, value) for key, value in args.items()}
 
 
@@ -72,6 +76,7 @@ def reject_unsafe_git_args(args: dict) -> None:
 
 
 def reject_url_credentials(value) -> None:
+    """Raise when any URL in the arguments carries a user name or password."""
     if isinstance(value, dict):
         for child in value.values():
             reject_url_credentials(child)
@@ -83,6 +88,7 @@ def reject_url_credentials(value) -> None:
 
 
 def _redact_value(key: str, value):
+    """One value with secrets and URL credentials removed."""
     if is_sensitive_key(key):
         return _REDACTED
     if isinstance(value, dict):
@@ -95,6 +101,7 @@ def _redact_value(key: str, value):
 
 
 def _without_url_credentials(value: str) -> str:
+    """The URL without its user name and password."""
     try:
         parsed = urlsplit(value)
         if parsed.scheme not in ("http", "https") or parsed.username is None:
@@ -108,6 +115,7 @@ def _without_url_credentials(value: str) -> str:
 
 
 def _has_url_credentials(value: str) -> bool:
+    """Whether an http or https URL carries credentials."""
     try:
         parsed = urlsplit(value)
         return parsed.scheme in ("http", "https") and parsed.username is not None
@@ -116,6 +124,7 @@ def _has_url_credentials(value: str) -> bool:
 
 
 def _file_digest(path: str | Path) -> str:
+    """SHA-256 of a file, read in chunks."""
     digest = hashlib.sha256()
     with Path(path).open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):

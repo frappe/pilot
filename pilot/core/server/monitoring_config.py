@@ -69,27 +69,33 @@ class MonitorConfigurator(SystemdUserMixin):
 
     @property
     def log_path(self) -> Path:
+        """The bench metrics log."""
         return bench_log_path(self._require_bench().config.name)
 
     @property
     def system_log_path(self) -> Path:
+        """The system metrics log."""
         return system_log_path()
 
     @property
     def db_log_path(self) -> Path:
+        """The database metrics log."""
         return db_log_path()
 
     @property
     def slow_query_log_path(self) -> Path:
+        """The slow query log."""
         return slow_query_log_path()
 
     def setup(self) -> None:
+        """Install the monitor; raise unless the host runs Linux."""
         if not HostPlatform().is_linux:
             raise BenchError("Monitoring is only supported on linux based machines.")
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _render_unit(self) -> str:
+        """The monitor service unit."""
         from pilot.managers.environment import AdminEnvManager
 
         root = Server().root
@@ -99,5 +105,6 @@ class MonitorConfigurator(SystemdUserMixin):
         )
 
     def _require_bench(self) -> "Bench":
+        """The bench; fail when none was given."""
         assert self.bench is not None, "MonitorConfigurator needs a bench for this operation"
         return self.bench

@@ -41,6 +41,7 @@ class Workspace:
 
     @classmethod
     def current(cls) -> "Workspace":
+        """The workspace here; raise when this is not an app repository."""
         workspace = cls.find()
         if workspace is None:
             raise BenchError(
@@ -66,6 +67,7 @@ class Workspace:
 
     @property
     def is_frappe_app(self) -> bool:
+        """Whether the workspace is a Frappe app."""
         return bool(self.app_name) and (self.root / self.app_name / "hooks.py").exists()
 
     @property
@@ -88,6 +90,7 @@ class Workspace:
 
     @cached_property
     def bench(self) -> "Bench":
+        """The workspace bench; raise when it has none."""
         bench = self.find_bench()
         if bench is None:
             raise BenchError(f"{self.root} has no bench yet. Run: pilot dev setup")
@@ -111,6 +114,7 @@ class Workspace:
         return None
 
     def is_linked_by(self, bench_root: Path) -> bool:
+        """Whether the bench links this workspace."""
         from pilot.config import BenchConfig
 
         toml_path = bench_root / "bench.toml"
@@ -129,6 +133,7 @@ class Workspace:
 
     @property
     def recorded_bench_name(self) -> str:
+        """The bench name saved for the workspace, or an empty string."""
         try:
             return self.bench_record.read_text().strip() if self.bench_record else ""
         except OSError:
@@ -136,14 +141,17 @@ class Workspace:
 
     @property
     def site(self) -> "Site":
+        """The development site."""
         return self.bench.site(f"{self.bench.config.name}.localhost")
 
     @property
     def site_url(self) -> str:
+        """The development site URL."""
         return f"http://{self.site.config.name}:{self.bench.config.http_port}"
 
     @property
     def is_running(self) -> bool:
+        """Whether the bench runs."""
         from pilot.managers.processes.local import ProcessManager
 
         return ProcessManager(self.bench).is_running()
@@ -194,10 +202,12 @@ class Workspace:
             ) from error
 
     def create_bench(self, db_type: str, frappe_branch: str, on_progress: Callable[[str], None]) -> "Bench":
+        """Create a development bench that links this app."""
         from pilot.config import AppConfig
         from pilot.core.bench import Bench
 
         def configure(config: BenchConfig) -> None:
+            """Turn the Admin off and link the app."""
             config.admin.enabled = False
             config.watch_apps_js = self.has_desk_bundles
             config.apps.append(AppConfig(name=self.app_name, repo="", branch="", path=str(self.root)))
@@ -214,6 +224,7 @@ class Workspace:
 
     @property
     def next_bench_name(self) -> str:
+        """A free bench name based on the directory name."""
         slug = re.sub(r"[^a-z0-9]+", "-", self.root.name.lower()).strip("-") or "app"
         name = base = f"dev-{slug}"
         suffix = 2

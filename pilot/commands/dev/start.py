@@ -14,6 +14,7 @@ class DevStartCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
+        """Start the workspace bench."""
         from pilot.core.workspace import Workspace
 
         Workspace.current().start(on_progress=self.report)

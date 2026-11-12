@@ -50,6 +50,7 @@ def import_queue_timeouts(bench_dir: Path) -> bool:
 
 
 def get_imported_timeout(bench_dir: Path, entries: dict, queues: list[str]) -> int | None:
+    """The timeout imported for the queues, if they agree."""
     from pilot.config.worker import frappe_default_timeout
 
     timeouts = {queue: get_hand_set_timeout(bench_dir, entries, queue) for queue in queues}
@@ -59,6 +60,7 @@ def get_imported_timeout(bench_dir: Path, entries: dict, queues: list[str]) -> i
 
 
 def get_hand_set_timeout(bench_dir: Path, entries: dict, queue: str) -> int | None:
+    """The timeout a user set for the queue, if any."""
     entry = entries.get(queue)
     if not isinstance(entry, dict) or "timeout" not in entry:
         return None
@@ -70,6 +72,7 @@ def get_hand_set_timeout(bench_dir: Path, entries: dict, queue: str) -> int | No
 
 
 def register_worker_queues(bench) -> None:
+    """Register the bench worker queues in the common site config."""
     from pilot.config.common_site_config import update_common_site_config
     from pilot.core.bench.config_files import BenchConfigFiles
     from pilot.managers.processes.definitions import ProcessDefinitionBuilder

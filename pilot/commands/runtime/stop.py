@@ -13,4 +13,5 @@ class StopCommand(Command):
     supports_all_benches: ClassVar[bool] = True
 
     def run(self) -> None:
+        """Stop the bench."""
         self.bench.stop(on_progress=self.report)

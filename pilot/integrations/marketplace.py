@@ -37,6 +37,7 @@ class Resolver:
     _registry: dict[str, list["Resolver"]] = field(default_factory=dict, init=False, repr=False)
 
     def to_dict(self) -> dict:
+        """The resolver as a dict."""
         return {
             "name": self.app,
             "repo": self.repo,
@@ -66,6 +67,7 @@ class Resolver:
         path: list[str],
         result: list["Resolver"],
     ):
+        """Add the app's dependencies, then the app; raise on a cycle."""
         if app in path:
             cycle = " -> ".join([*path[path.index(app) :], app])
             raise DependencyResolutionError(f"Circular dependency detected: {cycle}")
@@ -124,6 +126,7 @@ class Marketplace:
 
     @staticmethod
     def _load_registry() -> list[dict]:
+        """The registry apps."""
         from pilot.core.registry_cache import RegistryCache
         from pilot.core.server import Server
 
@@ -145,6 +148,7 @@ class Marketplace:
     @staticmethod
     @lru_cache(maxsize=1)
     def _registry_at(modified_ns: int) -> list[dict]:
+        """The registry apps, cached by file time."""
         return Marketplace._load_registry()
 
     @staticmethod
@@ -164,6 +168,7 @@ class Marketplace:
     @staticmethod
     @lru_cache(maxsize=512)
     def _releases_at(app_name: str, modified_ns: int) -> tuple[dict, ...]:
+        """The releases of an app, cached by file time."""
         from pilot.core.registry_cache import RegistryCache
         from pilot.core.server import Server
 
@@ -171,10 +176,12 @@ class Marketplace:
 
     @staticmethod
     def _newest_first(releases: list[dict]) -> tuple[dict, ...]:
+        """The releases, newest first."""
         return tuple(sorted(releases, key=Marketplace._version_key, reverse=True))
 
     @staticmethod
     def _version_key(release: dict) -> Version:
+        """The version of a release, or 0."""
         try:
             return Version(release.get("version") or "")
         except InvalidVersion:
@@ -199,6 +206,7 @@ class Marketplace:
             return None
 
     def _make_resolver(self, app: dict, release: dict, is_installable: bool) -> "Resolver":
+        """A resolver for an app release."""
         return Resolver(
             app=app["name"],
             repo=app["repo"],
@@ -221,6 +229,7 @@ class Marketplace:
         )
 
     def read_all_apps(self) -> list[Resolver]:
+        """A resolver for every app compatible with the bench."""
         resolvers = []
         dependency_lookup: dict[str, list[Resolver]] = {}
         current_frappe = Version(self.frappe_version)

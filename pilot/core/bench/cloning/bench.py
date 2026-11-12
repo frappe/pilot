@@ -27,6 +27,7 @@ class BenchClone:
             raise BenchError(f"Unknown app branch overrides: {', '.join(sorted(unknown))}")
 
     def run(self, on_progress=print):
+        """Create the new bench next to the source, copy its apps and environment, and return it."""
         from pilot.core.bench import Bench
 
         BenchConfig.default(self.name).validate()
@@ -57,6 +58,7 @@ class BenchClone:
         return destination
 
     def prepare_environment(self, destination, rebuild: bool, on_progress) -> None:
+        """Create the Python environment and restore or rebuild the assets."""
         from pilot.core.bench.build_artifacts import BuildArtifacts
         from pilot.managers.environment import PythonEnvManager
 
@@ -77,6 +79,7 @@ class BenchClone:
             BuildArtifacts(destination).restore_or_build(environment.build_assets, on_progress)
 
     def create_python_environment(self, destination, environment, rebuild: bool) -> None:
+        """Create the virtual environment while copying node dependencies in parallel."""
         with ThreadPoolExecutor(max_workers=1) as executor:
             dependencies = executor.submit(self.copy_dependencies, destination) if rebuild else None
             try:
@@ -93,6 +96,7 @@ class BenchClone:
                 dependencies.result()
 
     def copy_dependencies(self, destination) -> None:
+        """Copy cached node dependencies into the new bench."""
         from pilot.managers.node_cache import NodeDependencyCache
         from pilot.managers.node_dependencies import NodeDependencies
 
@@ -110,6 +114,7 @@ class BenchClone:
                     )
 
     def copy_apps(self, destination) -> None:
+        """Copy every app with its selected branch."""
         apps = self.source.apps()
         with ThreadPoolExecutor(max_workers=4) as executor:
             branches = list(executor.map(self.copy_selected_app, apps, [destination] * len(apps)))
@@ -120,6 +125,7 @@ class BenchClone:
         destination.config = config
 
     def copy_selected_app(self, app, destination) -> str | None:
+        """Copy one app as it is, or clone it on the selected branch; return the branch used."""
         selected = self.app_branches.get(app.config.name, self.branch)
         target = destination.apps_path / app.config.name
         if selected == "current":
@@ -128,6 +134,7 @@ class BenchClone:
         return clone_branch(app.path, target, selected, auth_config_for(app.bench.path, app.config.repo))
 
     def configure(self, destination) -> None:
+        """Copy the source bench settings that the clone keeps."""
         for name in (
             "python_version",
             "mariadb",
@@ -148,6 +155,7 @@ class BenchClone:
 
     @staticmethod
     def copy_app(source: Path, destination: Path) -> None:
+        """Copy an app directory, turning a linked worktree into a standalone repository."""
         BenchArtifacts.copy_directory(source, destination)
         # A linked worktree's .git file points back to its owner. Materialize its
         # repository, retaining copied dirty/untracked files in the destination.

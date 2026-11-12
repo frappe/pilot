@@ -24,6 +24,7 @@ class WorkerLock:
 
     @classmethod
     def try_acquire(cls, path: Path) -> WorkerLock | None:
+        """The worker lock, or None when another process holds it."""
         handle = PrivateFile(path).open("a")
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -33,6 +34,7 @@ class WorkerLock:
         return cls(handle)
 
     def release(self) -> None:
+        """Release the lock and close its file."""
         if self._handle.closed:
             return
         fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
@@ -75,25 +77,30 @@ class WorkerStore:
         self.intent_path = self.tasks_root / "worker-control.json"
 
     def ensure_layout(self) -> None:
+        """Create the tasks directory and the worker lock file."""
         PrivateDirectory(self.tasks_root).create(parents=True)
         with PrivateFile(self.lock_path).open("a"):
             pass
 
     def try_acquire(self) -> WorkerLock | None:
+        """Take the bench worker lock, or None when another worker holds it."""
         self.ensure_layout()
         return WorkerLock.try_acquire(self.lock_path)
 
     def write_pid(self, pid: int | None) -> None:
+        """Record the worker pid, or clear it."""
         self.ensure_layout()
         atomic_write_private_text(self.pid_path, "" if pid is None else str(pid))
 
     def read_pid(self) -> int | None:
+        """The recorded worker pid, or None."""
         if not self.pid_path.exists():
             return None
         value = self.pid_path.read_text(encoding="utf-8").strip()
         return int(value) if value else None
 
     def write_intent(self, intent: WorkerIntent) -> None:
+        """Store whether the worker should run or stop."""
         self.ensure_layout()
         with exclusive_file_lock(self.intent_path):
             replace_private_text_locked(
@@ -102,11 +109,13 @@ class WorkerStore:
             )
 
     def read_intent(self) -> WorkerIntent:
+        """Whether the worker should run or stop."""
         with self.locked_intent() as intent:
             return intent
 
     @contextmanager
     def locked_intent(self) -> Iterator[WorkerIntent]:
+        """Hold the intent lock and yield the stored intent."""
         self.ensure_layout()
         with exclusive_file_lock(self.intent_path):
             yield self._read_intent_locked()
@@ -117,6 +126,7 @@ class WorkerStore:
         pid: int | None,
         current_task_id: str | None = None,
     ) -> WorkerState:
+        """Store the worker status, pid and current task."""
         self.ensure_layout()
         state = WorkerState(
             status=status,
@@ -134,6 +144,7 @@ class WorkerStore:
         return state
 
     def read_state(self) -> WorkerState | None:
+        """The stored worker state, or None."""
         if not self.state_path.exists():
             return None
         payload = json.loads(self.state_path.read_text(encoding="utf-8"))
@@ -145,6 +156,7 @@ class WorkerStore:
         )
 
     def _read_intent_locked(self) -> WorkerIntent:
+        """The stored intent, RUNNING when none is stored; the caller holds the lock."""
         if not self.intent_path.exists():
             return WorkerIntent.RUNNING
         payload = json.loads(self.intent_path.read_text(encoding="utf-8"))

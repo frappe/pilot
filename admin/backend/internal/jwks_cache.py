@@ -87,6 +87,7 @@ class JwksCache:
         threading.Thread(target=self._refresh_once, name="jwks-cache-refresh", daemon=True).start()
 
     def _refresh_once(self) -> None:
+        """Refresh once, and clear the refreshing flag."""
         try:
             self.refresh()
         finally:
@@ -115,6 +116,7 @@ class JwksCache:
         replace_private_text_locked(self.path, json.dumps(record))
 
     def _has_usable_cache(self) -> bool:
+        """Whether the cache holds a usable key set."""
         import jwt
 
         record = self._read()
@@ -140,6 +142,7 @@ class JwksCache:
         return record
 
     def _find(self, record: dict | None, kid: str) -> PyJWK | None:
+        """The key with this ID, or None."""
         import jwt
         from jwt import PyJWKClient
 
@@ -151,11 +154,13 @@ class JwksCache:
             return None
 
     def _is_stale(self, record: dict) -> bool:
+        """Whether the cached key set is too old."""
         fetched_at = record.get("fetched_at")
         return not isinstance(fetched_at, int) or time.time() - fetched_at > self.REFRESH_AFTER_SECONDS
 
     @staticmethod
     def _key_set(jwks: object) -> PyJWKSet:
+        """The key set; raise when it is not one."""
         import jwt
 
         if not isinstance(jwks, dict):

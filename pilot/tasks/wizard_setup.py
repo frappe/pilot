@@ -13,16 +13,19 @@ class WizardSetupTask(Task):
     command: ClassVar[str] = "wizard-setup"
 
     def run(self) -> None:
+        """Set up the bench, and production when chosen."""
         self.init()
         if self.bench.config.production.process_manager:
             self.setup_production()
 
     @step("init", "Initialize bench")
     def init(self) -> None:
+        """Set up the bench."""
         self.bench.initialize(on_progress=self.report)
 
     @step("production", "Set up production")
     def setup_production(self) -> None:
+        """Deploy the bench to production."""
         # Wizard handoff tolerates pending DNS; the CLI path fails hard on TLS.
         self.bench.setup_production(best_effort_tls=True, on_progress=self.report)
 

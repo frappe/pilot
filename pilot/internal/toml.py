@@ -27,10 +27,12 @@ class Toml:
 
     @staticmethod
     def loads(value: str) -> ConfigDict:
+        """Parse TOML text."""
         return tomllib.loads(value)
 
     @classmethod
     def dumps(cls, data: Mapping[str, Any]) -> str:
+        """TOML text for the data, checked by parsing it back."""
         writer = cls()
         writer._write_table(data, ())
         content = "\n".join(writer._lines) + ("\n" if writer._lines else "")
@@ -38,6 +40,7 @@ class Toml:
         return content
 
     def _write_table(self, data: Mapping[str, Any], path: tuple[str, ...]) -> None:
+        """Write one table: its scalars, then its tables and arrays of tables."""
         scalars, tables, arrays = self._partition(data)
         self._write_scalars(scalars)
         for key, table in tables:
@@ -49,6 +52,7 @@ class Toml:
                 self._write_table(entry, (*path, key))
 
     def _partition(self, data: Mapping[str, Any]):
+        """Split a table's items into scalars, tables and arrays of tables."""
         scalars = []
         tables = []
         arrays = []
@@ -63,16 +67,19 @@ class Toml:
         return scalars, tables, arrays
 
     def _write_scalars(self, values: list[tuple[str, Any]]) -> None:
+        """Write key = value lines."""
         for key, value in values:
             self._lines.append(f"{self._key(key)} = {self._value(value)}")
 
     def _write_header(self, path: tuple[str, ...], *, array: bool) -> None:
+        """Write a table or array-of-tables header."""
         if self._lines and self._lines[-1] != "":
             self._lines.append("")
         name = ".".join(self._key(part) for part in path)
         self._lines.append(f"[[{name}]]" if array else f"[{name}]")
 
     def _value(self, value: Any) -> str:
+        """One value in TOML syntax."""
         if isinstance(value, str):
             return self._string(value)
         if isinstance(value, bool):
@@ -89,15 +96,18 @@ class Toml:
 
     @staticmethod
     def _scalar(value: int | datetime | date) -> str:
+        """An integer or date in TOML syntax."""
         return str(value) if isinstance(value, int) else value.isoformat()
 
     def _array(self, values: list[Any]) -> str:
+        """An inline array in TOML syntax."""
         if any(isinstance(value, Mapping) for value in values):
             raise TypeError("TOML table arrays must contain only tables")
         return "[" + ", ".join(self._value(value) for value in values) + "]"
 
     @staticmethod
     def _float(value: float) -> str:
+        """A float in TOML syntax, including nan and inf."""
         if math.isnan(value):
             return "nan"
         if math.isinf(value):
@@ -106,20 +116,24 @@ class Toml:
 
     @staticmethod
     def _time(value: time) -> str:
+        """A local time in TOML syntax; raise for one with a UTC offset."""
         if value.utcoffset() is not None:
             raise TypeError("TOML local times cannot have a UTC offset")
         return value.isoformat()
 
     @classmethod
     def _key(cls, value: str) -> str:
+        """A key, quoted when it is not a bare key."""
         return value if _BARE_KEY.fullmatch(value) else cls._string(value)
 
     @classmethod
     def _string(cls, value: str) -> str:
+        """A basic TOML string."""
         return '"' + "".join(cls._escaped_character(character) for character in value) + '"'
 
     @staticmethod
     def _escaped_character(character: str) -> str:
+        """One character escaped for a TOML string."""
         if character in _ESCAPES:
             return _ESCAPES[character]
         codepoint = ord(character)
@@ -131,6 +145,7 @@ class Toml:
 
     @staticmethod
     def _is_array_of_tables(value: Any) -> bool:
+        """Whether the value is a non-empty list of tables; raise for a mixed list."""
         if not isinstance(value, list) or not value:
             return False
         has_table = any(isinstance(item, Mapping) for item in value)
@@ -140,5 +155,6 @@ class Toml:
 
     @staticmethod
     def _validate_key(value: Any) -> None:
+        """Raise for a key that is not a string."""
         if not isinstance(value, str):
             raise TypeError(f"TOML keys must be strings, got {type(value).__name__}")

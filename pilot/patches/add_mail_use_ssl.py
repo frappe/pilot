@@ -21,6 +21,7 @@ def run(benches_root: Path) -> None:
 
 
 def add_use_ssl(sites_path: Path) -> None:
+    """Add use_ssl to the common site config."""
     from pilot.config.common_site_config import update_common_site_config
 
     with update_common_site_config(sites_path) as config:

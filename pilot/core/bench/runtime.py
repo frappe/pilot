@@ -28,6 +28,7 @@ class BenchRuntime:
         self.bench = bench
 
     def wait_for_database(self, timeout_seconds: float = 60) -> None:
+        """Wait until the production database accepts connections; raise on timeout."""
         from pilot.managers.database import MariaDBManager, PostgresManager
 
         config = self.bench.config
@@ -61,6 +62,7 @@ class BenchRuntime:
         return manager.config.existing or manager.is_reachable()
 
     def start(self, on_progress: Callable[[str], None]) -> None:
+        """Start the bench in development, production or setup mode."""
         self.bench.site_aliases.release_expired()
         initialized = self.bench.is_initialized
         process_manager = self.bench.config.production.process_manager
@@ -81,6 +83,7 @@ class BenchRuntime:
         manager.start()
 
     def stop(self, on_progress: Callable[[str], None]) -> None:
+        """Stop the bench processes and the Admin."""
         from pilot.managers.processes.local import ProcessManager
 
         manager = ProcessManager.detect_running(self.bench)
@@ -109,6 +112,7 @@ class BenchRuntime:
             manager.restart_admin()
 
     def run_production_action(self, action: str) -> None:
+        """Start, stop or restart the production processes."""
         from pilot.managers.processes.local import ProcessManager
 
         if not self.bench.config.production.enabled:
@@ -118,6 +122,7 @@ class BenchRuntime:
         operation()
 
     def rebuild_config(self) -> None:
+        """Regenerate the Redis, process manager and nginx configs."""
         from pilot.managers.nginx import NginxManager
         from pilot.managers.processes.local import ProcessManager
         from pilot.managers.redis import RedisManager
@@ -129,6 +134,7 @@ class BenchRuntime:
             NginxManager(self.bench).write_config()
 
     def rebuild_assets(self, apps: list[str] | None = None, force: bool = False) -> None:
+        """Build the assets for some or all apps."""
         from pilot.managers.environment import PythonEnvManager
         from pilot.managers.processes.local import ProcessManager
 
@@ -152,10 +158,12 @@ class BenchRuntime:
         return [by_name[name] for name in names]
 
     def install_requirements(self, on_progress: Callable[[str], None]) -> None:
+        """Install every app's Python and node requirements."""
         self._install_python_requirements(on_progress)
         self._install_js_requirements(on_progress)
 
     def _start_development(self, initialized: bool, on_progress: Callable[[str], None]) -> None:
+        """Start the development processes."""
         from pilot.managers.processes.local import ProcessManager
 
         try:
@@ -174,6 +182,7 @@ class BenchRuntime:
         manager.start()
 
     def _warn_missing_python_reloader(self, on_progress: Callable[[str], None]) -> None:
+        """Warn when Python auto-reload is on but watchdog is missing."""
         bench = self.bench
         if bench.is_lite_mode and bench.config.reload_python and not bench.has_python_reloader:
             on_progress(
@@ -182,6 +191,7 @@ class BenchRuntime:
             )
 
     def _warn_fixed_dev_site(self, on_progress: Callable[[str], None]) -> None:
+        """Warn when a fixed default site is set in development."""
         from pilot.config.common_site_config import read_common_site_config
 
         if self.bench.is_lite_mode:
@@ -196,6 +206,7 @@ class BenchRuntime:
             )
 
     def _production_manager(self, process_manager: str) -> "ManagedProcessManager":
+        """The production process manager by name."""
         if process_manager == "systemd":
             from pilot.managers.processes.systemd import SystemdProcessManager
 
@@ -206,15 +217,18 @@ class BenchRuntime:
 
     def _start_setup_admin(self, manager: "ManagedProcessManager", on_progress) -> None:
 
+        """Start only the Admin so the user can finish setup."""
         manager.start_admin()
         on_progress(f"Admin running at {self.bench.config.admin_url}")
         on_progress("Finish setup there; the bench starts serving once it's initialized.")
 
     def _rebuild_manager_config(self, manager: "ProcessManager") -> None:
+        """Write the process manager config and the common site config."""
         manager.write_config()
         self.bench.write_common_site_config()
 
     def _ensure_admin_dist(self, on_progress: Callable[[str], None]) -> None:
+        """Build the Admin frontend if it is missing."""
         from admin.backend.frontend import is_admin_frontend_built
         from pilot import is_dev_build
         from pilot.core.server import Server
@@ -232,6 +246,7 @@ class BenchRuntime:
             self._rebuild_admin(on_progress)
 
     def _rebuild_admin(self, on_progress: Callable[[str], None]) -> None:
+        """Build the Admin frontend; report a failure."""
         from admin.backend.frontend import build_admin_frontend, is_admin_frontend_built
         from pilot.core.server import Server
 
@@ -243,6 +258,7 @@ class BenchRuntime:
             on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
+        """Start the Admin setup wizard."""
         from admin.backend.frontend import ensure_admin_frontend, is_admin_frontend_built
         from pilot.core.server import Server
         from pilot.managers.environment import AdminEnvManager
@@ -280,6 +296,7 @@ class BenchRuntime:
             on_progress("\nSetup complete. Run 'pilot start' to start your bench.\n")
 
     def _admin_port(self) -> int:
+        """The Admin port from bench.toml."""
         import tomllib
 
         from pilot.config import BenchConfig
@@ -290,6 +307,7 @@ class BenchRuntime:
             return 7000
 
     def _install_python_requirements(self, on_progress: Callable[[str], None]) -> None:
+        """Install the Python package of every app."""
         from pilot.managers.environment import PythonEnvManager
 
         for app in self.bench.apps():
@@ -299,6 +317,7 @@ class BenchRuntime:
             PythonEnvManager(self.bench).install_app(app)
 
     def _install_js_requirements(self, on_progress: Callable[[str], None]) -> None:
+        """Install the node packages of every app that has them."""
         from pilot.core.app.node_packages import NodePackages
 
         for app in self.bench.apps():
@@ -309,6 +328,7 @@ class BenchRuntime:
 
 
 def incomplete_production_message(bench: "Bench") -> str:
+    """The message for a production bench whose deployment is incomplete."""
     pm = bench.config.production.process_manager
     return (
         f"Bench {bench.config.name} is configured for production, but its {pm}\n"

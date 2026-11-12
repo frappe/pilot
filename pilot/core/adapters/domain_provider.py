@@ -28,6 +28,7 @@ _PROVIDER_TIMEOUT_SECONDS = 30
 
 
 def _run_provider(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run the provider command; raise when it times out."""
     try:
         return subprocess.run(argv, capture_output=True, text=True, timeout=_PROVIDER_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as error:
@@ -71,6 +72,7 @@ class DomainRouteProvider:
         return policy
 
     def _register_with_provider(self, domain: str) -> tuple[bool, object]:
+        """Ask the provider to register the domain; return whether it ran and its data."""
         try:
             return self._ask_provider("register", domain)
         except (ValueError, TypeError) as error:
@@ -131,13 +133,16 @@ class DomainRouteProvider:
         return json.loads(out) if out else []
 
     def domains(self, site_name: str) -> list[str]:
+        """The site's domains."""
         return self._names(self._read(site_name))
 
     def primary(self, site_name: str) -> str | None:
+        """The primary domain, if any."""
         host = (self._read(site_name).get("host_name") or "").strip()
         return host.split("://", 1)[-1] or None if host else None
 
     def set_primary(self, site_name: str, domain: str | None) -> None:
+        """Set or clear the primary domain."""
         from pilot.config import RoutePolicy, SiteConfig
 
         with self._edit_config(site_name) as config:
@@ -160,9 +165,11 @@ class DomainRouteProvider:
             config["host_name"] = f"{scheme}://{domain}"
 
     def _config_path(self, site_name: str):
+        """The site config file."""
         return self.bench.sites_path / site_name / "site_config.json"
 
     def _read(self, site_name: str) -> dict:
+        """The site config; raise when the site does not exist."""
         path = self._config_path(site_name)
         if not path.exists():
             raise BenchError(f"Site '{site_name}' not found.")
@@ -196,6 +203,7 @@ class DomainRouteProvider:
         return True, (json.loads(out) if out else None)
 
     def _route_policy(self, domain: str, ran: bool, data: object) -> RoutePolicy | None:
+        """The route policy the provider returned, or None."""
         if not ran:
             return None
         try:
@@ -271,6 +279,7 @@ class DomainRouteProvider:
 
     @staticmethod
     def _resolve(host: str) -> set[str]:
+        """The addresses the host resolves to."""
         try:
             return {str(info[4][0]) for info in socket.getaddrinfo(host, None)}
         except OSError:
@@ -278,6 +287,7 @@ class DomainRouteProvider:
 
     @staticmethod
     def _names(config: dict) -> list[str]:
+        """The domain names in a site config."""
         out = []
         for entry in config.get("domains") or []:
             name = entry.get("domain") if isinstance(entry, dict) else entry
@@ -287,4 +297,5 @@ class DomainRouteProvider:
 
     @staticmethod
     def _name(entry) -> str:
+        """The domain of a domain entry."""
         return entry.get("domain", "") if isinstance(entry, dict) else str(entry)

@@ -22,6 +22,7 @@ def run(benches_root: Path) -> None:
 
 
 def check_sessions_locally(bench) -> None:
+    """Make realtime check sessions locally."""
     from pilot.config.common_site_config import update_common_site_config
     from pilot.managers.processes.definitions import ProcessDefinitionBuilder
     from pilot.managers.processes.local import ProcessManager

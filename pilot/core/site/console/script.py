@@ -81,6 +81,7 @@ class SiteScript:
             raise ScriptBusyError("Another script is running on this bench.") from error
 
     def _start(self) -> subprocess.Popen:
+        """Start the script process in commit or rollback mode."""
         mode = "commit" if self.commit else "rollback"
         process = subprocess.Popen(
             [str(self.site.bench.python), "-c", _BOOTSTRAP, self.site.config.name, mode],
@@ -100,6 +101,7 @@ class SiteScript:
         return process
 
     def _read(self, process: subprocess.Popen, should_stop: Callable[[], bool]) -> Iterator[bytes | None]:
+        """Yield the script output; yield None to keep the stream alive."""
         assert process.stdout is not None
         deadline = time.monotonic() + TIMEOUT_SECONDS
         last_yield = time.monotonic()

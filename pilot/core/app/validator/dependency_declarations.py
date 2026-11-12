@@ -50,6 +50,7 @@ class DependencyDeclarationsCheck:
     """Ensure hooks and pyproject.toml have sane dependency requirements."""
 
     def run(self, app: "App") -> None:
+        """Raise when the app uses apps it does not declare."""
         if app.module_name == "frappe":
             return  # the framework itself has nothing to declare a dependency on
 

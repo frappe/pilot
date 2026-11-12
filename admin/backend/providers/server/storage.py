@@ -104,6 +104,7 @@ def _site_backup_dirs(site_path: Path) -> tuple[Path, Path]:
 
 
 def site_directories(site_path: Path) -> list[Path]:
+    """The site directory and its backup directories."""
     backups = [path for path in _site_backup_dirs(site_path) if path.is_dir()]
     return [site_path, site_path / "private" / "files", site_path / "public", *backups]
 
@@ -115,17 +116,20 @@ def measure_in_parallel(directories: list[Path]) -> None:
 
 
 def _measure_quietly(path: str) -> None:
+    """Measure a directory, ignoring errors."""
     # A failure is not cached, so the serial read that follows raises it where it did before.
     with suppress(OSError, CommandError, IndexError, ValueError):
         directory_size_bytes(path)
 
 
 def _storage_entry(path: Path) -> StorageItem:
+    """The size of a file or directory."""
     size = path.stat().st_size if path.is_file() else directory_size_bytes(str(path))
     return StorageItem(name=path.name, bytes=size)
 
 
 def _site_backup_files(site_path: Path) -> list[StorageItem]:
+    """The site's backup files."""
     return [
         _storage_entry(child)
         for backups_dir in _site_backup_dirs(site_path)
@@ -135,6 +139,7 @@ def _site_backup_files(site_path: Path) -> list[StorageItem]:
 
 
 def _site_other_entries(site_path: Path) -> list[StorageItem]:
+    """The site's other files and directories."""
     entries: list[StorageItem] = []
     for child in site_path.iterdir():
         if child.name in {"public", "backups"}:
@@ -186,6 +191,7 @@ class StorageProvider:
         return directories
 
     def _database_breakdown(self) -> DatabaseBreakdown:
+        """The database storage breakdown."""
         engine = self._config.db_type
         if engine not in _ENGINES_WITH_SCHEMA_SIZES:
             return DatabaseBreakdown(engine=engine, supported=False, used_bytes=0, binlog_bytes=0)
@@ -209,6 +215,7 @@ class StorageProvider:
         )
 
     def _schema_sizes(self, database) -> list[DatabaseRow]:
+        """The size of each schema with its site."""
         site_by_db = self._site_by_database_name()
         return [
             DatabaseRow(
@@ -221,6 +228,7 @@ class StorageProvider:
         ]
 
     def _site_by_database_name(self) -> dict[str, str]:
+        """The site name of each database."""
         mapping = {}
         for site in self._bench.sites():
             try:
@@ -232,6 +240,7 @@ class StorageProvider:
         return mapping
 
     def _bench_breakdown(self) -> BenchBreakdown:
+        """The bench storage breakdown."""
         apps = [
             StorageItem(name=app.config.name, bytes=directory_size_bytes(str(app.path)))
             for app in self._bench.apps()
@@ -250,6 +259,7 @@ class StorageProvider:
         )
 
     def _site_storage(self, site) -> SiteStorage:
+        """The storage of one site."""
         total_bytes = directory_size_bytes(str(site.path))
         private_files_bytes = directory_size_bytes(str(site.path / "private" / "files"))
         public_files_bytes = directory_size_bytes(str(site.path / "public"))

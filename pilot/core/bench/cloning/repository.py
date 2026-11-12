@@ -9,6 +9,7 @@ from pilot.internal.git import git_env
 
 
 def clone_repository(source: Path, destination: Path) -> None:
+    """Clone the repository, copying its objects when that is safe."""
     if not destination.exists() and try_copy_clone(source, destination):
         return
     run_command(
@@ -18,6 +19,7 @@ def clone_repository(source: Path, destination: Path) -> None:
 
 
 def try_copy_clone(source: Path, destination: Path) -> bool:
+    """Clone by copying the object directory; False when the objects are not portable."""
     objects = Path(
         run_command(
             ["git", "-C", str(source), "rev-parse", "--path-format=absolute", "--git-path", "objects"],
@@ -62,6 +64,7 @@ def try_copy_clone(source: Path, destination: Path) -> bool:
 
 
 def read_shallow_boundary(path: Path) -> bytes:
+    """The shallow file content, or empty bytes when the clone is not shallow."""
     try:
         return path.read_bytes()
     except FileNotFoundError:
@@ -69,6 +72,7 @@ def read_shallow_boundary(path: Path) -> bytes:
 
 
 def has_portable_objects(objects: Path) -> bool:
+    """Whether the objects can be copied without alternates or links."""
     if os.environ.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"):
         return False
     if objects.is_symlink() or (objects / "info" / "alternates").exists():
@@ -77,6 +81,7 @@ def has_portable_objects(objects: Path) -> bool:
 
 
 def has_independent_object_files(objects: Path) -> bool:
+    """Whether the object directory holds no links and no lock files."""
     for directory, directories, files in os.walk(objects):
         if any(Path(directory, name).is_symlink() for name in [*directories, *files]):
             return False
@@ -86,6 +91,7 @@ def has_independent_object_files(objects: Path) -> bool:
 
 
 def initialize_repository(source: Path, destination: Path) -> None:
+    """Create an empty repository with the source's object format."""
     prefix = ["git", "-C", str(source)]
     object_format = (
         run_command([*prefix, "rev-parse", "--show-object-format"], env=git_env()).stdout.decode().strip()

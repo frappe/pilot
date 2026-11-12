@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 # Shared, read-only CRS assets; every bench's generated main.conf Includes these.
 # Bench-user owned, so installing them never needs privileges.
 def shared_modsec_dir() -> Path:
+    """The shared ModSecurity CRS directory."""
     from pilot.core.server import Server
 
     return Server().root / "system" / "waf" / "modsecurity-crs"
@@ -60,6 +61,7 @@ class WafManager:
 
     @staticmethod
     def module_path() -> str | None:
+        """The ModSecurity nginx module, if found."""
         for base in _MODULE_DIRS:
             candidate = Path(base) / MODSEC_MODULE_NAME
             if candidate.exists():
@@ -68,6 +70,7 @@ class WafManager:
 
     @staticmethod
     def crs_available() -> bool:
+        """Whether the CRS rules are installed."""
         shared = shared_modsec_dir()
         return (shared / "crs-setup.conf").exists() and (shared / "rules").is_dir()
 
@@ -77,6 +80,7 @@ class WafManager:
         return cls.module_available() and cls.crs_available()
 
     def install(self) -> None:
+        """Install the WAF; raise unless the host runs Linux."""
         if not HostPlatform().is_linux:
             raise RuntimeError("The WAF (ModSecurity) is only supported on Linux production hosts.")
         if not self.module_available():

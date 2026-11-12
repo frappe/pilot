@@ -33,6 +33,7 @@ class Site:
 
     @property
     def path(self) -> Path:
+        """The site directory."""
         return self.bench.sites_path / self.config.name
 
     def clone(
@@ -42,6 +43,7 @@ class Site:
         admin_password: str | None = None,
         on_progress=print,
     ) -> "Site":
+        """Clone the site under a new name, on this bench or another."""
         from pilot.core.site.clone import SiteClone
 
         password = secrets.token_urlsafe(24) if admin_password is None else admin_password
@@ -49,46 +51,54 @@ class Site:
 
     @property
     def exists(self) -> bool:
+        """Whether the site has a site_config.json."""
         return (self.path / "site_config.json").exists()
 
     @cached_property
     def backups(self) -> "SiteBackups":
+        """The site backups."""
         from pilot.core.site.backups import SiteBackups
 
         return SiteBackups(self)
 
     @cached_property
     def console_completions(self) -> "ConsoleCompletions":
+        """The console completions."""
         from pilot.core.site.console.completions import ConsoleCompletions
 
         return ConsoleCompletions(self)
 
     @cached_property
     def domains(self) -> "SiteDomains":
+        """The site domains."""
         from pilot.core.site.domains import SiteDomains
 
         return SiteDomains(self)
 
     @cached_property
     def frappe_cloud(self) -> "SiteFrappeCloud":
+        """The Frappe Cloud connection."""
         from pilot.core.site.frappe_cloud import SiteFrappeCloud
 
         return SiteFrappeCloud(self)
 
     @cached_property
     def migration_backup(self) -> "SiteMigrationBackup":
+        """The migration backup."""
         from pilot.core.site.backups.migration import SiteMigrationBackup
 
         return SiteMigrationBackup(self)
 
     @property
     def config_file(self) -> "SiteConfigFile":
+        """The site_config.json file."""
         from pilot.core.site.config.file import SiteConfigFile
 
         return SiteConfigFile(self.bench.sites_path, self.config.name)
 
     @property
     def database_state(self) -> "SiteDatabaseState":
+        """The site state read from its database."""
         from pilot.core.site.config.database_state import SiteDatabaseState
 
         return SiteDatabaseState(self.bench.path, self.config.name)
@@ -100,10 +110,12 @@ class Site:
 
     @property
     def maintenance_mode(self) -> bool:
+        """Whether maintenance mode is on."""
         return bool(self.maintenance_settings["maintenance_mode"])
 
     @property
     def maintenance_settings(self) -> dict[str, int]:
+        """The maintenance mode and pause scheduler flags."""
         config = self.config_file.read()
         return {
             "maintenance_mode": int(bool(config.get("maintenance_mode"))),
@@ -111,10 +123,12 @@ class Site:
         }
 
     def set_maintenance_mode(self, enabled: bool) -> None:
+        """Turn maintenance mode and the scheduler pause on or off."""
         value = 1 if enabled else 0
         self.set_maintenance_settings({"maintenance_mode": value, "pause_scheduler": value})
 
     def set_maintenance_settings(self, settings: dict[str, int]) -> None:
+        """Save the maintenance flags."""
         self.config_file.set_values(settings)
 
     @contextmanager
@@ -128,6 +142,7 @@ class Site:
             self.set_maintenance_settings(original)
 
     def ensure_exists(self) -> None:
+        """Raise when the site does not exist."""
         if not self.exists:
             raise BenchError(f"Site '{self.config.name}' does not exist in this bench.")
 
@@ -144,6 +159,7 @@ class Site:
         return [*self.bench.frappe_call, *args]
 
     def create(self, db_type: str | None = None) -> None:
+        """Create the site."""
         from pilot.core.site.commands import SiteCommands
 
         SiteCommands(self).create(db_type)
@@ -151,6 +167,7 @@ class Site:
     def restore(
         self, db_file: str, public_files: str | None = None, private_files: str | None = None
     ) -> None:
+        """Restore the site from backup files."""
         from pilot.core.site.commands import SiteCommands
 
         SiteCommands(self).restore(db_file, public_files, private_files)
@@ -171,11 +188,13 @@ class Site:
             self.bench.processes.apply()
 
     def reinstall(self, admin_password: str) -> None:
+        """Reinstall the site with a new admin password."""
         from pilot.core.site.commands import SiteCommands
 
         SiteCommands(self).reinstall(admin_password)
 
     def install_app(self, app: "App", force: bool = False) -> None:
+        """Install the app and apply its processes."""
         from pilot.core.site.apps import SiteApps
 
         apps = SiteApps(self)
@@ -191,6 +210,7 @@ class Site:
         return SiteApps(self).install_app_with_dependencies(app)
 
     def uninstall_app(self, app: "App", force: bool = False) -> None:
+        """Uninstall the app and apply its processes."""
         from pilot.core.site.apps import SiteApps
 
         # Checked first: the app may leave the bench along with its declarations.
@@ -200,6 +220,7 @@ class Site:
             self.bench.processes.apply()
 
     def enable_app(self, app: "App") -> None:
+        """Enable the app and apply its processes."""
         from pilot.core.site.apps import SiteApps
 
         apps = SiteApps(self)
@@ -209,6 +230,7 @@ class Site:
             self.bench.processes.apply()
 
     def disable_app(self, app: "App") -> None:
+        """Disable the app and apply its processes."""
         from pilot.core.site.apps import SiteApps
 
         SiteApps(self).disable_app(app)
@@ -216,6 +238,7 @@ class Site:
             self.bench.processes.apply()
 
     def disabled_apps(self) -> list[str]:
+        """The apps disabled on the site."""
         from pilot.core.site.apps import SiteApps
 
         return SiteApps(self).disabled_apps()
@@ -260,6 +283,7 @@ class Site:
 
     @property
     def has_pending_background_jobs(self) -> bool:
+        """Whether the site has queued or running background jobs."""
         from pilot.core.site.commands import SiteCommands
 
         return SiteCommands(self).has_pending_background_jobs()
@@ -271,11 +295,13 @@ class Site:
         return SiteScript(self, code, commit)
 
     def clear_cache(self) -> None:
+        """Clear the site cache."""
         from pilot.core.site.commands import SiteCommands
 
         SiteCommands(self).clear_cache()
 
     def enable_scheduler(self) -> None:
+        """Turn on the site scheduler."""
         from pilot.core.site.commands import SiteCommands
 
         SiteCommands(self).enable_scheduler()
@@ -295,6 +321,7 @@ class Site:
         on_progress: Callable[[str], None] = lambda message: None,
         remove_from_bench: bool = True,
     ) -> None:
+        """Uninstall the apps from the site."""
         from pilot.core.site.apps import SiteApps
 
         SiteApps(self).uninstall_apps(app_names, force, on_progress, remove_from_bench)
@@ -306,6 +333,7 @@ class Site:
         force: bool = False,
         archived_sites_path: str | None = None,
     ) -> None:
+        """Drop the site, its database and its routes."""
         from pilot.core.site.commands import SiteCommands
         from pilot.managers.nginx import NginxManager
 
@@ -342,6 +370,7 @@ class Site:
         keep_old_hostname: bool = True,
         make_primary: bool = False,
     ) -> None:
+        """Rename the site."""
         from pilot.core.site.rename import SiteRename
 
         SiteRename(self, new_name, keep_old_hostname, make_primary).run(on_progress)
@@ -359,6 +388,7 @@ class Site:
         SiteDropper(self).release_domains(domains)
 
     def _remove_from_bench_toml(self) -> None:
+        """Remove the site from bench.toml."""
         from pilot.core.site.drop import SiteDropper
 
         SiteDropper(self).remove_from_bench_toml()
@@ -393,11 +423,13 @@ class Site:
         SiteProvisioner(self.bench, self.config.name, apps, None).finish(self, on_progress)
 
     def set_ssl(self, enabled: bool) -> None:
+        """Turn SSL on or off in the site config."""
         self.config_file.set_values({"ssl": enabled})
 
     def admin_login_url(
         self, proxy_tls: bool = False, user: str = "Administrator", full_name: str = ""
     ) -> str | None:
+        """A one-time login URL for the site's desk."""
         from pilot.core.site.login import SiteLogin
 
         return SiteLogin(self).admin_url(proxy_tls=proxy_tls, user=user, full_name=full_name)

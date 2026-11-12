@@ -26,6 +26,7 @@ class Validator:
         self.checks = checks or _all_checks()
 
     def validate(self) -> None:
+        """Run every check."""
         for check in self.checks:
             check.run(self.app)
 

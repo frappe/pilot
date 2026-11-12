@@ -26,6 +26,7 @@ class SiteUptimeProvider(WindowedLogProvider):
         self.bucket_seconds = max(_MIN_BUCKET_SECONDS, self.window_seconds // _MAX_BUCKETS)
 
     def get_uptime(self) -> dict:
+        """The uptime percent and pings in the window."""
         entries = list(self._entries_in_window())
         return {
             "window": self.window,
@@ -41,6 +42,7 @@ class SiteUptimeProvider(WindowedLogProvider):
         }
 
     def _is_production_enabled(self) -> bool:
+        """Whether the bench runs in production."""
         from pilot.config import BenchConfig
 
         try:
@@ -72,6 +74,7 @@ class SiteUptimeProvider(WindowedLogProvider):
 
     @staticmethod
     def _percent(entries: list[dict]) -> float | None:
+        """The uptime percent, or None without pings."""
         # A site in maintenance is down on purpose, so those checks do not count against it.
         ups = [
             entry["up"]
@@ -83,6 +86,7 @@ class SiteUptimeProvider(WindowedLogProvider):
         return round(sum(ups) / len(ups) * 100, 2)
 
     def _entries_in_window(self) -> list[dict]:
+        """The site's pings in the window."""
         return [
             record
             for record in self.records_in_window(self._log_path, time_key="time")

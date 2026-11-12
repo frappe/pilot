@@ -88,6 +88,7 @@ class InsufficientDiskSpaceError(BenchError):
 
     @staticmethod
     def format_size(size: int) -> str:
+        """The size in GB, MB or KB."""
         if size >= 1024**3:
             return f"{size / 1024**3:.1f} GB"
         if size >= 1024**2:

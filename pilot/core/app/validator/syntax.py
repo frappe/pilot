@@ -15,6 +15,7 @@ class SyntaxCheck:
     """AST-parses every Python file in the app using the bench's Python environment, rejecting it on any SyntaxError."""
 
     def run(self, app: "App") -> None:
+        """Raise when a Python file has a syntax error."""
         files = [str(p) for p in python_files(app)]
         if not files:
             return

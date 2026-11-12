@@ -30,6 +30,7 @@ class BuildArtifacts:
 
     @property
     def optional_key(self) -> str | None:
+        """The asset cache key, or None when it cannot be computed."""
         try:
             return self.get_key()
         except Exception as error:
@@ -37,6 +38,7 @@ class BuildArtifacts:
             return None
 
     def get_key(self) -> str | None:
+        """A key for the built assets: the build environment and every app's source, or None."""
         digest = hashlib.sha256(b"pilot-assets-v1\0")
         environment = {
             key: value
@@ -70,6 +72,7 @@ class BuildArtifacts:
         return digest.hexdigest()
 
     def get_package_manager_binaries(self) -> list[str]:
+        """The package manager programs the apps' frontends use."""
         managers = {
             package.package_manager
             for app in self.bench.apps()
@@ -81,6 +84,7 @@ class BuildArtifacts:
 
     @staticmethod
     def get_app_key(app) -> str | None:
+        """A key for one app's asset sources, or None when the app cannot be cached."""
         if not (app.path / ".git").exists() or BuildArtifacts.has_custom_build(app):
             return None
         digest = hashlib.sha256(f"{app.config.name}:{app.module_name}".encode() + b"\0")
@@ -107,6 +111,7 @@ class BuildArtifacts:
 
     @staticmethod
     def get_source_files(app, files: list[str]) -> list[str]:
+        """The tracked files that feed the build, without the build outputs."""
         outputs = (f"{app.module_name}/public/dist", "frontend/dist", "roster/dist")
         prefixes = tuple(f"{output}/" for output in outputs)
         return [
@@ -117,6 +122,7 @@ class BuildArtifacts:
 
     @staticmethod
     def get_file_key(path: Path) -> bytes | None:
+        """The file's identity bytes for the cache key; empty for a missing file."""
         try:
             metadata = path.lstat()
         except FileNotFoundError:
@@ -141,6 +147,7 @@ class BuildArtifacts:
 
     @staticmethod
     def has_custom_build(app) -> bool:
+        """Whether the app builds assets its own way, so the cache cannot know its outputs."""
         if asset_build_dirs(app) or build_output_paths(app):
             return True
         hooks = app.path / app.module_name / "hooks.py"
@@ -155,6 +162,7 @@ class BuildArtifacts:
 
     @staticmethod
     def is_custom_build_hook(node, module_name: str) -> bool:
+        """Whether a hooks.py assignment declares a custom build."""
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         names = {target.id for target in targets if isinstance(target, ast.Name)}
         if not names & {"after_build", "after_app_build"}:
@@ -169,10 +177,12 @@ class BuildArtifacts:
 
     @property
     def paths(self) -> list[str]:
+        """The output paths that exist in the bench now."""
         return [path for path in self.output_paths if (self.bench.path / path).is_dir()]
 
     @property
     def output_paths(self) -> list[str]:
+        """Every path an asset build may write to."""
         paths = ["sites/assets"]
         for app in self.bench.apps():
             prefix = f"apps/{app.config.name}"
@@ -194,6 +204,7 @@ class BuildArtifacts:
             self.capture(key)
 
     def capture(self, key: str | None) -> None:
+        """Save the built assets under the key; a failure only skips the cache."""
         if key is None:
             return
         try:
@@ -206,6 +217,7 @@ class BuildArtifacts:
             logging.warning("Skipping asset cache publication: %s", error)
 
     def publish(self, key: str, paths: list[str]) -> None:
+        """Store a copy of the paths under the key, unless another process already did."""
         self.root.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.root / f"{key}.guard"):
             target = self.root / key
@@ -223,6 +235,7 @@ class BuildArtifacts:
                     shutil.rmtree(staging)
 
     def restore(self, key: str | None) -> bool:
+        """Copy cached assets for the key into the bench; False when there is no valid cache."""
         if key is None:
             return False
         target = self.root / key
@@ -243,6 +256,7 @@ class BuildArtifacts:
         return True
 
     def has_valid_manifest(self, target: Path, paths) -> bool:
+        """Whether a cached copy lists every required path and only safe ones."""
         if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
             return False
         if not set(self.required_paths).issubset(paths) or not set(paths).issubset(self.output_paths):
@@ -251,6 +265,7 @@ class BuildArtifacts:
 
     @property
     def required_paths(self) -> list[str]:
+        """The output paths a complete build must produce."""
         paths = ["sites/assets"]
         for app in self.bench.apps():
             public = app.path / app.module_name / "public"
@@ -264,6 +279,7 @@ class BuildArtifacts:
         return paths
 
     def is_safe_output(self, target: Path, path: str) -> bool:
+        """Whether the cached path stays inside both the cache and the bench."""
         return (
             (target / path).is_dir()
             and (target / path).resolve().is_relative_to(target.resolve())

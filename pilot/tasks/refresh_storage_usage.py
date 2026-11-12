@@ -15,6 +15,7 @@ class RefreshStorageUsageTask(Task):
 
     @step("measure", "Measuring every site's files and database")
     def run(self) -> None:
+        """Measure the site storage."""
         self.bench.site_storage.collect()
 
 

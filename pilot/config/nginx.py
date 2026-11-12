@@ -18,15 +18,18 @@ class NginxConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "NginxConfig":
+        """The validated nginx config from its TOML table."""
         config = cls(http_port=data.get("http_port", 80), https_port=data.get("https_port", 443))
         config.validate()
         return config
 
     @property
     def ports(self) -> dict[str, int]:
+        """The nginx ports by name."""
         return {"http_port": self.http_port, "https_port": self.https_port}
 
     def validate(self) -> None:
+        """Raise when a port is invalid."""
         for name, port in self.ports.items():
             if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
                 raise ConfigError(f"nginx.{name} must be a port number between 1 and 65535, got {port!r}.")

@@ -12,6 +12,7 @@ class CompleteMigrationTask(Task):
 
     @step("restart", "Restart services and finish migration")
     def run(self) -> None:
+        """Complete the migration."""
         self.bench.migrations.get_for_chain_task(
             self.operation_id, self.running_task_id, self.command, {}
         ).complete()
@@ -19,6 +20,7 @@ class CompleteMigrationTask(Task):
     @on_failure
     @on_cancel
     def fail_migration_step(self) -> dict:
+        """The callback args that fail the migrate step."""
         return {"operation_id": self.operation_id, "phase": "migrating", "site": None}
 
 

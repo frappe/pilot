@@ -15,6 +15,7 @@ class RevertAppsTask(Task):
     operation_id: str
 
     def run(self) -> None:
+        """Revert the apps in the migration."""
         operation = self.bench.migrations.get_for_chain_task(
             self.operation_id, self.running_task_id, self.command, {}
         )
@@ -28,6 +29,7 @@ class RevertAppsTask(Task):
     @on_failure
     @on_cancel
     def fail_migration_step(self) -> dict:
+        """The callback args that fail the revert step."""
         return {"operation_id": self.operation_id, "phase": "reverting_apps", "site": None}
 
 

@@ -22,6 +22,7 @@ class ConfigPatch:
     common_site_config: dict[str, Any] = field(default_factory=dict)
 
     def apply(self, bench: Bench) -> None:
+        """Apply the bench.toml and common config patch to the bench."""
         if unknown := BenchConfig.unknown_config_paths(self.bench_config):
             raise ConfigError(f"bench.toml patch has unrecognized fields: {', '.join(unknown)}")
 

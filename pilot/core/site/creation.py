@@ -19,17 +19,20 @@ class SiteCreationOwner:
 
     @contextlib.contextmanager
     def locked(self) -> Iterator[SiteCreationOwner]:
+        """Hold the creation lock."""
         PrivateDirectory(self.path.parent).create(parents=True)
         with exclusive_file_lock(self.path):
             yield self
 
     def claim(self, task_id: str) -> None:
+        """Record the task that creates the site, or clear the record."""
         if task_id:
             replace_private_text_locked(self.path, json.dumps({"task_id": task_id}))
         else:
             self.path.unlink(missing_ok=True)
 
     def is_owned_by(self, task_id: str) -> bool:
+        """Whether the task owns the site creation."""
         if not task_id:
             return False
         try:
@@ -38,5 +41,6 @@ class SiteCreationOwner:
             return False
 
     def release(self, task_id: str) -> None:
+        """Remove the record if the task owns it."""
         if self.is_owned_by(task_id):
             self.path.unlink()

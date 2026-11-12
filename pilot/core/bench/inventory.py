@@ -18,6 +18,7 @@ class BenchInventory:
         self.bench = bench
 
     def app(self, name: str) -> "App":
+        """The app with this name; try the dashed directory name too."""
         app_path = self.bench.apps_path / name
         if not app_path.is_dir():
             app_path = self.bench.apps_path / name.replace("_", "-")
@@ -28,6 +29,7 @@ class BenchInventory:
         return self.get_app_at(app_path)
 
     def apps(self) -> list["App"]:
+        """Every app directory under apps, sorted by name."""
         if not self.bench.apps_path.is_dir():
             return []
         return [
@@ -55,10 +57,12 @@ class BenchInventory:
         )
 
     def registered_apps(self) -> list[str]:
+        """The app names in sites/apps.txt."""
         apps_txt = self.bench.sites_path / "apps.txt"
         return apps_txt.read_text().splitlines() if apps_txt.exists() else []
 
     def is_app_installed(self, name: str) -> bool:
+        """Whether the app's module is installed in the bench environment."""
         from pilot.config import AppConfig
         from pilot.core.app import App
 
@@ -66,11 +70,13 @@ class BenchInventory:
         return module_name in self.registered_apps()
 
     def init_apps(self) -> list["App"]:
+        """The apps listed in bench.toml."""
         from pilot.core.app import App
 
         return [App(app_config, self.bench) for app_config in self.bench.config.apps]
 
     def sites(self) -> list["Site"]:
+        """Every site directory with a site_config.json."""
         from pilot.core.site import Site
 
         if not self.bench.sites_path.is_dir():
@@ -88,11 +94,13 @@ class BenchInventory:
         return result
 
     def write_apps_txt(self) -> None:
+        """Write sites/apps.txt from the app directories."""
         apps_txt = self.bench.sites_path / "apps.txt"
         names = [app.config.name for app in self.apps()]
         apps_txt.write_text("\n".join(names) + "\n" if names else "")
 
     def _site_config(self, name: str, raw: dict):
+        """The site config built from a raw site_config.json."""
         from pilot.config import RoutePolicy, SiteConfig, SiteDomain
 
         domains = [SiteDomain.from_entry(entry) for entry in (raw.get("domains") or [])]
@@ -110,6 +118,7 @@ class BenchInventory:
         )
 
     def _read_site_config(self, path: Path) -> dict:
+        """The parsed site config, or an empty dict when it cannot be read."""
         try:
             return json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
@@ -117,12 +126,14 @@ class BenchInventory:
 
     @staticmethod
     def _git_remote(path: Path) -> str:
+        """The remote URL of the repository."""
         from pilot.internal.git import GitRepo
 
         return GitRepo(path).remote_url
 
     @staticmethod
     def _git_branch(path: Path) -> str:
+        """The current branch of the repository."""
         from pilot.internal.git import GitRepo
 
         return GitRepo(path).branch

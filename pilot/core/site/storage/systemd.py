@@ -46,6 +46,7 @@ class SiteStorageConfigurator(SystemdUserMixin):
         self.storage_dir = Server().root / "system" / "storage"
 
     def install(self) -> None:
+        """Install the storage collector timer if it is missing."""
         if user_timer_installed(self.timer_unit_name):
             return
         # systemd cannot open the unit's append: targets if this is missing.
@@ -59,6 +60,7 @@ class SiteStorageConfigurator(SystemdUserMixin):
         )
 
     def _render_unit(self) -> str:
+        """The collector service unit."""
         from pilot.managers.environment import AdminEnvManager
 
         root = Server().root

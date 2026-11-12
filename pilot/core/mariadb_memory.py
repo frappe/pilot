@@ -141,6 +141,7 @@ def calculate_mariadb_variable_limits(total_memory_mb: int, memory_share: float 
 
 
 def _innodb_log_file_size(total_memory_mb: int) -> int:
+    """The InnoDB log file size for the memory, in MB."""
     ram_gb = round(total_memory_mb / 1024)
     if ram_gb > 16:
         return 2048
@@ -154,10 +155,12 @@ def _innodb_log_file_size(total_memory_mb: int) -> int:
 
 
 def _round_up(value: int, block: int) -> int:
+    """The value rounded up to a multiple of block."""
     return ((value + block - 1) // block) * block
 
 
 def _round_down(value: int, block: int) -> int:
+    """The value rounded down to a multiple of block."""
     return (value // block) * block
 
 

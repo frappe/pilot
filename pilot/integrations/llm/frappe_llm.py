@@ -25,10 +25,12 @@ class FrappeLLMIntegration(SelfHostedIntegration):
 
     @classmethod
     def providers(cls) -> dict[str, str]:
+        """The providers this integration serves."""
         return {"frappe-llm": "Frappe LLM"}
 
     @classmethod
     def get_models(cls, provider: str, api_key: str = "", api_base: str = "") -> list[str]:
+        """The models of the provider; raise without an API key."""
         if not api_key:
             raise ValueError("Frappe LLM needs an API key to list models.")
 

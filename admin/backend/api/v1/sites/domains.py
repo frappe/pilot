@@ -28,6 +28,7 @@ from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 @sites_bp.post("/<name>/actions/enable-tls")
 @require_scope(site_name)
 def enable_tls(name: str):
+    """Queue turning on TLS for the site."""
     bench_root = ApiRequest.get_bench_root()
     config_path = site_config_path(bench_root, name)
     if config_path is None:
@@ -55,6 +56,7 @@ def enable_tls(name: str):
 
 
 def _tls_email_request(bench_root: Path):
+    """The Let's Encrypt email, or an error response."""
     from pilot.config import BenchConfig
 
     data = request.get_json(silent=True)
@@ -89,6 +91,7 @@ def _tls_email_request(bench_root: Path):
 
 
 def _validate_tls_not_enabled(config_path: Path):
+    """The error response when TLS is already on, or None."""
     try:
         current = json.loads(config_path.read_text())
     except Exception:
@@ -101,16 +104,19 @@ def _validate_tls_not_enabled(config_path: Path):
 
 
 def _site_domains(bench_root: Path, name: str):
+    """The site's domains."""
     return Bench(bench_root).site(name).domains
 
 
 def _apply_domains(bench_root: Path, name: str) -> str:
+    """Queue applying the domains; return the task ID."""
     return _site_domains(bench_root, name).apply_task()
 
 
 @sites_bp.route("/<name>/domains", methods=["GET"])
 @require_scope(site_name)
 def list_domains(name: str):
+    """List the site's domains."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -152,6 +158,7 @@ def domain_dns_records(name: str, domain: str):
 @sites_bp.post("/<name>/domains")
 @require_scope(site_name)
 def add_domain(name: str):
+    """Add a domain."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -170,6 +177,7 @@ def add_domain(name: str):
 
 
 def _add_domain_request():
+    """The domain fields, or an error response."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return None, malformed_body()
@@ -190,6 +198,7 @@ def _add_domain_request():
 @sites_bp.get("/<name>/domains/<domain>")
 @require_scope(site_name)
 def get_domain(name: str, domain: str):
+    """Show one domain."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -209,6 +218,7 @@ def get_domain(name: str, domain: str):
 @sites_bp.patch("/<name>/domains/<domain>")
 @require_scope(site_name)
 def update_domain(name: str, domain: str):
+    """Update a domain."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -231,6 +241,7 @@ def update_domain(name: str, domain: str):
 @sites_bp.delete("/<name>/domains/<domain>")
 @require_scope(site_name)
 def remove_domain(name: str, domain: str):
+    """Remove a domain."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -247,6 +258,7 @@ def remove_domain(name: str, domain: str):
 
 
 def _domain_failure(error: BenchError, message: str):
+    """The error response for a domain failure."""
     if isinstance(error, ConfigError):
         raise error
     if isinstance(error, DomainConflictError):

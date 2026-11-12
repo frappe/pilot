@@ -9,6 +9,7 @@ from pilot.internal.git import GitRepo, git_env
 
 
 def parse_app_branches(value: str) -> dict[str, str]:
+    """Parse `app=branch,app=branch` into a dict."""
     branches = {}
     for entry in value.split(",") if value.strip() else []:
         app, separator, branch = entry.strip().partition("=")
@@ -19,6 +20,7 @@ def parse_app_branches(value: str) -> dict[str, str]:
 
 
 def validate_branches(branch: str, app_branches: dict[str, str]) -> None:
+    """Raise for an empty default branch or an invalid app branch."""
     if not isinstance(branch, str) or not branch.strip():
         raise BenchError("Select default, current, or a branch name.")
     validate_app_branches(app_branches)
@@ -32,6 +34,7 @@ def validate_branches(branch: str, app_branches: dict[str, str]) -> None:
 
 
 def validate_app_branches(app_branches: dict[str, str]) -> None:
+    """Raise unless every app and branch is a non-empty string."""
     if not isinstance(app_branches, dict) or not all(
         isinstance(app, str) and app and isinstance(value, str) and value
         for app, value in app_branches.items()
@@ -43,12 +46,14 @@ GITHUB_SSH_RE = re.compile(r"^(?:git@github\.com:|ssh://git@github\.com/)(?P<pat
 
 
 def ls_remote(source: Path, remote: str, git_config: dict[str, str] | None) -> str:
+    """The output of git ls-remote for HEAD and every branch."""
     env = {**git_env(git_config), "GIT_TERMINAL_PROMPT": "0"}
     command = ["git", "-C", str(source), "ls-remote", "--symref", remote, "HEAD", "refs/heads/*"]
     return run_command(command, env=env, timeout=15).stdout.decode()
 
 
 def read_remote_refs(source: Path, remote: str, git_config: dict[str, str] | None) -> str:
+    """The remote refs, trying the HTTPS form of a GitHub SSH remote first."""
     github = GITHUB_SSH_RE.match(remote)
     if github:
         with contextlib.suppress(CommandError):
@@ -57,6 +62,7 @@ def read_remote_refs(source: Path, remote: str, git_config: dict[str, str] | Non
 
 
 def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) -> dict:
+    """The app's remote branches and default branch."""
     remote = GitRepo(source).remote_url
     if not remote:
         raise BenchError(f"{source.name} has no origin remote.")
@@ -81,6 +87,7 @@ def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) 
 
 
 def get_branch_options(source: Path, git_config: dict[str, str] | None = None) -> dict:
+    """The branch choices for an app; only "current" when it has no remote."""
     if not GitRepo(source).remote_url:
         return {"name": source.name, "default_branch": "current", "branches": ["current"]}
     return get_remote_branches(source, git_config)

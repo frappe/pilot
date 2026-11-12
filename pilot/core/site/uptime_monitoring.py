@@ -41,6 +41,7 @@ class UptimeMonitor:
         return {site.config.name for site in self.bench.sites() if site.maintenance_mode}
 
     def ping_site(self, site_name: str) -> dict:
+        """Ping the site through the local web server and return the result."""
         # Stay on loopback. Traffic over the public address keeps a Sleepy VM awake, so
         # this client follows no redirect and uses no proxy.
         connection = http.client.HTTPConnection(
@@ -64,6 +65,7 @@ class UptimeMonitor:
 
     @property
     def alerts_path(self):
+        """The file with the uptime alert state."""
         return self._configurator.log_path.with_suffix(".alerts")
 
     def collect(self) -> None:
@@ -151,6 +153,7 @@ class UptimeMonitor:
     def _result(
         site_name: str, start: float, up: bool, status_code: int | None, error: str | None = None
     ) -> dict:
+        """One ping result record."""
         result = {
             "time": datetime.now(UTC).isoformat(),
             "site": site_name,
@@ -165,6 +168,7 @@ class UptimeMonitor:
 
 
 def _production_uptime_monitors() -> list[UptimeMonitor]:
+    """An uptime monitor for each production bench."""
     from pilot.core.bench import Bench
     return [
         UptimeMonitor(Bench(bench_config, bench_path))
@@ -174,6 +178,7 @@ def _production_uptime_monitors() -> list[UptimeMonitor]:
 
 
 def main() -> None:
+    """Ping the sites of every production bench."""
     for monitor in _production_uptime_monitors():
         monitor.collect()
 

@@ -22,9 +22,11 @@ class AutoUpdate:
 
     @property
     def is_enabled(self) -> bool:
+        """Whether Pilot updates itself."""
         return CommonConfig.read(self.server.benches_dir).updates.auto_pilot_update
 
     def enable(self) -> None:
+        """Install the update cron job and turn auto update on."""
         log_file = Server().root / "system" / "logs" / "auto-update.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         # A UTC guard works on cron implementations without per-job timezone support.
@@ -36,11 +38,13 @@ class AutoUpdate:
             config.updates.auto_pilot_update = True
 
     def disable(self) -> None:
+        """Remove the update cron job and turn auto update off."""
         with CommonConfig.open(self.server.benches_dir) as config:
             CronManager(Server().root).remove_schedule(CRON_JOB_KEY)
             config.updates.auto_pilot_update = False
 
     def set_enabled(self, enabled: bool) -> None:
+        """Save the auto update setting."""
         with CommonConfig.open(self.server.benches_dir) as config:
             config.updates.auto_pilot_update = enabled
 

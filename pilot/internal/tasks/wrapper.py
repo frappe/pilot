@@ -23,6 +23,7 @@ _cancel_requested = False
 
 
 def _wait_until_ready() -> bool:
+    """Wait for the parent to record this process; False when it gave up."""
     raw_fd = os.environ.pop("BENCH_TASK_READY_FD", None)
     if raw_fd is None:
         return True
@@ -34,6 +35,7 @@ def _wait_until_ready() -> bool:
 
 
 def _request_cancel(_signum, _frame) -> None:
+    """Note a cancel request from SIGTERM."""
     global _cancel_requested
     _cancel_requested = True
 
@@ -46,6 +48,7 @@ def _syslog_prefix_parts(tag: str, pid: int) -> tuple[bytes, bytes]:
 
 
 def _redact(data: bytes, redactions: list[bytes]) -> bytes:
+    """The bytes with every secret replaced."""
     for secret in redactions:
         data = data.replace(secret, b"[redacted]")
     return data
@@ -66,6 +69,7 @@ def run_with_syslog_output(
     secret_bytes = sorted({value.encode() for value in redactions or [] if value}, key=len, reverse=True)
 
     def write_prefix(log_file) -> None:
+        """Write the syslog-style prefix for one output line."""
         ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
         log_file.write(head)
         log_file.write(ts)
@@ -104,6 +108,7 @@ def callback_handler(
     meta: dict,
     redactions: list[str] | None = None,
 ) -> None:
+    """Run one callback, logging a failure to the task output instead of raising."""
     head, tail = _syslog_prefix_parts(meta["command"], os.getpid())
     ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
     prefix = (head + ts + tail).decode()
@@ -119,6 +124,7 @@ def callback_handler(
 
 
 def _secret_values(value, key: str = "") -> list[str]:
+    """Every secret value in nested task arguments."""
     from pilot.internal.tasks.args import is_sensitive_key
 
     if is_sensitive_key(key) and isinstance(value, (str, int, float)):
@@ -153,6 +159,7 @@ def _load_redactions(task_dir: Path, bench_root: Path) -> list[str]:
 
 
 def _json_secret_values(path: Path) -> list[str]:
+    """Every secret value in a JSON file; empty when unreadable."""
     try:
         return _secret_values(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
@@ -160,6 +167,7 @@ def _json_secret_values(path: Path) -> list[str]:
 
 
 def main() -> None:
+    """The task wrapper entry point."""
     global _cancel_requested
     _cancel_requested = False
     previous = signal.getsignal(signal.SIGTERM)
@@ -171,6 +179,7 @@ def main() -> None:
 
 
 def _run_task() -> None:
+    """Run the task command, record its output and final status, then run its callback."""
     if not _wait_until_ready():
         return
     task_dir = Path(sys.argv[1])
@@ -229,6 +238,7 @@ def _run_task() -> None:
 
 
 def _finalize_task(store: TaskStore, task_id: str, exit_code: int) -> TaskStatus:
+    """Store the final status for the exit code, or KILLED after a cancel request."""
     updates: dict[str, object]
     if _cancel_requested:
         target = TaskStatus.KILLED

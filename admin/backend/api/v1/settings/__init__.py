@@ -55,6 +55,7 @@ def lite_mode_payload(config: BenchConfig, bench_root: Path | None) -> dict:
 
 
 def build_settings_response(config: BenchConfig, bench_root: Path | None = None) -> dict:
+    """The settings for the API."""
     payload = SettingsPayload(config)
     return {
         "is_linux": HostPlatform().is_linux,
@@ -131,6 +132,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
 
 
 def s3_provider_options(config: BenchConfig) -> list[dict]:
+    """The S3 provider choices."""
     from pilot.integrations.s3.base import PROVIDER_LABELS, SUPPORTED_REGIONS
 
     options = [
@@ -146,6 +148,7 @@ def s3_provider_options(config: BenchConfig) -> list[dict]:
 
 
 def llm_provider_options() -> list[dict]:
+    """The LLM provider choices."""
     from pilot.integrations.llm.registry import provider_options
 
     return provider_options()
@@ -208,6 +211,7 @@ def llm_models():
 
 @settings_bp.get("")
 def get_settings():
+    """Show the settings."""
     bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
@@ -272,6 +276,7 @@ def audit_log():
         log = AuditLog(Bench(bench_root))
 
         def fetch_newest(count: int) -> list:
+            """The newest audit entries that match the filters."""
             return log.entries(**filters, limit=count)
 
         return paginated_response(fetch_newest, limit, offset)
@@ -358,6 +363,7 @@ def change_admin_domain():
 
 @settings_bp.patch("")
 def update_settings():
+    """Save the settings and apply what changed."""
     bench_root = ApiRequest.get_bench_root()
     data = ApiRequest.get_json_body()
 
@@ -385,6 +391,7 @@ def update_settings():
 
 
 def _save_settings_update(bench_root: Path, data: dict) -> dict:
+    """Save the settings and apply them; return the result."""
     mail = MailConfig.read(bench_root / "sites")
     with BenchConfig.open(bench_root) as config:
         payload = SettingsPayload(config)
@@ -424,6 +431,7 @@ def _apply_system_prompt(bench_root: Path, llm: dict) -> None:
 
 
 def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
+    """Raise when the new S3 settings cannot reach the bucket."""
     if SettingsPayload(config).s3 == old_s3_config or not config.s3.access_key:
         return
 
@@ -436,6 +444,7 @@ def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
 
 
 def _settings_update_result(restarted: bool, waf_warning: str | None) -> dict[str, bool | str]:
+    """The update result for the API."""
     result: dict[str, bool | str] = {"restarted": restarted}
     if waf_warning:
         result["waf_warning"] = waf_warning
@@ -451,6 +460,7 @@ def apply_post_save_changes(
     old_s3_config: dict,
     old_proxy: dict,
 ) -> tuple[bool, str | None]:
+    """Apply the saved settings; return (restarted, WAF warning)."""
     return Bench(config, bench_root).apply_saved_settings(
         old_restart,
         old_firewall,

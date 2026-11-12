@@ -58,6 +58,7 @@ class PostgreSQL(Database):
             raise DatabaseError(f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}") from exc
 
     def execute(self, query: str, read_only: bool = True) -> QueryResult:
+        """Run the query, read-only by default, and return its result."""
         conn = self._connect()
         start = time.monotonic()
         try:
@@ -89,6 +90,7 @@ class PostgreSQL(Database):
             conn.close()
 
     def get_tables(self) -> list[str]:
+        """The public table names."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -100,6 +102,7 @@ class PostgreSQL(Database):
             conn.close()
 
     def get_table_columns(self, table: str) -> list[dict]:
+        """The columns of a table."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -113,6 +116,7 @@ class PostgreSQL(Database):
             conn.close()
 
     def get_schema(self) -> list[dict]:
+        """Every public table with its columns."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
@@ -164,9 +168,11 @@ class PostgreSQL(Database):
             raise DatabaseError(f"No such process: {pid}")
 
     def get_active_connections(self) -> int:
+        """The number of open connections."""
         return int(self.execute("SELECT COUNT(*) FROM pg_stat_activity").rows[0][0])
 
     def get_lock_waits(self) -> LockWaitStatus:
+        """The ungranted locks and the lock timeout."""
         current = int(self.execute("SELECT COUNT(*) FROM pg_locks WHERE NOT granted").rows[0][0])
         timeout_ms = int(self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0])
         # PostgreSQL keeps no cumulative lock-wait counter; lock_timeout of 0 means disabled.
@@ -220,6 +226,7 @@ class PostgreSQL(Database):
 
     @staticmethod
     def _relation_name(database: str | None, oid: int | None, names: dict[int, str]) -> str | None:
+        """The relation name for an OID, or a placeholder."""
         if not database or not oid:
             return None
         relation_oid = int(oid)
@@ -251,6 +258,7 @@ class PostgreSQL(Database):
         )
 
     def _server_database_bytes(self) -> int:
+        """The total size of every database."""
         result = self.execute(
             "SELECT COALESCE(SUM(size_bytes), 0), COUNT(*) FILTER (WHERE size_bytes IS NULL) "
             "FROM (SELECT pg_database_size(datname) AS size_bytes FROM pg_database "
@@ -262,11 +270,13 @@ class PostgreSQL(Database):
         return int(total)
 
     def _scoped_to(self, database: str) -> "PostgreSQL":
+        """A client for another database on the same server."""
         return PostgreSQL(
             self._host, self._port, self._user, self._password, database, self._connect_timeout
         )
 
     def get_table_sizes(self) -> list[TableSize]:
+        """The size of each table."""
         result = self.execute(
             "SELECT c.relname, pg_table_size(c.oid), pg_indexes_size(c.oid) "
             + self._TABLE_SIZE_SOURCE
@@ -283,12 +293,14 @@ class PostgreSQL(Database):
         ]
 
     def get_data_directory(self) -> str | None:
+        """The data directory, or None for a remote server."""
         if not is_local_host(self._host):
             return None
         result = self.execute("SELECT setting FROM pg_settings WHERE name = 'data_directory'")
         return str(result.rows[0][0]) if result.rows else None
 
     def get_schema_sizes(self) -> dict[str, int]:
+        """The size of each database."""
         result = self.execute(
             "SELECT datname, pg_database_size(datname) FROM pg_database WHERE NOT datistemplate"
         )

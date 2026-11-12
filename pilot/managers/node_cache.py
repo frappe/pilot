@@ -20,6 +20,7 @@ class NodeDependencyCache:
 
     @staticmethod
     def get_key(path: Path) -> str | None:
+        """The cache key of the node packages, or None when they cannot be cached."""
         if not all((path / name).is_file() for name in ("package.json", "yarn.lock")):
             return None
         if not NodeDependencies.is_portable(path):
@@ -27,6 +28,7 @@ class NodeDependencyCache:
         return NodeDependencies.get_key(path)
 
     def capture(self, path: Path) -> None:
+        """Save the installed node packages to the cache."""
         key = self.get_key(path)
         if key is None or (path / "node_modules").is_symlink():
             return
@@ -39,6 +41,7 @@ class NodeDependencyCache:
             logging.warning("Skipping Node dependency cache publication: %s", error)
 
     def publish(self, path: Path, key: str) -> None:
+        """Store a copy under the key, unless another process already did."""
         self.root.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.root / f"{key}.guard"):
             target = self.root / key
@@ -59,6 +62,7 @@ class NodeDependencyCache:
                 staging.rename(target)
 
     def restore(self, path: Path) -> bool:
+        """Copy cached node packages in; return whether that worked."""
         key = self.get_key(path)
         if key is None or not self.root.is_dir():
             return False
@@ -78,6 +82,7 @@ class NodeDependencyCache:
 
     @staticmethod
     def has_internal_links(copied: Path, original: Path) -> bool:
+        """Whether the copy has links into the original."""
         for directory, directories, files in os.walk(copied):
             for name in [*directories, *files]:
                 path = Path(directory) / name

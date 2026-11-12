@@ -54,9 +54,11 @@ class BenchUpdater:
 
     @staticmethod
     def _follows_its_branch(app: "App", live_lookup: bool) -> bool:
+        """Whether the app follows its branch head instead of a fixed revision."""
         return live_lookup and not app.is_marketplace
 
     def reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        """Reinstall the apps into the environment."""
         from pilot.exceptions import CommandError, MigrateError
         from pilot.managers.environment import PythonEnvManager
 
@@ -71,6 +73,7 @@ class BenchUpdater:
                 raise MigrateError(f"Failed to install app {app.config.name}: {error}") from error
 
     def rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        """Rebuild the assets of the apps."""
         from pilot.managers.environment import PythonEnvManager
 
         python_env = PythonEnvManager(self.bench)

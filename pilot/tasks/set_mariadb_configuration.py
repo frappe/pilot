@@ -21,6 +21,7 @@ class SetMariaDBConfigurationTask(Task):
 
     @step("configure", lambda self: f"Updating MariaDB variable {self.variable}")
     def run(self) -> None:
+        """Set a MariaDB variable."""
         try:
             value = json.loads(self.value_json)
         except (TypeError, json.JSONDecodeError) as exc:

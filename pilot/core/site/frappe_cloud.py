@@ -28,14 +28,17 @@ class SiteFrappeCloud:
 
     @property
     def path(self) -> Path:
+        """The saved Frappe Cloud connection file."""
         return self.site.bench.config_path / "frappe_cloud" / f"{self.site.config.name}.json"
 
     @property
     def connection(self) -> dict:
+        """The saved connection, or an empty dict."""
         return json.loads(self.path.read_text()) if self.path.exists() else {}
 
     @property
     def client(self) -> FrappeCloud:
+        """The Frappe Cloud client; raise when not connected."""
         connection = self.connection
         if not connection:
             raise FrappeCloudError("Connect to Frappe Cloud first.")
@@ -58,6 +61,7 @@ class SiteFrappeCloud:
         return connection | {"status": "Pending"}
 
     def get_status(self) -> dict:
+        """The connection status and the remote site."""
         connection = self.connection
         status = self.client.get_status()
         return {

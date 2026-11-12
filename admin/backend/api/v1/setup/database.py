@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 
 def database_validation(bench_root: Path, data: dict):
+    """The engine, manager, password and existing flag; raise for invalid input."""
     engine = data.get("engine")
     if engine not in ("mariadb", "postgres"):
         raise ValueError("engine must be 'mariadb' or 'postgres'.")
@@ -78,6 +79,7 @@ def local_database_credentials(bench_root: Path, engine: str) -> dict | None:
 
 
 def database_validation_state(manager, password: str, existing: bool) -> str:
+    """The validation state of the database credentials."""
     if existing:
         return "valid" if manager.has_valid_credentials(password) else "invalid"
     if _is_fresh_install(manager):
@@ -100,6 +102,7 @@ def _mariadb_config(
     port=None,
     existing: bool = False,
 ):
+    """The MariaDB config for validation."""
     from pilot.config import MariaDBConfig
 
     config = MariaDBConfig(

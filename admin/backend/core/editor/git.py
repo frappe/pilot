@@ -49,6 +49,7 @@ class EditorGit:
         return changes
 
     def is_sha(self, sha: str) -> bool:
+        """Whether the text is a commit SHA."""
         return bool(_SHA_RE.match(sha or ""))
 
     def is_branch_name(self, name: str) -> bool:
@@ -58,9 +59,11 @@ class EditorGit:
         return self._run("check-ref-format", "--branch", name).returncode == 0
 
     def is_tracked(self, rel: str) -> bool:
+        """Whether git tracks the path."""
         return self._run("ls-files", "--error-unmatch", "--", rel).returncode == 0
 
     def ignored_set(self, paths: list[str]) -> set[str]:
+        """The paths git ignores."""
         if not paths:
             return set()
         result = self._run(
@@ -69,12 +72,14 @@ class EditorGit:
         return {p for p in result.stdout.split("\x00") if p}
 
     def list_files(self, cap: int) -> list[str] | None:
+        """The tracked and untracked files, or None above the cap."""
         result = self._run("ls-files", "--cached", "--others", "--exclude-standard", "-z")
         if result.returncode != 0:
             return None
         return [p for p in result.stdout.split("\x00") if p][:cap]
 
     def status(self) -> dict:
+        """The branch, ahead and behind counts, and changed files."""
         if not self.is_repo:
             return {"repo": False}
         branch = self._text("rev-parse", "--abbrev-ref", "HEAD") or "none"
@@ -98,6 +103,7 @@ class EditorGit:
         }
 
     def _parse_status(self, prefix: str) -> tuple[list[dict], list[dict]]:
+        """The staged and unstaged changes."""
         staged, unstaged = [], []
         # Raw stdout, not _text(): porcelain's leading status column is significant.
         for line in self._run("status", "--porcelain").stdout.split("\n"):
@@ -115,6 +121,7 @@ class EditorGit:
         return staged, unstaged
 
     def blame(self, rel: str) -> list[dict]:
+        """The blame of each line."""
         result = self._run("blame", "--line-porcelain", "--", rel)
         if result.returncode != 0:
             return []
@@ -130,6 +137,7 @@ class EditorGit:
         return lines
 
     def diff_gutters(self, rel: str) -> dict:
+        """The added, changed and deleted lines."""
         added: list[int] = []
         modified: list[int] = []
         deleted: list[int] = []
@@ -153,11 +161,13 @@ class EditorGit:
         return {"added": added, "modified": modified, "deleted": deleted}
 
     def show_head(self, rel: str) -> str:
+        """The file at HEAD."""
         if not self.is_repo:
             return ""
         return self._text("show", f"HEAD:./{rel}")
 
     def branches(self) -> dict:
+        """The current branch and every local branch."""
         if not self.is_repo:
             return {"current": "", "branches": []}
         current = self._text("rev-parse", "--abbrev-ref", "HEAD")
@@ -168,10 +178,12 @@ class EditorGit:
         return {"current": current, "branches": branches}
 
     def checkout(self, branch: str, create: bool) -> tuple[bool, str]:
+        """Check out or create a branch."""
         args = ["checkout", "-b", branch] if create else ["checkout", branch, "--"]
         return self._combined(*args)
 
     def commit(self, message: str, stage_all: bool) -> tuple[bool, str]:
+        """Commit, staging everything first when asked."""
         if stage_all:
             ok, out = self._combined("add", "-A", "--", ".")
             if not ok:
@@ -179,18 +191,22 @@ class EditorGit:
         return self._combined("commit", "-m", message)
 
     def stage(self, rel: str) -> tuple[bool, str]:
+        """Stage a path."""
         return self._combined("add", "--", rel)
 
     def unstage(self, rel: str) -> tuple[bool, str]:
+        """Unstage a path."""
         return self._combined("restore", "--staged", "--", rel)
 
     def discard(self, workspace, rel: str) -> tuple[bool, str]:
+        """Discard a path's changes; delete it when untracked."""
         if not self.is_tracked(rel):
             workspace.safe(rel).unlink()
             return True, ""
         return self._combined("restore", "--", rel)
 
     def push(self, force: bool) -> tuple[bool, str]:
+        """Push the branch, setting its upstream when needed."""
         base = ["push"] + (["--force-with-lease"] if force else [])
         ok, out = self._combined(*base)
         if ok:
@@ -206,12 +222,14 @@ class EditorGit:
         return False, out
 
     def pull(self) -> tuple[bool, str]:
+        """Pull the branch with a merge."""
         ok, out = self._combined("pull", "--no-rebase")
         if not ok and "CONFLICT" in out:
             out = "Pull created merge conflicts. Resolve them in the editor, then commit."
         return ok, out
 
     def log(self, skip: int, limit: int) -> dict:
+        """A page of the commit log."""
         if not self.is_repo:
             return {"repo": False, "commits": []}
         result = self._run(
@@ -237,6 +255,7 @@ class EditorGit:
         return {"repo": True, "commits": commits, "more": len(commits) == limit}
 
     def commit_info(self, sha: str) -> dict | None:
+        """One commit with its files, or None."""
         result = self._run("show", "-s", "--no-color", f"--pretty=format:{_INFO_FORMAT}", sha)
         if result.returncode != 0:
             return None
@@ -256,6 +275,7 @@ class EditorGit:
         }
 
     def _commit_files(self, sha: str, prefix: str) -> list[dict]:
+        """The files a commit changed."""
         result = self._run(
             "diff-tree", "--no-commit-id", "--name-status", "-r", "--root", "-z", sha
         )
@@ -288,16 +308,19 @@ class EditorGit:
         }
 
     def _text(self, *args: str) -> str:
+        """The git output, or an empty string on failure."""
         result = self._run(*args)
         return result.stdout.strip() if result.returncode == 0 else ""
 
     def _combined(self, *args: str, input: str | None = None) -> tuple[bool, str]:
+        """Whether git succeeded, and its combined output."""
         result = self._run(*args, input=input, combine=True)
         return result.returncode == 0, result.stdout.strip()
 
     def _run(
         self, *args: str, input: str | None = None, combine: bool = False
     ) -> subprocess.CompletedProcess:
+        """Run git in the app."""
         try:
             return subprocess.run(
                 ["git", *args],
@@ -315,6 +338,7 @@ class EditorGit:
 
 
 def _status_entry(line: str, prefix: str) -> tuple[str, str, str] | None:
+    """The index state, worktree state and path of a status line."""
     if len(line) < 4:
         return None
     x, y, path = line[0], line[1], line[3:].strip('"')
@@ -328,11 +352,13 @@ def _status_entry(line: str, prefix: str) -> tuple[str, str, str] | None:
 
 
 def _is_blame_header(line: str) -> bool:
+    """Whether the line starts a blame entry."""
     head = line[:40]
     return len(line) >= 40 and _is_hex(head) and (len(line) == 40 or line[40] == " ")
 
 
 def _new_blame(line: str) -> dict:
+    """A new blame entry from its header."""
     cur = {"sha": line[:40], "author": "", "time": 0, "summary": ""}
     fields = line.split()
     if len(fields) >= 3:
@@ -341,6 +367,7 @@ def _new_blame(line: str) -> dict:
 
 
 def _blame_attr(cur: dict, line: str) -> None:
+    """Read one blame field into the entry."""
     if line.startswith("author "):
         cur["author"] = line[7:]
     elif line.startswith("author-time "):
@@ -350,13 +377,16 @@ def _blame_attr(cur: dict, line: str) -> None:
 
 
 def _finalize_blame(cur: dict) -> None:
+    """Mark uncommitted lines."""
     if cur.get("sha", "").startswith("0000000"):
         cur["author"] = "Uncommitted"
 
 
 def _is_hex(text: str) -> bool:
+    """Whether the text is lowercase hex."""
     return all(c in "0123456789abcdef" for c in text)
 
 
 def _int_or(value: str | None, default: int) -> int:
+    """The value as an int, or the default."""
     return int(value) if value else default

@@ -40,9 +40,11 @@ class ModSecurityRenderer:
         self.bench = bench
 
     def modsec_dir(self) -> Path:
+        """The ModSecurity config directory."""
         return self.bench.config_path / "modsecurity"
 
     def render_main(self, modsec_dir: Path) -> str:
+        """The main ModSecurity config."""
         return (
             f"Include {modsec_dir}/modsecurity.conf\n"
             f"Include {shared_modsec_dir()}/crs-setup.conf\n"
@@ -53,6 +55,7 @@ class ModSecurityRenderer:
         )
 
     def render_engine(self, waf: "WafConfig") -> str:
+        """The ModSecurity engine config."""
         from pilot.config import parse_nginx_size
 
         audit_log = self.bench.path / "logs" / "modsec_audit.log"
@@ -81,6 +84,7 @@ class ModSecurityRenderer:
 
     @staticmethod
     def render_overrides(waf: "WafConfig") -> str:
+        """The CRS paranoia and threshold overrides."""
         lines = [
             f'SecAction "id:1000,phase:1,pass,nolog,'
             f"setvar:tx.blocking_paranoia_level={waf.paranoia},"
@@ -102,10 +106,12 @@ class ModSecurityRenderer:
 
     @staticmethod
     def render_exclusions(waf: "WafConfig") -> str:
+        """The rule exclusions."""
         return "\n".join(waf.exclusions) + ("\n" if waf.exclusions else "")
 
     @classmethod
     def render_custom_rules(cls, waf: "WafConfig") -> str:
+        """The enabled custom rules."""
         blocks = []
         for index, rule in enumerate(waf.custom_rules):
             if not rule.enabled or not rule.conditions:
@@ -121,6 +127,7 @@ class ModSecurityRenderer:
 
     @staticmethod
     def _condition_var_op(cond: "WafCondition") -> tuple[str, str]:
+        """The ModSecurity variable and operator of a condition."""
         if cond.field == "header":
             variable = f"REQUEST_HEADERS:{cond.header_name}"
         else:
@@ -136,6 +143,7 @@ class ModSecurityRenderer:
 
     @classmethod
     def _render_all_rule(cls, rule: "WafRule", base_id: int, action: str, msg: str) -> str:
+        """A chained rule that matches when every condition holds."""
         conditions = rule.conditions
         lines = []
         for position, cond in enumerate(conditions):
@@ -153,6 +161,7 @@ class ModSecurityRenderer:
 
     @classmethod
     def _render_any_rule(cls, rule: "WafRule", base_id: int, action: str, msg: str) -> str:
+        """Rules that match when any condition holds."""
         lines = []
         for position, cond in enumerate(rule.conditions):
             variable, operator_arg = cls._condition_var_op(cond)

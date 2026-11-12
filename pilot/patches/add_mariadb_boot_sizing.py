@@ -6,6 +6,7 @@ PATCH_NAME = Path(__file__).stem
 
 
 def run(benches_root: Path) -> None:
+    """Install the MariaDB boot sizing on each bench that owns MariaDB."""
     from pilot.config import BenchConfig
     from pilot.internal.patch_state import is_applied, mark_applied
     from pilot.managers.database.mariadb import MariaDBManager

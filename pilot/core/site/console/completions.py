@@ -58,6 +58,7 @@ class ConsoleCompletions:
 
     @property
     def doctypes(self) -> list[str]:
+        """The DocType names of the site."""
         return self._query("doctypes")
 
     def get_doctype(self, doctype: str) -> dict[str, Any]:
@@ -68,6 +69,7 @@ class ConsoleCompletions:
         return found
 
     def _query(self, *args: str) -> Any:
+        """Run a completion query in the site and return its JSON result."""
         argv = [str(self.site.bench.python), "-c", _BOOTSTRAP, self.site.config.name, *args]
         result = run_command(argv, cwd=self.site.bench.sites_path, timeout=TIMEOUT_SECONDS)
         # Apps may print while Frappe loads, so the answer is the last line.

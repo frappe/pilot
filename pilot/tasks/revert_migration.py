@@ -15,6 +15,7 @@ class RevertMigrationTask(Task):
     operation_id: str
 
     def run(self) -> None:
+        """Start reverting the migration."""
         operation = self.bench.migrations.get(self.operation_id)
         if self.running_task_id:
             operation.task_ids["restore"] = self.running_task_id
@@ -28,6 +29,7 @@ class RevertMigrationTask(Task):
     @on_failure
     @on_cancel
     def fail_migration_step(self) -> dict | None:
+        """The callback args that fail the migration step, if there is a chain."""
         operation = self.bench.migrations.get(self.operation_id)
         if not operation.chain:
             return None

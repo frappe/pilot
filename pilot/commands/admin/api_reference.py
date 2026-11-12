@@ -19,6 +19,7 @@ class ApiReferenceCommand(Command):
     ] = None
 
     def run(self) -> None:
+        """Build the Admin API reference."""
         from pilot.core.server import Server
         from pilot.internal.command import run_command
         from pilot.managers.environment import AdminEnvManager

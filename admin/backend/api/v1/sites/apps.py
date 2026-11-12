@@ -49,6 +49,7 @@ _COMMAND_FAILURE = re.compile(r"^Command '.+' (?:failed with exit code -?\d+|tim
 @sites_bp.get("/<name>/apps")
 @require_scope(site_name)
 def site_apps(name: str):
+    """List the site's apps."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -121,6 +122,7 @@ def site_marketplace(name: str):
 @sites_bp.post("/<name>/apps")
 @require_scope(site_name)
 def install_site_app(name: str):
+    """Queue an app install on the site."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -264,6 +266,7 @@ def update_site_apps(name: str):  # noqa: C901
 
 
 def _requested_update_apps():
+    """The apps to update, or None when the body is invalid."""
     data = request.get_json(silent=True)
     if data is None:
         data = {}
@@ -307,6 +310,7 @@ def site_task(name: str, task_id: str):
 
 
 def _task_operation(bench_root: Path, args: dict):
+    """The migration a task belongs to, if any."""
     operation_id = args.get("operation_id")
     if not isinstance(operation_id, str):
         return None
@@ -317,6 +321,7 @@ def _task_operation(bench_root: Path, args: dict):
 
 
 def _operation_task_data(data: dict, state: str) -> dict:
+    """The task data with the migration state."""
     if state == "completed":
         data.update(status="success", exit_code=0)
     elif state in {"needs_attention", "revert_failed", "reverted"}:
@@ -329,6 +334,7 @@ def _operation_task_data(data: dict, state: str) -> dict:
 @sites_bp.delete("/<name>/apps/<app>")
 @require_scope(site_name)
 def delete_site_app(name: str, app: str):
+    """Queue an app uninstall from the site."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()

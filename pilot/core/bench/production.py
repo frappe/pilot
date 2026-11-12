@@ -14,6 +14,7 @@ class BenchProduction:
         self.bench = bench
 
     def restart_processes(self) -> None:
+        """Restart the production processes, if production is on."""
         if not self.bench.config.production.enabled:
             return
 
@@ -57,6 +58,7 @@ class BenchProduction:
             manager.start_workload()
 
     def remove_production(self, on_progress: Callable[[str], None]) -> None:
+        """Remove the process units, nginx config and admin domain, and turn production off."""
         production = self.bench.config.production
         if not production.enabled:
             on_progress(f"Bench {self.bench.config.name} is not deployed to production. Nothing to remove.")
@@ -68,6 +70,7 @@ class BenchProduction:
         self._report_removed_production(on_progress)
 
     def drop(self, on_progress: Callable[[str], None]) -> None:
+        """Remove production, then delete the bench directory; it must have no sites."""
         import shutil
 
         name = self.bench.config.name
@@ -95,6 +98,7 @@ class BenchProduction:
             raise BenchError(f"Bench '{name}' is running. Stop it with 'pilot -b {name} stop', then retry.")
 
     def setup_nginx(self, on_progress: Callable[[str], None]) -> None:
+        """Write, install and reload the nginx config."""
         from pilot.exceptions import ConfigError
         from pilot.managers.nginx import NginxManager
 
@@ -113,6 +117,7 @@ class BenchProduction:
         self._report_site_urls(nginx_manager, on_progress)
 
     def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Issue the certificates and install the renewal timer."""
         from pilot.exceptions import ConfigError
         from pilot.managers.letsencrypt import (
             LetsEncryptManager,
@@ -151,6 +156,7 @@ class BenchProduction:
         best_effort_tls: bool,
         on_progress: Callable[[str], None],
     ) -> None:
+        """Run the production setup."""
         from pilot.core.bench.setup import ProductionSetup
 
         ProductionSetup(
@@ -163,6 +169,7 @@ class BenchProduction:
         ).run(on_progress)
 
     def _remove_process_manager(self, process_manager: str) -> None:
+        """Remove the systemd units or the supervisor config."""
         if process_manager == "systemd":
             from pilot.managers.processes.systemd import SystemdProcessManager
 
@@ -173,6 +180,7 @@ class BenchProduction:
             SupervisorProcessManager(self.bench).shutdown()
 
     def _remove_nginx(self, on_progress: Callable[[str], None]) -> None:
+        """Remove the nginx config; report a failure without raising."""
         from pilot.managers.nginx import NginxManager
 
         try:
@@ -181,6 +189,7 @@ class BenchProduction:
             on_progress(f"  (nginx cleanup skipped: {exc})")
 
     def _persist_production_disabled(self) -> None:
+        """Save production as disabled in bench.toml."""
         from pilot.config import BenchConfig
 
         with BenchConfig.open(self.bench.path, mode="raw") as data:
@@ -190,7 +199,7 @@ class BenchProduction:
             production.pop("nginx", None)
 
     def _report_removed_production(self, on_progress: Callable[[str], None]) -> None:
-
+        """Mark production off in memory and report it."""
         name = self.bench.config.name
         self.bench.config.production.enabled = False
         self.bench.config.production.process_manager = ""
@@ -201,6 +210,7 @@ class BenchProduction:
         on_progress(f"  {self.bench.config.admin_url}")
 
     def _release_admin_domain(self) -> None:
+        """Release the admin domain route."""
         from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         domain = self.bench.config.admin.domain
@@ -208,6 +218,7 @@ class BenchProduction:
             DomainRouteProvider(self.bench).release(domain)
 
     def _install_waf(self) -> None:
+        """Install the WAF on Linux."""
         from pilot.managers.platform import HostPlatform
 
         if not HostPlatform().is_linux:
@@ -226,6 +237,7 @@ class BenchProduction:
             )
 
     def _report_site_urls(self, nginx_manager, on_progress: Callable[[str], None]) -> None:
+        """Report each site's URL, with https when it has a certificate."""
         tls = self.bench.config.admin.tls
         for site in self.bench.sites():
             if tls and site.config.ssl and nginx_manager.has_cert(site.config):

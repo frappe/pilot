@@ -41,9 +41,11 @@ class MetricShipper:
 
     @property
     def is_enabled(self) -> bool:
+        """Whether metrics are shipped."""
         return self.client is not None
 
     def add_system(self, record: dict) -> None:
+        """Add the CPU, memory and storage metrics."""
         if not self.is_enabled:
             return
         when = _read_time(record)
@@ -62,6 +64,7 @@ class MetricShipper:
         self.batches += [cpu, load, self._memory(record, when), *self._storage(record, when)]
 
     def add_application(self, record: dict) -> None:
+        """Add the process metrics."""
         if not self.is_enabled:
             return
         when = _read_time(record)
@@ -81,6 +84,7 @@ class MetricShipper:
         self.batches.append(batch)
 
     def add_database(self, record: dict | None) -> None:
+        """Add the database metrics."""
         if not self.is_enabled or record is None:
             return
         when = _read_time(record)
@@ -113,6 +117,7 @@ class MetricShipper:
 
     @staticmethod
     def _memory(record: dict, when: datetime | None) -> Batch:
+        """The memory metrics batch."""
         memory = record.get("memory") or {}
         batch = Batch("system", "memory")
         for target in ("total", "used", "cached", "free"):
@@ -123,6 +128,7 @@ class MetricShipper:
 
     @staticmethod
     def _storage(record: dict, when: datetime | None) -> list[Batch]:
+        """The disk metrics batches."""
         disk = (record.get("storage") or {}).get("disk") or {}
         disk_io = record.get("disk_io") or {}
         batch = Batch("system", "disk")

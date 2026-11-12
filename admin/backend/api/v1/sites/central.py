@@ -40,6 +40,7 @@ _ALLOWED_EXACT = frozenset(
 
 
 def _is_allowed(method_path: str) -> bool:
+    """Whether Central may call the method."""
     if not _METHOD_NAME.fullmatch(method_path):
         return False
     return method_path in _ALLOWED_EXACT or any(method_path.startswith(p) for p in _ALLOWED_PREFIXES)
@@ -49,6 +50,7 @@ def _is_allowed(method_path: str) -> bool:
 @sites_bp.post("/<name>/central/<path:method_path>")
 @require_scope(site_name)
 def central_proxy(name: str, method_path: str):
+    """Forward an allowed method call to the site."""
     if not _is_allowed(method_path):
         return error_response(
             "central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403

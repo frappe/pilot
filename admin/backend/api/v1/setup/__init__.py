@@ -41,17 +41,20 @@ __all__ = [
 
 @setup_bp.get("/configuration")
 def get_configuration():
+    """Show the setup fields."""
     bench_root = ApiRequest.get_bench_root()
     return jsonify(read_defaults(bench_root))
 
 
 @setup_bp.get("/framework-branches")
 def get_framework_branches():
+    """List the framework branches."""
     return jsonify({"branches": FRAMEWORK_BRANCHES})
 
 
 @setup_bp.put("/configuration")
 def update_configuration():
+    """Save the setup fields."""
     bench_root = ApiRequest.get_bench_root()
     data = ApiRequest.get_json_body()
     if error := validate_settable_keys(data):
@@ -62,6 +65,7 @@ def update_configuration():
 
 
 def _update_configuration(bench_root: Path, data: dict):
+    """Save the setup fields into bench.toml."""
     try:
         current = BenchConfig.read_flat(bench_root)
     except Exception:
@@ -103,6 +107,7 @@ def _update_configuration(bench_root: Path, data: dict):
 
 @setup_bp.post("/database-validations")
 def validate_database():
+    """Check the database credentials."""
     data = ApiRequest.get_json_body()
     try:
         engine, manager, password, existing = database_validation(
@@ -127,6 +132,7 @@ def validate_database():
 
 @setup_bp.post("/actions/start")
 def start_setup():
+    """Queue the setup task."""
     bench_root = ApiRequest.get_bench_root()
     idempotency_key = ApiRequest.get_idempotency_key()
     if not idempotency_key:
@@ -172,6 +178,7 @@ def start_setup():
 
 @setup_bp.post("/actions/finish")
 def finish_setup():
+    """Finish setup and restart the Admin."""
     import os
     import signal
     import threading
@@ -199,6 +206,7 @@ def finish_setup():
 
 
 def _validate_finished_setup_task(bench_root: Path, task_id: str):
+    """The error response unless the setup task succeeded, or None."""
     try:
         task = TaskReader(bench_root).read_task(task_id)
     except TaskNotFoundError as error:

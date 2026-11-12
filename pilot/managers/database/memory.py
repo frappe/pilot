@@ -35,17 +35,21 @@ class MariaDBMemory:
 
     @property
     def state_path(self) -> Path:
+        """The file with the recorded host memory."""
         return self.manager.config_dir / "memory-sizing.json"
 
     @property
     def limits_path(self) -> Path:
+        """The systemd drop-in with the memory limits."""
         return self.manager.unit_path.with_name(self.manager._UNIT_NAME + ".d") / "50-pilot-memory.conf"
 
     @property
     def boot_id(self) -> str:
+        """The current boot ID."""
         return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
 
     def record_host(self) -> None:
+        """Record the host memory and boot ID."""
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_private_text(
             self.state_path,
@@ -58,6 +62,7 @@ class MariaDBMemory:
         )
 
     def prepare_boot(self) -> None:
+        """Resize the server for this boot when the host memory changed."""
         from pilot.core.server import Server
 
         manager = self.manager
@@ -88,6 +93,7 @@ class MariaDBMemory:
             self.record_host()
 
     def install_startup_hook(self) -> None:
+        """Install the unit that resizes the server at boot."""
         from pilot.core.server import Server
 
         path = self.manager.user_unit_dir / "pilot-mariadb-sizing.service"
@@ -105,6 +111,7 @@ class MariaDBMemory:
         )
 
     def install_existing(self) -> None:
+        """Apply memory sizing to an existing managed server."""
         manager = self.manager
         manager._require_linux_managed_server()
         with manager.database_action_lock():
@@ -129,5 +136,6 @@ class MariaDBMemory:
         )
 
     def write_limits(self, high: int, maximum: int) -> None:
+        """Write the unit memory limits."""
         self.limits_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_private_text(self.limits_path, f"[Service]\nMemoryHigh={high}M\nMemoryMax={maximum}M\n")

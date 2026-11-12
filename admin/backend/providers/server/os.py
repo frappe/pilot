@@ -20,6 +20,7 @@ class OSProvider:
         self._config = config
 
     def get_versions(self) -> dict[str, str]:
+        """The versions of the runtime tools."""
         versions = {
             "Python": self._config.python_version,
             "Node": self.get_flag_version("node", ["--version"], r"v?([\d.]+)"),
@@ -34,6 +35,7 @@ class OSProvider:
         return {label: value for label, value in versions.items() if value}
 
     def get_flag_version(self, binary: str, args: list[str], pattern: str) -> str:
+        """The version a binary prints, or an empty string."""
         path = HostPlatform().get_executable_path(binary) if binary else None
         if path is None:
             return ""
@@ -45,6 +47,7 @@ class OSProvider:
 
     @property
     def frappe_version(self) -> str:
+        """The Frappe version."""
         from pilot.core.bench import Bench
 
         try:

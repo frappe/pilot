@@ -23,10 +23,12 @@ class NodePackageManager:
 
     @property
     def local_bin(self) -> Path:
+        """The user-local binary of the package manager."""
         return Path.home() / ".local" / "bin" / self.name
 
     @property
     def is_installed(self) -> bool:
+        """Whether the package manager is installed."""
         return bool(shutil.which(self.name)) or self.local_bin.exists()
 
     @property
@@ -73,6 +75,7 @@ class NodePackages:
 
     @property
     def install_path(self) -> Path:
+        """The directory to install packages in: the app or its workspace root."""
         if self.lockfiles_in(self.path) or self.path == self.app_path:
             return self.path
         if self.is_workspace_member:
@@ -94,6 +97,7 @@ class NodePackages:
         patterns = [pattern.strip() for pattern in self.workspace_patterns]
 
         def matches(pattern: str) -> bool:
+            """Whether the member matches a workspace pattern."""
             return fnmatch(member, pattern.removeprefix("./").rstrip("/"))
 
         return any(matches(pattern) for pattern in patterns if not pattern.startswith("!")) and not any(
@@ -120,12 +124,14 @@ class NodePackages:
 
     @property
     def lockfile(self) -> Path | None:
+        """The lockfile, if any."""
         self.validate_lockfiles()
         lockfiles = self.lockfiles_in(self.install_path)
         return lockfiles[0] if lockfiles else None
 
     @property
     def package_manager(self) -> NodePackageManager:
+        """The package manager the lockfile names; yarn by default."""
         lockfile = self.lockfile
         if lockfile is None:
             return YARN
@@ -153,6 +159,7 @@ class NodePackages:
 
     @property
     def has_package_json(self) -> bool:
+        """Whether there is a package.json."""
         return (self.path / "package.json").exists()
 
     def install(self, frozen: bool = True) -> None:
@@ -178,6 +185,7 @@ class NodePackages:
                 stamp.write_text(NodeDependencies.get_key(self.install_path))
 
     def ensure_installed(self) -> None:
+        """Install the packages if they are missing."""
         if self.has_package_json and not self.is_installed:
             print(f"  Installing JS dependencies in {self.install_path}...")
             sys.stdout.flush()
@@ -190,12 +198,14 @@ class NodePackages:
         return [manager.bin, "run", script]
 
     def has_script(self, script: str) -> bool:
+        """Whether package.json has the script."""
         if not self.has_package_json:
             return False
         return script in json.loads((self.path / "package.json").read_text()).get("scripts", {})
 
     @staticmethod
     def lockfiles_in(path: Path) -> list[Path]:
+        """The lockfiles in the directory."""
         return [path / manager.lockfile for manager in PACKAGE_MANAGERS if (path / manager.lockfile).exists()]
 
     @staticmethod

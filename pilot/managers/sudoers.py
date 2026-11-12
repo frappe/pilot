@@ -42,6 +42,7 @@ def install_sudoers_grant(
 
 
 def is_sudo_rs() -> bool:
+    """Whether sudo is sudo-rs."""
     import subprocess
 
     result = subprocess.run(["sudo", "--version"], capture_output=True, text=True, timeout=5)
@@ -49,6 +50,7 @@ def is_sudo_rs() -> bool:
 
 
 def _grant(bench_user: str, commands: list[str]) -> str:
+    """The sudoers line for the commands."""
     return f"{bench_user} ALL=(ALL) NOPASSWD: " + ",".join(commands) + "\n"
 
 

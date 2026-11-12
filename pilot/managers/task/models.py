@@ -38,11 +38,13 @@ class TaskInfo:
 
     @property
     def duration_seconds(self) -> float | None:
+        """How long the task ran, if it finished."""
         if self.started_at is None or self.finished_at is None:
             return None
         return (self.finished_at - self.started_at).total_seconds()
 
     def as_dict(self) -> dict:
+        """The task as a JSON-ready dict."""
         return {
             "task_id": self.task_id,
             "command": self.command,

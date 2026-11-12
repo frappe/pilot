@@ -46,6 +46,7 @@ from pilot.tasks.rename_site import RenameSiteTask
 
 @sites_bp.get("")
 def list_sites():
+    """List the sites."""
     bench_root = ApiRequest.get_bench_root()
     try:
         sites = SiteProvider(bench_root).get_all()
@@ -68,6 +69,7 @@ def list_sites():
 @sites_bp.route("/<name>")
 @require_scope(site_name)
 def detail(name: str):
+    """Show one site."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -128,6 +130,7 @@ def wildcard_domains():
 
 @sites_bp.post("")
 def create_site():
+    """Queue a new site."""
     bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -166,6 +169,7 @@ def create_site():
 @sites_bp.delete("/<name>")
 @require_scope(site_name)
 def drop_site(name: str):
+    """Queue a site drop."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -185,6 +189,7 @@ def drop_site(name: str):
 @sites_bp.post("/<name>/actions/rename")
 @require_scope(site_name)
 def rename_site(name: str):
+    """Queue a site rename."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -228,6 +233,7 @@ def rename_site(name: str):
 @sites_bp.post("/<name>/actions/reinstall")
 @require_scope(site_name)
 def reinstall_site(name: str):
+    """Queue a site reinstall."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -255,6 +261,7 @@ def reinstall_site(name: str):
 @sites_bp.post("/<name>/actions/clear-cache")
 @require_scope(site_name)
 def clear_cache(name: str):
+    """Queue a site cache clear."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -273,6 +280,7 @@ def clear_cache(name: str):
 @sites_bp.post("/<name>/actions/build-assets")
 @require_scope(site_name)
 def build_assets(name: str):
+    """Queue a site asset build."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -292,6 +300,7 @@ def build_assets(name: str):
 @sites_bp.post("/<name>/actions/migrate")
 @require_scope(site_name)
 def migrate_site(name: str):
+    """Start a site migration."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -312,6 +321,7 @@ def migrate_site(name: str):
 @require_scope(site_name)
 @rate_limit(10, 60, user_ip=True)
 def create_login_link(name: str):
+    """Create a one-time login link."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -338,6 +348,7 @@ def create_login_link(name: str):
 
 
 def _site_resource(site: SiteInfo) -> dict:
+    """The site for the API."""
     framework_branch = site.site_config.get("frappe_branch", "")
     return {
         "name": site.name,

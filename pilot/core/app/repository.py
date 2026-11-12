@@ -35,6 +35,7 @@ class AppRepository:
 
     @property
     def repo(self) -> "GitRepo":
+        """The git repository of the app."""
         from pilot.internal.git import GitRepo
 
         return GitRepo(self.app.path, self.git_config)
@@ -168,6 +169,7 @@ class AppRepository:
         return git_env(self.git_config)
 
     def get_default_branch(self) -> str:
+        """The default branch of the remote."""
         import subprocess
 
         remote, environment = self.remote_url, self.git_env
@@ -195,11 +197,13 @@ class AppRepository:
 
     @staticmethod
     def is_commit_hash(ref: str) -> bool:
+        """Whether the ref looks like a commit hash."""
         import re
 
         return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
 
     def clone_rev(self, commit: str) -> None:
+        """Clone the repository at one commit."""
         # Git fetches a commit on its own only by its full SHA; a short one is found in the full history.
         if len(commit) == 40 and self.depth_flags and not self.app.path.exists():
             try:
@@ -232,6 +236,7 @@ class AppRepository:
         run_command(["git", "-C", path, "checkout", "--quiet", "FETCH_HEAD"])
 
     def clone(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Clone the repository on its branch or commit."""
         branch = self.app.config.branch or self.get_default_branch()
         if self.is_commit_hash(branch):
             on_progress(
@@ -256,6 +261,7 @@ class AppRepository:
 
     @property
     def is_shallow(self) -> bool:
+        """Whether the clone is shallow."""
         return self.repo.is_shallow
 
     @property
@@ -268,6 +274,7 @@ class AppRepository:
 
     @staticmethod
     def pack_threads() -> int:
+        """The number of threads git may use to pack."""
         import os
 
         cpus = os.cpu_count() or 1
@@ -319,6 +326,7 @@ class AppRepository:
         )
 
     def switch_branch(self, branch: str) -> None:
+        """Switch the clone to another branch."""
         if not self.app.is_cloned:
             raise BenchError(f"'{self.app.config.name}' is not cloned at {self.app.path}")
 
@@ -337,6 +345,7 @@ class AppRepository:
         self.app.config.branch = branch
 
     def checkout_pinned_target(self, pin: RevisionPin) -> None:
+        """Check out the pinned tag or commit."""
         if pin.kind == "tag":
             self._sync_remote_url()
             self.repo.prune_stale_temp_packs()

@@ -25,16 +25,19 @@ git_bp = Blueprint("git", __name__)
 
 
 def _store() -> GitCredentialStore:
+    """The git credential store."""
     return GitCredentialStore(ApiRequest.get_bench_root())
 
 
 def _mask_token(token: str) -> str:
+    """The token with its middle hidden."""
     if len(token) <= 8:
         return token
     return f"{token[:4]}{'x' * 8}{token[-4:]}"
 
 
 def _central_github(store: GitCredentialStore) -> dict | None:
+    """The Central GitHub status, if Central is on."""
     if not ApiRequest.get_bench().config.central.enabled:
         return None
     try:
@@ -44,6 +47,7 @@ def _central_github(store: GitCredentialStore) -> dict | None:
 
 
 def _status(record: dict | None, central: dict | None = None) -> dict:
+    """The git integration status for the API."""
     status = {"connected": False, "providers": TOKEN_HELP_URLS}
     if central is not None:
         status["central"] = central
@@ -63,6 +67,7 @@ def _status(record: dict | None, central: dict | None = None) -> dict:
 
 @git_bp.get("/connection")
 def get_integration():
+    """Show the git integration."""
     store = _store()
     central = _central_github(store)
     return jsonify(_status(store.load(), central))
@@ -70,6 +75,7 @@ def get_integration():
 
 @git_bp.post("/connection-attempts")
 def start_central_connection():
+    """Start a GitHub connection through Central."""
     data = request.get_json(silent=True)
     return_url = data.get("return_url") if isinstance(data, dict) else None
     if not isinstance(return_url, str) or not return_url.startswith(("http://", "https://")):
@@ -85,6 +91,7 @@ def start_central_connection():
 
 @git_bp.put("/connection")
 def save_integration():
+    """Save a git provider token."""
     data = ApiRequest.get_json_body()
     if any(
         value is not None and not isinstance(value, str)
@@ -135,6 +142,7 @@ def save_integration():
 
 @git_bp.delete("/connection")
 def delete_integration():
+    """Remove the git integration."""
     store = _store()
     grant = GitHubAppGrant(store)
     if grant.is_active:
@@ -149,6 +157,7 @@ def delete_integration():
 
 @git_bp.get("/repositories")
 def list_repos():
+    """List the repositories the integration can reach."""
     store = _store()
     if GitHubAppGrant(store).is_active:
         try:
@@ -178,6 +187,7 @@ def list_repos():
 
 @git_bp.get("/branches")
 def list_branches():
+    """List the branches of a repository."""
     repo_url = request.args.get("repo", "").strip()
     if not repo_url:
         return error_response("repository_required", "repo parameter is required.", 422)
@@ -231,6 +241,7 @@ def _resolution_request(data) -> tuple[str, str] | tuple[None, None]:
 
 @git_bp.post("/repository-resolutions")
 def resolve_app():
+    """Find the app name of a repository."""
     bench_root = ApiRequest.get_bench_root()
     data = ApiRequest.get_json_body()
     repo_url, branch = _resolution_request(data)
@@ -244,6 +255,7 @@ def resolve_app():
 
 
 def _resolved_app_response(bench_root: Path, repo_url: str, branch: str):
+    """The resolved app name response."""
     try:
         resolved = resolve_app_name_from_repo(bench_root, repo_url, branch)
     except BranchNotFoundError as exc:

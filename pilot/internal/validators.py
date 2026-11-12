@@ -23,6 +23,7 @@ _SYMBOL_RE = re.compile(r"[^A-Za-z0-9]")
 
 
 def validate_app_name(name: str) -> str | None:
+    """An error message for an invalid app name, or None."""
     if not name:
         return "App name is required."
     if not _APP_NAME_RE.match(name):
@@ -33,6 +34,7 @@ def validate_app_name(name: str) -> str | None:
 
 
 def validate_repo_url(url: str) -> str | None:
+    """An error message for an invalid git repository URL, or None."""
     if not url:
         return "Repository URL is required."
     if not (_GIT_HTTP_RE.match(url) or _GIT_SSH_RE.match(url) or _GIT_LOCAL_RE.match(url)):
@@ -41,6 +43,7 @@ def validate_repo_url(url: str) -> str | None:
 
 
 def validate_branch_name(branch: str) -> str | None:
+    """An error message for an unsafe branch name, or None; an empty name is allowed."""
     if not branch:
         return None
     if ".." in branch:
@@ -53,6 +56,7 @@ def validate_branch_name(branch: str) -> str | None:
 
 
 def validate_hostname(name: str, label: str = "Hostname") -> str | None:
+    """An error message for an invalid hostname, or None."""
     if not name:
         return f"{label} is required."
     if len(name) > 253:
@@ -70,10 +74,12 @@ def validate_hostname_pattern(pattern: str, label: str = "Hostname pattern") -> 
 
 
 def validate_site_name(name: str) -> str | None:
+    """An error message for an invalid site name, or None."""
     return validate_hostname(name, "Site name")
 
 
 def validate_cron_expression(expr: str) -> str | None:
+    """An error message for an invalid five-field cron expression, or None."""
     if not expr:
         return "Schedule expression is required."
     if not _CRON_RE.match(expr.strip()):
@@ -125,6 +131,7 @@ def validate_external_url(url: str, field: str = "URL") -> str | None:
 
 
 def _is_metadata_address(host: str) -> bool:
+    """Whether the host is a link-local or cloud metadata address."""
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
@@ -133,6 +140,7 @@ def _is_metadata_address(host: str) -> bool:
 
 
 def validate_email(email: str) -> str | None:
+    """An error message for an invalid email address, or None; an empty address is allowed."""
     if not email:
         return None
     if not _EMAIL_RE.match(email):

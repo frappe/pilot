@@ -19,14 +19,17 @@ class UptimeMonitorConfigurator:
 
     @property
     def log_path(self) -> Path:
+        """The uptime log file."""
         return self._require_bench().logs_path / "uptime.json.log"
 
     def setup(self) -> None:
+        """Install the uptime monitor; raise unless the host runs Linux."""
         if not HostPlatform().is_linux:
             raise BenchError("Uptime monitoring is only supported on linux based machines.")
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _require_bench(self) -> "Bench":
+        """The bench; fail when none was given."""
         assert self.bench is not None, "UptimeMonitorConfigurator needs a bench for this operation"
         return self.bench
