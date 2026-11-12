@@ -407,3 +407,27 @@ def test_asset_restore_marks_entry_recently_used(source):
     os.utime(artifacts.root / key, (0, 0))
     assert artifacts.restore(key)
     assert (artifacts.root / key).stat().st_mtime > 0
+
+
+def test_cache_prune_skips_entries_another_process_removed(tmp_path, monkeypatch):
+    import os
+    import shutil
+    from contextlib import contextmanager
+
+    from pilot.core.bench.artifacts import BenchArtifacts
+
+    root = tmp_path / "cache"
+    keys = [f"{index:064x}" for index in range(4)]
+    for index, key in enumerate(keys):
+        (root / key).mkdir(parents=True)
+        os.utime(root / key, (index, index))
+
+    @contextmanager
+    def lock_after_other_pruner(path):
+        if path.name == f"{keys[1]}.guard":
+            shutil.rmtree(root / keys[1])
+        yield
+
+    monkeypatch.setattr("pilot.core.bench.artifacts.exclusive_file_lock", lock_after_other_pruner)
+    BenchArtifacts.prune(root, 1, "manifest.json")
+    assert [path.name for path in root.iterdir()] == [keys[3]]
