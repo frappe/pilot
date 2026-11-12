@@ -373,6 +373,13 @@ class Bench:
         return runner.is_file() and "LISTEN_FDS" in runner.read_text()
 
     @property
+    def has_python_reloader(self) -> bool:
+        """Whether dev processes reload on Python changes: `reload_python` is on and watchdog is installed."""
+        from pilot.utils import installed_app_version
+
+        return self.config.reload_python and bool(installed_app_version(self.env_path, "watchdog"))
+
+    @property
     def is_lite_mode(self) -> bool:
         """Whether lite mode is enabled and supported by Frappe."""
         return self.config.lite_mode.enabled and self.supports_lite_mode

@@ -177,12 +177,35 @@ def test_lite_stop_timeout_covers_both_drains(tmp_path: Path) -> None:
     assert _web(bench).stop_timeout == 690
 
 
+def install_watchdog(bench: Bench) -> None:
+    dist_info = bench.env_path / "lib" / "python3.14" / "site-packages" / "watchdog-6.0.0.dist-info"
+    dist_info.mkdir(parents=True)
+    (dist_info / "METADATA").write_text("Name: watchdog\nVersion: 6.0.0\n")
+
+
 def test_lite_reloads_and_serves_assets_only_in_dev(tmp_path: Path) -> None:
     """frappe.runner folds asset serving into --dev; there is no --serve-assets."""
     bench = make_bench(tmp_path)
+    install_watchdog(bench)
 
     assert "--dev" not in _web(bench).argv
+    assert "FRAPPE_SERVE_ASSETS" not in _web(bench).env
     assert "--dev" in _web(bench, dev=True).argv
+
+
+@pytest.mark.parametrize("watchdog", [False, True])
+def test_lite_dev_serves_assets_without_the_reloader(tmp_path: Path, watchdog: bool) -> None:
+    """--dev refuses to start without watchdog, and reload_python = false turns reloading off."""
+    bench = make_bench(tmp_path)
+    if watchdog:
+        install_watchdog(bench)
+        bench.config.reload_python = False
+
+    web = _web(bench, dev=True)
+
+    assert "--dev" not in web.argv
+    assert "--verbose" in web.argv
+    assert web.env["FRAPPE_SERVE_ASSETS"] == "1"
 
 
 def test_lite_dev_keeps_the_single_process(tmp_path: Path) -> None:
@@ -245,3 +268,22 @@ def test_start_refuses_to_overwrite_a_damaged_common_site_config(tmp_path: Path)
         bench.write_common_site_config()
 
     assert "mail_server" in path.read_text()
+
+
+@pytest.mark.parametrize(
+    ("watchdog", "reload_python", "warn"), [(False, True, True), (True, True, False), (False, False, False)]
+)
+def test_dev_start_warns_when_watchdog_is_missing(
+    tmp_path: Path, watchdog: bool, reload_python: bool, warn: bool
+) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    bench.config.reload_python = reload_python
+    if watchdog:
+        install_watchdog(bench)
+    messages: list[str] = []
+
+    BenchRuntime(bench)._warn_missing_python_reloader(messages.append)
+
+    assert any("watchdog is not installed" in message for message in messages) is warn
