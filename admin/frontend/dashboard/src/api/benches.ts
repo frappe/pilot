@@ -1,13 +1,24 @@
 import { request } from '@/api/client'
-import type { BenchReadiness, BenchResource, CloneBranchOptions, CreatedBench } from '@/types/benches'
+import type {
+  BenchReadiness,
+  BenchResource,
+  CloneAppBranches,
+  CloneApps,
+  CreatedBench,
+} from '@/types/benches'
 import type { WildcardDomains } from '@/types/sites'
 import type { TaskPayload } from '@/types/tasks'
 
 export const benchesApi = {
   list: (): Promise<BenchResource[]> => request.get('benches').json(),
 
-  cloneBranchOptions: (source: string): Promise<CloneBranchOptions> =>
-    request.get(`benches/${encodeURIComponent(source)}/clone-branch-options`).json(),
+  cloneApps: (source: string): Promise<CloneApps> =>
+    request.get(`benches/${encodeURIComponent(source)}/clone-apps`).json(),
+
+  cloneAppBranches: (source: string, app: string): Promise<CloneAppBranches> =>
+    request
+      .get(`benches/${encodeURIComponent(source)}/clone-apps/${encodeURIComponent(app)}/branches`)
+      .json(),
 
   clone: (
     source: string,
