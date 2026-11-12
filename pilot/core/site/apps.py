@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -28,16 +29,53 @@ class SiteApps:
                 f"'{app.config.name}' requires {', '.join(missing)}, which this bench does not have. "
                 "Add it with 'pilot get-app <repo>' first, then retry."
             )
-        command = self.site._frappe_call(
-            "frappe", "--site", self.site.config.name, "install-app", app.config.name
-        )
+        name = app.config.name
+        was_installed = name in self.get_committed_apps()
+        # An earlier attempt that failed left module rows, which a plain install refuses as duplicates.
+        force = force or (not was_installed and self.has_unfinished_install(name))
+        command = self.site._frappe_call("frappe", "--site", self.site.config.name, "install-app", name)
         if force:
             command.append("--force")
         self._clear_cache()
         try:
             run_command(command, cwd=self.site.bench.sites_path, stream_output=True)
+        except CommandError:
+            if not was_installed:
+                # The install error is the one to report, even if unlisting fails too.
+                with contextlib.suppress(CommandError):
+                    self.unlist_failed_install(name)
+            raise
         finally:
             self._clear_cache()
+
+    def get_committed_apps(self) -> list[str]:
+        """The installed apps Frappe committed to the database; empty when unreadable."""
+        from pilot.core.site.config import query_installed_apps_setting_via_db
+
+        return query_installed_apps_setting_via_db(self.site.bench.path, self.site.config.name) or []
+
+    def has_unfinished_install(self, app_name: str) -> bool:
+        from pilot.core.site.config import has_module_defs_for_app
+
+        return has_module_defs_for_app(self.site.bench.path, self.site.config.name, app_name)
+
+    def unlist_failed_install(self, app_name: str) -> None:
+        """Frappe lists an app as installed before its after_install hooks run, so a failing hook
+        leaves a half-installed app that looks complete. Unlist it so the site shows the truth."""
+        if app_name not in self.get_committed_apps():
+            return
+        run_command(
+            self.site._frappe_call(
+                "frappe",
+                "--site",
+                self.site.config.name,
+                "execute",
+                "frappe.installer.remove_from_installed_apps",
+                "--args",
+                json.dumps([app_name]),
+            ),
+            cwd=self.site.bench.sites_path,
+        )
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
         self.site.install_app(app)
@@ -81,7 +119,9 @@ class SiteApps:
             return
         committed = query_installed_apps_setting_via_db(self.site.bench.path, self.site.config.name)
         if committed is not None and committed != copy:
-            set_site_config_values(self.site.bench.sites_path, self.site.config.name, {"installed_apps": committed})
+            set_site_config_values(
+                self.site.bench.sites_path, self.site.config.name, {"installed_apps": committed}
+            )
 
     def disabled_apps(self) -> list[str]:
         from pilot.core.site.config import query_disabled_apps_via_db
@@ -118,7 +158,9 @@ class SiteApps:
                 continue
             names.append(current.config.name)
             bench = self.site.bench
-            pending += [bench.app(name) for name in self.get_required_apps(current) if bench.is_app_installed(name)]
+            pending += [
+                bench.app(name) for name in self.get_required_apps(current) if bench.is_app_installed(name)
+            ]
         return names
 
     def get_required_apps(self, app: "App") -> list[str]:

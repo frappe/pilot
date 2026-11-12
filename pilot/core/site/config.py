@@ -11,6 +11,7 @@ from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
 _PROBE_CONNECT_TIMEOUT = 5
+_APP_NAME = re.compile(r"[a-z][a-z0-9_]*")
 _TRUE_SINGLES_VALUES = frozenset({"1", "true"})
 
 PROTECTED_CONFIG_KEYS = frozenset(
@@ -115,6 +116,20 @@ def has_app_disabling(bench_root: Path, site_name: str) -> bool:
         lambda database: (
             f"SELECT fieldname FROM {database.quote_identifier('tabDocField')} "
             "WHERE parent = 'Installed Application' AND fieldname = 'disabled'"
+        ),
+    )
+    return bool(rows)
+
+
+def has_module_defs_for_app(bench_root: Path, site_name: str, app_name: str) -> bool:
+    """Whether an earlier install attempt already wrote this app's module rows."""
+    if not _APP_NAME.fullmatch(app_name):
+        return False
+    rows = _query_site_database(
+        bench_root,
+        site_name,
+        lambda database: (
+            f"SELECT 1 FROM {database.quote_identifier('tabModule Def')} WHERE app_name = '{app_name}' LIMIT 1"
         ),
     )
     return bool(rows)

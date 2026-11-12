@@ -84,6 +84,73 @@ def test_install_app_clears_cache_after_failure(tmp_path: Path) -> None:
     assert commands[2][-1] == "clear-cache"
 
 
+def _fail_on_install(argv, **kwargs):
+    if "install-app" in argv:
+        raise CommandError("after_install failed")
+
+
+def test_failed_first_install_unlists_the_half_installed_app(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+
+    with (
+        patch("pilot.core.site.apps.run_command", side_effect=_fail_on_install) as mock_rc,
+        patch.object(SiteApps, "get_committed_apps", side_effect=[["frappe"], ["frappe", "erpnext"]]),
+        patch.object(SiteApps, "has_unfinished_install", return_value=False),
+        pytest.raises(CommandError, match="after_install failed"),
+    ):
+        site.install_app(app)
+
+    unlist = [call.args[0] for call in mock_rc.call_args_list if "execute" in call.args[0]]
+    assert unlist and unlist[0][-3:] == [
+        "frappe.installer.remove_from_installed_apps",
+        "--args",
+        '["erpnext"]',
+    ]
+
+
+def test_failed_reinstall_keeps_an_app_that_was_already_installed(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+
+    with (
+        patch("pilot.core.site.apps.run_command", side_effect=_fail_on_install) as mock_rc,
+        patch.object(SiteApps, "get_committed_apps", return_value=["frappe", "erpnext"]),
+        pytest.raises(CommandError),
+    ):
+        site.install_app(app, force=True)
+
+    assert not [call for call in mock_rc.call_args_list if "execute" in call.args[0]]
+
+
+def test_install_error_survives_a_failing_unlist(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+
+    def fail_everything(argv, **kwargs):
+        if "install-app" in argv or "execute" in argv:
+            raise CommandError("install-app" if "install-app" in argv else "unlist")
+
+    with (
+        patch("pilot.core.site.apps.run_command", side_effect=fail_everything),
+        patch.object(SiteApps, "get_committed_apps", side_effect=[[], ["erpnext"]]),
+        patch.object(SiteApps, "has_unfinished_install", return_value=False),
+        pytest.raises(CommandError, match="install-app"),
+    ):
+        site.install_app(app)
+
+
+def test_retry_after_unfinished_install_forces_past_leftover_module_rows(tmp_path: Path) -> None:
+    site, app = make_site_and_app(tmp_path)
+
+    with (
+        patch("pilot.core.site.apps.run_command") as mock_rc,
+        patch.object(SiteApps, "get_committed_apps", return_value=["frappe"]),
+        patch.object(SiteApps, "has_unfinished_install", return_value=True),
+    ):
+        site.install_app(app)
+
+    commands = [call.args[0] for call in mock_rc.call_args_list]
+    assert commands[1][-3:] == ["install-app", "erpnext", "--force"]
+
+
 def test_uninstall_app_clears_cache_after_success(tmp_path: Path) -> None:
     site, app = make_site_and_app(tmp_path)
 
