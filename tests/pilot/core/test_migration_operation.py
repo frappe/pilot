@@ -942,7 +942,7 @@ def test_a_stopped_task_callback_leaves_the_operation_to_the_next_task(tmp_path:
 
 
 def test_chain_tasks_register_the_stopped_step_callback() -> None:
-    from pilot.internal.tasks.callbacks import validate_callback
+    from pilot.internal.tasks.callbacks import CallbackOperations
     from pilot.tasks.migrate import MigrateTask
     from pilot.tasks.migration_backup import MigrationBackupTask
     from pilot.tasks.update import UpdateTask
@@ -956,7 +956,7 @@ def test_chain_tasks_register_the_stopped_step_callback() -> None:
         args.operation_id, args.site = "op-1", "site1.localhost"
         assert task.fail_migration_step(args)["phase"] == phase
     assert (
-        validate_callback({"operation": "fail-migration-step", "args": {}})["operation"]
+        CallbackOperations.validate({"operation": "fail-migration-step", "args": {}})["operation"]
         == "fail-migration-step"
     )
 
@@ -1016,7 +1016,7 @@ def test_a_stopped_revert_chain_can_resume_from_its_checkpoint(tmp_path, phase):
 def test_an_interrupted_action_recovers_only_before_it_queues_a_chain_task(tmp_path, monkeypatch, task_name):
     import importlib
 
-    from pilot.internal.tasks.callbacks import run_callback
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
     operation, bench = _backing_up_operation(tmp_path)
     operation.state = get_state("needs_attention")
@@ -1033,12 +1033,12 @@ def test_an_interrupted_action_recovers_only_before_it_queues_a_chain_task(tmp_p
     monkeypatch.setattr("pilot.core.bench.Bench", lambda root: bench)
 
     operation.retry()
-    run_callback(spec, {"bench_root": str(tmp_path), "task_id": "action-task"})
+    CallbackOperations({"bench_root": str(tmp_path), "task_id": "action-task"}).run(spec)
     assert operation.state == "needs_attention"
 
     operation.retry()
     operation.chain.append({"task_id": "next-task", "command": "migration-backup"})
-    run_callback(spec, {"bench_root": str(tmp_path), "task_id": "action-task"})
+    CallbackOperations({"bench_root": str(tmp_path), "task_id": "action-task"}).run(spec)
     assert operation.state == "backing_up"
 
 
@@ -1306,7 +1306,7 @@ def test_a_chain_task_records_itself_when_its_queuer_stopped_first(tmp_path: Pat
 
 @pytest.mark.parametrize("suffix", ["", "."])
 def test_a_stopped_step_names_the_error_the_task_printed(tmp_path: Path, suffix: str) -> None:
-    from pilot.internal.tasks.callbacks import _last_task_error
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
     task_dir = tmp_path / "tasks" / "task-101"
     task_dir.mkdir(parents=True)
@@ -1315,7 +1315,7 @@ def test_a_stopped_step_names_the_error_the_task_printed(tmp_path: Path, suffix:
         "<14>1 2026-10-27T04:25:21+00:00 host migration-backup 1 - - Error: [Errno 28] No space left on device\n"
         "<14>1 2026-10-27T04:25:21+00:00 host migration-backup 1 - - Error: 1\n"
     )
-    reason = _last_task_error({"bench_root": str(tmp_path), "task_id": "task-101"})
+    reason = CallbackOperations({"bench_root": str(tmp_path), "task_id": "task-101"}).last_task_error
     assert reason == "[Errno 28] No space left on device"
 
     operation, _mock_bench = _backing_up_operation(tmp_path)
@@ -1326,12 +1326,12 @@ def test_a_stopped_step_names_the_error_the_task_printed(tmp_path: Path, suffix:
 
 
 def test_a_killed_task_has_no_error_to_name(tmp_path: Path) -> None:
-    from pilot.internal.tasks.callbacks import _last_task_error
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
     task_dir = tmp_path / "tasks" / "task-101"
     task_dir.mkdir(parents=True)
     (task_dir / "output.log").write_text("<14>1 t host migrate 1 - - Executing patch\n")
-    assert _last_task_error({"bench_root": str(tmp_path), "task_id": "task-101"}) == ""
+    assert CallbackOperations({"bench_root": str(tmp_path), "task_id": "task-101"}).last_task_error == ""
 
 
 def _operation_with_backups(tmp_path: Path, sizes: dict[str, int], in_s3: frozenset[str] = frozenset()):

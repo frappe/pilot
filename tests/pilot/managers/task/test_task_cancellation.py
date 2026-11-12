@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from pilot.exceptions import TaskConflictError, TaskNotRunningError
-from pilot.internal.tasks import callbacks as callback_module
+from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
 from pilot.internal.tasks.process import TaskProcess, TaskProcessRecord
 from pilot.internal.tasks.process_identity import ProcessInspector
 from pilot.internal.tasks.store import TaskStore
@@ -110,8 +110,8 @@ def test_cancel_queued_task_runs_cancel_callback(
 ) -> None:
     marker = tmp_path / "cancelled.marker"
 
-    def mark_cancelled(meta: dict, args: dict) -> None:
-        marker.write_text(meta["task_id"])
+    def mark_cancelled(operations: CallbackOperations, args: dict) -> None:
+        marker.write_text(operations.meta["task_id"])
 
     store = TaskStore(tmp_path)
     store.create_queued(
@@ -132,12 +132,8 @@ def test_cancel_queued_task_runs_cancel_callback(
         },
         resource_key="site:new.localhost",
     )
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-cancel", mark_cancelled)
-    monkeypatch.setattr(
-        callback_module,
-        "run_bounded_callback",
-        lambda spec, meta, **kwargs: callback_module.run_callback(spec, meta),
-    )
+    monkeypatch.setitem(CallbackOperations.operations, "test-cancel", mark_cancelled)
+    monkeypatch.setattr(BoundedCallback, "run", lambda self: CallbackOperations(self.meta).run(self.spec))
 
     TaskRunner(tmp_path).kill(TASK_ID)
 

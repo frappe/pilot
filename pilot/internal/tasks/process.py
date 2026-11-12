@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.exceptions import BenchError, TaskNotFoundError, TaskNotRunningError
-from pilot.internal.tasks.callbacks import run_stored_callback, trigger_for_task_status
+from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.process_identity import (
     ProcessIdentity,
@@ -318,7 +318,7 @@ class TaskProcess:
 
     def _run_stored_callback(self, task_id: str, trigger: str) -> None:
         try:
-            run_stored_callback(self._store.task_dir(task_id), trigger)
+            BoundedCallback.run_stored(self._store.task_dir(task_id), trigger)
         except Exception as exc:
             from pilot.internal.command import Command
             from pilot.internal.private_files import PrivateFile
@@ -334,7 +334,7 @@ class TaskProcess:
     def _run_stored_callback_for_status(self, task_id: str) -> None:
         try:
             status = self._store.read_status(task_id)
-            trigger = trigger_for_task_status(status)
+            trigger = CallbackOperations.get_trigger(status)
         except (KeyError, OSError, ValueError, TaskNotFoundError):
             return
         self._run_stored_callback(task_id, trigger)

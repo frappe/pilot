@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.internal.tasks import callbacks as callbacks
+from pilot.internal.tasks.callbacks import CallbackOperations
 from pilot.managers import platform
 from pilot.managers.platform import HostsFile
 
@@ -27,9 +27,8 @@ def test_remove_failed_site_operation_uses_json_args(
     site_path.mkdir(parents=True)
     monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
-    callbacks.run_callback(
-        {"operation": "remove-failed-site", "args": {"site": "new.localhost"}},
-        owned_meta(tmp_path),
+    CallbackOperations(owned_meta(tmp_path)).run(
+        {"operation": "remove-failed-site", "args": {"site": "new.localhost"}}
     )
 
     assert not site_path.exists()
@@ -44,16 +43,15 @@ def test_remove_failed_site_attempts_database_drop_before_file_cleanup(
     (site_path / "site_config.json").write_text("{}")
     attempted_while_present = []
 
-    def drop_failed_site(bench_root: Path, site_name: str, path: Path) -> bool:
-        attempted_while_present.append((bench_root, site_name, path, path.exists()))
+    def drop_failed_site(operations: CallbackOperations, site_name: str, path: Path) -> bool:
+        attempted_while_present.append((operations.bench_root, site_name, path, path.exists()))
         return True
 
-    monkeypatch.setattr(callbacks, "_drop_failed_site", drop_failed_site)
+    monkeypatch.setattr(CallbackOperations, "drop_failed_site", drop_failed_site)
     monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
-    callbacks.run_callback(
-        {"operation": "remove-failed-site", "args": {"site": "new.localhost"}},
-        owned_meta(tmp_path),
+    CallbackOperations(owned_meta(tmp_path)).run(
+        {"operation": "remove-failed-site", "args": {"site": "new.localhost"}}
     )
 
     assert attempted_while_present == [(tmp_path, "new.localhost", site_path.resolve(), True)]
@@ -67,16 +65,15 @@ def test_remove_failed_site_preserves_files_when_database_drop_fails(
     site_path = tmp_path / "sites" / "new.localhost"
     site_path.mkdir(parents=True)
     (site_path / "site_config.json").write_text('{"db_name":"recoverable"}')
-    monkeypatch.setattr(callbacks, "_drop_failed_site", lambda *args: False)
+    monkeypatch.setattr(CallbackOperations, "drop_failed_site", lambda *args: False)
     monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
     with pytest.raises(RuntimeError, match="preserved for recovery"):
-        callbacks.run_callback(
+        CallbackOperations(owned_meta(tmp_path)).run(
             {
                 "operation": "remove-failed-site",
                 "args": {"site": "new.localhost"},
-            },
-            owned_meta(tmp_path),
+            }
         )
 
     assert (site_path / "site_config.json").is_file()
@@ -100,7 +97,7 @@ def test_drop_failed_site_skips_the_backup(
 
     monkeypatch.setattr("pilot.core.bench.Bench", FakeBench)
 
-    assert callbacks._drop_failed_site(tmp_path, "new.localhost", site_path)
+    assert CallbackOperations({"bench_root": str(tmp_path)}).drop_failed_site("new.localhost", site_path)
     assert drops == [("new.localhost", {"no_backup": True})]
 
 
@@ -130,9 +127,8 @@ def test_disable_site_ssl_operation_uses_json_args(tmp_path: Path) -> None:
     config_path.parent.mkdir(parents=True)
     config_path.write_text(json.dumps({"ssl": True, "db_name": "site"}))
 
-    callbacks.run_callback(
-        {"operation": "disable-site-ssl", "args": {"site": "secure.localhost"}},
-        {"bench_root": str(tmp_path)},
+    CallbackOperations({"bench_root": str(tmp_path)}).run(
+        {"operation": "disable-site-ssl", "args": {"site": "secure.localhost"}}
     )
 
     assert json.loads(config_path.read_text()) == {"ssl": False, "db_name": "site"}
@@ -140,7 +136,7 @@ def test_disable_site_ssl_operation_uses_json_args(tmp_path: Path) -> None:
 
 def test_callback_args_must_be_json_serializable(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="JSON serializable"):
-        callbacks.validate_callback({"operation": "remove-failed-site", "args": {"path": tmp_path}})
+        CallbackOperations.validate({"operation": "remove-failed-site", "args": {"path": tmp_path}})
 
 
 @pytest.mark.parametrize("remove_site", [False, True])
@@ -156,7 +152,7 @@ def test_cleanup_site_restore_removes_contained_uploads(
     site_path.mkdir(parents=True)
     monkeypatch.setattr(HostsFile, "remove", lambda self, site: None)
 
-    callbacks.run_callback(
+    CallbackOperations(owned_meta(tmp_path)).run(
         {
             "operation": "cleanup-site-restore",
             "args": {
@@ -164,8 +160,7 @@ def test_cleanup_site_restore_removes_contained_uploads(
                 "site": "new.localhost",
                 "remove_site": remove_site,
             },
-        },
-        owned_meta(tmp_path),
+        }
     )
 
     assert not upload_dir.exists()
@@ -177,7 +172,7 @@ def test_cleanup_site_restore_refuses_outside_directory(tmp_path: Path) -> None:
     outside.mkdir()
 
     with pytest.raises(ValueError, match="within the bench"):
-        callbacks.run_callback(
+        CallbackOperations({"bench_root": str(tmp_path)}).run(
             {
                 "operation": "cleanup-site-restore",
                 "args": {
@@ -185,8 +180,7 @@ def test_cleanup_site_restore_refuses_outside_directory(tmp_path: Path) -> None:
                     "site": "new.localhost",
                     "remove_site": False,
                 },
-            },
-            {"bench_root": str(tmp_path)},
+            }
         )
 
     assert outside.exists()
@@ -204,7 +198,7 @@ def test_cleanup_site_restore_refuses_symlinked_upload_root(tmp_path: Path) -> N
     upload_dir.mkdir()
 
     with pytest.raises(ValueError, match="root must stay within the bench"):
-        callbacks.run_callback(
+        CallbackOperations({"bench_root": str(tmp_path)}).run(
             {
                 "operation": "cleanup-site-restore",
                 "args": {
@@ -212,8 +206,7 @@ def test_cleanup_site_restore_refuses_symlinked_upload_root(tmp_path: Path) -> N
                     "site": "new.localhost",
                     "remove_site": False,
                 },
-            },
-            {"bench_root": str(tmp_path)},
+            }
         )
 
     assert upload_dir.exists()
@@ -227,9 +220,8 @@ def test_cleanup_site_restore_removes_the_downloads_of_its_own_task_only(tmp_pat
     other.mkdir()
     (own / "files.tar").write_text("backup")
 
-    callbacks.run_callback(
-        {"operation": "cleanup-site-restore", "args": {"site": "a.localhost", "upload_dir": ""}},
-        {"bench_root": str(tmp_path), "task_id": "20261006-030650-f261c6"},
+    CallbackOperations({"bench_root": str(tmp_path), "task_id": "20261006-030650-f261c6"}).run(
+        {"operation": "cleanup-site-restore", "args": {"site": "a.localhost", "upload_dir": ""}}
     )
 
     assert not own.exists() and other.exists()
