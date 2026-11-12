@@ -152,6 +152,53 @@ def test_a_link_that_stays_inside_an_allowed_root_is_resolved(
     assert _paths(read_paths=["~/.cache/alias"]).read == (str((tmp_path / ".cache" / "real").resolve()),)
 
 
+HIDDEN = "must not be in or above"
+
+
+@pytest.mark.parametrize("path", ["/srv/frappe/.ssh", "/srv/frappe/benches/other/bench.toml", "/srv/frappe"])
+def test_a_system_path_cannot_reach_a_home_below_an_allowed_root(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", "/srv/frappe")
+
+    with pytest.raises(ValueError, match=HIDDEN):
+        _paths(read_paths=[path])
+
+
+def test_a_home_below_an_allowed_root_keeps_its_home_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", "/srv/frappe")
+
+    assert _paths(read_paths=["~/.cache/model"]).read == ("/srv/frappe/.cache/model",)
+
+
+@pytest.mark.parametrize("path", ["/srv/frappe/benches/other", "/srv/frappe/benches", "/srv/frappe"])
+def test_a_system_path_cannot_reach_the_benches_directory(path: str) -> None:
+    bench = Path("/srv/frappe/benches/b")
+
+    with pytest.raises(ValueError, match=HIDDEN):
+        SandboxPaths.from_declaration({"write_paths": [path]}, "test", _error, bench)
+
+
+@pytest.mark.parametrize("path", ["/opt/frappe/pilot/databases", "/opt/frappe"])
+def test_a_system_path_cannot_reach_the_pilot_install(path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pilot.core.app.sandbox.cli_root", lambda: Path("/opt/frappe/pilot"))
+
+    with pytest.raises(ValueError, match=HIDDEN):
+        _paths(write_paths=[path])
+
+
+def test_a_link_below_a_system_root_cannot_lead_into_the_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("pilot.core.app.sandbox.ALLOWED_SYSTEM_ROOTS", (str(tmp_path / "srv"),))
+    monkeypatch.setenv("HOME", str(tmp_path / "srv" / "frappe"))
+    (tmp_path / "srv" / "frappe" / ".ssh").mkdir(parents=True)
+    (tmp_path / "srv" / "data").symlink_to(tmp_path / "srv" / "frappe" / ".ssh")
+
+    with pytest.raises(ValueError, match=HIDDEN):
+        _paths(read_paths=[str(tmp_path / "srv" / "data")])
+
+
 def _app(tmp_path: Path, pyproject: str | None) -> SimpleNamespace:
     if pyproject is not None:
         (tmp_path / "pyproject.toml").write_text(pyproject)

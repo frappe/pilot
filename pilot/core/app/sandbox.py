@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 import re
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
+
+from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -68,6 +70,11 @@ class SandboxPaths:
                 f"{label} '{path}' must be a directory below one of: "
                 f"{', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}, {', '.join(ALLOWED_SYSTEM_ROOTS)}."
             )
+        if is_protected_path(expanded, bench_path) or is_protected_path(resolved, bench_path):
+            raise error(
+                f"{label} '{path}' must not be in or above the benches directory or the Pilot install, "
+                f"or in the home directory outside {', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}."
+            )
         return str(resolved)
 
 
@@ -96,9 +103,25 @@ def is_allowed_path(path: Path) -> bool:
     return False
 
 
+def is_protected_path(path: Path, bench_path: Path) -> bool:
+    """Whether `path` is in or above a place the sandbox hides: the benches directory, the Pilot install,
+    or the home directory outside the allowed home roots. An allowed system root can hold any of them."""
+    hidden = [bench_path.parent, cli_root()]
+    home_roots = _with_real_paths(Path.home() / root for root in ALLOWED_HOME_ROOTS)
+    if not any(path.is_relative_to(root) for root in home_roots):
+        hidden.append(Path.home())
+    return any(path.is_relative_to(place) or place.is_relative_to(path) for place in _with_real_paths(hidden))
+
+
 def _get_allowed_roots() -> set[Path]:
-    roots = {Path.home() / root for root in ALLOWED_HOME_ROOTS} | {Path(root) for root in ALLOWED_SYSTEM_ROOTS}
-    return roots | {Path(os.path.realpath(root)) for root in roots}
+    home_roots = [Path.home() / root for root in ALLOWED_HOME_ROOTS]
+    return _with_real_paths([*home_roots, *map(Path, ALLOWED_SYSTEM_ROOTS)])
+
+
+def _with_real_paths(paths: Iterable[Path]) -> set[Path]:
+    """The paths, and where each one leads when links are followed."""
+    paths = set(paths)
+    return paths | {Path(os.path.realpath(path)) for path in paths}
 
 
 class AppSandbox:
