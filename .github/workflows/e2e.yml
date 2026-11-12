@@ -14,6 +14,48 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Pure Node; runs beside the e2e matrix so it adds no wall-clock time to it.
+  cloud-settings:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            admin/frontend/dashboard/package-lock.json
+            admin/frontend/cloud-sdk/package-lock.json
+            admin/frontend/in-app-embed/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix admin/frontend/dashboard
+          npm ci --prefix admin/frontend/cloud-sdk
+          npm ci --prefix admin/frontend/in-app-embed
+
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-dashboard-${{ runner.os }}-${{ hashFiles('admin/frontend/dashboard/package-lock.json') }}
+
+      - name: Install Playwright browser
+        working-directory: admin/frontend/dashboard
+        run: npx playwright install --with-deps chromium
+
+      - name: Test Cloud Settings embed
+        run: |
+          npm --prefix admin/frontend/cloud-sdk test
+          npm --prefix admin/frontend/cloud-sdk run build
+          npm --prefix admin/frontend/in-app-embed run build
+          cd admin/frontend/dashboard
+          npx playwright test --config cloud-settings.config.ts
+
   e2e:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
@@ -90,6 +132,18 @@ jobs:
           npm install -g yarn
           uv pip install --system -e ".[test,admin,e2e]"
 
+      - name: Get cache week
+        id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache yarn packages
+        # pilot runs yarn install for the framework app; the key rolls weekly so the cache tracks yarn.lock.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/yarn
+          key: yarn-${{ runner.os }}-${{ steps.week.outputs.week }}
+          restore-keys: yarn-${{ runner.os }}-
+
       - name: Cache admin frontend node_modules
         uses: actions/cache@v4
         with:
@@ -114,17 +168,6 @@ jobs:
       - name: Install dashboard Playwright browser
         working-directory: admin/frontend/dashboard
         run: npx playwright install chromium
-
-      - name: Test Cloud Settings embed
-        if: matrix.db_type == 'mariadb'
-        run: |
-          npm ci --prefix admin/frontend/cloud-sdk
-          npm ci --prefix admin/frontend/in-app-embed
-          npm --prefix admin/frontend/cloud-sdk test
-          npm --prefix admin/frontend/cloud-sdk run build
-          npm --prefix admin/frontend/in-app-embed run build
-          cd admin/frontend/dashboard
-          npx playwright test --config cloud-settings.config.ts
 
       - name: Run e2e tests
         working-directory: tests/e2e

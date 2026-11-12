@@ -58,6 +58,18 @@ jobs:
           npm install -g yarn
           uv pip install --system -e ".[test,admin]"
 
+      - name: Get cache week
+        id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache yarn packages
+        # pilot runs yarn install for the framework app; the key rolls weekly so the cache tracks yarn.lock.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/yarn
+          key: yarn-${{ runner.os }}-${{ steps.week.outputs.week }}
+          restore-keys: yarn-${{ runner.os }}-
+
       - name: Create bench
         run: |
           mkdir -p benches/ci-bench
