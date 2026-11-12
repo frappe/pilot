@@ -39,7 +39,9 @@ class BuildArtifacts:
     def get_key(self) -> str | None:
         digest = hashlib.sha256(b"pilot-assets-v1\0")
         environment = {
-            key: value for key, value in os.environ.items() if key not in {"PWD", "OLDPWD", "SHLVL", "_"}
+            key: value
+            for key, value in os.environ.items()
+            if key in {"NODE_ENV", "CI"} or key.startswith(("FRAPPE_", "VITE_", "ESBUILD_"))
         }
         digest.update(json.dumps(environment, sort_keys=True).encode())
         config_path = self.bench.sites_path / "common_site_config.json"

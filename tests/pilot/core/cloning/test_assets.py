@@ -431,3 +431,18 @@ def test_cache_prune_skips_entries_another_process_removed(tmp_path, monkeypatch
     monkeypatch.setattr("pilot.core.bench.artifacts.exclusive_file_lock", lock_after_other_pruner)
     BenchArtifacts.prune(root, 1, "manifest.json")
     assert [path.name for path in root.iterdir()] == [keys[3]]
+
+
+def test_build_cache_key_ignores_environment_that_does_not_affect_builds(source, monkeypatch):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    PythonEnvManager(source).create_venv()
+    artifacts = BuildArtifacts(source)
+    key = artifacts.get_key()
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22")
+    monkeypatch.setenv("INVOCATION_ID", "admin-worker")
+    assert artifacts.get_key() == key
+    for name in ("NODE_ENV", "CI", "FRAPPE_BUILD_CONCURRENCY", "ESBUILD_BINARY_PATH"):
+        monkeypatch.setenv(name, "changed")
+        assert artifacts.get_key() != key
+        monkeypatch.delenv(name)
