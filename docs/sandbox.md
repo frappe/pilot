@@ -22,6 +22,8 @@ The sandbox limits the damage when a running workload is compromised. It does no
 
 The systemd directives behind each row are in [Production](production.md#sandbox).
 
+nginx runs outside the sandbox as the bench user and serves `sites/` from disk, so a link that a workload makes there could reach a file the workload cannot read. For that reason nginx follows no symlinks below a bench. See [Nginx And TLS](production.md#nginx-and-tls).
+
 ## Which processes run in it
 
 Pilot adds the sandbox to every workload unit that it writes for a systemd bench.

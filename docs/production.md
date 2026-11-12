@@ -91,6 +91,8 @@ Programs declared only in extension fragments are not members of Pilot's generat
 
 ## Nginx And TLS
 
+nginx follows no symlinks below a bench (`disable_symlinks`), because a workload can write in `sites/` and nginx reads files as the bench user. Pilot serves each app's assets from the real `public` folder of the app. A link directly in that folder, such as `node_modules`, is served only when it points to a folder in the same app. Pilot adds a new app or link when it applies the app's processes, or on `pilot setup production`.
+
 Nginx config is rendered from bench and site state. Regenerate it with `pilot setup nginx` or `pilot setup config`.
 
 All benches on a host share one nginx. A config change holds the host lock `benches/.nginx.lock` from its first write until `nginx -t` passes and nginx reloads, or until Pilot puts back the files that nginx rejected. Another bench's config change waits for the lock, so its `nginx -t` never sees untested files.
