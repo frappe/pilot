@@ -189,11 +189,16 @@ def proxy_payload(config: BenchConfig) -> dict:
 
 
 def is_behind_cloudflare(domain: str) -> bool:
-    try:
-        addresses = {str(info[4][0]) for info in socket.getaddrinfo(domain, None)}
-    except OSError:
-        return False
+    addresses = resolve_addresses(domain, socket.AF_INET) or resolve_addresses(domain, socket.AF_INET6)
     return bool(addresses) and all(is_cloudflare_address(address) for address in addresses)
+
+
+def resolve_addresses(domain: str, family: socket.AddressFamily) -> set[str]:
+    """One family at a time: a resolver that fails AAAA slowly (~1 s, uncached) would hold up every A answer."""
+    try:
+        return {str(info[4][0]) for info in socket.getaddrinfo(domain, None, family)}
+    except OSError:
+        return set()
 
 
 def waf_payload(config: BenchConfig) -> dict:

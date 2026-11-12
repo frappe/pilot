@@ -77,7 +77,7 @@ def detail(name: str):
 
     # Installable = apps that are cloned but not yet installed on this site
     try:
-        all_apps = [a.name for a in AppProvider(bench_root).get_all()]
+        all_apps = AppProvider(bench_root).cloned_app_names
         installable = [a for a in all_apps if a not in site.active_apps]
     except Exception:
         installable = []

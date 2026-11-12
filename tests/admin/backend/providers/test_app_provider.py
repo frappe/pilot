@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from admin.backend.providers.apps import AppProvider
 
@@ -54,3 +55,13 @@ def test_read_all_includes_title_and_description(tmp_path: Path) -> None:
     assert len(apps) == 1
     assert apps[0].title == "myapp"
     assert apps[0].description == "A demo Frappe app"
+
+
+def test_cloned_app_names_list_git_folders_without_running_git(tmp_path: Path) -> None:
+    for name in ("frappe", "erpnext"):
+        (tmp_path / "apps" / name / ".git").mkdir(parents=True)
+    (tmp_path / "apps" / "loose").mkdir()
+
+    with patch("admin.backend.providers.apps.GitRepo") as repo:
+        assert AppProvider(tmp_path).cloned_app_names == ["erpnext", "frappe"]
+    repo.assert_not_called()
