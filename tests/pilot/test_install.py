@@ -116,9 +116,7 @@ system_packages_present
 
 
 @pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
-def test_system_packages_present_fails_when_required_package_is_missing(
-    distro: str, tmp_path: Path
-) -> None:
+def test_system_packages_present_fails_when_required_package_is_missing(distro: str, tmp_path: Path) -> None:
     missing = EXPECTED_PACKAGES[distro][0]
     result = run_installer_functions(
         f"""
@@ -328,6 +326,102 @@ database_packages
     assert result.stdout.splitlines() == ["postgresql", "postgresql-libs", "pkgconf", "redis"]
 
 
+# --ci drops the database servers (init installs what the bench manages),
+# production traffic serving, and headless browsers. Ubuntu is pinned exactly
+# since that is what CI runs; the other distros only pin what must be absent.
+CI_UBUNTU_PACKAGES = [
+    "git",
+    "curl",
+    "bash",
+    "sudo",
+    "ca-certificates",
+    "python3",
+    "python3-dev",
+    "build-essential",
+    "tzdata",
+    "cron",
+    "file",
+    "ripgrep",
+    "mariadb-client",
+    "libmariadb-dev",
+    "postgresql-client",
+    "libpq-dev",
+    "pkg-config",
+    "redis-server",
+]
+
+# Server, production, and browser packages per distro. Fedora's *client* is
+# literally named mariadb, so this cannot be one shared list.
+CI_DROPPED_PACKAGES = {
+    "macos": ["mariadb@11.8", "postgresql@16", "nginx", "certbot"],
+    "debian": [
+        "mariadb-server",
+        "postgresql",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "libnginx-mod-http-modsecurity",
+        "libnss3",
+    ],
+    "ubuntu": [
+        "mariadb-server",
+        "postgresql",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "libnginx-mod-http-modsecurity",
+        "libnss3",
+    ],
+    "fedora": [
+        "mariadb-server",
+        "postgresql-server",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "nginx-mod-modsecurity",
+        "nss",
+    ],
+    "arch": ["mariadb", "postgresql", "nginx", "certbot", "supervisor", "nss"],
+}
+
+
+def _ci_install_packages(distro: str, tmp_path: Path) -> list[str]:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+CI_MODE=1
+is_root() {{ return 0; }}
+services_to_disable() {{ :; }}
+ensure_curl() {{ :; }}
+pkg_update() {{ :; }}
+pkg_available() {{ return 1; }}
+pkg_installed() {{ return 1; }}
+pkg_install() {{ printf 'install:%s\\n' "$*"; }}
+enable_cron() {{ :; }}
+disable_system_services() {{ :; }}
+install_node() {{ :; }}
+ensure_tzdata() {{ :; }}
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
+    assert len(installs) == 1
+    return installs[0].removeprefix("install:").split()
+
+
+def test_ci_mode_installs_the_full_client_stack(tmp_path: Path) -> None:
+    assert _ci_install_packages("ubuntu", tmp_path) == CI_UBUNTU_PACKAGES
+
+
+@pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
+def test_ci_mode_drops_servers_and_production(distro: str, tmp_path: Path) -> None:
+    installed = _ci_install_packages(distro, tmp_path)
+    assert "git" in installed
+    assert not (set(CI_DROPPED_PACKAGES[distro]) & set(installed))
+
+
 def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) -> None:
     """sudo-rs on Ubuntu 26.04 rejects wildcards in arguments."""
     result = run_installer_functions(
@@ -361,7 +455,9 @@ services_to_disable
     assert "mariadb" in result.stdout.split()
 
 
-@pytest.mark.parametrize(("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)])
+@pytest.mark.parametrize(
+    ("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)]
+)
 def test_node_24_or_later_is_accepted(version: str, is_accepted: bool, tmp_path: Path) -> None:
     """Frappe needs Node 24 or later, and Arch and Homebrew install the current release."""
     result = run_installer_functions(

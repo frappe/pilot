@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocation } from 'vue-router'
 import { authApi } from '@/api/auth'
 import { useSession } from '@/composables/auth/useSession'
 import { safeRedirect } from '@/utils/redirect'
@@ -98,16 +98,20 @@ const routes = [
     meta: { title: 'Update', group: 'Insights' },
   },
   {
-    path: '/database/analyzer',
+    path: '/database/analyzer/:tab?',
     name: 'DB analyzer',
     component: () => import('@/pages/database/Analyzer.vue'),
     meta: { title: 'DB analyzer', group: 'Dev tools' },
   },
   {
     path: '/database/sql-playground',
-    name: 'SQL playground',
-    component: () => import('@/pages/database/SQLPlayground.vue'),
-    meta: { title: 'SQL playground', group: 'Dev tools' },
+    redirect: (to: RouteLocation) => ({ path: '/console', query: { ...to.query, language: 'sql' } }),
+  },
+  {
+    path: '/console',
+    name: 'System console',
+    component: () => import('@/pages/console/SystemConsole.vue'),
+    meta: { title: 'System console', group: 'Dev tools' },
   },
   {
     path: '/editor',

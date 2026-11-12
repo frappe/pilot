@@ -7,6 +7,7 @@ import AddAppFromGithubDialog from '@/components/apps/AddAppFromGithubDialog.vue
 import AppIcon from '@/components/apps/AppIcon.vue'
 import InstallAppDialog from '@/components/apps/InstallAppDialog.vue'
 import NewAppDialog from '@/components/apps/NewAppDialog.vue'
+import UninstallAppDialog from '@/components/apps/UninstallAppDialog.vue'
 import GithubMark from '@/components/icons/GithubMark.vue'
 import MarketplaceAppTile from '@/components/marketplace/MarketplaceAppTile.vue'
 import type { MarketplaceListing } from '@/composables/apps/useMarketplace'
@@ -77,6 +78,8 @@ const showInstallApp = ref(false)
 const showAddFromGithub = ref(false)
 const showNewApp = ref(false)
 const installTarget = ref<MarketplaceListing | null>(null)
+const showUninstallApp = ref(false)
+const uninstallTarget = ref<MarketplaceListing | null>(null)
 
 watch(
   () => route.query.addFromGithub,
@@ -91,6 +94,11 @@ watch(
 const onInstall = (app: MarketplaceListing) => {
   installTarget.value = app
   showInstallApp.value = true
+}
+
+const onUninstall = (app: MarketplaceListing) => {
+  uninstallTarget.value = app
+  showUninstallApp.value = true
 }
 
 const clearFilters = () => {
@@ -188,6 +196,7 @@ onMounted(load)
             :key="app.name"
             :app="app"
             @install="onInstall"
+            @uninstall="onUninstall"
           />
         </div>
       </section>
@@ -199,7 +208,13 @@ onMounted(load)
         </h2>
 
         <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-          <MarketplaceAppTile v-for="app in apps" :key="app.name" :app="app" @install="onInstall" />
+          <MarketplaceAppTile
+            v-for="app in apps"
+            :key="app.name"
+            :app="app"
+            @install="onInstall"
+            @uninstall="onUninstall"
+          />
         </div>
       </section>
     </template>
@@ -208,6 +223,13 @@ onMounted(load)
   <InstallAppDialog
     v-model:open="showInstallApp"
     :app="installTarget"
+    :sites="sites"
+    :site-name="currentSiteName"
+  />
+
+  <UninstallAppDialog
+    v-model:open="showUninstallApp"
+    :app="uninstallTarget"
     :sites="sites"
     :site-name="currentSiteName"
   />

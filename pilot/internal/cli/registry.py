@@ -51,7 +51,14 @@ def command_names() -> frozenset[str]:
     return frozenset(top_level | GROUP_HELP.keys())
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(only: str | None = None) -> argparse.ArgumentParser:
+    """Build the CLI parser.
+
+    `only` is the command the user asked for. One command's parser costs a
+    fraction of all fifty, so a command starts without paying for the others.
+    An unknown name keeps every command, so argparse's "invalid choice" error
+    still lists them all.
+    """
     parser = argparse.ArgumentParser(prog="pilot", description="Frappe bench manager")
     parser.add_argument("--version", action="version", version=f"pilot {pilot.__version__}")
     parser.add_argument("--verbose", action="store_true", help="Show full tracebacks on error.")
@@ -65,6 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command")
+    # The usage line lists every command, even when only one of them is built.
+    sub.metavar = _top_level_metavar(_discover())
 
     # Create a sub-parser action for each command group up front.
     # `help=` populates the parent listing; `description=` populates the
@@ -75,13 +84,36 @@ def build_parser() -> argparse.ArgumentParser:
         gparser.set_defaults(_help_printer=gparser.print_help)
         group_subparsers[gname] = gparser.add_subparsers(dest=f"{gname}_command")
 
-    for cls in _discover():
+    for cls in _commands_for(only):
         target = group_subparsers[cls.group] if cls.group else sub
         cmd_parser = target.add_parser(cls.name, aliases=cls.aliases, help=cls.help, description=cls.help)
         add_command_arguments(cls, cmd_parser)
         cmd_parser.set_defaults(_command_cls=cls)
 
     return parser
+
+
+def _commands_for(only: str | None) -> list[type[Command]]:
+    """The commands to build parsers for.
+
+    A group name keeps that group's commands, a command name keeps just that
+    command, and anything else keeps every command.
+    """
+    commands = _discover()
+    if only is None:
+        return commands
+    if only in GROUP_HELP:
+        return [command for command in commands if command.group == only]
+    for command in commands:
+        if only == command.name or only in command.aliases:
+            return [command]
+    return commands
+
+
+def _top_level_metavar(commands: list[type[Command]]) -> str:
+    """The command list in the usage line, as argparse would spell it."""
+    names = [*GROUP_HELP, *(command.name for command in commands if not command.group)]
+    return f"{{{','.join(names)}}}"
 
 
 def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:

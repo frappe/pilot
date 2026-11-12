@@ -73,7 +73,8 @@ class PythonAssetBuilder:
 
     def build_assets(self) -> None:
         for app in self.bench.apps():
-            NodePackages(app.path).ensure_installed()
+            for packages in get_app_packages(app.path, self.frontend_dirs(app)):
+                packages.ensure_installed()
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,

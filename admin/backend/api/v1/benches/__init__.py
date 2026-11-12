@@ -30,6 +30,27 @@ __all__ = ["bench_readiness_bp", "benches_bp"]
 benches_bp.before_request(guard_bench_management)
 
 
+@benches_bp.post("/<name>/actions/clone")
+def clone_bench(name: str):
+    from admin.backend.api.v1.cloning import clone_bench as submit
+
+    return submit(name)
+
+
+@benches_bp.get("/<name>/clone-apps")
+def clone_apps(name: str):
+    from admin.backend.api.v1.cloning import clone_apps as read
+
+    return read(name)
+
+
+@benches_bp.get("/<name>/clone-apps/<app>/branches")
+def clone_app_branches(name: str, app: str):
+    from admin.backend.api.v1.cloning import clone_app_branches as read
+
+    return read(name, app)
+
+
 @benches_bp.get("")
 def list_benches():
     bench_root = Path(current_app.config["BENCH_ROOT"])

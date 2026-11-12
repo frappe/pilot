@@ -2,6 +2,7 @@
 import { Button, Dialog, ErrorMessage, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
+import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
 import PerformanceSchemaNotice from '@/components/database/PerformanceSchemaNotice.vue'
@@ -13,6 +14,7 @@ import type { PerformanceSection } from '@/types/database'
 import { errorMessage } from '@/utils/error'
 
 interface Props {
+  active?: boolean
   site?: string
   badge?: string
   enabled?: boolean
@@ -28,6 +30,7 @@ interface Column {
 type PerformanceRow = PerformanceSection['data'][number]
 
 const props = withDefaults(defineProps<Props>(), {
+  active: false,
   site: '',
   badge: '',
   enabled: false,
@@ -111,28 +114,32 @@ const openQuery = ref('')
 
 <template>
   <DatabasePanel
-    title="SQL Query Analysis"
-    subtitle="Check the concerning queries that might be affecting your database performance"
+    :active="active"
     :badge="badge"
     :loading="loading"
     @open="load()"
     @refresh="load()"
   >
-    <ErrorMessage v-if="error" :message="error" class="m-4" />
+    <template #start>
+      <TabButtons v-model="tab" :options="tabOptions" size="sm" />
+    </template>
+
+    <ErrorMessage v-if="error" :message="error" />
 
     <template v-else>
-      <div class="px-4 pb-3">
-        <TabButtons v-model="tab" :options="tabOptions" size="sm" />
-      </div>
-
       <PerformanceSchemaNotice v-if="!enabled" />
 
-      <p v-else-if="!rows.length" class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center">
-        No results to display
-      </p>
+      <EmptyState
+        v-else-if="!rows.length"
+        icon="lucide-scan-search"
+        :title="tab === 'full_table_scan_queries' ? 'No full table scans' : 'No queries yet'"
+        :description="tab === 'full_table_scan_queries' ? 'No query has read a whole table' : 'Nothing recorded since the server started'"
+        :bordered="false"
+        class="flex-1 justify-center pb-16"
+      />
 
       <template v-else>
-        <Table class="px-4" height="max-h-96" :columns="columns" :rows="rows">
+        <Table height="flex-1" :columns="columns" :rows="rows">
           <template #database="{ row }">{{ siteLabel(row.database) }}</template>
           <template #percent="{ row }">{{ percentOf(row).toFixed(1) }}%</template>
           <template #calls="{ row }">{{ formatCount(callsOf(row)) }}</template>
@@ -152,7 +159,7 @@ const openQuery = ref('')
           </template>
         </Table>
 
-        <div class="flex justify-end px-4 pb-4">
+        <div class="flex justify-end">
           <Button v-if="hasNextPage" :loading="loading" @click="load(rows.length)">
             Load more
           </Button>

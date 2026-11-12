@@ -32,7 +32,7 @@ export const useAppMenu = () => {
       : []),
     {
       label: 'Settings',
-      icon: 'lucide-settings',
+      icon: 'lucide-cog',
       onClick: () => router.push({ name: 'Settings' }),
     },
     {
@@ -46,7 +46,7 @@ export const useAppMenu = () => {
       ? [
           {
             label: 'Switch Bench',
-            icon: 'lucide-repeat',
+            icon: 'lucide-arrow-left-right',
             onClick: () => (showBenches.value = true),
           },
         ]

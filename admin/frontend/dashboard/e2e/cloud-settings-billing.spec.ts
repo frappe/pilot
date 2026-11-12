@@ -65,7 +65,8 @@ async function openBilling(page: Page, responses: Responses) {
     const method = new URL(route.request().url()).pathname.split('.').pop()!
     const form = new URLSearchParams(route.request().postData() || '')
     calls.push({ method, form })
-    const answer = responses[method]?.(form) ?? { message: {} }
+    // Central lists invoices as an array, empty for a site that has none.
+    const answer = responses[method]?.(form) ?? { message: method === 'get_invoices' ? [] : {} }
     await route.fulfill({ status: answer.status ?? 200, json: answer.body ?? { message: answer.message } })
   })
   await page.goto('/tests/host.html')
@@ -90,9 +91,9 @@ test('an active trial shows the days left above the plan, with one primary actio
   await openBilling(page, { get_billing: () => ({ message: billing() }), get_account_url: accountLinks })
 
   await expect(page.getByText('Your free trial ends in 5 days')).toBeVisible()
-  await expect(page.getByText(/Your site is free until .+\. Upgrade to a paid plan to keep it running after that\./)).toBeVisible()
+  await expect(page.getByText(/This trial runs on Frappe Cloud until .+\. Upgrade to keep your site running\./)).toBeVisible()
   await expect(page.getByText(/credit/i)).toHaveCount(0)
-  await expect(page.getByText('Trial plan')).toBeVisible()
+  await expect(page.getByText('Free trial', { exact: true })).toBeVisible()
   await expect(page.getByText('Starter')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Upgrade' })).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Change plan' })).toHaveCount(0)
@@ -104,7 +105,7 @@ test('an ended trial names the deletion date', async ({ page }) => {
   await openBilling(page, { get_billing: () => ({ message: billing({ onTrial: 'Ended' }) }), get_account_url: accountLinks })
 
   await expect(page.getByText('Your free trial has ended')).toBeVisible()
-  await expect(page.getByText(/This site is stopped\. To keep the site and its data, upgrade to a paid plan before .+\./)).toBeVisible()
+  await expect(page.getByText(/Your site on Frappe Cloud is stopped\. Upgrade before .+ to keep it and its data\./)).toBeVisible()
 })
 
 test('an upgrade picks the plan first, with the cheapest one selected', async ({ page }) => {
@@ -192,17 +193,25 @@ test('with lists from Central, country and an Indian state are picked from dropd
   await page.getByLabel('Legal name').fill('Acme Pvt Ltd')
   await page.getByLabel('Address').fill('1 MG Road')
   await page.getByLabel('City').fill('Bengaluru')
-  await page.getByLabel('Country').click()
+  const country = page.getByRole('button', { name: /^Country/ })
+  const state = page.getByRole('button', { name: /^State/ })
+
+  // The search starts empty, so typing finds a new country even with one already chosen.
+  await country.click()
+  await page.keyboard.type('Ind')
   await page.getByRole('option', { name: 'India', exact: true }).click()
-  await page.getByLabel('State').click()
+  await state.click()
   await page.getByRole('option', { name: 'Karnataka', exact: true }).click()
-  await page.getByLabel('Country').click()
+  await country.click()
+  await page.keyboard.type('United')
   await page.getByRole('option', { name: 'United States', exact: true }).click()
-  await expect(page.getByLabel('State')).toHaveValue('')
-  await page.getByLabel('Country').click()
+  await expect(page.getByRole('textbox', { name: /^State/ })).toHaveValue('')
+  await country.click()
+  await page.keyboard.type('Ind')
   await page.getByRole('option', { name: 'India', exact: true }).click()
-  await page.getByLabel('State').click()
+  await state.click()
   await page.getByRole('option', { name: 'Karnataka', exact: true }).click()
+  await page.getByRole('textbox', { name: /Phone/ }).fill('98765 43210')
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
 
   await expect(page.getByText('Step 3 of 3')).toBeVisible()
@@ -210,6 +219,29 @@ test('with lists from Central, country and an Indian state are picked from dropd
   expect(saved?.get('country')).toBe('India')
   expect(saved?.get('state')).toBe('Karnataka')
   expect(saved?.get('currency')).toBe('INR')
+  expect(saved?.get('phone')).toBe('+91-98765 43210')
+})
+
+test('a held mouse click picks a country and a calling code', async ({ page }) => {
+  await openBilling(page, {
+    get_billing: () => ({ message: billing({ profileComplete: false }) }),
+    get_account_url: accountLinks,
+    ...upgrade,
+    get_billing_profile: () => ({ message: { ...emptyProfile().message, countries: ['India', 'United States'] } }),
+    get_payment_gateways: stripeOnly,
+  })
+  await chooseTrialPlan(page)
+
+  // A person holds the button for a moment, so focus reaches the option before the click selects it.
+  const pick = async (trigger: string, option: RegExp) => {
+    await page.getByRole('button', { name: new RegExp(`^${trigger}`) }).click()
+    await page.getByRole('option', { name: option }).first().click({ delay: 100 })
+  }
+
+  await pick('Country', /^India$/)
+  await expect(page.getByRole('button', { name: /^Country/ })).toContainText('India')
+  await pick('Code', /\+44/)
+  await expect(page.getByRole('button', { name: /^Code/ })).toContainText('+44')
 })
 
 test('a paid site moves to a bigger plan and opens the progress page', async ({ page }) => {
@@ -307,17 +339,18 @@ test('a failed plan list offers a retry, and Check more plans opens Central', as
   expect(await page.evaluate(() => (window as unknown as { opened: string }).opened)).toBe('https://cloud.example.test/plans')
 })
 
-test('India requires the state, and a currency the owner picks stays', async ({ page }) => {
+test('India requires the state and a phone, and the currency follows the country', async ({ page }) => {
   const calls = await openBilling(page, {
     get_billing: () => ({ message: billing({ profileComplete: false }) }),
     get_account_url: accountLinks,
     ...upgrade,
     get_billing_profile: emptyProfile,
+    save_billing_profile: () => ({ message: { saved: true } }),
+    get_payment_gateways: stripeOnly,
   })
 
   await chooseTrialPlan(page)
-  await page.getByLabel('Currency').click()
-  await page.getByRole('option', { name: 'USD' }).click()
+  await expect(page.getByLabel('Currency')).toHaveCount(0)
 
   await page.getByLabel('Legal name').fill('Acme Pvt Ltd')
   await page.getByLabel('Address').fill('1 MG Road')
@@ -326,8 +359,15 @@ test('India requires the state, and a currency the owner picks stays', async ({ 
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
 
   await expect(page.getByText('Choose your state. GST needs it.')).toBeVisible()
-  await expect(page.getByLabel('Currency')).toContainText('USD')
+  await expect(page.getByText('Enter a phone number. Razorpay needs it to save a card.')).toBeVisible()
   expect(calls.some((call) => call.method === 'save_billing_profile')).toBe(false)
+
+  await page.getByRole('textbox', { name: 'State (required)', exact: true }).fill('Karnataka')
+  await page.getByRole('textbox', { name: /Phone/ }).fill('9876543210')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+
+  await expect(page.getByText('Step 3 of 3')).toBeVisible()
+  expect(calls.find((call) => call.method === 'save_billing_profile')?.form.get('currency')).toBe('INR')
 })
 
 test('a trial held by the spending limit says why and offers no payment action', async ({ page }) => {
@@ -394,7 +434,7 @@ test('Razorpay explains its mandate limit for a card and for UPI', async ({ page
   })
 
   await chooseTrialPlan(page)
-  await expect(page.getByText('Razorpay shows a high limit for card payments.')).toBeVisible()
+  await expect(page.getByText('Razorpay shows a high limit. We charge only your monthly bill and refund the ₹1 setup.')).toBeVisible()
   await page.getByText('UPI', { exact: true }).click()
   await expect(page.getByText('Razorpay asks you to approve payments up to your spending limit.')).toBeVisible()
 })
@@ -413,6 +453,20 @@ test('Razorpay needs a phone number before it opens', async ({ page }) => {
 
   await expect(page.getByText('Enter a phone number. Razorpay needs it to save a card.')).toBeVisible()
   expect(calls.some((call) => call.method === 'add_payment_method')).toBe(false)
+})
+
+test('Razorpay takes the phone from the billing profile', async ({ page }) => {
+  await openBilling(page, {
+    get_billing: () => ({ message: billing() }),
+    get_account_url: accountLinks,
+    ...upgrade,
+    get_billing_profile: () => ({ message: { ...emptyProfile().message, country: 'India', phone: '+91 9876543210' } }),
+    get_payment_gateways: () => ({ message: [{ name: 'Razorpay', label: 'Razorpay', adapter_key: 'Razorpay', method_types: ['Card'] }] }),
+  })
+
+  await chooseTrialPlan(page)
+  await expect(page.getByRole('button', { name: 'Continue with Razorpay' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: /Phone/ })).toHaveCount(0)
 })
 
 test('a card that Central activates on return shows without Check status', async ({ page }) => {

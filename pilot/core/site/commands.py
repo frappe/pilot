@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -15,6 +16,29 @@ if TYPE_CHECKING:
 class SiteCommands:
     def __init__(self, site: "Site") -> None:
         self.site = site
+
+    def set_admin_password(self, password: str) -> None:
+        """Change Administrator credentials without putting the secret in argv."""
+        if not isinstance(password, str) or not password.strip():
+            raise BenchError("Site Administrator password must not be empty.")
+        program = (
+            "import json, sys, frappe\n"
+            "from frappe.utils.password import update_password\n"
+            "data = json.load(sys.stdin)\n"
+            "frappe.init(site=data['site'], sites_path='.')\n"
+            "try:\n"
+            "    frappe.connect()\n"
+            "    update_password('Administrator', data['password'], logout_all_sessions=True)\n"
+            "    frappe.db.commit()\n"
+            "finally:\n"
+            "    frappe.destroy()\n"
+        )
+        run_command(
+            [str(self.site.bench.python), "-c", program],
+            cwd=self.site.bench.sites_path,
+            stdin_text=json.dumps({"site": self.site.config.name, "password": password}),
+            redactions=[password],
+        )
 
     def create(self, db_type: str | None = None) -> None:
         if (

@@ -104,8 +104,9 @@ const GROUPS = [
 const store = ref(createStore(props.context, __))
 if (props.open) store.value.loadBilling()
 
-// The site config editor reaches past the site, so a free trial site does not get it.
-const TRIAL_HIDDEN_TABS = new Set(['site-config'])
+// The site config editor reaches past the site, and a backup restores on another site,
+// so a free trial gets neither.
+const TRIAL_HIDDEN_TABS = new Set(['site-config', 'backups'])
 // These panels only show Central's data and links, so a server without Central drops them.
 const CENTRAL_TABS = new Set(['billing', 'advanced'])
 
@@ -129,8 +130,32 @@ const getFirstTab = () =>
 
 const overlays = ref<HTMLElement>()
 
+const isPanelShown = (value: string) => visibleTabs.value.some((item) => item.value === value)
+provide('cloudSettingsPanels', {
+  isShown: isPanelShown,
+  open: (value: string) => {
+    if (isPanelShown(value)) tab.value = value
+  },
+})
+provide('hostApp', props.options.app || '')
+
 provide('overlayTarget', overlays)
 providePortalTarget(overlays)
+
+// The document sees a click inside this shadow root as a click on its host, so the dialog
+// takes a click in a portaled popover, such as a Combobox list, as one outside it and closes.
+const keepPopoverPointerInside = (event: PointerEvent) => {
+  const target = event.composedPath()[0]
+  const layer = target instanceof Element ? target.closest('[data-dismissable-layer]') : null
+  if (layer && layer.getAttribute('role') !== 'dialog') event.stopPropagation()
+}
+
+// Reka's combobox looks up its list with `document`, which cannot see into this shadow root, so focus
+// moving to a pressed option reads as leaving the list and closes it before the click selects.
+const keepFocusOffPressedOption = (event: MouseEvent) => {
+  const target = event.composedPath()[0]
+  if (target instanceof Element && target.closest('[role="listbox"] [role="option"]')) event.preventDefault()
+}
 
 const isOpen = ref(props.open)
 const tab = ref(getFirstTab())
@@ -162,7 +187,7 @@ const isDark = computed(() => props.options.theme === 'dark' || (props.options.t
 <template>
   <div class="cloud-settings-root" :class="inline && 'h-full'" :data-theme="isDark ? 'dark' : 'light'">
     <ConfigProvider :teleport-to="overlays">
-      <div ref="overlays" />
+      <div ref="overlays" @pointerdown="keepPopoverPointerInside" @mousedown="keepFocusOffPressedOption" />
       <template v-if="overlays">
         <TabsRoot
           v-if="inline"

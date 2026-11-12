@@ -137,7 +137,7 @@ class GeneralSettings(TypedDict):
     socketio_port: int
     default_branch: str
     db_type: str
-    allow_developer_mode: bool
+    enable_code_editor: bool
     onboarding: str
 
 

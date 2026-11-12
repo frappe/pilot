@@ -46,10 +46,15 @@ def test_timeout_raises_command_error_mentioning_timeout() -> None:
 
 
 def test_timeout_actually_terminates_the_process_group() -> None:
+    marker = f"pilot-timeout-test-{time.monotonic_ns()}"
+    script = (
+        "import subprocess, sys; "
+        "subprocess.run([sys.executable, '-c', 'import time; time.sleep(5)', sys.argv[1]])"
+    )
     with pytest.raises(CommandError):
-        run_command(["sh", "-c", "sleep 5"], timeout=0.3)
+        run_command([sys.executable, "-c", script, marker], timeout=0.3)
     time.sleep(0.2)
-    result = subprocess.run(["pgrep", "-f", "sleep 5"], capture_output=True)
+    result = subprocess.run(["pgrep", "-f", marker], capture_output=True)
     assert result.stdout == b""
 
 

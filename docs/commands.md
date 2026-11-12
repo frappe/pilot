@@ -6,11 +6,17 @@ Use `pilot --help` and `pilot <command> --help` for exact flags. `pilot --versio
 
 ## Bench Commands
 
+- `pilot clone-bench TARGET`: infer the source bench and create an independent development bench without sites, using each app's origin default branch. Override with `--branch current` to include local changes, `--branch NAME` for a clean named branch, or `--app-branches frappe=develop,my_app=feature/example` per app. Use `-b SOURCE` from elsewhere.
+- `pilot clone-site SOURCE_SITE TARGET_SITE [--target-bench NAME]`: stream a fresh database copy and copy uploads into a new site in the current or selected bench. Scheduler and outgoing mail start disabled.
+
+See [Bench and site cloning](cloning.md) for independent environments and cross-bench data copies.
+
 - `pilot new NAME`: create a new bench. `--frappe-branch BRANCH` selects the Frappe branch saved in `bench.toml` (default: `version-16`). Sets the Admin password from `--admin-password`, else prompts on a terminal, else generates and prints one.
 - `pilot start` on an uninitialized bench serves the setup wizard and prints a one-hour `?sid=` sign-in link for it.
 - An interrupted first initialization stays in setup mode. Retry from the wizard or run `pilot init`. Failed initialization preserves directories that existed before the attempt.
 - `pilot init`: initialize a bench from `bench.toml`. This is what the setup wizard runs. `--no-dev` skips apps' `dev` extras. `--skip-frontend` is for test jobs that never serve web pages: it skips building assets and only downloads prebuilt ones when published. Refused on production benches. `--commit <sha>` checks out the framework app at that commit and keeps it on the branch that `bench.toml` names, so updates and prebuilt assets still find the branch. When an app's `dev` extra does not install, for example because its dependencies conflict, Pilot warns and installs the app without it. Init enables Pilot's MariaDB or PostgreSQL user unit at boot on every run, so a retry after a failed run is safe. It also builds the framework app's assets, or downloads its prebuilt archive, so `get-app` can come before the first `new-site`.
 - `pilot ls`: list benches in the fixed benches directory.
+- `pilot set-bench-config KEY VALUE`: set a `bench.toml` value by key (booleans, numbers, or strings). Regenerates runtime configs on an initialized bench; a fresh bench picks the value up at `pilot init`.
 - `pilot drop --bench NAME`: remove a bench. The bench must have no sites. A development bench must be stopped first (`pilot -b NAME stop`), including a setup wizard that is still open.
 
 To create and initialize a bench tracking Frappe `develop`:

@@ -43,6 +43,8 @@ class AuditEntry:
     finished_at: str | None = None
     with_files: bool | None = None
     file: str | None = None
+    commit: bool | None = None
+    code: str | None = None
     name: str | None = None
 
 

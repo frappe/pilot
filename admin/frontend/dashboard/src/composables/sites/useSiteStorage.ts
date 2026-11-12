@@ -41,5 +41,8 @@ export const useSiteStorage = () => {
     return usage?.total_bytes ? formatBytes(usage.total_bytes) : ''
   }
 
-  return { load, storageLabel }
+  const storageBytes = (siteName: string) =>
+    (report.value?.sites || []).find((site) => site.name === siteName)?.total_bytes || 0
+
+  return { load, storageLabel, storageBytes }
 }

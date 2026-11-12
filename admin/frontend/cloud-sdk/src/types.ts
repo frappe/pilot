@@ -11,8 +11,11 @@ export interface CloudContext {
 export interface AccountLinks {
   url: string
   billing: string
+  invoices: string
   change_plan: string
   server: string
+  /** Opens this server's terminate dialog in Frappe Cloud, never the server list. */
+  end_subscription: string
 }
 
 export interface TaskSubmission { task_id: string }
@@ -35,7 +38,8 @@ export interface BillingSummary {
   currency: string
   plan: { name: string; subtitle: string; specs: Record<string, string> } | null
   estimate: { amount: string; note: string }
-  credit: { amount: string; note: string; warning: boolean }
+  /** `available` is true when the team has credit, which Central uses before the card. */
+  credit: { amount: string; note: string; warning: boolean; available?: boolean }
   payment_method: { name: string; label: string } | null
   profile_complete: boolean
   usage?: { name: string; percent: number; detail: string }[]
@@ -43,7 +47,40 @@ export interface BillingSummary {
   trial?: BillingTrial | null
   /** The server's pending plan change, such as a converted trial's move to its paid plan. */
   plan_change?: { plan: string | null; progress_url: string | null } | null
+  /** This site's server's share of the team's next bill. Absent before Central sends it. */
+  next_bill?: NextBill
 }
+
+export interface NextBill {
+  /** Formatted money, tax included. */
+  amount: string
+  subtotal: string
+  tax: string | null
+  /** Such as GST or VAT, when the bill carries tax. */
+  tax_type: string | null
+  /** ISO date of the team's next charge. */
+  charge_on: string | null
+  days_left: number
+  lines: { item: string; detail: string | null; amount: string }[]
+  /** What would stop the team's next charge. Empty when nothing in the data would. */
+  blockers: { code: string; title: string; fix: string | null }[]
+}
+
+/** This site's server's share of one team invoice. */
+export interface Invoice {
+  name: string
+  period_start: string
+  period_end: string
+  status: 'Outstanding' | 'Paid' | 'Overdue' | 'Waived'
+  /** Formatted money, tax included. */
+  amount: string
+  /** The invoice covers this server alone and has been issued. */
+  has_pdf: boolean
+  /** The invoice covers this server alone and is open. */
+  can_pay: boolean
+}
+
+export interface InvoicePdf { filename: string; content: string }
 
 export interface BillingTrial {
   state: 'Active' | 'Ended'
@@ -55,6 +92,8 @@ export interface BillingTrial {
   held?: boolean
   /** The plan the site converts to, at the rate its subscription charges. */
   plan?: BillingTrialPlan | null
+  /** The app the trial is for. It stays installed until the site converts. */
+  app?: string | null
 }
 
 export interface BillingTrialPlan {
@@ -99,6 +138,7 @@ export interface BillingProfile {
   currency: string
   legal_name: string
   email: string
+  phone?: string
   address_line1: string
   city: string
   state: string
@@ -106,6 +146,8 @@ export interface BillingProfile {
   pincode: string
   gstin: string
   supported_currencies?: (string | { label: string; value: string })[]
+  /** Money has moved in this currency, so Central refuses to change it. */
+  currency_locked?: boolean
   /** Country names the address form picks from. */
   countries?: string[]
   /** India's GST state names, the only state list Central checks. */
@@ -145,6 +187,8 @@ export interface MarketplaceApp {
   installed_version: string
   latest_version: string
   has_update: boolean
+  /** The installed apps that need this one. Frappe refuses to uninstall it while they stay. */
+  required_by?: string[]
   repo?: string
   documentation?: string
   website?: string

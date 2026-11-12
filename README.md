@@ -26,7 +26,7 @@ Pilot makes it simple to run Frappe on your own servers. Use the Admin UI to man
 - Integrated marketplace to install apps on sites from Git repositories or the app registry
 - Local development runner for Redis, web, workers, socket.io, and Admin UI
 - Production setup for process managers, nginx, monitoring, domains, and TLS
-- Devtools for investigation: SQL playground, database analyzer, binlog browser, logs, and task history
+- Devtools for investigation: system console (Python and SQL), database analyzer, binlog browser, logs, and task history
 
 ## Requirements
 
@@ -157,6 +157,7 @@ See [Admin UI](docs/admin-ui.md) and [Admin API](docs/admin-api.md).
 - [Admin UI](docs/admin-ui.md)
 - [Production](docs/production.md)
 - [Domain Provider](docs/domain-provider.md)
+- [Bench and site cloning](docs/cloning.md)
 
 ## Development
 

@@ -94,6 +94,20 @@ class Bench:
             self._db = make_database(self.config)
         return self._db
 
+    def clone(self, name: str, on_progress=print, *, branch="default", app_branches=None) -> "Bench":
+        from pilot.core.bench.cloning.bench import BenchClone
+
+        return BenchClone(self, name, branch, app_branches).run(on_progress)
+
+    def get_clone_branch_options(self, app_name: str) -> dict:
+        from pilot.core.bench.cloning.branches import get_branch_options
+        from pilot.integrations.git import auth_config_for
+
+        app = next((app for app in self.apps() if app.config.name == app_name), None)
+        if app is None:
+            raise BenchError(f"Unknown app: {app_name}")
+        return get_branch_options(app.path, auth_config_for(self.path, app.config.repo))
+
     @cached_property
     def tasks(self) -> "TaskRunner":
         from pilot.tasks import TaskRunner

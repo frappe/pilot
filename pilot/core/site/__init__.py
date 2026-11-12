@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import cached_property
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
+    from pilot.core.site.console.completions import ConsoleCompletions
+    from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
     from pilot.core.site.migration_backup import SiteMigrationBackup
@@ -30,6 +33,18 @@ class Site:
     def path(self) -> Path:
         return self.bench.sites_path / self.config.name
 
+    def clone(
+        self,
+        name: str,
+        destination: "Bench | None" = None,
+        admin_password: str | None = None,
+        on_progress=print,
+    ) -> "Site":
+        from pilot.core.site.clone import SiteClone
+
+        password = secrets.token_urlsafe(24) if admin_password is None else admin_password
+        return SiteClone(self, destination or self.bench, name, password).run(on_progress)
+
     @property
     def exists(self) -> bool:
         return (self.path / "site_config.json").exists()
@@ -39,6 +54,12 @@ class Site:
         from pilot.core.site.backups import SiteBackups
 
         return SiteBackups(self)
+
+    @cached_property
+    def console_completions(self) -> "ConsoleCompletions":
+        from pilot.core.site.console.completions import ConsoleCompletions
+
+        return ConsoleCompletions(self)
 
     @cached_property
     def domains(self) -> "SiteDomains":
@@ -240,6 +261,12 @@ class Site:
         from pilot.core.site.commands import SiteCommands
 
         return SiteCommands(self).has_pending_background_jobs()
+
+    def script(self, code: str, commit: bool = False) -> "SiteScript":
+        """A Python script for this site; iterate `run()` to execute it."""
+        from pilot.core.site.console.script import SiteScript
+
+        return SiteScript(self, code, commit)
 
     def clear_cache(self) -> None:
         from pilot.core.site.commands import SiteCommands

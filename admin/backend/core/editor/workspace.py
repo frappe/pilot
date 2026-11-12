@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from admin.backend.core.editor.git import EditorGit
 
@@ -12,6 +12,10 @@ _FILE_LIST_CAP = 20000
 
 class EditorPathError(ValueError):
     """Requested path escapes the workspace root."""
+
+
+class HiddenPathError(ValueError):
+    """Path is a dot file or inside a dot folder, such as `.git` or `.env`."""
 
 
 class BinaryFileError(ValueError):
@@ -27,22 +31,50 @@ class EditorWorkspace:
         self.git = EditorGit(self.root)
 
     def safe(self, rel: str) -> Path:
-        """Resolve a client path against the root, rejecting traversal and symlink escapes."""
+        """Resolve a client path against the root, rejecting traversal, symlink escapes and dot files."""
         clean = _clean_relative(rel)
         target = self.root / clean if clean else self.root
-        resolved = target.resolve()
+        try:
+            resolved = target.resolve(strict=True)
+        except FileNotFoundError:
+            resolved = target.resolve()
+        # A symlink loop, or a file used as a folder.
+        except (OSError, RuntimeError) as error:
+            raise EditorPathError(rel) from error
         if resolved != self.root_real and self.root_real not in resolved.parents:
             raise EditorPathError(rel)
+        if _is_hidden(clean) or _is_hidden(resolved.relative_to(self.root_real).as_posix()):
+            raise HiddenPathError(rel)
         return target
 
     def relative(self, rel: str) -> str:
         """Validated in-app path, as git and the API expect to see it."""
         return self.rel(self.safe(rel))
 
+    def changeable(self, rel: str) -> str:
+        """Validated in-app path whose whole tree a git command may change: no dot file inside."""
+        target = self.safe(rel)
+        _refuse_hidden_inside(target)
+        return self.rel(target)
+
     def rel(self, abs_path: Path) -> str:
         if abs_path == self.root:
             return "."
         return abs_path.relative_to(self.root).as_posix()
+
+    def get_commit_blockers(self, stage_all: bool) -> list[str]:
+        """Repository paths a commit would take that the editor may not change: dot files or files
+        outside the app. Commit all stages only the app folder, so outside changes block only when staged."""
+        prefix = self.git.prefix
+        blockers = []
+        for code, path in self.git.get_changes():
+            is_staged = code[0] not in " ?"
+            is_inside = path.startswith(prefix)
+            if not is_staged and not (stage_all and is_inside):
+                continue
+            if not is_inside or _is_hidden(path[len(prefix) :]):
+                blockers.append(path)
+        return blockers
 
     def tree(self, rel: str) -> list[dict]:
         base = self.safe(rel)
@@ -109,6 +141,9 @@ class EditorWorkspace:
     def rename(self, frm: str, to: str) -> dict:
         source = self.safe(frm)
         destination = self.safe(to)
+        _refuse_hidden_inside(source)
+        if source.resolve() in [destination.resolve(), *destination.resolve().parents]:
+            raise EditorPathError(to)
         if destination.exists():
             raise FileExistsError(to)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +154,7 @@ class EditorWorkspace:
         target = self.safe(rel)
         if target == self.root or target.resolve() == self.root_real:
             raise EditorPathError("cannot delete root")
+        _refuse_hidden_inside(target)
         if target.is_dir() and not target.is_symlink():
             shutil.rmtree(target)
         else:
@@ -128,11 +164,13 @@ class EditorWorkspace:
         if self.git.is_repo:
             tracked = self.git.list_files(_FILE_LIST_CAP)
             if tracked is not None:
-                return tracked
+                return [path for path in tracked if not _is_hidden(path)]
         out: list[str] = []
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules")]
+            dirnames[:] = [d for d in dirnames if d != "node_modules" and not d.startswith(".")]
             for name in filenames:
+                if name.startswith("."):
+                    continue
                 out.append(self.rel(Path(dirpath) / name))
                 if len(out) >= _FILE_LIST_CAP:
                     return out
@@ -145,7 +183,9 @@ def _clean_relative(rel: str) -> str:
     Absolute paths and ".." are rejected rather than collapsed: a request that
     tries to leave the app should fail, not silently land on a different file.
     """
-    text = (rel or "").strip()
+    if not isinstance(rel, str):
+        raise EditorPathError(rel)
+    text = rel.strip()
     if "\x00" in text or text.startswith("/"):
         raise EditorPathError(rel)
     segments = []
@@ -155,6 +195,19 @@ def _clean_relative(rel: str) -> str:
         if segment not in ("", "."):
             segments.append(segment)
     return "/".join(segments)
+
+
+def _is_hidden(rel: str) -> bool:
+    return any(part.startswith(".") for part in PurePosixPath(rel).parts)
+
+
+def _refuse_hidden_inside(path: Path) -> None:
+    """Deleting or moving a folder must not take a `.git` or `.env` inside it along."""
+    if not path.is_dir() or path.is_symlink():
+        return
+    for _, dirnames, filenames in os.walk(path):
+        if any(name.startswith(".") for name in [*dirnames, *filenames]):
+            raise HiddenPathError(str(path))
 
 
 def _etag(data: bytes) -> str:

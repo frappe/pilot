@@ -43,8 +43,8 @@ onMounted(async () => {
       Browse and edit the files of installed apps.
     </p>
 
-    <p v-if="!session.developerMode" class="mt-16 text-ink-gray-5 text-p-sm text-center">
-      Enable Developer mode in Settings to use the code editor.
+    <p v-if="!session.codeEditor" class="mt-16 text-ink-gray-5 text-p-sm text-center">
+      Turn on the code editor in Settings to use it.
     </p>
 
     <LoadingText v-else-if="loading" class="justify-center mt-16" />
