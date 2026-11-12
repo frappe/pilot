@@ -69,11 +69,13 @@ class MariaDB(Database):
 
     def execute(self, query: str, read_only: bool = True) -> QueryResult:
         import pymysql
+        import pymysql.cursors
 
         conn = self._connect()
         start = time.monotonic()
         try:
-            with conn.cursor() as cursor:
+            # Tuples, not dicts: a dict row keeps one value per column name, so `a.name, b.name` would repeat a.name.
+            with conn.cursor(pymysql.cursors.Cursor) as cursor:
                 if read_only:
                     cursor.execute("START TRANSACTION READ ONLY")
                 cursor.execute(query)
@@ -81,7 +83,7 @@ class MariaDB(Database):
                     columns = [d[0] for d in cursor.description]
                     raw = list(cursor.fetchmany(MAX_ROWS + 1))
                     truncated = len(raw) > MAX_ROWS
-                    rows = [[r[c] for c in columns] for r in raw[:MAX_ROWS]]
+                    rows = [list(row) for row in raw[:MAX_ROWS]]
                 else:
                     columns, rows, truncated = [], [], False
                 affected = cursor.rowcount or 0
@@ -278,7 +280,7 @@ class MariaDB(Database):
         result = self.execute(
             "SELECT w.requesting_trx_id, l.lock_type, l.lock_mode, l.lock_table, l.lock_index, "
             "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB, "
-            "w.blocking_trx_id, b.trx_mysql_thread_id, b.trx_query "
+            "w.blocking_trx_id, b.trx_mysql_thread_id AS blocking_thread_id, b.trx_query AS blocking_query "
             "FROM information_schema.INNODB_LOCK_WAITS w "
             "JOIN information_schema.INNODB_LOCKS l ON l.lock_id = w.requested_lock_id "
             "JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id "
