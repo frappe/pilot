@@ -117,6 +117,16 @@ const retryInstall = async (app: AppCardEntry) => {
 const menuOptions = (app: AppCardEntry): DropdownItem[] => {
   const options: DropdownItem[] = []
 
+  if (app.website)
+    options.push({ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) })
+
+  if (app.documentation)
+    options.push({
+      label: 'Documentation',
+      icon: 'lucide-book-open',
+      onClick: () => openLink(app.documentation),
+    })
+
   if (app.unfinished)
     options.push({
       label: 'Retry install',
@@ -129,16 +139,6 @@ const menuOptions = (app: AppCardEntry): DropdownItem[] => {
       label: 'Open in editor',
       icon: 'lucide-code',
       onClick: () => openLink(`/editor/${encodeURIComponent(app.name)}`),
-    })
-
-  if (app.website)
-    options.push({ label: 'Website', icon: 'lucide-globe', onClick: () => openLink(app.website) })
-
-  if (app.documentation)
-    options.push({
-      label: 'Documentation',
-      icon: 'lucide-book-open',
-      onClick: () => openLink(app.documentation),
     })
 
   // Branches are listed through the GitHub provider.
