@@ -16,6 +16,7 @@ class LogFile(TypedDict):
     last_modified: str
     process_name: str
     line_count: int
+    has_errors: bool
 
 
 class LogTail(TypedDict):
@@ -54,6 +55,7 @@ def index():
                 "last_modified": lf.last_modified.isoformat(),
                 "process_name": lf.process_name,
                 "line_count": lf.line_count,
+                "has_errors": lf.has_errors,
             }
             for lf in log_files
         ]

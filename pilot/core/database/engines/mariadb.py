@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.core.database.base import (
@@ -296,7 +297,7 @@ class MariaDB(Database):
         owning connection supplies it."""
         result = self.execute(
             "SELECT w.requesting_trx_id, l.lock_type, l.lock_mode, l.lock_table, l.lock_index, "
-            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB, "
+            "t.trx_state, UNIX_TIMESTAMP(t.trx_started), t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB, "
             "w.blocking_trx_id, b.trx_mysql_thread_id AS blocking_thread_id, b.trx_query AS blocking_query "
             "FROM information_schema.INNODB_LOCK_WAITS w "
             "JOIN information_schema.INNODB_LOCKS l ON l.lock_id = w.requested_lock_id "
@@ -313,7 +314,7 @@ class MariaDB(Database):
                 table=row[3],
                 index=row[4],
                 state=row[5],
-                started=str(row[6]) if row[6] is not None else None,
+                started=_utc_iso(row[6]),
                 query=row[7],
                 rows_locked=int(row[8]) if row[8] is not None else None,
                 rows_modified=int(row[9]) if row[9] is not None else None,
@@ -465,3 +466,10 @@ class MariaDB(Database):
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")
         return int(result.rows[0][1])
+
+
+def _utc_iso(epoch: object) -> str | None:
+    """INNODB_TRX times are server-local with no zone; an epoch turned UTC reads the same everywhere."""
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(float(epoch), tz=UTC).isoformat()

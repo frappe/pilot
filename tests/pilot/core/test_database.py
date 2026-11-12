@@ -392,7 +392,7 @@ def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
              "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB",
              "blocking_trx_id", "trx_mysql_thread_id", "trx_query"],
             [[42, "RECORD", "X", "`db`.`tabDoc`", "PRIMARY", "LOCK WAIT",
-              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", 3, 1, "db", 41, 7, "SELECT 1 FOR UPDATE"]],
+              1767225600, "UPDATE tabDoc SET x=1", 3, 1, "db", 41, 7, "SELECT 1 FOR UPDATE"]],
         )
     }
     with patch.object(MariaDB, "execute", _canned_execute(responses)):
@@ -406,7 +406,7 @@ def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
     assert row.table == "`db`.`tabDoc`"
     assert row.index == "PRIMARY"
     assert row.state == "LOCK WAIT"
-    assert row.started == "2026-01-01 00:00:00"
+    assert row.started == "2026-01-01T00:00:00+00:00"
     assert row.query == "UPDATE tabDoc SET x=1"
     assert row.rows_locked == 3
     assert row.rows_modified == 1

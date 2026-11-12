@@ -142,7 +142,10 @@ const lockRows = computed(() =>
     mode: row.mode,
     table: row.table || '—',
     index: row.index || '—',
-    started: row.started || '—',
+    // UTC from the server, shown in the viewer's time zone.
+    started: row.started
+      ? new Date(row.started).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
+      : '—',
     query: truncateQuery(row.query),
     rowsLocked: row.rows_locked ?? '—',
     rowsModified: row.rows_modified ?? '—',

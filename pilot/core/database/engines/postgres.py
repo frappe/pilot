@@ -196,7 +196,7 @@ class PostgreSQL(Database):
                 table=self._relation_name(row[7], row[3], tables),
                 index=None,
                 state=row[4],
-                started=str(row[5]) if row[5] is not None else None,
+                started=row[5].isoformat() if hasattr(row[5], "isoformat") else row[5],
                 query=row[6],
                 rows_locked=None,
                 rows_modified=None,
