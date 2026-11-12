@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
+
+from pilot.internal.jsonl_log import JsonLines
 
 WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 86400, "1w": 604800}
 _MAX_BUCKETS = 48
@@ -32,7 +33,7 @@ class WafProvider:
         bucket_blocked: Counter = Counter()
         bucket_size = max(60, WINDOW_SECONDS[self._window] // _MAX_BUCKETS)
 
-        for record in self._iter_records_reversed(self._log_path):
+        for record in JsonLines(self._log_path).read_newest_first():
             transaction = record.get("transaction", record)
             when = self._parse_time(self._first(transaction, "time_stamp", "timestamp", "time"))
             if when is None:
@@ -124,36 +125,4 @@ class WafProvider:
                 return datetime.strptime(text, fmt)
             except ValueError:
                 continue
-        return None
-
-    @staticmethod
-    def _iter_records_reversed(path: Path, block_size: int = 65536):
-        """Yield JSON records newest first, skipping malformed lines."""
-        if not path.exists():
-            return
-        with path.open("rb") as handle:
-            handle.seek(0, 2)
-            position = handle.tell()
-            remainder = b""
-            while position > 0:
-                size = min(block_size, position)
-                position -= size
-                handle.seek(position)
-                lines = (handle.read(size) + remainder).split(b"\n")
-                remainder = lines[0]
-                for line in reversed(lines[1:]):
-                    record = _safe_json(line)
-                    if record is not None:
-                        yield record
-            record = _safe_json(remainder)
-            if record is not None:
-                yield record
-
-
-def _safe_json(line: bytes):
-    if not line.strip():
-        return None
-    try:
-        return json.loads(line)
-    except ValueError:
         return None

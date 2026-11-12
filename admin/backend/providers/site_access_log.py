@@ -7,6 +7,7 @@ from pathlib import Path
 from admin.backend.internal.timeline import TimelinePoint, build_timeline
 from admin.backend.providers.windowed_log import WindowedLogProvider
 from pilot.core.site.uptime_monitoring import PING_PATH
+from pilot.internal.jsonl_log import JsonLines
 
 _MAX_BUCKETS = 30
 _TOP_LIMIT = 5
@@ -39,7 +40,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
 
     def _points(self) -> list[TimelinePoint]:
         points = []
-        for line in self._iter_lines_reversed(self._log_path):
+        for line in JsonLines(self._log_path).read_lines_newest_first():
             match = _LINE_RE.match(line.decode("utf-8", errors="replace"))
             if match is None:
                 continue
