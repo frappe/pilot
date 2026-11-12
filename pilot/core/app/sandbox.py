@@ -17,8 +17,9 @@ CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 # An app may keep a directory below one of these roots, and nothing else.
 ALLOWED_HOME_ROOTS = (".cache", ".local/share", ".local/state")
 ALLOWED_SYSTEM_ROOTS = ("/opt", "/srv", "/var/lib", "/var/cache", "/usr/local/share")
-# Bench-root folders an app may not claim: the admin's own, and config/, which has protected entries.
-RESERVED_BENCH_FOLDERS = frozenset({"tmp", "migrations", "tasks", "config"})
+# Bench-root folders an app may not claim: the admin's own, config/, which has protected entries, and the
+# code folders, which the admin runs outside the sandbox.
+RESERVED_BENCH_FOLDERS = frozenset({"tmp", "migrations", "tasks", "config", "apps", "env"})
 # First directory below a root that holds credentials, runs at login, or is code the admin runs.
 RESERVED_NAMES = frozenset(
     {"keyrings", "gnome-keyring", "kwalletd", "applications", "autostart", "systemd", "uv", "pilot", "pip"}

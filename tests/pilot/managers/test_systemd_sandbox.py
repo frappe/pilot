@@ -10,7 +10,7 @@ from pilot.config.production import ProductionConfig
 from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
-from pilot.managers.processes.sandbox import CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
+from pilot.managers.processes.sandbox import CODE_DIRECTORIES, CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
 from pilot.managers.processes.systemd_render import SystemdRenderer
 from tests.pilot.managers.test_managers_extra import make_bench
 
@@ -69,6 +69,8 @@ SANDBOX_DIRECTIVES = {
     f"ReadWritePaths={FOLDERS}",
     f"TemporaryFileSystem={Path.home()}:ro",
     "BindReadOnlyPaths="
+    + " ".join(f"-{BENCH}/{name}" for name in CODE_DIRECTORIES)
+    + " "
     + " ".join(f"-{BENCH}/config/{name}" for name in CONTROL_ENTRIES)
     + f" -{BENCH}/sites/common_site_config.json"
     + " -/run/systemd/resolve",
@@ -91,7 +93,8 @@ def test_extra_paths_are_bound_next_to_the_control_files() -> None:
 
     read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
     assert read_only.endswith(" -/home/u/app")
-    assert read_only.startswith(f"BindReadOnlyPaths=-{BENCH}/config/{CONTROL_ENTRIES[0]} ")
+    assert read_only.startswith(f"BindReadOnlyPaths=-{BENCH}/{CODE_DIRECTORIES[0]} ")
+    assert f" -{BENCH}/config/{CONTROL_ENTRIES[0]} " in read_only
     assert "BindPaths=-/home/u/data" in properties
     assert "ReadWritePaths=-/home/u/data" in properties
 
@@ -125,7 +128,8 @@ def test_an_unsandboxed_unit_ignores_declared_paths() -> None:
 def test_a_bench_path_with_a_space_is_quoted() -> None:
     properties = SystemdRenderer.get_sandbox_properties(Path("/srv/my benches/b"), Path("/srv/my benches"))
 
-    assert 'BindPaths="/srv/my benches/b/apps" ' in " ".join(properties)
+    assert 'BindPaths="/srv/my benches/b/sites" ' in " ".join(properties)
+    assert 'BindReadOnlyPaths="-/srv/my benches/b/apps" ' in " ".join(properties)
     assert 'TemporaryFileSystem="/srv/my benches:ro"' in properties
 
 
@@ -266,9 +270,28 @@ def test_only_the_workload_folders_of_the_bench_are_mounted() -> None:
     bench_paths = [Path(path.lstrip("-")) for path in mounted if path.lstrip("-").startswith(f"{BENCH}/")]
 
     assert str(BENCH) not in mounted
-    assert {path.relative_to(BENCH).parts[0] for path in bench_paths} <= set(WORKLOAD_DIRECTORIES)
+    mounted_folders = {path.relative_to(BENCH).parts[0] for path in bench_paths}
+    assert mounted_folders <= {*WORKLOAD_DIRECTORIES, *CODE_DIRECTORIES}
     for admin_file in ("bench.toml", ".credentials", "tasks", ".patches.json", ".active-jtis.json"):
-        assert admin_file not in WORKLOAD_DIRECTORIES
+        assert admin_file not in (*WORKLOAD_DIRECTORIES, *CODE_DIRECTORIES)
+
+
+def test_the_code_folders_are_read_only() -> None:
+    """The admin and the CLI run the bench venv and the apps outside the sandbox. A workload that could
+    write a .pth file in env/ or a git hook in apps/ would get its code run there."""
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
+    read_only = next(line for line in properties if line.startswith("BindReadOnlyPaths="))
+    read_only = read_only.split("=", 1)[1].split()
+    writable = [
+        path.lstrip("-")
+        for line in properties
+        if line.startswith(("BindPaths=", "ReadWritePaths="))
+        for path in line.split("=", 1)[1].split()
+    ]
+
+    for name in CODE_DIRECTORIES:
+        assert f"-{BENCH}/{name}" in read_only
+        assert not any(path == f"{BENCH}/{name}" or path.startswith(f"{BENCH}/{name}/") for path in writable)
 
 
 def test_config_is_not_bound_as_a_whole_so_frappe_can_create_its_lock_files() -> None:

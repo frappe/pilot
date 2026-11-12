@@ -230,7 +230,7 @@ def test_a_name_without_a_prefix_is_a_folder_in_the_bench(tmp_path: Path) -> Non
     assert paths.read == (str(tmp_path.resolve() / "shared" / "assets"),)
 
 
-@pytest.mark.parametrize("path", ["", "..", "../x", "a/../../x", ".hidden", ".credentials/x", "tmp", "tmp/x", "migrations", "tasks", "config", "config/services/x"])
+@pytest.mark.parametrize("path", ["", "..", "../x", "a/../../x", ".hidden", ".credentials/x", "tmp", "tmp/x", "migrations", "tasks", "config", "config/services/x", "apps", "apps/frappe/frappe", "env", "env/lib"])
 def test_a_bench_folder_the_admin_owns_or_that_climbs_out_is_refused(tmp_path: Path, path: str) -> None:
     with pytest.raises(ValueError):
         SandboxPaths.from_declaration({"write_paths": [path]}, "t", _error, tmp_path)

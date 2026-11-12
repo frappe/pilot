@@ -191,6 +191,17 @@ def test_a_workload_cannot_change_the_unit_files_the_admin_loads(run_sandboxed, 
     assert {unit: unit.read_text() for unit in units} == before
 
 
+def test_a_workload_cannot_plant_code_the_admin_runs(run_sandboxed, sandboxed: Path) -> None:
+    """The admin and the CLI run the bench venv and the apps outside the sandbox, such as for the console
+    and backups. A .pth file in env/ runs on every start of that Python; a git hook in apps/ on a pull."""
+    site_packages = next((sandboxed / "env" / "lib").glob("python*/site-packages"))
+    hook = sandboxed / "apps" / "frappe" / ".git" / "hooks" / "post-merge"
+    planted = [site_packages / "sandbox-escape.pth", hook]
+    for path in planted:
+        assert not run_sandboxed(f"echo 'import os' > {path}"), path
+        assert not path.exists(), path
+
+
 def test_sudo_works_outside_the_sandbox(sandboxed: Path) -> None:
     """Shows the sudo check above is meaningful on this host."""
     assert _run("sudo", "-n", "true").returncode == 0

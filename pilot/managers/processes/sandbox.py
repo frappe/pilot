@@ -36,7 +36,10 @@ CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
 # The bench folders a workload uses. The rest of the bench root, such as bench.toml, .credentials and the
 # admin's tasks/, stays outside the sandbox. Folders, because Linux detaches a file mount once Pilot
 # replaces the file by rename.
-WORKLOAD_DIRECTORIES = ("apps", "env", "sites", "config", "logs", "pids", "chromium")
+WORKLOAD_DIRECTORIES = ("sites", "config", "logs", "pids", "chromium")
+# The bench folders that hold code. The admin and the CLI run it outside the sandbox, so a workload
+# only reads it.
+CODE_DIRECTORIES = ("apps", "env")
 
 
 class PilotSandboxPaths:
@@ -75,7 +78,7 @@ class PilotSandboxPaths:
         exist before the units start.
 
         A workload cannot create a folder in the read-only bench root, and cannot plant a protected one first."""
-        for name in WORKLOAD_DIRECTORIES:
+        for name in (*CODE_DIRECTORIES, *WORKLOAD_DIRECTORIES):
             (bench.path / name).mkdir(parents=True, exist_ok=True)
         bench_root = Path(os.path.realpath(bench.path))
         for path in map(Path, declared_paths):

@@ -7,6 +7,7 @@ import pytest
 
 from pilot.config.common_site_config import update_common_site_config
 from pilot.managers.processes.sandbox import (
+    CODE_DIRECTORIES,
     CONTROL_DIRECTORIES,
     CONTROL_ENTRIES,
     CONTROL_FILES,
@@ -58,7 +59,7 @@ def test_the_protected_folders_exist_before_the_sandbox_starts(tmp_path: Path) -
 
     PilotSandboxPaths.create_entries(bench)
 
-    for name in WORKLOAD_DIRECTORIES:
+    for name in (*CODE_DIRECTORIES, *WORKLOAD_DIRECTORIES):
         assert (bench.path / name).is_dir()
     for name in CONTROL_DIRECTORIES:
         assert (bench.config_path / name).is_dir()

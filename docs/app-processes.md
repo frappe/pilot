@@ -45,11 +45,11 @@ A `command` runs in the app directory, `apps/<app>`. A relative `working_dir` is
 
 ## Sandbox paths
 
-With the sandbox on, the home directory is empty, and so is the bench except for the folders Pilot knows a workload uses (`apps`, `env`, `sites`, `config`, `logs`, `pids` and `chromium`). An app lists any other folder it needs in its own `pyproject.toml`, and Pilot does not need to know the app.
+With the sandbox on, the home directory is empty, and so is the bench except for the folders Pilot knows a workload uses (`apps` and `env` read-only, `sites`, `config`, `logs`, `pids` and `chromium` writable). An app lists any other folder it needs in its own `pyproject.toml`, and Pilot does not need to know the app.
 
 A path in `read_paths` or `write_paths` is one of three kinds:
 
-- **A folder in the bench.** A name with no `/` or `~/` in front, such as `flow-server`, is a folder in the bench the app is in. Pilot creates a writable one before the units start, because a workload cannot create a folder in the read-only bench root. It cannot be hidden (`.credentials`), an admin folder (`tmp`, `migrations`, `tasks`), or `config`, and it cannot reach out of the bench, even through a link.
+- **A folder in the bench.** A name with no `/` or `~/` in front, such as `flow-server`, is a folder in the bench the app is in. Pilot creates a writable one before the units start, because a workload cannot create a folder in the read-only bench root. It cannot be hidden (`.credentials`), an admin folder (`tmp`, `migrations`, `tasks`), `config`, or a code folder (`apps`, `env`), and it cannot reach out of the bench, even through a link.
 - **A folder in the home directory.** It starts with `~/`.
 - **A folder on the system.** It starts with `/`.
 

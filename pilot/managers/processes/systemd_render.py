@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.managers.processes.sandbox import CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
+from pilot.managers.processes.sandbox import CODE_DIRECTORIES, CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
 
@@ -79,8 +79,10 @@ class SystemdRenderer(ServiceRenderer):
         """systemd.exec directives that confine a workload unit to its own bench.
 
         `read_paths` and `write_paths` are what every unit gets back from the masked home."""
-        # Pilot's control files: the admin trusts them, so a workload must not change them.
-        control = [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
+        # The code folders and Pilot's control files: the admin runs or trusts them outside the sandbox,
+        # so a workload must not change them.
+        control = [str(bench_path / name) for name in CODE_DIRECTORIES]
+        control += [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
         control.append(str(bench_path / "sites" / "common_site_config.json"))
         folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
         return [

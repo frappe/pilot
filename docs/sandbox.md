@@ -13,7 +13,8 @@ The sandbox limits the damage when a running workload is compromised. It does no
 | Home directory | Empty, so `~/.ssh`, the other dotfiles and the user bus are not there. |
 | Other benches and `common_config.toml` | Not there. |
 | `bench.toml`, `.credentials` and the admin's `tasks/` | Not there. |
-| `apps`, `env`, `sites`, `config`, `logs`, `pids` and `chromium` in the bench | There, and writable. |
+| `sites`, `config`, `logs`, `pids` and `chromium` in the bench | There, and writable. |
+| `apps` and `env` in the bench | There, and read-only, because the Admin and the CLI run this code outside the sandbox. |
 | Pilot's own files in `config/`, and `sites/common_site_config.json` | Read-only. |
 | The rest of the system | Read-only. Host sockets in `/run`, such as `docker.sock`, are hidden. |
 | `/tmp` | Each process has its own. |
