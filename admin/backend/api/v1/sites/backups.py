@@ -18,7 +18,6 @@ from admin.backend.api.v1.sites.shared import (
 )
 from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
-from pilot.core.site.restore import backup_part
 from pilot.exceptions import BenchError, CronError
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_cron_expression
@@ -31,6 +30,8 @@ _DEFAULT_BACKUPS_PAGE_SIZE = 20
 @sites_bp.post("/<name>/backups")
 @require_scope(site_name)
 def backup_site(name: str):
+    if refused := server_access_locked_response():
+        return refused
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not site_exists(bench_root, name):
         return site_not_found()
@@ -116,11 +117,11 @@ def _backup_set_resource(s) -> dict:
 @sites_bp.get("/<name>/backups/<timestamp>/files/<file_id>/content")
 @require_scope(site_name)
 def download_backup_file(name: str, timestamp: str, file_id: str):
+    # A backup restores elsewhere, so a free trial cannot take its data out.
+    if refused := server_access_locked_response():
+        return refused
     bench_root = Path(current_app.config["BENCH_ROOT"])
     bench = Bench(bench_root)
-    # The config file holds the site's secrets, which reach past the site.
-    if backup_part(file_id) == "config" and (refused := server_access_locked_response()):
-        return refused
     try:
         target = bench.site(name).backups.download_file_path(timestamp, file_id)
     except BenchError:
@@ -141,6 +142,8 @@ def _site_backups_dir(bench_root: Path, name: str) -> Path:
 def backup_download_links(name: str, timestamp: str):
     """Pre-signed S3 URLs for a backup run's files - the user downloads
     straight from the bucket, so this server never proxies the transfer."""
+    if refused := server_access_locked_response():
+        return refused
     bench_root = Path(current_app.config["BENCH_ROOT"])
     bench = Bench(bench_root)
     try:
@@ -149,9 +152,6 @@ def backup_download_links(name: str, timestamp: str):
         return error_response("backup_not_found", "Offsite backup not found.", 404)
     except Exception:
         return internal_error("Could not create offsite backup URLs.")
-    # The config file holds the site's secrets, which reach past the site.
-    if "site_config" in links and server_access_locked_response():
-        links.pop("site_config")
 
     bench.audit_action("backup", {"site": name, "event": "download", "timestamp": timestamp, "via": "s3"})
     return jsonify(links)

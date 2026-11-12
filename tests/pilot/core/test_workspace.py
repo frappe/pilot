@@ -260,6 +260,7 @@ def test_setup_creates_a_linked_bench_and_reruns_only_sync_it(tmp_path: Path, be
     assert bench.config.db_type == "sqlite"
     assert bench.config.framework_app.branch == "develop"
     assert not bench.config.admin.enabled
+    assert not bench.config.watch_apps_js
     assert bench.config.get_app_by_name("gameplan").path == str(repo)
     assert site.config.name == "dev-gameplan.localhost"
     assert json.loads((site.path / "site_config.json").read_text()) == {"developer_mode": 1}
@@ -277,6 +278,31 @@ def test_setup_creates_a_linked_bench_and_reruns_only_sync_it(tmp_path: Path, be
 
     with pytest.raises(BenchError, match="uses database 'sqlite', not 'postgres'"):
         workspace.setup(db_type="postgres")
+
+
+@pytest.mark.parametrize(
+    ("public_file", "watches"),
+    [
+        (None, False),
+        ("js/gameplan.bundle.js", True),
+        ("scss/desk.bundle.scss", True),
+        ("node_modules/lib/lib.bundle.js", False),
+        ("dist/js/gameplan.bundle.js", False),
+        ("frontend/index.html", False),
+    ],
+)
+def test_a_new_bench_watches_assets_only_when_the_app_has_desk_bundles(
+    tmp_path: Path, benches: Path, public_file: str | None, watches: bool
+) -> None:
+    repo = make_repo(tmp_path / "gameplan")
+    if public_file:
+        path = repo / "gameplan" / "public" / public_file
+        path.parent.mkdir(parents=True)
+        path.touch()
+
+    bench = Workspace(repo).create_bench("sqlite", "develop", lambda message: None)
+
+    assert bench.config.watch_apps_js is watches
 
 
 def test_setup_records_the_requested_frappe_branch_and_rejects_an_invalid_one(

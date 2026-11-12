@@ -124,6 +124,7 @@ export const TASK_TYPES = [
       'complete-migration',
       'retry-update',
       'revert-migration',
+      'dismiss-migration',
       'bypass-patch',
       'build',
       'update-cli',
@@ -233,10 +234,7 @@ export const redirectRouteOnSuccess = (task: ScopedTask) => {
   const appKey = APP_ARG_KEY[task.command]
   const app = appKey && task.args?.[appKey]
   if (typeof app !== 'string' || !app) return route
-  return {
-    ...route,
-    query: { app, action: APP_ACTION_FOR_COMMAND[task.command] },
-  }
+  return { ...route, query: { app, action: APP_ACTION_FOR_COMMAND[task.command] } }
 }
 
 /**
@@ -258,10 +256,7 @@ export const fmtDuration = (
 
 export const fmtDateTime = (value: string | number | Date | null | undefined) => {
   if (!value) return '-'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 /** A queued task has no duration, so its place in the queue takes that slot. */

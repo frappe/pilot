@@ -40,8 +40,8 @@ def git_branches(ws):
 @with_workspace
 def git_checkout(ws):
     body = json_body()
-    if not body.get("branch"):
-        return error_response("bad_request", "Branch is required.", 400)
+    if not ws.git.is_branch_name(body.get("branch")):
+        return error_response("bad_request", "Branch name is invalid.", 400)
     return _git_result(*ws.git.checkout(body["branch"], bool(body.get("create"))))
 
 
@@ -51,7 +51,14 @@ def git_commit(ws):
     body = json_body()
     if not (body.get("message") or "").strip():
         return error_response("bad_request", "Commit message is required.", 400)
-    return _git_result(*ws.git.commit(body["message"], bool(body.get("all"))))
+    stage_all = bool(body.get("all"))
+    if blockers := ws.get_commit_blockers(stage_all):
+        return _git_result(
+            False,
+            f"The editor cannot commit dot files or files outside this app: {', '.join(blockers)}. "
+            "Commit them from a terminal.",
+        )
+    return _git_result(*ws.git.commit(body["message"], stage_all))
 
 
 @editor_bp.get("/git/log")
@@ -101,10 +108,7 @@ def git_unstage(ws):
 @editor_bp.post("/git/discard")
 @with_workspace
 def git_discard(ws):
-    path = (json_body().get("path") or "").strip()
-    if not path:
-        return error_response("bad_request", "Path is required.", 400)
-    return _git_result(*ws.git.discard(ws, ws.relative(path)))
+    return _git_path_op(ws, lambda rel: ws.git.discard(ws, rel))
 
 
 @editor_bp.post("/git/push")
@@ -120,10 +124,10 @@ def git_pull(ws):
 
 
 def _git_path_op(ws, op):
-    path = (json_body().get("path") or "").strip()
-    if not path:
+    path = json_body().get("path") or ""
+    if isinstance(path, str) and not path.strip():
         return error_response("bad_request", "Path is required.", 400)
-    return _git_result(*op(ws.relative(path)))
+    return _git_result(*op(ws.changeable(path)))
 
 
 def _git_result(ok: bool, message: str):

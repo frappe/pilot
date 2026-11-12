@@ -5,17 +5,21 @@ import {
   confirmPaymentMethod,
   confirmPaymentMethodCheckout,
   createPaymentMethodCheckout,
+  getBillingProfile,
   getPaymentGateways,
 } from '@frappe/cloud-sdk/api'
-import { Button, ErrorMessage, Skeleton, TextInput } from 'frappe-ui'
+import { Button, ErrorMessage } from 'frappe-ui'
 import type { PaymentCheckout, PaymentGateway, PaymentMethodSetup } from '@frappe/cloud-sdk'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import RazorpayLogo from '../assets/Razorpay-1.svg?inline'
-import StripeLogo from '../assets/Stripe.svg?inline'
 import UpiLogo from '../assets/UPI-1.svg?inline'
 import { openExternal } from '../external'
 import { holdRazorpayCheckout, releaseRazorpayCheckout } from '../razorpayCheckout'
 import { useErrorMessage, type Store } from '../store'
+import ChoiceTile from './ChoiceTile.vue'
+import { GATEWAY_LOGOS } from './gatewayLogos'
+import PanelSkeleton from './PanelSkeleton.vue'
+import PaymentTrustNote from './PaymentTrustNote.vue'
+import PhoneInput from './PhoneInput.vue'
 
 const __ = useTranslation()
 const getErrorMessage = useErrorMessage()
@@ -30,7 +34,6 @@ const props = defineProps<Props>()
 const emit = defineEmits(['close', 'added'])
 const store = props.store
 
-const GATEWAY_LOGO: Record<string, string> = { Stripe: StripeLogo, Razorpay: RazorpayLogo }
 const RAZORPAY_SDK = 'https://checkout.razorpay.com/v1/checkout.js'
 
 const METHODS = [
@@ -54,6 +57,7 @@ const gateways = ref<PaymentGateway[] | null>(null)
 const method = ref('Card')
 const selected = ref('')
 const contact = ref('')
+const profile = ref({ phone: '', country: '' })
 const checkout = ref<PaymentCheckout | null>(null)
 const message = ref('')
 const working = ref(false)
@@ -74,8 +78,17 @@ const methods = computed(() =>
   ),
 )
 
+const paymentNote = computed(() => {
+  if (gateway.value?.adapter_key !== 'Razorpay')
+    return __('We verify your card with a small refunded charge, then bill you at the end of each cycle.')
+  if (method.value === 'UPI Autopay')
+    return __('Razorpay asks you to approve payments up to your spending limit. We charge only your monthly bill, on its due date. We refund the ₹1 setup payment.')
+  return __('Razorpay shows a high limit. We charge only your monthly bill and refund the ₹1 setup.')
+})
+
+// Razorpay needs a phone to save a card, which Central takes from the billing profile when it has one.
 const needsContact = computed(
-  () => method.value === 'Card' && gateway.value?.adapter_key === 'Razorpay',
+  () => method.value === 'Card' && gateway.value?.adapter_key === 'Razorpay' && !profile.value.phone,
 )
 
 const contactError = ref('')
@@ -93,7 +106,9 @@ const load = async () => {
   error.value = ''
 
   try {
-    gateways.value = await getPaymentGateways()
+    const [options, billingProfile] = await Promise.all([getPaymentGateways(), getBillingProfile()])
+    gateways.value = options
+    profile.value = { phone: billingProfile.phone || '', country: billingProfile.country || '' }
   } catch (exception) {
     error.value = getErrorMessage(exception)
   }
@@ -269,11 +284,6 @@ const run = async (action: () => Promise<void>) => {
     working.value = false
   }
 }
-
-const tileClass = (isSelected: boolean) => [
-  'grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 rounded-6 border p-3.5 text-left disabled:opacity-60',
-  isSelected ? 'border-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3',
-]
 </script>
 
 <template>
@@ -292,39 +302,23 @@ const tileClass = (isSelected: boolean) => [
       </p>
 
       <div class="grid gap-3 sm:grid-cols-2">
-        <button
+        <ChoiceTile
           v-for="option in methods"
           :key="option.value"
-          type="button"
-          :class="tileClass(method === option.value)"
+          :label="option.label"
+          :hint="option.hint"
+          :icon="option.icon"
+          :image="option.image"
+          :selected="method === option.value"
           :disabled="working || !!checkout"
           @click="method = option.value"
-        >
-          <span class="row-span-2 mt-0.5 flex size-6 items-center justify-center">
-            <span v-if="option.icon" :class="[option.icon, 'size-5 text-ink-gray-7']" />
-
-            <img
-              v-else
-              :src="option.image"
-              :alt="option.label"
-              class="max-h-full max-w-full object-contain"
-            />
-          </span>
-
-          <span class="text-base-semibold text-ink-gray-8">
-            {{ option.label }}
-          </span>
-
-          <span class="col-start-2 text-p-sm text-ink-gray-5">
-            {{ option.hint }}
-          </span>
-        </button>
+        />
       </div>
     </div>
 
     <div v-if="!gateways || visibleGateways.length !== 1">
       <p class="mb-2 text-p-sm text-ink-gray-5">{{ __("Pay through") }}</p>
-      <Skeleton v-if="!gateways && !error" class="h-16 rounded-6" />
+      <PanelSkeleton v-if="!gateways && !error" kind="tiles" :rows="1" />
       <Button v-else-if="!gateways" :label="__('Try again')" @click="load" />
 
       <div v-else-if="!visibleGateways.length" class="space-y-2">
@@ -343,74 +337,41 @@ const tileClass = (isSelected: boolean) => [
       </div>
 
       <div v-else class="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
-        <button
+        <ChoiceTile
           v-for="option in visibleGateways"
           :key="option.name"
-          type="button"
-          :class="tileClass(selected === option.name)"
+          :label="option.label"
+          :hint="option.subtitle"
+          :image="GATEWAY_LOGOS[option.adapter_key]"
+          :selected="selected === option.name"
           :disabled="working || !!checkout"
           @click="selected = option.name"
-        >
-          <span
-            v-if="GATEWAY_LOGO[option.adapter_key]"
-            class="row-span-2 mt-0.5 flex size-6 items-center justify-center"
-          >
-            <img
-              :src="GATEWAY_LOGO[option.adapter_key]"
-              :alt="option.label"
-              class="max-h-full max-w-full object-contain"
-              :class="{ 'rounded-4': option.adapter_key === 'Stripe' }"
-            />
-          </span>
-
-          <span
-            v-else
-            class="row-span-2 flex size-8 items-center justify-center rounded-6 bg-surface-gray-3 text-p-sm-bold text-ink-gray-8"
-          >
-            {{ (option.label || "?").charAt(0) }}
-          </span>
-
-          <span class="text-base-medium text-ink-gray-8">
-            {{ option.label }}
-          </span>
-
-          <span class="col-start-2 text-p-sm text-ink-gray-5">
-            {{ option.subtitle }}
-          </span>
-        </button>
+        />
       </div>
     </div>
 
-    <div v-if="needsContact" class="max-w-xs">
-      <TextInput
-        v-model="contact"
-        type="tel"
-        autocomplete="tel"
-        :label="__('Phone')"
-        placeholder="+91 98765 43210"
-        :disabled="working"
-        :aria-invalid="Boolean(contactError) || undefined"
-      />
-      <ErrorMessage :message="contactError" class="mt-1" />
-    </div>
+    <PhoneInput
+      v-if="needsContact"
+      v-model="contact"
+      class="max-w-md"
+      required
+      :label="__('Phone')"
+      :country="profile.country"
+      :disabled="working"
+      :error="contactError"
+    />
 
     <p class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
       <span class="lucide-info mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      {{ __("To check your card, we may charge a small amount and refund it. After that, we charge it only when your billing cycle ends.")
-      }}
+      {{ paymentNote }}
     </p>
 
-    <p class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
-      <span
-        class="mt-0.5 size-3.5 shrink-0"
-        :class="message ? 'lucide-info' : 'lucide-lock'"
-        aria-hidden="true"
-      />
-      {{ message || __(
-          "{0} collects your payment details. This site never sees them.",
-          [gateway?.label || __("The payment gateway")],
-        ) }}
+    <p v-if="message" class="flex items-start gap-1.5 text-p-sm text-ink-gray-5">
+      <span class="lucide-info mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      {{ message }}
     </p>
+
+    <PaymentTrustNote :gateway="gateway" />
 
     <div class="flex justify-end gap-2">
       <Button :disabled="working" @click="emit('close')" :label="__('Cancel')" />

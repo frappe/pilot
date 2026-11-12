@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import socket
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import BenchConfig
 from pilot.config.mail import MailConfig
+from pilot.config.proxy import is_cloudflare_address
+from pilot.config.webhook import WEBHOOK_EVENTS
 from pilot.managers.waf import WafManager
 
 if TYPE_CHECKING:
@@ -45,10 +48,11 @@ class BenchSettings:
         old_firewall: dict,
         old_waf: dict,
         old_s3_config: dict,
+        old_proxy: dict,
     ) -> tuple[bool, str | None]:
         self.bench.enforce_lite_mode_rules()
         restarted = self._regenerate_and_restart_if_needed(old_restart)
-        waf_warning = self._apply_nginx_if_needed(old_firewall, old_waf)
+        waf_warning = self._apply_nginx_if_needed(old_firewall, old_waf, old_proxy)
         self._sync_s3_if_needed(old_s3_config)
         return restarted, waf_warning
 
@@ -84,8 +88,23 @@ class BenchSettings:
             if self.bench.config.production.enabled:
                 self._apply_nginx()
 
-    def _apply_nginx_if_needed(self, old_firewall: dict, old_waf: dict) -> str | None:
+    def get_cloudflare_status(self) -> dict:
+        """Report the edge proxy and which site domains resolve to Cloudflare."""
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+        domains = sorted({domain for site in self.bench.sites() for domain in site.config.all_domains})
+        return {
+            "has_edge_proxy": bool(DomainRouteProvider.proxy_servers()),
+            "domains": [
+                {"domain": domain, "is_behind_cloudflare": is_behind_cloudflare(domain)} for domain in domains
+            ],
+        }
+
+    def _apply_nginx_if_needed(self, old_firewall: dict, old_waf: dict, old_proxy: dict) -> str | None:
         waf_changed = waf_payload(self.bench.config) != old_waf
+        proxy_changed = proxy_payload(self.bench.config) != old_proxy
+        if proxy_changed:
+            self._apply_nginx_to_host()
         if not self.bench.config.production.enabled:
             return None
         if firewall_payload(self.bench.config) == old_firewall and not waf_changed:
@@ -97,12 +116,30 @@ class BenchSettings:
                 "ModSecurity is not installed on this host. Redeploy production to "
                 "install the WAF; it stays inactive until then."
             )
-        self._apply_nginx()
+        if not proxy_changed:
+            self._apply_nginx()
         return warning
 
-    def _apply_nginx(self) -> None:
+    def _apply_nginx_to_host(self) -> None:
+        """Re-render every production bench, since the proxy settings are host-wide."""
+        from pilot.core.bench import Bench
+
+        for path in sorted(self.bench.path.parent.iterdir()):
+            if not (path / "bench.toml").exists():
+                continue
+            try:
+                bench = Bench(BenchConfig.read(path), path)
+            except Exception as error:
+                raise SettingsApplyFailed(
+                    "nginx_apply_failed",
+                    f"Settings were saved, but bench '{path.name}' could not be read to apply them.",
+                ) from error
+            if bench.config.production.enabled:
+                self._apply_nginx(bench)
+
+    def _apply_nginx(self, bench: "Bench | None" = None) -> None:
         try:
-            regenerate_nginx(self.bench)
+            regenerate_nginx(bench or self.bench)
         except Exception as error:
             raise SettingsApplyFailed(
                 "nginx_apply_failed",
@@ -140,6 +177,18 @@ def firewall_payload(config: BenchConfig) -> dict:
             {"ip": rule.ip, "action": rule.action, "description": rule.description} for rule in firewall.rules
         ],
     }
+
+
+def proxy_payload(config: BenchConfig) -> dict:
+    return {"cloudflare": config.proxy.cloudflare}
+
+
+def is_behind_cloudflare(domain: str) -> bool:
+    try:
+        addresses = {str(info[4][0]) for info in socket.getaddrinfo(domain, None)}
+    except OSError:
+        return False
+    return bool(addresses) and all(is_cloudflare_address(address) for address in addresses)
 
 
 def waf_payload(config: BenchConfig) -> dict:
@@ -194,6 +243,7 @@ def s3_payload(config: BenchConfig) -> dict:
         "provider": config.s3.provider,
         "region": config.s3.region,
         "endpoint_url": config.s3.endpoint_url,
+        "upload_migration_backups": config.s3.upload_migration_backups,
     }
 
 
@@ -225,12 +275,20 @@ def resource_limits_payload(config: BenchConfig) -> dict:
         "memory_usage_limit": limits.memory_usage_limit,
         "disk_space_limit": limits.disk_space_limit,
         "site_uptime": limits.site_uptime,
-        # Secrets stay server-side; the UI only needs to know one is stored.
-        "webhook_endpoints": [
-            {"url": url, "token_set": bool(token)} for url, token in limits.webhook_endpoints.items()
-        ],
         "email_recipients": limits.email_recipients,
     }
+
+
+def webhook_endpoints_payload(config: BenchConfig) -> list[dict]:
+    # Secrets stay server-side; the UI only needs to know one is stored.
+    return [
+        {"url": endpoint.url, "token_set": bool(endpoint.token), "events": endpoint.events}
+        for endpoint in config.webhook_endpoints
+    ]
+
+
+def webhook_events_payload() -> list[dict]:
+    return [{"value": name, "label": label} for name, label in WEBHOOK_EVENTS.items()]
 
 
 def restart_trigger_values(config: BenchConfig) -> dict:

@@ -32,6 +32,7 @@ from pilot.config.s3 import S3Config
 from pilot.config.schema import TomlSchema, field_names
 from pilot.config.telemetry import TelemetryConfig
 from pilot.config.waf import WafCondition, WafConfig, WafRule
+from pilot.config.webhook import WebhookEndpoint, validate_webhook_endpoints
 from pilot.config.worker import WorkerConfig, WorkerGroup, parse_timeout
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import (
@@ -57,7 +58,7 @@ FLAT_KEYS = {
     "reload_python": "reload_python",
     "watch_admin_js": "watch_admin_js",
     "db_type": "db_type",
-    "allow_developer_mode": "allow_developer_mode",
+    "enable_code_editor": "enable_code_editor",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_socket_path": "mariadb.socket_path",
@@ -74,6 +75,7 @@ FLAT_KEYS = {
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
     "admin_tls": "admin.tls",
+    "admin_allow_site_to_pilot_communication": "admin.allow_site_to_pilot_communication",
     "admin_jwks_url": "admin.jwks_url",
     "admin_jwks_audience": "admin.jwks_audience",
     "admin_allow_bench_management": "admin.allow_bench_management",
@@ -126,8 +128,7 @@ class BenchConfig:
     # The single database engine for this bench's sites: "mariadb" or "postgres".
     db_type: str = "mariadb"
     default_branch: str = ""
-    # Gates whether developer mode can be toggled per site; sets nothing itself.
-    allow_developer_mode: bool = False
+    enable_code_editor: bool = True
     # Whether `uv pip install -e` pulls an app's `dev` extra, such as frappe's watchdog.
     install_dev_extra: bool = True
     onboarding: str = ""
@@ -147,6 +148,7 @@ class BenchConfig:
     s3: S3Config = field(default_factory=S3Config)
     llm: LLMConfig = field(default_factory=LLMConfig)
     resource_limits: ResourceLimitConfig = field(default_factory=ResourceLimitConfig)
+    webhook_endpoints: list[WebhookEndpoint] = field(default_factory=list)
     frappe_cloud: FrappeCloudConfig = field(default_factory=FrappeCloudConfig)
     # What common_config.toml held when this was read, so a write can tell which
     # shared settings this view changed. Not a setting itself: kept out of
@@ -200,6 +202,10 @@ class BenchConfig:
         cls, data: dict, *, common: CommonConfig | None = None, strict: bool = False
     ) -> "BenchConfig":
         cls._report_unknown_fields(data, strict=strict)
+        if "nginx" in data:
+            raise ConfigError(
+                "[nginx] belongs in common_config.toml, not bench.toml: nginx is shared by every bench."
+            )
         common = common or CommonConfig()
         bench_data = data.get("bench", {})
         apps = [
@@ -225,17 +231,19 @@ class BenchConfig:
             watch_admin_js=bench_data.get("watch_admin_js", False),
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
-            allow_developer_mode=bench_data.get("allow_developer_mode", False),
+            enable_code_editor=bench_data.get("enable_code_editor", True),
             install_dev_extra=bench_data.get("install_dev_extra", True),
             onboarding=bench_data.get("onboarding", ""),
             apps=apps,
             mariadb=common.mariadb,
             postgres=common.postgres,
             letsencrypt=common.letsencrypt,
+            nginx=common.nginx,
             central=common.central,
             proxy=common.proxy,
             telemetry=common.telemetry,
             resource_limits=common.resource_limits,
+            webhook_endpoints=common.webhook_endpoints,
             frappe_cloud=common.frappe_cloud,
             **sections,
         )
@@ -285,6 +293,7 @@ class BenchConfig:
         self.waf.validate(self.nginx.client_max_body_size)
         self.llm.validate()
         self.resource_limits.validate()
+        validate_webhook_endpoints(self.webhook_endpoints)
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -510,10 +519,12 @@ class BenchConfig:
             mariadb=self.mariadb,
             postgres=self.postgres,
             letsencrypt=self.letsencrypt,
+            nginx=self.nginx,
             central=self.central,
             proxy=self.proxy,
             telemetry=self.telemetry,
             resource_limits=self.resource_limits,
+            webhook_endpoints=self.webhook_endpoints,
             frappe_cloud=self.frappe_cloud,
             jwks_url=self.admin.jwks_url,
             jwks_audience=self.admin.jwks_audience,
@@ -558,7 +569,7 @@ class BenchConfig:
             "reload_python": self.reload_python,
             "watch_admin_js": self.watch_admin_js,
             "db_type": self.db_type,
-            "allow_developer_mode": self.allow_developer_mode,
+            "enable_code_editor": self.enable_code_editor,
             "install_dev_extra": self.install_dev_extra,
         }
         if self.default_branch:
@@ -634,6 +645,7 @@ class BenchConfig:
             "password": self.admin.password,
             "domain": self.admin.domain,
             "tls": self.admin.tls,
+            "allow_site_to_pilot_communication": self.admin.allow_site_to_pilot_communication,
             "allow_bench_management": self.admin.allow_bench_management,
         }
         if self.admin.route:
@@ -699,6 +711,7 @@ class BenchConfig:
             "provider": self.s3.provider,
             "region": self.s3.region,
             "endpoint_url": self.s3.endpoint_url,
+            "upload_migration_backups": self.s3.upload_migration_backups,
         }
 
     def _llm_section(self) -> ConfigDict:
@@ -879,12 +892,23 @@ def _set_path(config: BenchConfig, path: str, value) -> None:
         obj = getattr(obj, part)
     current = getattr(obj, leaf)
     if isinstance(current, bool):
-        value = bool(value)
+        value = _sbool(value)
     elif isinstance(current, int):
         value = int(value)
     elif isinstance(current, str):
         value = str(value)
     setattr(obj, leaf, value)
+
+
+def _sbool(value):
+    """Frappe sbool: "true"/"1" become True, "false"/"0" become False."""
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in ("true", "1"):
+            return True
+        if lowered in ("false", "0"):
+            return False
+    return value
 
 
 def _workers_to_groups(value) -> list[WorkerGroup]:
@@ -922,11 +946,12 @@ _BENCH_KEYS = {
     "watch_admin_js",
     "db_type",
     "default_branch",
-    "allow_developer_mode",
+    "enable_code_editor",
     "install_dev_extra",
     "onboarding",
 }
 # Keys older Pilot versions wrote that the parser still tolerates.
+_BENCH_LEGACY = {"allow_developer_mode"}
 _PRODUCTION_LEGACY = {"lightweight", "nginx", "use_companion_manager"}
 _GUNICORN_LEGACY = {"malloc_arena_max"}
 _WORKER_LEGACY = {"queue"}
@@ -935,7 +960,7 @@ _WORKER_LEGACY = {"queue"}
 def _bench_schema() -> TomlSchema:
     return TomlSchema(
         tables={
-            "bench": TomlSchema(keys=set(_BENCH_KEYS)),
+            "bench": TomlSchema(keys=set(_BENCH_KEYS) | _BENCH_LEGACY),
             "redis": TomlSchema(keys=field_names(RedisConfig)),
             "production": TomlSchema(keys=field_names(ProductionConfig) | _PRODUCTION_LEGACY),
             "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),
@@ -991,4 +1016,3 @@ def _preserve_unknown_array(original: list, replacement: list, table: TomlSchema
         if isinstance(old_entry, Mapping) and isinstance(new_entry, Mapping):
             result[index] = _preserve_unknown(old_entry, new_entry, table)
     return result
-

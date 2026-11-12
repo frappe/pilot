@@ -2,10 +2,11 @@
 import { useTranslation } from '../translation'
 import { changePlan, getPlanOptions } from '@frappe/cloud-sdk/api'
 import type { PlanOption, PlanOptions } from '@frappe/cloud-sdk'
-import { Alert, Badge, Button, ErrorMessage, Radio, RadioGroup, Skeleton } from 'frappe-ui'
+import { Alert, Badge, Button, ErrorMessage, Radio, RadioGroup } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { openExternal } from '../external'
 import { useErrorMessage, type Store } from '../store'
+import PanelSkeleton from './PanelSkeleton.vue'
 
 const __ = useTranslation()
 const getErrorMessage = useErrorMessage()
@@ -69,6 +70,11 @@ const submit = async () => {
   }
 }
 
+// The radio keeps keyboard selection; the card makes the price and the whole row clickable too.
+const selectPlan = (name: string) => {
+  if (!submitting.value) selected.value = name
+}
+
 const submitLabel = computed(() => {
   if (isTrial.value) return __('Continue')
   return choice.value && !choice.value.is_current ? __('Move to {0}', [choice.value.title]) : __('Choose a plan')
@@ -85,7 +91,7 @@ onMounted(load)
     </h3>
     <p class="mt-1 text-p-sm text-ink-gray-5">
       {{ isTrial
-          ? __("Every plan gives you full server access: SSH, the web console, Pilot and snapshots. Billing starts when you add a payment method.")
+          ? __("Pick a size for your site. You can change it later. Billing starts when you add a payment method.")
           : __("Pick the size this site runs on. You pay for the new plan from today.") }}
     </p>
 
@@ -103,8 +109,8 @@ onMounted(load)
       </div>
     </div>
 
-    <div v-else-if="!options" class="mt-5 space-y-3" aria-busy="true" :aria-label="__('Loading plans')">
-      <Skeleton v-for="index in 3" :key="index" class="h-14 rounded-6" />
+    <div v-else-if="!options" class="mt-5 space-y-3">
+      <PanelSkeleton />
       <Button :label="__('Cancel')" @click="emit('close')" />
     </div>
 
@@ -125,14 +131,16 @@ onMounted(load)
         <div
           v-for="plan in options.plans"
           :key="plan.name"
-          class="flex items-center gap-3 px-4 py-3 border rounded-6 transition-colors"
+          class="flex cursor-pointer items-center gap-3 px-4 py-3 border rounded-6 transition-colors hover:bg-surface-gray-1"
           :class="selected === plan.name ? 'border-outline-gray-5' : 'border-outline-gray-2'"
+          @click="selectPlan(plan.name)"
         >
           <Radio :value="plan.name" class="flex-1 min-w-0" :description="plan.subtitle">
             <template #label>
-              <span class="flex items-center gap-2">
+              <span class="flex flex-wrap items-center gap-2">
                 {{ plan.title }}
-                <Badge v-if="plan.is_current" :label="__('Current')" theme="gray" />
+                <Badge v-if="plan.note" :label="plan.note" theme="blue" />
+                <Badge v-if="plan.is_current" :label="__('Current')" theme="blue" />
               </span>
             </template>
           </Radio>

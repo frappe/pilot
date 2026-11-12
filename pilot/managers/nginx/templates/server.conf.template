@@ -1,6 +1,18 @@
 server_names_hash_bucket_size 256;
 
-log_format pilot_access '$remote_addr [$time_local] "$request_method $uri" $status "$host" $request_time';
+geo $pilot_from_cloudflare {
+    default 0;
+    {% for network in cloudflare_networks %}
+    {{ network }} 1;
+    {% endfor %}
+}
+
+map $pilot_from_cloudflare $pilot_client_addr {
+    1       $http_cf_connecting_ip;
+    default $remote_addr;
+}
+
+log_format pilot_access '$pilot_client_addr [$time_local] "$request_method $uri" $status "$host" $request_time';
 
 server {
     listen {{ http_port }} default_server;
@@ -26,4 +38,7 @@ server {
     server_name _;
 
     ssl_reject_handshake on;
+    {% if cloudflare_networks %}
+    ssl_prefer_server_ciphers off;
+    {% endif %}
 }

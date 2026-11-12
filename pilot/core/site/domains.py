@@ -50,7 +50,7 @@ class SiteDomains:
         attached = normalized in {normalize_host(name) for name in self.names()}
         return attached, primary is not None and normalize_host(primary) == normalized
 
-    def describe(self) -> tuple[list[dict[str, str | bool]], str]:
+    def describe(self) -> tuple[list[dict[str, str | bool | dict | None]], str]:
         """Return all domains with their primary and public route state."""
         config = self._site_config()
         site_name = config.name
@@ -58,7 +58,7 @@ class SiteDomains:
         rows = [self._description(config, domain, domain == primary) for domain in [site_name, *self.names()]]
         return rows, primary
 
-    def describe_domain(self, domain: str) -> dict[str, str | bool] | None:
+    def describe_domain(self, domain: str) -> dict[str, str | bool | dict | None] | None:
         """Return one attached domain with its primary and public route state."""
         attached, is_primary = self.status(domain)
         if not attached:
@@ -131,7 +131,7 @@ class SiteDomains:
         config: "SiteConfig",
         domain: str,
         is_primary: bool,
-    ) -> dict[str, str | bool]:
+    ) -> dict[str, str | bool | dict | None]:
         route = config.route_for(domain)
         tls = route.public_tls
         if tls and config.configured_route_for(domain) is None:
@@ -145,4 +145,23 @@ class SiteDomains:
             "is_primary": is_primary,
             "public_scheme": route.public_scheme,
             "tls": tls,
+            "tls_status": self.get_tls_status(config, domain),
         }
+
+    def get_tls_status(self, config: "SiteConfig", domain: str) -> dict | None:
+        """The certificate state for a domain whose TLS ends on this host, read from disk."""
+        from pilot.core.bench.certificates import CertificateRecord
+        from pilot.managers.letsencrypt import certificate_domains
+        from pilot.managers.nginx import NginxManager
+
+        domains = certificate_domains(config)
+        if domain not in domains:
+            return None
+        certificates = self.site.bench.certificates
+        record = certificates.get(config.name)
+        nginx = NginxManager(self.site.bench)
+        if record is None and nginx.has_cert(config):
+            record = certificates.refresh(config.name, domains, nginx.cert_path(config))
+        if record is None:
+            return CertificateRecord(config.name, [domain]).get_status()
+        return record.get_status(domain)

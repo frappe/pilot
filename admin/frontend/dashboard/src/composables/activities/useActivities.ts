@@ -5,20 +5,23 @@ import type { AuditEntry } from '@/types/audit'
 import type { AuditPage } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
 
-interface ActivityFilters {
+export interface ActivityFilters {
   type?: string
   site?: string
   status?: string
+  since?: string
+  until?: string
 }
 
-const auditParams = (filters: ActivityFilters, forCursor?: string | null) => {
-  const params: Record<string, string> = {}
-  if (filters.type) params.type = filters.type
-  if (filters.site) params.site = filters.site
-  if (filters.status) params.status = filters.status
-  if (forCursor) params.cursor = forCursor
-  return { ...params, limit: 50 }
-}
+// Drops unset filters so the list and the CSV export send the same query.
+export const activityFilterParams = (filters: ActivityFilters): Record<string, string> =>
+  Object.fromEntries(Object.entries(filters).filter(([, value]) => value)) as Record<string, string>
+
+const auditParams = (filters: ActivityFilters, forCursor?: string | null) => ({
+  ...activityFilterParams(filters),
+  ...(forCursor && { cursor: forCursor }),
+  limit: 50,
+})
 
 export const useActivities = () => {
   const activities = ref<AuditEntry[]>([])

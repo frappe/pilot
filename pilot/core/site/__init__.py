@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import SiteConfig
-from pilot.exceptions import CronError
+from pilot.exceptions import BenchError, CronError
 from pilot.managers.cron import CronManager
 from pilot.utils import run_command
 
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
+    from pilot.core.site.console.completions import ConsoleCompletions
+    from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
     from pilot.core.site.migration_backup import SiteMigrationBackup
@@ -52,6 +54,12 @@ class Site:
         from pilot.core.site.backups import SiteBackups
 
         return SiteBackups(self)
+
+    @cached_property
+    def console_completions(self) -> "ConsoleCompletions":
+        from pilot.core.site.console.completions import ConsoleCompletions
+
+        return ConsoleCompletions(self)
 
     @cached_property
     def domains(self) -> "SiteDomains":
@@ -117,6 +125,18 @@ class Site:
             yield
         finally:
             self.set_maintenance_settings(original)
+
+    def ensure_exists(self) -> None:
+        if not self.exists:
+            raise BenchError(f"Site '{self.config.name}' does not exist in this bench.")
+
+    @contextmanager
+    def reserve(self) -> Iterator[None]:
+        """Refuse task submissions for this site until the block exits."""
+        from pilot.internal.tasks.store import TaskStore
+
+        with TaskStore(self.bench.path).reserve(f"site:{self.config.name.lower()}"):
+            yield
 
     def _frappe_call(self, *args: str) -> list[str]:
         """Build a frappe bench_helper command."""
@@ -242,6 +262,12 @@ class Site:
 
         return SiteCommands(self).has_pending_background_jobs()
 
+    def script(self, code: str, commit: bool = False) -> "SiteScript":
+        """A Python script for this site; iterate `run()` to execute it."""
+        from pilot.core.site.console.script import SiteScript
+
+        return SiteScript(self, code, commit)
+
     def clear_cache(self) -> None:
         from pilot.core.site.commands import SiteCommands
 
@@ -286,6 +312,7 @@ class Site:
         from pilot.core.site.commands import SiteCommands
         from pilot.managers.nginx import NginxManager
 
+        self.ensure_exists()
         provider_domains = self._provider_domains()
         has_processes = self.bench.processes.has_declarations(self.active_apps())
         cmd = [*self.bench.frappe_call, "frappe", "drop-site", self.config.name]
@@ -350,11 +377,12 @@ class Site:
         on_progress: Callable[[str], None] = lambda message: None,
         *,
         schedule_backups: bool = True,
+        skip_assets: bool = False,
     ) -> "Site":
         """Create a site, install apps, reload nginx, and issue TLS if needed."""
         from pilot.core.site.provisioning import SiteProvisioner
 
-        return SiteProvisioner(bench, name, apps, admin_password, db_type).provision(
+        return SiteProvisioner(bench, name, apps, admin_password, db_type, skip_assets).provision(
             on_progress, schedule_backups=schedule_backups
         )
 

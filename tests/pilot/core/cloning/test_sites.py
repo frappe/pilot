@@ -99,7 +99,7 @@ def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source,
     original = source.site("source.localhost")
     (original.path / "public/files/alias.txt").symlink_to(original.path / "public/files/marker.txt")
     monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: imports.append(self.config.copy()))
-    monkeypatch.setattr(SiteClone, "finish", lambda self, site: None)
+    monkeypatch.setattr(SiteClone, "finish", lambda self, site, on_progress: None)
     monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
     first = source.site("source.localhost").clone("first.localhost", on_progress=lambda message: None)
     original = source.site("source.localhost")
@@ -123,13 +123,16 @@ def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source,
 @pytest.mark.parametrize("stage", ["database", "finish", "domain_cleanup"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
 def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatch, stage, cleanup_fails):
+    from pilot.config import RoutePolicy
     from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     original = source.site("source.localhost")
     source_config = (original.path / "site_config.json").read_bytes()
     released, dropped = [], []
     monkeypatch.setattr(SiteClone, "validate", lambda self: True)
-    monkeypatch.setattr("pilot.core.site.clone.register_with_provider", lambda *args: None)
+    monkeypatch.setattr(
+        "pilot.core.site.clone.register_with_provider", lambda *args: RoutePolicy.direct(False)
+    )
     monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
     monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
 
@@ -164,6 +167,35 @@ def test_failed_site_clone_releases_route_and_owned_resources(source, monkeypatc
         assert json.loads((target / "site_config.json").read_text())["db_name"] == dropped[0]
     assert (original.path / "site_config.json").read_bytes() == source_config
     assert (original.path / "public/files/marker.txt").read_text() == "source files"
+
+
+@pytest.mark.parametrize("target", ["/another/site/private/secret", "../../private/files/marker.txt", "loop"])
+def test_clone_rejects_upload_links_outside_their_upload_tree(source, monkeypatch, target):
+    root = source.site("source.localhost").path / "public/files"
+    (root / "loop").symlink_to(target)
+    monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: None)
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: None)
+    with pytest.raises(BenchError, match="Upload symlink"):
+        source.site("source.localhost").clone("unsafe.localhost", on_progress=lambda message: None)
+    assert not source.site("unsafe.localhost").path.exists()
+
+
+def test_no_provider_policy_does_not_release_a_route(source, monkeypatch):
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+
+    released = []
+    monkeypatch.setattr(SiteClone, "validate", lambda self: True)
+    monkeypatch.setattr("pilot.core.site.clone.register_with_provider", lambda *args: None)
+    monkeypatch.setattr(DomainRouteProvider, "release", lambda self, name: released.append(name))
+    monkeypatch.setattr(SiteDatabaseClone, "cleanup", lambda self: None)
+
+    def fail(self):
+        raise RuntimeError("clone failed")
+
+    monkeypatch.setattr(SiteDatabaseClone, "run", fail)
+    with pytest.raises(RuntimeError, match="clone failed"):
+        source.site("source.localhost").clone("failed.localhost", on_progress=lambda message: None)
+    assert released == []
 
 
 def test_failed_route_registration_does_not_release_an_unowned_route(source, monkeypatch):
@@ -254,3 +286,25 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
         + ["database removed", "nginx cleared"]
     )
     assert (source.sites_path / "failed.localhost").exists() == (cleanup_failure == "database")
+
+
+def test_clone_reports_certificate_progress_through_task_progress(source, monkeypatch):
+    from pilot.core.site import Site
+    from pilot.core.site.commands import SiteCommands
+    from pilot.core.site.provisioning import SiteProvisioner
+
+    for name in ("write_route_policy", "write_pilot_communication_config", "add_to_hosts", "reload_nginx"):
+        monkeypatch.setattr(SiteProvisioner, name, lambda *args: None)
+    monkeypatch.setattr(SiteCommands, "set_admin_password", lambda *args: None)
+    monkeypatch.setattr(Site, "set_maintenance_settings", lambda *args: None)
+    monkeypatch.setattr(
+        SiteProvisioner, "obtain_cert", lambda self, site, progress: progress("certificate issued")
+    )
+    site = source.site("copy.localhost")
+    site.config.route = None
+    site.config.ssl = True
+    progress = []
+    SiteClone(source.site("source.localhost"), source, "copy.localhost", "secret").finish(
+        site, progress.append
+    )
+    assert progress == ["certificate issued"]

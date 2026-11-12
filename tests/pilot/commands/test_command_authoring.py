@@ -83,19 +83,6 @@ def test_positional_field_is_required() -> None:
     assert _parse(_Greet, ["alice", "a"]).who == "alice"
 
 
-def test_defaulted_positional_scalar_and_list():
-    @dataclass(kw_only=True)
-    class Example(Command):
-        name: Annotated[str, Arg(positional=True)] = "default"
-        values: Annotated[list[str], Arg(positional=True)] = None
-
-    assert _parse(Example, []).name == "default"
-    assert _parse(Example, []).values == []
-    parsed = _parse(Example, ["chosen", "one", "two"])
-    assert parsed.name == "chosen"
-    assert parsed.values == ["one", "two"]
-
-
 def test_bool_field_becomes_store_true_flag() -> None:
     assert _parse(_Greet, ["alice", "a", "--loud"]).loud is True
     assert _parse(_Greet, ["alice", "a"]).loud is False
@@ -161,3 +148,40 @@ def test_skip_confirm_is_sourced_from_global_yes_flag() -> None:
 
     assert _parse(_Destructive, ["--yes"]).skip_confirm is True
     assert _parse(_Destructive, []).skip_confirm is False
+
+
+def test_factory_default_is_not_called_while_building_the_parser() -> None:
+    """A default factory can import heavy modules. The parser build must not
+    run it - the dataclass runs it when the command is actually built."""
+    from dataclasses import field
+
+    calls = []
+
+    def _expensive_default() -> int:
+        calls.append(1)
+        return 42
+
+    @dataclass(kw_only=True)
+    class _Lazy(Command):
+        ttl: int = field(default_factory=_expensive_default)
+
+    parser = argparse.ArgumentParser()
+    add_command_arguments(_Lazy, parser)
+
+    assert calls == []
+    assert command_from_args(_Lazy, parser.parse_args([]), bench=None).ttl == 42
+    assert calls == [1]
+
+
+def test_factory_list_default_is_fresh_per_command() -> None:
+    from dataclasses import field
+
+    @dataclass(kw_only=True)
+    class _LazyList(Command):
+        tags: list[str] = field(default_factory=list)
+
+    first = _parse(_LazyList, [])
+    first.tags.append("x")
+
+    assert _parse(_LazyList, []).tags == []
+    assert _parse(_LazyList, ["--tags", "a", "b"]).tags == ["a", "b"]

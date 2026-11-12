@@ -7,8 +7,15 @@ from pilot.config import SiteConfig
 from pilot.core.bench.audit_log import AuditLog
 from pilot.core.bench.backups import BenchBackups
 from pilot.core.site import Site
+from pilot.core.site.backups import SiteBackups
 from pilot.exceptions import CommandError
 from pilot.tasks.backup_site import BackupSiteTask
+
+
+@pytest.fixture(autouse=True)
+def _no_disk_space_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are not about disk space; see the estimate tests in test_site_backup_take."""
+    monkeypatch.setattr(SiteBackups, "get_estimated_size", lambda self, with_files=True: 0)
 
 
 def _task(tmp_path):

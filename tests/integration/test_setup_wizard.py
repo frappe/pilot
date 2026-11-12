@@ -97,7 +97,7 @@ class TestSetupWizard:
                         "timezone": "America/New_York",
                         "currency": "USD",
                         "full_name": "Test Administrator",
-                        "email": "admin@example.com",
+                        "email": "setup-wizard@example.com",
                         "password": ADMIN_PASSWORD,
                     }
                 )

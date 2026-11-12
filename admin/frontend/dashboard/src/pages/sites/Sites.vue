@@ -15,6 +15,7 @@ import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import CloneDialog from '@/components/common/CloneDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import Sparkline from '@/components/common/Sparkline.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import Table from '@/components/common/Table.vue'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
@@ -31,10 +32,11 @@ const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
 const { sites, loading, error, load } = useSites()
-const { load: loadStorage, storageLabel } = useSiteStorage()
+const { load: loadStorage, storageLabel, storageBytes } = useSiteStorage()
 
 const search = ref('')
 const statusFilter = ref('all')
+const sortBy = ref('name')
 const view = ref('grid')
 
 const viewOptions = [
@@ -57,6 +59,12 @@ const statusOptions = [
   { label: 'Creating', value: 'provisioning' },
 ]
 
+const sortOptions = [
+  { label: 'Name', value: 'name', icon: 'lucide-arrow-down-a-z' },
+  { label: 'Largest', value: 'largest', icon: 'lucide-hard-drive' },
+  { label: 'Most requests', value: 'requests', icon: 'lucide-chart-line' },
+]
+
 const siteStatus = (site: SiteResource) => {
   // Provisioning wins over "offline": the site dir/site_config.json may not
   // exist yet in the earliest moments of a new-site/reinstall task.
@@ -73,32 +81,49 @@ const appsLabel = (site: SiteResource) => {
   return count === 1 ? '1 app' : `${count} apps`
 }
 
-// Storage lands after the list, so a card shows its app count alone until then.
-const metaLabel = (site: SiteResource) => {
-  const used = storageLabel(site.name)
-  return used ? `${used} · ${appsLabel(site)}` : appsLabel(site)
-}
+const requestTotal = (site: SiteResource) =>
+  (site.requests || []).reduce((total, count) => total + count, 0)
+
+const uptimeLabel = (site: SiteResource) =>
+  typeof site.uptime_percent === 'number' ? `${Number(site.uptime_percent.toFixed(1))}%` : ''
+
+const compactNumber = new Intl.NumberFormat(undefined, { notation: 'compact' })
+
+const siteMetrics = (site: SiteResource) =>
+  [
+    { icon: 'lucide-hard-drive', value: storageLabel(site.name) },
+    { icon: 'lucide-package', value: appsLabel(site) },
+  ].filter((metric) => metric.value)
 
 const isFiltered = computed(() => Boolean(search.value.trim()) || statusFilter.value !== 'all')
 
 const filteredSites = computed(() => {
   const query = search.value.toLowerCase().trim()
-  return sites.value.filter((site) => {
+  const matches = sites.value.filter((site) => {
     const matchesSearch =
       !query ||
       [site.name, site.primary_domain].some((label) => label.toLowerCase().includes(query))
     const matchesStatus = statusFilter.value === 'all' || siteStatus(site) === statusFilter.value
     return matchesSearch && matchesStatus
   })
+
+  if (sortBy.value === 'largest') {
+    return matches.sort((a, b) => storageBytes(b.name) - storageBytes(a.name))
+  }
+
+  if (sortBy.value === 'requests') return matches.sort((a, b) => requestTotal(b) - requestTotal(a))
+  return matches.sort((a, b) => a.primary_domain.localeCompare(b.primary_domain))
 })
 
 const hasCount = computed(() => !loading.value || sites.value.length > 0)
 const showSkeleton = computed(() => loading.value && sites.value.length === 0)
 
 const listColumns = [
-  { label: 'Site', key: 'site', class: 'w-1/2' },
+  { label: 'Site', key: 'site', class: 'w-1/3' },
   { label: 'Status', key: 'status' },
-  { label: 'Storage', key: 'storage', class: 'text-ink-gray-6 text-sm' },
+  { label: 'Requests · 24h', key: 'requests', class: 'text-ink-gray-6 text-sm tabular-nums' },
+  { label: 'Uptime', key: 'uptime', class: 'text-ink-gray-6 text-sm tabular-nums' },
+  { label: 'Storage', key: 'storage', class: 'text-ink-gray-6 text-sm tabular-nums' },
   { label: 'Apps', key: 'apps', class: 'text-ink-gray-6 text-sm' },
   { label: '', key: 'actions' },
 ]
@@ -109,6 +134,8 @@ const listRows = computed(() =>
     site,
     storage: storageLabel(site.name),
     apps: appsLabel(site),
+    requests: requestTotal(site) ? requestTotal(site).toLocaleString() : '',
+    uptime: uptimeLabel(site),
   })),
 )
 
@@ -163,11 +190,7 @@ const siteMenuOptions = (site: SiteResource) => {
     {
       label: 'View analytics',
       icon: 'lucide-chart-line',
-      onClick: () =>
-        router.push({
-          name: 'Analytics',
-          query: { view: 'site', site: site.name },
-        }),
+      onClick: () => router.push({ name: 'Analytics', query: { view: 'site', site: site.name } }),
     },
     {
       label: 'View jobs',
@@ -198,8 +221,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="p-3 md:p-4 mx-auto max-w-3xl">
-    <StickyToolbar v-if="sites.length > 10" class="flex items-center gap-2">
+  <div class="px-3 md:px-4 pb-4">
+    <StickyToolbar class="flex items-center gap-2">
       <TextInput
         v-model="search"
         placeholder="Search"
@@ -217,6 +240,22 @@ onMounted(() => {
         :options="statusOptions"
         :size="isMobile ? 'md' : 'sm'"
         class="max-w-24 sm:max-w-32"
+      >
+        <template #item-prefix="{ item }">
+          <span
+            v-if="item.value !== 'all'"
+            class="rounded-full size-1.5 shrink-0"
+            :class="SITE_STATUS[item.value as keyof typeof SITE_STATUS].dot"
+          />
+        </template>
+      </Select>
+
+      <Select
+        side="bottom"
+        v-model="sortBy"
+        :options="sortOptions"
+        :size="isMobile ? 'md' : 'sm'"
+        class="max-w-32 sm:max-w-40"
       />
       <TabButtons
         v-model="view"
@@ -231,57 +270,76 @@ onMounted(() => {
     <template v-else-if="showSkeleton || filteredSites.length">
       <div
         v-if="showSkeleton || view === 'grid'"
-        class="gap-3 grid mt-1"
-        :class="showSkeleton || filteredSites.length > 1 ? 'md:grid-cols-2' : ''"
+        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         <template v-if="showSkeleton">
           <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />
         </template>
 
-        <!-- Site Card -->
+        <!-- card -->
         <router-link
           v-for="site in filteredSites"
           :key="site.name"
-          class="flex items-center gap-3 bg-surface-base p-2 px-3 border rounded-6 border-outline-gray-2 hover:border-outline-gray-4 transition-colors"
+          class="flex flex-col gap-3 bg-surface-gray-0 px-4 pt-3.5 pb-4 border border-outline-gray-1.5 hover:border-outline-gray-4 rounded-6"
           :to="{ name: 'SiteDetail', params: { name: site.name } }"
         >
-          <div class="bg-surface-gray-2 flex rounded-4 p-2 text-ink-gray-6 shrink-0">
-            <span class="size-4 lucide-globe m-auto" />
-          </div>
-
-          <div class="flex flex-1 flex-wrap items-center gap-x-1.5 min-w-0">
-            <span class="flex-1 max-w-fit font-medium truncate">
-              {{ site.primary_domain }}
-            </span>
-
-            <span
-              v-if="siteStatus(site) !== 'online'"
-              class="flex items-center gap-1.5 mx-1 text-ink-gray-6 text-p-sm"
-            >
-              <span class="rounded-full size-1.5" :class="statusInfo(site).dot" />
+          <div class="flex items-center gap-2 text-ink-gray-5 text-sm">
+            <span class="rounded-full size-2 shrink-0" :class="statusInfo(site).dot" />
+            <span class="text-base-medium text-ink-gray-8 truncate">{{ site.primary_domain }}</span>
+            <span v-if="site.ssl" class="size-3.5 text-ink-gray-4 lucide-lock shrink-0" />
+            <span v-if="siteStatus(site) !== 'online'" class="ml-auto shrink-0">
               {{ statusInfo(site).label }}
             </span>
 
             <Dropdown :options="siteMenuOptions(site)">
-              <Button
-                variant="ghost"
-                size="xs"
-                icon="lucide-ellipsis"
-                label="Site actions"
-                tooltip="Actions"
-                class="ml-auto"
-                @click.stop
-              />
+              <template #default="{ open }">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  :active="open"
+                  icon="lucide-ellipsis"
+                  label="Site actions"
+                  class="-mt-2 -mr-2"
+                  :class="siteStatus(site) === 'online' && 'ml-auto'"
+                  @click.prevent.stop
+                />
+              </template>
             </Dropdown>
+          </div>
 
-            <p class="w-full text-ink-gray-5 text-p-sm">
-              {{ metaLabel(site) }}
-            </p>
+          <div
+            class="flex items-center gap-3 text-ink-gray-5 text-sm tabular-nums whitespace-nowrap"
+          >
+            <span
+              v-for="metric in siteMetrics(site)"
+              :key="metric.icon"
+              class="flex items-center gap-1.5"
+            >
+              <span class="size-3.5 text-ink-gray-4" :class="metric.icon" />
+              {{ metric.value }}
+            </span>
+          </div>
+
+          <div v-if="site.requests?.length" class="flex flex-col gap-3 mt-1">
+            <Sparkline :values="site.requests || []" unit="request" class="w-full h-8" />
+
+            <div class="flex justify-between text-ink-gray-5 text-xs tabular-nums">
+              <span>
+                <span class="text-ink-gray-8">{{ compactNumber.format(requestTotal(site)) }}</span>
+                requests · 24h
+              </span>
+
+              <span v-if="uptimeLabel(site)" class="flex items-center gap-1">
+                <span class="size-3 text-ink-gray-4 lucide-activity" />
+                <span class="text-ink-gray-8">{{ uptimeLabel(site) }}</span>
+                uptime
+              </span>
+            </div>
           </div>
         </router-link>
       </div>
 
-      <Table v-else :columns="listColumns" :rows="listRows" height="h-auto" class="mt-1">
+      <Table v-else :columns="listColumns" :rows="listRows" height="h-auto">
         <template #site="{ row }">
           <router-link
             :to="{ name: 'SiteDetail', params: { name: row.site.name } }"

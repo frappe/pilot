@@ -110,6 +110,7 @@ def test_asset_cache_failure_keeps_completed_build(source, monkeypatch, caplog, 
 
     assets = source.sites_path / "assets"
     (assets / "app.js").write_text("completed build")
+    (source.apps_path / "frappe/frappe/public/dist").mkdir(parents=True)
     cache = BuildArtifacts(source)
 
     def fail(*args, **kwargs):
@@ -134,6 +135,7 @@ def test_asset_cache_failure_keeps_completed_build(source, monkeypatch, caplog, 
 
 
 def test_dependency_copy_seeds_changed_lockfile_without_reusing_install_stamp(tmp_path):
+    from pilot.core.app.node_packages import NodePackages
     from pilot.managers.node_dependencies import NodeDependencies
 
     original, copied = tmp_path / "source", tmp_path / "target"
@@ -153,8 +155,9 @@ def test_dependency_copy_seeds_changed_lockfile_without_reusing_install_stamp(tm
     (copied / "yarn.lock").write_text("different dependencies")
     assert NodeDependencies.copy(original, copied)
     assert (copied / "node_modules/dependency.js").read_text() == "original"
-    assert not (copied / "node_modules/.pilot-install-key").exists()
+    assert (copied / "node_modules/.pilot-install-key").read_text() == ""
     assert not NodeDependencies.has_matching_install(copied, NodeDependencies.get_key(copied))
+    assert not NodePackages(copied).is_installed
     assert (modules / ".pilot-install-key").exists()
     (copied / ".yarnrc").write_text("ignore-scripts true\n")
     assert not NodeDependencies.copy(original, copied)
@@ -258,6 +261,30 @@ def test_default_clone_reuses_matching_build_without_sharing_writable_artifacts(
     assert len(builds) == 1
 
 
+def test_asset_cache_rejects_manifest_missing_framework_dist(source):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    artifacts = BuildArtifacts(source)
+    cached = artifacts.root / "key"
+    (cached / "sites/assets").mkdir(parents=True)
+    (cached / "manifest.json").write_text(json.dumps(["sites/assets"]))
+    assert not artifacts.restore("key")
+
+
+def test_directory_copy_refuses_symlinked_destination(tmp_path):
+    from pilot.core.bench.artifacts import BenchArtifacts
+    from pilot.exceptions import BenchError
+
+    source, outside, destination = (tmp_path / name for name in ("source", "outside", "destination"))
+    source.mkdir()
+    outside.mkdir()
+    (source / "file").write_text("new data")
+    destination.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(BenchError, match="symlinked directory"):
+        BenchArtifacts.copy_directory(source, destination)
+    assert list(outside.iterdir()) == []
+
+
 def test_pnpm_build_cache_does_not_require_yarn(source, monkeypatch):
     from pilot.core.app.node_packages import NodePackageManager
     from pilot.core.bench.build_artifacts import BuildArtifacts
@@ -312,3 +339,110 @@ def test_build_cache_rejects_changed_build_mode_environment_and_custom_hooks(sou
     hooks = source.apps_path / "frappe/frappe/hooks.py"
     hooks.write_text("after_build = 'frappe.custom_build'\n")
     assert artifacts.get_key() is None
+
+
+@pytest.mark.parametrize("stage", ["before", "after", "publish"])
+def test_clone_build_succeeds_when_optional_cache_fails(source, stage):
+    from unittest.mock import PropertyMock, patch
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    failure = OSError("cannot fingerprint")
+    keys = {"before": [failure], "after": ["key", failure], "publish": ["key", "key"]}[stage]
+    builds = []
+    with (
+        patch.object(BuildArtifacts, "get_key", side_effect=keys),
+        patch.object(BuildArtifacts, "publish", side_effect=OSError("cache unavailable")),
+        patch.object(BuildArtifacts, "paths", new_callable=PropertyMock, return_value=["sites/assets"]),
+        patch.object(
+            BuildArtifacts, "required_paths", new_callable=PropertyMock, return_value=["sites/assets"]
+        ),
+    ):
+        BuildArtifacts(source).restore_or_build(lambda: builds.append(True), lambda message: None)
+    assert builds == [True]
+
+
+def test_clone_build_caches_output_only_when_inputs_are_unchanged(source):
+    from unittest.mock import patch
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    (source.apps_path / "frappe/frappe/public/dist").mkdir(parents=True)
+    artifacts = BuildArtifacts(source)
+    with patch.object(BuildArtifacts, "get_key", side_effect=["before", "after"]):
+        artifacts.restore_or_build(lambda: None, lambda message: None)
+    assert not (artifacts.root / "before").exists()
+    with patch.object(BuildArtifacts, "get_key", side_effect=["stable", "stable"]):
+        artifacts.restore_or_build(lambda: None, lambda message: None)
+    assert (artifacts.root / "stable/manifest.json").is_file()
+
+
+def test_cache_prune_keeps_most_recently_used_entries(tmp_path):
+    import os
+
+    from pilot.core.bench.artifacts import BenchArtifacts
+
+    root = tmp_path / "cache"
+    keys = [f"{index:064x}" for index in range(4)]
+    for index, key in enumerate(keys):
+        (root / key).mkdir(parents=True)
+        (root / key / "manifest.json").write_text("[]")
+        os.utime(root / key, (index, index))
+    (root / "build-staging").mkdir()
+    BenchArtifacts.prune(root, 2, "manifest.json")
+    assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
+        [*keys[2:], "build-staging"]
+    )
+
+
+def test_asset_restore_marks_entry_recently_used(source):
+    import os
+
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    (source.apps_path / "frappe/frappe/public/dist").mkdir(parents=True)
+    artifacts = BuildArtifacts(source)
+    key = "a" * 64
+    artifacts.capture(key)
+    os.utime(artifacts.root / key, (0, 0))
+    assert artifacts.restore(key)
+    assert (artifacts.root / key).stat().st_mtime > 0
+
+
+def test_cache_prune_skips_entries_another_process_removed(tmp_path, monkeypatch):
+    import os
+    import shutil
+    from contextlib import contextmanager
+
+    from pilot.core.bench.artifacts import BenchArtifacts
+
+    root = tmp_path / "cache"
+    keys = [f"{index:064x}" for index in range(4)]
+    for index, key in enumerate(keys):
+        (root / key).mkdir(parents=True)
+        os.utime(root / key, (index, index))
+
+    @contextmanager
+    def lock_after_other_pruner(path):
+        if path.name == f"{keys[1]}.guard":
+            shutil.rmtree(root / keys[1])
+        yield
+
+    monkeypatch.setattr("pilot.core.bench.artifacts.exclusive_file_lock", lock_after_other_pruner)
+    BenchArtifacts.prune(root, 1, "manifest.json")
+    assert [path.name for path in root.iterdir()] == [keys[3]]
+
+
+def test_build_cache_key_ignores_environment_that_does_not_affect_builds(source, monkeypatch):
+    from pilot.core.bench.build_artifacts import BuildArtifacts
+
+    PythonEnvManager(source).create_venv()
+    artifacts = BuildArtifacts(source)
+    key = artifacts.get_key()
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22")
+    monkeypatch.setenv("INVOCATION_ID", "admin-worker")
+    assert artifacts.get_key() == key
+    for name in ("NODE_ENV", "CI", "FRAPPE_BUILD_CONCURRENCY", "ESBUILD_BINARY_PATH"):
+        monkeypatch.setenv(name, "changed")
+        assert artifacts.get_key() != key
+        monkeypatch.delenv(name)

@@ -29,6 +29,20 @@ class FirewallSettings(TypedDict):
     rules: list[FirewallRuleSettings]
 
 
+class ProxySettings(TypedDict):
+    cloudflare: bool
+
+
+class CloudflareDomain(TypedDict):
+    domain: str
+    is_behind_cloudflare: bool
+
+
+class CloudflareStatus(TypedDict):
+    has_edge_proxy: bool
+    domains: list[CloudflareDomain]
+
+
 class WafConditionSettings(TypedDict):
     field: str
     operator: str
@@ -63,6 +77,7 @@ class S3Settings(TypedDict):
     provider: str
     region: str
     endpoint_url: str
+    upload_migration_backups: bool
 
 
 class LLMSettings(TypedDict):
@@ -93,6 +108,18 @@ class MailSettings(TypedDict):
 class WebhookEndpointSettings(TypedDict):
     url: str
     token_set: bool
+    events: list[str]
+
+
+class WebhookTestResult(TypedDict):
+    status: int
+    body: str
+    is_success: bool
+
+
+class WebhookEventOption(TypedDict):
+    value: str
+    label: str
 
 
 class ResourceLimitSettings(TypedDict):
@@ -100,7 +127,6 @@ class ResourceLimitSettings(TypedDict):
     memory_usage_limit: int
     disk_space_limit: int
     site_uptime: bool
-    webhook_endpoints: list[WebhookEndpointSettings]
     email_recipients: list[str]
 
 
@@ -111,7 +137,7 @@ class GeneralSettings(TypedDict):
     socketio_port: int
     default_branch: str
     db_type: str
-    allow_developer_mode: bool
+    enable_code_editor: bool
     onboarding: str
 
 
@@ -187,6 +213,7 @@ class Settings(TypedDict):
     redis: RedisSettings
     workers: list[WorkerGroupSettings]
     firewall: FirewallSettings
+    proxy: ProxySettings
     waf: WafSettingsDetail
     production: ProductionSettings
     lite_mode: LiteModeSettings
@@ -197,6 +224,8 @@ class Settings(TypedDict):
     llm: LLMSettingsDetail
     llm_providers: list[LLMProviderOption]
     resource_limits: ResourceLimitSettings
+    webhook_endpoints: list[WebhookEndpointSettings]
+    webhook_events: list[WebhookEventOption]
     mail: MailSettings
     monitor: MonitorSettings
 

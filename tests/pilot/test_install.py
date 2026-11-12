@@ -116,9 +116,7 @@ system_packages_present
 
 
 @pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
-def test_system_packages_present_fails_when_required_package_is_missing(
-    distro: str, tmp_path: Path
-) -> None:
+def test_system_packages_present_fails_when_required_package_is_missing(distro: str, tmp_path: Path) -> None:
     missing = EXPECTED_PACKAGES[distro][0]
     result = run_installer_functions(
         f"""
@@ -131,6 +129,41 @@ system_packages_present
     )
 
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
+@pytest.mark.parametrize("database_installed", [False, True])
+def test_system_packages_are_installed_in_one_transaction(
+    distro: str, database_installed: bool, tmp_path: Path
+) -> None:
+    installed_package = EXPECTED_PACKAGES[distro][0] if database_installed else ""
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+is_root() {{ return 0; }}
+services_to_disable() {{ :; }}
+ensure_curl() {{ :; }}
+add_distro_repos() {{ :; }}
+pkg_update() {{ :; }}
+pkg_available() {{ return 0; }}
+pkg_installed() {{ [ "$1" = "{installed_package}" ]; }}
+pkg_install() {{ printf 'install:%s\\n' "$*"; }}
+enable_cron() {{ :; }}
+disable_system_services() {{ :; }}
+install_node() {{ :; }}
+ensure_tzdata() {{ :; }}
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
+    assert len(installs) == 1
+    packages = installs[0].removeprefix("install:").split()
+    expected = {"git", *EXPECTED_PACKAGES[distro]} - {installed_package}
+    assert expected <= set(packages)
+    if database_installed:
+        assert installed_package not in packages
 
 
 def test_non_root_install_skips_provisioning_only_when_stack_is_present(
@@ -157,10 +190,11 @@ system_packages_present() { return 1; }
 ensure_curl() { echo ensure_curl; }
 add_distro_repos() { echo add_distro_repos; }
 pkg_update() { echo pkg_update; }
-bootstrap_packages() { echo bootstrap_packages; }
+bootstrap_packages() { echo bootstrap-package; }
 enable_cron() { echo enable_cron; }
-install_database_engines() { echo install_database_engines; }
-install_production_packages() { echo install_production_packages; }
+database_packages() { echo database-package; }
+production_packages() { echo production-package; }
+pkg_install() { echo "pkg_install $*"; }
 disable_system_services() { echo disable_system_services; }
 install_node() { echo install_node; }
 ensure_tzdata() { echo ensure_tzdata; }
@@ -169,7 +203,9 @@ install_system_packages
         tmp_path,
     )
     assert provisioned.returncode == 0, provisioned.stderr
-    assert "install_database_engines" in provisioned.stdout.splitlines()
+    assert (
+        "pkg_install bootstrap-package database-package production-package" in provisioned.stdout.splitlines()
+    )
 
 
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
@@ -267,15 +303,13 @@ def test_missing_waf_module_is_skipped_with_a_warning(tmp_path: Path) -> None:
         """
 DISTRO=ubuntu
 pkg_available() { return 1; }
-pkg_install() { echo "pkg_install $*"; }
-install_production_packages
+production_packages
 """,
         tmp_path,
     )
     assert result.returncode == 0, result.stderr
-    assert "WAF is unavailable" in result.stdout
-    assert "pkg_install nginx certbot supervisor" in result.stdout
-    assert "modsecurity" not in result.stdout.split("pkg_install", 1)[1]
+    assert "WAF is unavailable" in result.stderr
+    assert result.stdout.splitlines() == ["nginx", "certbot", "supervisor"]
 
 
 def test_arch_keeps_an_installed_mariadb_provider(tmp_path: Path) -> None:
@@ -284,19 +318,115 @@ def test_arch_keeps_an_installed_mariadb_provider(tmp_path: Path) -> None:
         """
 DISTRO=arch
 pkg_installed() { case "$1" in mariadb*) return 0 ;; *) return 1 ;; esac; }
-pkg_install() { echo "pkg_install $*"; }
-install_database_engines
+database_packages
 """,
         tmp_path,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "pkg_install postgresql postgresql-libs pkgconf redis"
+    assert result.stdout.splitlines() == ["postgresql", "postgresql-libs", "pkgconf", "redis"]
+
+
+# --ci drops the database servers (init installs what the bench manages),
+# production traffic serving, and headless browsers. Ubuntu is pinned exactly
+# since that is what CI runs; the other distros only pin what must be absent.
+CI_UBUNTU_PACKAGES = [
+    "git",
+    "curl",
+    "bash",
+    "sudo",
+    "ca-certificates",
+    "python3",
+    "python3-dev",
+    "build-essential",
+    "tzdata",
+    "cron",
+    "file",
+    "ripgrep",
+    "mariadb-client",
+    "libmariadb-dev",
+    "postgresql-client",
+    "libpq-dev",
+    "pkg-config",
+    "redis-server",
+]
+
+# Server, production, and browser packages per distro. Fedora's *client* is
+# literally named mariadb, so this cannot be one shared list.
+CI_DROPPED_PACKAGES = {
+    "macos": ["mariadb@11.8", "postgresql@16", "nginx", "certbot"],
+    "debian": [
+        "mariadb-server",
+        "postgresql",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "libnginx-mod-http-modsecurity",
+        "libnss3",
+    ],
+    "ubuntu": [
+        "mariadb-server",
+        "postgresql",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "libnginx-mod-http-modsecurity",
+        "libnss3",
+    ],
+    "fedora": [
+        "mariadb-server",
+        "postgresql-server",
+        "nginx",
+        "certbot",
+        "supervisor",
+        "nginx-mod-modsecurity",
+        "nss",
+    ],
+    "arch": ["mariadb", "postgresql", "nginx", "certbot", "supervisor", "nss"],
+}
+
+
+def _ci_install_packages(distro: str, tmp_path: Path) -> list[str]:
+    result = run_installer_functions(
+        f"""
+DISTRO={distro}
+CI_MODE=1
+is_root() {{ return 0; }}
+services_to_disable() {{ :; }}
+ensure_curl() {{ :; }}
+pkg_update() {{ :; }}
+pkg_available() {{ return 1; }}
+pkg_installed() {{ return 1; }}
+pkg_install() {{ printf 'install:%s\\n' "$*"; }}
+enable_cron() {{ :; }}
+disable_system_services() {{ :; }}
+install_node() {{ :; }}
+ensure_tzdata() {{ :; }}
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    installs = [line for line in result.stdout.splitlines() if line.startswith("install:")]
+    assert len(installs) == 1
+    return installs[0].removeprefix("install:").split()
+
+
+def test_ci_mode_installs_the_full_client_stack(tmp_path: Path) -> None:
+    assert _ci_install_packages("ubuntu", tmp_path) == CI_UBUNTU_PACKAGES
+
+
+@pytest.mark.parametrize("distro", EXPECTED_PACKAGES)
+def test_ci_mode_drops_servers_and_production(distro: str, tmp_path: Path) -> None:
+    installed = _ci_install_packages(distro, tmp_path)
+    assert "git" in installed
+    assert not (set(CI_DROPPED_PACKAGES[distro]) & set(installed))
 
 
 def test_sudoers_grant_falls_back_when_wildcards_are_rejected(tmp_path: Path) -> None:
     """sudo-rs on Ubuntu 26.04 rejects wildcards in arguments."""
     result = run_installer_functions(
         """
+is_root() { return 0; }
 visudo() { ! grep -q '\\*' "$2"; }
 sudo() { echo "sudo-rs 0.2.13"; }
 install() { cp "$3" "$TARGET"; }
@@ -325,7 +455,9 @@ services_to_disable
     assert "mariadb" in result.stdout.split()
 
 
-@pytest.mark.parametrize(("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)])
+@pytest.mark.parametrize(
+    ("version", "is_accepted"), [("v18.20.3", False), ("v24.1.0", True), ("v26.0.0", True)]
+)
 def test_node_24_or_later_is_accepted(version: str, is_accepted: bool, tmp_path: Path) -> None:
     """Frappe needs Node 24 or later, and Arch and Homebrew install the current release."""
     result = run_installer_functions(
@@ -389,3 +521,91 @@ create_bench_user frappe
             'export XDG_RUNTIME_DIR="/run/user/$(id -u)"\n'
             'export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"\n'
         )
+
+
+@pytest.mark.parametrize(
+    ("version", "url"),
+    [
+        ("", "https://api.github.com/repos/frappe/pilot/releases?per_page=1"),
+        ("v0.0.87", "https://api.github.com/repos/frappe/pilot/releases/tags/v0.0.87"),
+    ],
+)
+def test_a_pinned_version_fetches_that_release(version: str, url: str, tmp_path: Path) -> None:
+    result = run_installer_functions(f'PILOT_VERSION="{version}"\nrelease_api_url', tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == url
+
+
+_FAKE_SUDO = """
+is_root() { return 1; }
+sudo() {
+    [ "$1" = "-n" ] && return 0
+    [ "$1" = "--version" ] && { echo "sudo 1.9"; return 0; }
+    echo "sudo $*" >> "$LOG"
+    case "$1" in
+        visudo) return 0 ;;
+        install) cp "$4" "$5" ;;
+    esac
+}
+"""
+
+
+def test_a_non_root_install_adds_the_build_swap_helper_through_sudo(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        _FAKE_SUDO
+        + f"""
+LOG={tmp_path}/sudo.log
+uname() {{ echo Linux; }}
+command() {{ return 0; }}
+BUILD_SWAP_HELPER={tmp_path}/pilot-build-swap
+ensure_build_swap_helper
+cat "$LOG"
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "sudo install -m 755" in result.stdout
+    assert "sudo visudo -cf" in result.stdout
+    assert "-pilot-build-swap" in result.stdout.splitlines()[-1]
+    assert "pilot-build-swap on|off" in (tmp_path / "pilot-build-swap").read_text()
+
+
+def test_an_installed_build_swap_helper_needs_no_sudo(tmp_path: Path) -> None:
+    helper = tmp_path / "pilot-build-swap"
+    helper.write_text("#!/bin/sh\n")
+    helper.chmod(0o755)
+    result = run_installer_functions(
+        _FAKE_SUDO
+        + f"""
+LOG={tmp_path}/sudo.log
+BUILD_SWAP_HELPER={helper}
+ensure_build_swap_helper
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "sudo.log").exists()
+
+
+def test_a_non_root_install_without_working_sudo_only_warns(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        f"""
+is_root() {{ return 1; }}
+sudo() {{ return 1; }}
+SUDO_PASS=wrong
+uname() {{ echo Linux; }}
+command() {{ return 0; }}
+BUILD_SWAP_HELPER={tmp_path}/pilot-build-swap
+ensure_build_swap_helper
+echo continued
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "could not install the build swap helper" in result.stderr
+    assert result.stdout.strip().endswith("continued")
+    assert not (tmp_path / "pilot-build-swap").exists()

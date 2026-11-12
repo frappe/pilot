@@ -23,10 +23,10 @@ _BASE_DATA: dict = {
 }
 
 
-def _provisioner(tmp_path: Path) -> SiteProvisioner:
+def _provisioner(tmp_path: Path, skip_assets: bool = False) -> SiteProvisioner:
     bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
     bench.config.letsencrypt.email = "ops@example.com"
-    return SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb")
+    return SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb", skip_assets)
 
 
 def test_provisioning_records_its_owner_before_site_creation_starts(tmp_path, monkeypatch):
@@ -191,8 +191,12 @@ def test_restore_only_enables_backups_after_the_database_and_apps_are_ready(rest
         assert provision.call_args.kwargs["schedule_backups"] is False
 
 
-def test_a_new_site_calls_pilot_over_loopback_and_gives_the_browser_the_admin_domain(tmp_path: Path) -> None:
+@pytest.mark.parametrize("allow_site_to_pilot_communication", [True, False])
+def test_allow_site_to_pilot_communication_controls_the_cloud_markers(
+    tmp_path: Path, allow_site_to_pilot_communication: bool
+) -> None:
     provisioner = _provisioner(tmp_path)
+    provisioner.bench.config.admin.allow_site_to_pilot_communication = allow_site_to_pilot_communication
     provisioner.bench.config.admin.domain = "admin.local"
     site = provisioner.bench.site("site1.example.com")
     site.path.mkdir(parents=True)
@@ -201,10 +205,14 @@ def test_a_new_site_calls_pilot_over_loopback_and_gives_the_browser_the_admin_do
     with patch("admin.backend.internal.session.Session.issue_pilot_token", return_value="site-token"):
         provisioner.write_pilot_communication_config(site)
 
-    assert json.loads((site.path / "site_config.json").read_text()) == {
-        "pilot_endpoint": f"http://127.0.0.1:{provisioner.bench.config.admin.internal_port}",
+    persisted = json.loads((site.path / "site_config.json").read_text())
+    if not allow_site_to_pilot_communication:
+        assert persisted == {}
+        return
+    assert persisted == {
+        "pilot_endpoint": (f"http://127.0.0.1:{provisioner.bench.config.admin.internal_port}"),
         "cloud_server_url": "http://admin.local",
-        "cloud_settings_embed_url": "http://admin.local",
+        "cloud_settings_embed_url": "/_pilot",
         "pilot_auth_token": "site-token",
     }
 
@@ -243,7 +251,9 @@ def test_enable_scheduler_fails_loudly(tmp_path: Path) -> None:
         (1, "NOT READY for migration: site site1.example.com has pending background jobs", True),
     ],
 )
-def test_pending_background_jobs_come_from_ready_for_migration(tmp_path, returncode, stdout, expected) -> None:
+def test_pending_background_jobs_come_from_ready_for_migration(
+    tmp_path, returncode, stdout, expected
+) -> None:
     from pilot.exceptions import CommandError
 
     bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
@@ -284,3 +294,32 @@ def test_a_new_site_sends_mail_under_its_first_label_in_title_case(tmp_path: Pat
 
 def test_the_sender_name_turns_dashes_and_underscores_into_spaces() -> None:
     assert email_sender_name("north_star--labs.example.com") == "North Star Labs"
+
+
+@pytest.mark.parametrize(("skip_assets", "builds"), [(False, 1), (True, 0)])
+def test_skip_assets_controls_the_post_provisioning_build(
+    tmp_path: Path, skip_assets: bool, builds: int
+) -> None:
+    data = {**_BASE_DATA, "production": {"enabled": False}}
+    bench = Bench(BenchConfig._from_dict(data), tmp_path)
+    provisioner = SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb", skip_assets)
+
+    with (
+        patch.object(provisioner, "install_apps"),
+        patch.object(provisioner, "write_pilot_communication_config"),
+        patch.object(provisioner, "build_missing_assets") as build_missing_assets,
+        patch.object(provisioner, "add_to_hosts"),
+        patch.object(provisioner, "reload_nginx"),
+        patch.object(provisioner.bench, "write_common_site_config"),
+        patch.object(Site, "enable_scheduler"),
+    ):
+        provisioner.finish(MagicMock(), lambda _: None)
+
+    assert build_missing_assets.call_count == builds
+
+
+def test_skip_assets_refuses_a_production_bench(tmp_path: Path) -> None:
+    from pilot.exceptions import BenchError
+
+    with pytest.raises(BenchError, match="production bench"):
+        _provisioner(tmp_path, skip_assets=True)

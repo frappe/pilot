@@ -315,3 +315,52 @@ def test_workspace_member_installs_from_a_root_without_a_lockfile(
     NodePackages(frontend, app).install()
 
     run_command.assert_called_once_with(["yarn", "install", "--frozen-lockfile"], cwd=app, stream_output=True)
+
+
+def test_unstamped_yarn_install_keeps_the_lockfile_mtime_rule(tmp_path: Path, run_command: MagicMock) -> None:
+    app = write_package(tmp_path / "app")
+    lock = app / "yarn.lock"
+    integrity = app / "node_modules/.yarn-integrity"
+    integrity.parent.mkdir()
+    lock.write_text("lockfile")
+    integrity.write_text("{}")
+    os.utime(lock, (1, 1))
+    os.utime(integrity, (2, 2))
+
+    NodePackages(app).ensure_installed()
+    run_command.assert_not_called()
+
+    os.utime(lock, (3, 3))
+    NodePackages(app).ensure_installed()
+    run_command.assert_called_once()
+
+
+def test_yarn_install_key_ignores_unrelated_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    app = write_package(tmp_path / "app")
+    (app / "yarn.lock").write_text("lockfile")
+    key = NodeDependencies.get_key(app)
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22")
+    monkeypatch.setenv("TERM", "dumb")
+    assert NodeDependencies.get_key(app) == key
+    monkeypatch.setenv("NODE_ENV", "production")
+    assert NodeDependencies.get_key(app) != key
+    monkeypatch.delenv("NODE_ENV")
+    monkeypatch.setenv("YARN_REGISTRY", "https://registry.example")
+    assert NodeDependencies.get_key(app) != key
+
+
+def test_yarn_install_key_survives_kernel_updates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.managers.node_dependencies import NodeDependencies
+
+    app = write_package(tmp_path / "app")
+    (app / "yarn.lock").write_text("lockfile")
+    key = NodeDependencies.get_key(app)
+    monkeypatch.setattr("platform.release", lambda: "99.0.0-updated")
+    monkeypatch.setattr("platform.platform", lambda *args, **kwargs: "Linux-99.0.0-updated-x86_64")
+    assert NodeDependencies.get_key(app) == key
+    monkeypatch.setattr("platform.machine", lambda: "riscv64")
+    assert NodeDependencies.get_key(app) != key

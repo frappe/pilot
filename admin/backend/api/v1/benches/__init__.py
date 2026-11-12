@@ -37,11 +37,18 @@ def clone_bench(name: str):
     return submit(name)
 
 
-@benches_bp.get("/<name>/clone-branch-options")
-def clone_branch_options(name: str):
-    from admin.backend.api.v1.cloning import clone_branch_options as read
+@benches_bp.get("/<name>/clone-apps")
+def clone_apps(name: str):
+    from admin.backend.api.v1.cloning import clone_apps as read
 
     return read(name)
+
+
+@benches_bp.get("/<name>/clone-apps/<app>/branches")
+def clone_app_branches(name: str, app: str):
+    from admin.backend.api.v1.cloning import clone_app_branches as read
+
+    return read(name, app)
 
 
 @benches_bp.get("")

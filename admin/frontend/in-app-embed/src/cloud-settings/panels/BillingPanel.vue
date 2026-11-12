@@ -2,15 +2,21 @@
 import { useTranslation } from '../translation'
 import { reconcilePaymentSetup, removePaymentMethod } from '@frappe/cloud-sdk/api'
 import type { PlanOption } from '@frappe/cloud-sdk'
-import { Badge, Button, ErrorMessage, toast } from 'frappe-ui'
+import { Button, ErrorMessage, toast } from 'frappe-ui'
+import { List } from 'frappe-ui/list'
 import { computed, ref, watch } from 'vue'
 import AddPaymentCard from '../components/AddPaymentCard.vue'
+import BillingNotice from '../components/BillingNotice.vue'
+import BillingRow from '../components/BillingRow.vue'
+import BillingSummary from '../components/BillingSummary.vue'
 import BillingProfileCard from '../components/BillingProfileCard.vue'
 import ChangePlanCard from '../components/ChangePlanCard.vue'
+import InvoiceList from '../components/InvoiceList.vue'
 import Panel from '../components/Panel.vue'
 import PlanMoveCard from '../components/PlanMoveCard.vue'
 import TrialCard from '../components/TrialCard.vue'
 import { openExternal } from '../external'
+import { useInvoicePayment } from '../invoicePayment'
 import { useErrorMessage, type Store } from '../store'
 
 const __ = useTranslation()
@@ -29,14 +35,16 @@ type Step = 'plan' | 'profile' | 'payment'
 const flow = ref<'' | Step | 'moving'>('')
 // The steps of the open flow. Billing details and the payment method show only when Central still needs them.
 const steps = ref<Step[]>([])
-const removing = ref(false)
-const removeError = ref('')
+const replacingCard = ref('')
+const replaceError = ref('')
 const paymentSetupError = ref('')
 
 const load = async () => {
   paymentSetupError.value = ''
   store.loadAccountLinks()
   await store.loadBilling(true)
+  // A trial has no invoices yet.
+  if (!store.isOnTrial()) store.loadInvoices()
 
   try {
     const result = await reconcilePaymentSetup()
@@ -61,14 +69,6 @@ const plan = computed(() => billing.value?.plan)
 const trial = computed(() => billing.value?.trial)
 const isAddingPayment = computed(() => flow.value === 'profile' || flow.value === 'payment')
 
-const planSubtitle = computed(() => {
-  if (plan.value?.subtitle) return plan.value.subtitle
-
-  return Object.values(plan.value?.specs || {})
-    .filter(Boolean)
-    .join(' · ')
-})
-
 const stepLabel = (step: Step) =>
   steps.value.length > 1 ? __('Step {0} of {1}', [steps.value.indexOf(step) + 1, steps.value.length]) : ''
 
@@ -76,7 +76,7 @@ const stepLabel = (step: Step) =>
 const chosenPlan = ref<PlanOption | null>(null)
 
 const openSteps = (firstSteps: Step[]) => {
-  removeError.value = ''
+  replaceError.value = ''
   chosenPlan.value = null
   const needsPayment = !billing.value?.payment_method
   const needsProfile = needsPayment && !billing.value?.profile_complete
@@ -87,7 +87,16 @@ const openSteps = (firstSteps: Step[]) => {
 }
 
 const startUpgrade = () => openSteps(['plan'])
-const startPayment = () => openSteps([])
+
+// The new card is added first, so a paid site is never left without a way to pay.
+const changeCard = () => {
+  replacingCard.value = billing.value?.payment_method?.name || ''
+  if (!replacingCard.value) return openSteps([])
+
+  replaceError.value = ''
+  steps.value = ['payment']
+  flow.value = 'payment'
+}
 
 const nextStep = (current: Step) => {
   flow.value = steps.value[steps.value.indexOf(current) + 1] || ''
@@ -106,8 +115,21 @@ const finishPayment = async () => {
   flow.value = ''
   toast.success(__('Payment method added.'))
 
+  await removeReplacedCard()
   await store.loadBilling(true)
   if (chosenPlan.value && !billing.value?.trial) flow.value = 'moving'
+}
+
+const removeReplacedCard = async () => {
+  const replaced = replacingCard.value
+  replacingCard.value = ''
+  if (!replaced) return
+
+  try {
+    await removePaymentMethod(replaced)
+  } catch (exception) {
+    replaceError.value = getErrorMessage(exception)
+  }
 }
 
 // A pending move also shows after the dialog reopens, for example when the card was added in a new tab.
@@ -116,34 +138,27 @@ const isMoving = computed(
 )
 const movingPlan = computed(() => chosenPlan.value?.title || billing.value?.plan_change?.plan || '')
 
+const editDetails = () => {
+  steps.value = ['profile']
+  flow.value = 'profile'
+}
+
 const changePlan = () => {
   steps.value = []
   flow.value = 'plan'
 }
 
-const removeCard = async () => {
-  if (removing.value || !billing.value?.payment_method) return
-
-  removing.value = true
-  removeError.value = ''
-
-  try {
-    await removePaymentMethod(billing.value.payment_method.name)
-    await store.loadBilling(true)
-  } catch (exception) {
-    removeError.value = getErrorMessage(exception)
-  } finally {
-    removing.value = false
-  }
-}
-
 const changePlanUrl = computed(() => store.state.accountLinks?.change_plan)
+
+const invoicePayment = useInvoicePayment(async () => {
+  await Promise.all([store.loadInvoices(), store.loadBilling(true)])
+})
 </script>
 
 <template>
   <Panel
     :title="__('Billing')"
-    :description="__('Your plan and payment method.')"
+    :description="trial ? __('Your free trial and plan.') : __('Your plan, next payment and invoices.')"
     :loading="!billing && !error"
     :error="loadFailed ? error : ''"
     :error-title="__(`Couldn't load billing`)"
@@ -233,101 +248,40 @@ const changePlanUrl = computed(() => store.state.accountLinks?.change_plan)
       <PlanMoveCard v-else-if="isMoving" :store="store" :plan="movingPlan" />
 
       <section
-        v-else-if="!isAddingPayment"
-        class="grid grid-cols-1 items-center gap-x-4 rounded-6 border border-outline-gray-1.5 p-5 sm:grid-cols-[minmax(0,1fr)_auto]"
+        v-else-if="!isAddingPayment && trial"
+        class="rounded-6 border border-outline-gray-1.5 px-4"
+        :aria-label="__('Plan')"
       >
-        <p class="flex items-center gap-2 text-base-semibold text-ink-gray-8">
-          <template v-if="trial">
-            {{ __("Trial plan") }}
-            <Badge :label="__('Free trial')" theme="blue" />
-          </template>
-          <template v-else>{{ plan.name ? __("{0} plan", [plan.name]) : __("Current plan") }}</template>
-        </p>
-
-        <p class="col-start-1 mt-1 text-sm text-ink-gray-5">{{ planSubtitle }}</p>
-
-        <Button
-          v-if="!trial"
-          class="mt-3 justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0"
-          :label="__('Change plan')"
-          @click="changePlan"
-        />
-
-        <ErrorMessage :message="store.state.accountLinksError" class="mt-2 sm:col-span-2" />
+        <List :columns="['minmax(0,1fr)']">
+          <BillingRow :label="__('Plan')" :value="__('Free trial')" :detail="plan.subtitle" />
+        </List>
       </section>
 
       <template v-if="!trial && !flow && !isMoving">
-        <section class="border rounded-6 border-outline-gray-1.5">
-          <div class="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-outline-gray-1.5">
-            <div class="p-5">
-              <p class="text-sm text-ink-gray-5">{{ __("Estimated this cycle") }}</p>
+        <BillingNotice
+          :billing="billing"
+          :invoices="store.state.invoices"
+          :payment="invoicePayment"
+          :billing-url="store.state.accountLinks?.billing"
+          @change-card="changeCard"
+        />
 
-              <p class="mt-2 text-3xl-semibold tabular-nums text-ink-gray-9">
-                {{ billing.estimate?.amount ?? "-" }}
-              </p>
+        <BillingSummary
+          :billing="billing"
+          @change-plan="changePlan"
+          @change-card="changeCard"
+          @edit-details="editDetails"
+        />
 
-              <p class="mt-1.5 text-sm text-ink-gray-5">{{ billing.estimate?.note }}</p>
-            </div>
+        <ErrorMessage :message="replaceError" />
 
-            <div class="p-5">
-              <p class="text-sm text-ink-gray-5">{{ __("Credit") }}</p>
-
-              <p class="mt-2 text-3xl-semibold tabular-nums text-ink-gray-9">
-                {{ billing.credit?.amount ?? "-" }}
-              </p>
-
-              <p
-                class="flex items-center gap-1.5 mt-1.5 text-sm"
-                :class="billing.credit?.warning ? 'text-ink-amber-6' : 'text-ink-gray-5'"
-              >
-                <span
-                  v-if="billing.credit?.warning"
-                  class="lucide-triangle-alert size-3.5 shrink-0"
-                  aria-hidden="true"
-                />
-                {{ billing.credit?.note }}
-              </p>
-            </div>
-          </div>
-
-          <div
-            v-if="!isAddingPayment"
-            class="flex items-center gap-3 px-5 py-4 border-t border-outline-gray-1.5"
-          >
-            <span class="grid place-items-center bg-surface-gray-2 rounded-6 size-9 shrink-0 text-ink-gray-6">
-              <span class="lucide-credit-card size-4" aria-hidden="true" />
-            </span>
-
-            <div class="flex-1 min-w-0">
-              <p class="text-base-medium text-ink-gray-8 truncate">
-                {{ billing.payment_method ? billing.payment_method.label : __("No payment method yet") }}
-              </p>
-
-              <p class="mt-0.5 text-sm text-ink-gray-5">
-                {{ billing.payment_method
-                    ? __("Used for your monthly bill.")
-                    : __("Add a payment method to keep this site running.") }}
-              </p>
-            </div>
-
-            <Button
-              v-if="billing.payment_method"
-              :loading="removing"
-              :label="__('Remove')"
-              @click="removeCard"
-            />
-
-            <Button
-              v-else
-              variant="solid"
-              icon-left="lucide-plus"
-              :label="__('Add')"
-              @click="startPayment"
-            />
-          </div>
-        </section>
-
-        <ErrorMessage :message="removeError" />
+        <InvoiceList
+          class="pt-3"
+          :invoices="store.state.invoices"
+          :error="store.state.invoicesError"
+          :payment="invoicePayment"
+          @retry="store.loadInvoices"
+        />
       </template>
     </div>
   </Panel>

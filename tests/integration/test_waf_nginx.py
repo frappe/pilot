@@ -12,6 +12,7 @@ from pilot.config import BenchConfig, WafConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 from pilot.managers.waf import WafManager
+from tests.integration.nginx_wrapper import catch_all_http_directives
 
 pytestmark = pytest.mark.integration
 
@@ -44,7 +45,7 @@ def _make_bench(tmp_path: Path) -> Bench:
     return bench
 
 
-def _wrapper_conf(tmp_path: Path, include_conf: Path, module: str) -> Path:
+def _wrapper_conf(tmp_path: Path, bench: Bench, include_conf: Path, module: str) -> Path:
     conf = tmp_path / "nginx.conf"
     conf.write_text(
         f"load_module {module};\n"
@@ -52,8 +53,7 @@ def _wrapper_conf(tmp_path: Path, include_conf: Path, module: str) -> Path:
         f"error_log {tmp_path}/error.log;\n"
         "events {}\n"
         "http {\n"
-        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
-        "$status \"$host\" $request_time';\n"
+        f"{catch_all_http_directives(bench)}"
         f"    access_log {tmp_path}/access.log;\n"
         f"    include {include_conf};\n"
         "}\n"
@@ -69,7 +69,7 @@ def test_generated_waf_config_passes_nginx_t(tmp_path: Path) -> None:
     site_conf = (nginx_dir / "include.conf").read_text()
     assert "modsecurity on;" in site_conf
 
-    conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf", WafManager.module_path())
+    conf = _wrapper_conf(tmp_path, bench, nginx_dir / "include.conf", WafManager.module_path())
     result = subprocess.run(
         ["nginx", "-t", "-p", str(tmp_path), "-c", str(conf)],
         capture_output=True,

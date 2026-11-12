@@ -8,12 +8,12 @@ import os
 import shutil
 import stat
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from pilot.core.app.node_packages import get_app_packages
 from pilot.core.app.prebuilt_assets import asset_build_dirs, build_output_paths
 from pilot.core.bench.artifacts import BenchArtifacts
-from pilot.exceptions import CommandError
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.node_dependencies import NodeDependencies
 from pilot.utils import run_command
@@ -22,14 +22,26 @@ from pilot.utils import run_command
 class BuildArtifacts:
     """Reuse completed builds with identical code, environment and toolchains."""
 
+    max_entries = 3
+
     def __init__(self, bench) -> None:
         self.bench = bench
         self.root = bench.path.parent / ".pilot" / "asset-cache"
 
+    @property
+    def optional_key(self) -> str | None:
+        try:
+            return self.get_key()
+        except Exception as error:
+            logging.warning("Skipping asset cache fingerprint: %s", error)
+            return None
+
     def get_key(self) -> str | None:
         digest = hashlib.sha256(b"pilot-assets-v1\0")
         environment = {
-            key: value for key, value in os.environ.items() if key not in {"PWD", "OLDPWD", "SHLVL", "_"}
+            key: value
+            for key, value in os.environ.items()
+            if key in {"NODE_ENV", "CI"} or key.startswith(("FRAPPE_", "VITE_", "ESBUILD_"))
         }
         digest.update(json.dumps(environment, sort_keys=True).encode())
         config_path = self.bench.sites_path / "common_site_config.json"
@@ -170,15 +182,27 @@ class BuildArtifacts:
             )
         return paths
 
+    def restore_or_build(self, build: Callable[[], None], on_progress: Callable[[str], None]) -> None:
+        """Restore a matching cached build, or build and cache the result."""
+        key = self.optional_key
+        if self.restore(key):
+            on_progress("Reusing matching built assets")
+            return
+        on_progress("Installing Node dependencies and rebuilding assets for selected branches")
+        build()
+        if key is not None and self.optional_key == key:
+            self.capture(key)
+
     def capture(self, key: str | None) -> None:
         if key is None:
             return
-        paths = self.paths
-        if "sites/assets" not in paths:
-            return
         try:
+            paths = self.paths
+            if not set(self.required_paths).issubset(paths):
+                return
             self.publish(key, paths)
-        except (OSError, CommandError) as error:
+            BenchArtifacts.prune(self.root, self.max_entries, "manifest.json")
+        except Exception as error:
             logging.warning("Skipping asset cache publication: %s", error)
 
     def publish(self, key: str, paths: list[str]) -> None:
@@ -214,15 +238,30 @@ class BuildArtifacts:
                 return False
             if not self.has_valid_manifest(target, paths):
                 return False
+            os.utime(target)
             BenchArtifacts(target).restore(self.bench, paths)
         return True
 
     def has_valid_manifest(self, target: Path, paths) -> bool:
         if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
             return False
-        if "sites/assets" not in paths or not set(paths).issubset(self.output_paths):
+        if not set(self.required_paths).issubset(paths) or not set(paths).issubset(self.output_paths):
             return False
         return all(self.is_safe_output(target, path) for path in paths)
+
+    @property
+    def required_paths(self) -> list[str]:
+        paths = ["sites/assets"]
+        for app in self.bench.apps():
+            public = app.path / app.module_name / "public"
+            if app.config.name == "frappe" or any(public.rglob("*.bundle.*")):
+                paths.append(f"apps/{app.config.name}/{app.module_name}/public/dist")
+            for relative in ("frontend", "roster"):
+                from pilot.core.app.node_packages import NodePackages
+
+                if NodePackages(app.path / relative).has_script("build"):
+                    paths.append(f"apps/{app.config.name}/{relative}/dist")
+        return paths
 
     def is_safe_output(self, target: Path, path: str) -> bool:
         return (

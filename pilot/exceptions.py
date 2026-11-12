@@ -76,6 +76,25 @@ class DependencyResolutionError(RegistryError):
     """A dependency chain couldn't be resolved (cycle, version conflict, etc)."""
 
 
+class InsufficientDiskSpaceError(BenchError):
+    def __init__(self, purpose: str, needed_bytes: int, free_bytes: int, reserved_bytes: int):
+        super().__init__(
+            f"Not enough disk space for {purpose}: it needs about {self.format_size(needed_bytes)}, "
+            f"plus {self.format_size(reserved_bytes)} kept free for the system, "
+            f"and {self.format_size(free_bytes)} is free."
+        )
+        self.needed_bytes = needed_bytes
+        self.free_bytes = free_bytes
+
+    @staticmethod
+    def format_size(size: int) -> str:
+        if size >= 1024**3:
+            return f"{size / 1024**3:.1f} GB"
+        if size >= 1024**2:
+            return f"{size / 1024**2:.0f} MB"
+        return f"{size / 1024:.0f} KB"
+
+
 class CronError(BenchError):
     pass
 
@@ -106,3 +125,11 @@ class DatabaseError(BenchError):
 
 class TwoFactorError(BenchError):
     """Raised when an enrollment request cannot be honoured."""
+
+
+class ScriptBusyError(BenchError):
+    """Another console script is already running on this bench."""
+
+
+class LowMemoryError(BenchError):
+    """The host has too little free memory to start a helper process."""

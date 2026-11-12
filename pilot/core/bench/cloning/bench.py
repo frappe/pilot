@@ -74,12 +74,7 @@ class BenchClone:
                     continue
                 for relative in (".", "frontend", "roster"):
                     cache.capture(app.path / relative)
-            artifacts = BuildArtifacts(destination)
-            if artifacts.restore(artifacts.get_key()):
-                on_progress("Reusing matching built assets")
-            else:
-                on_progress("Installing Node dependencies and rebuilding assets for selected branches")
-                environment.build_assets()
+            BuildArtifacts(destination).restore_or_build(environment.build_assets, on_progress)
 
     def create_python_environment(self, destination, environment, rebuild: bool) -> None:
         with ThreadPoolExecutor(max_workers=1) as executor:
@@ -103,9 +98,11 @@ class BenchClone:
 
         cache = NodeDependencyCache(destination)
         for app in self.source.apps():
+            if self.app_branches.get(app.config.name, self.branch) == "current":
+                continue  # copy_app already copied its node_modules with the checkout.
             for relative in (".", "frontend", "roster"):
                 target = destination.apps_path / app.config.name / relative
-                if self.app_branches.get(app.config.name, self.branch) != "current" and cache.restore(target):
+                if cache.restore(target):
                     continue
                 if NodeDependencies.copy(app.path / relative, target):
                     BenchArtifacts.relocate_links(
@@ -138,7 +135,7 @@ class BenchClone:
             "workers",
             "socketio_backend",
             "install_dev_extra",
-            "allow_developer_mode",
+            "enable_code_editor",
         ):
             setattr(destination.config, name, copy.deepcopy(getattr(self.source.config, name)))
         destination.config.apps = [copy.deepcopy(app.config) for app in self.source.apps()]
@@ -156,13 +153,9 @@ class BenchClone:
         # repository, retaining copied dirty/untracked files in the destination.
         git_file = destination / ".git"
         if not git_file.is_file() and not git_file.is_symlink():
-            if (alternates := git_file / "objects/info/alternates").exists():
-                run_command(["git", "-C", str(destination), "repack", "-a", "-d"])
-                alternates.unlink()
-            if (worktrees := git_file / "worktrees").exists():
-                shutil.rmtree(worktrees)
-            return
-        git_file.unlink()
+            shutil.rmtree(git_file)
+        else:
+            git_file.unlink()
         staging = destination / ".pilot-clone-git"
         from pilot.core.bench.cloning.repository import clone_repository
 

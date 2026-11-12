@@ -18,6 +18,20 @@ def test_successful_command_returns_completed_process() -> None:
     assert result.returncode == 0
 
 
+def test_tee_output_preserves_progress_carriage_returns(capsys) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        'import sys; sys.stdout.write("Updating DocTypes: 0%\\rUpdating DocTypes: 50%\\rUpdating DocTypes: 100%\\nDone\\n"); sys.stdout.flush()',
+    ]
+    result = run_command(command, tee_output=True)
+
+    expected = "Updating DocTypes: 0%\rUpdating DocTypes: 50%\rUpdating DocTypes: 100%\nDone\n"
+    assert result.returncode == 0
+    assert result.stdout == expected
+    assert capsys.readouterr().out == expected
+
+
 def test_nonzero_exit_raises_command_error_with_returncode() -> None:
     with pytest.raises(CommandError) as excinfo:
         run_command(["sh", "-c", "exit 3"])
@@ -32,10 +46,15 @@ def test_timeout_raises_command_error_mentioning_timeout() -> None:
 
 
 def test_timeout_actually_terminates_the_process_group() -> None:
+    marker = f"pilot-timeout-test-{time.monotonic_ns()}"
+    script = (
+        "import subprocess, sys; "
+        "subprocess.run([sys.executable, '-c', 'import time; time.sleep(5)', sys.argv[1]])"
+    )
     with pytest.raises(CommandError):
-        run_command(["sh", "-c", "sleep 5"], timeout=0.3)
+        run_command([sys.executable, "-c", script, marker], timeout=0.3)
     time.sleep(0.2)
-    result = subprocess.run(["pgrep", "-f", "sleep 5"], capture_output=True)
+    result = subprocess.run(["pgrep", "-f", marker], capture_output=True)
     assert result.stdout == b""
 
 

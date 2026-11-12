@@ -256,6 +256,31 @@ def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
     assert store.read_metadata(TASK_ID)["resource_keys"] == ["site:example.test"]
 
 
+def test_reserved_resource_rejects_tasks_until_released(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+
+    with store.reserve("site:a.localhost"):
+        with pytest.raises(TaskConflictError, match=r"already using resource 'site:a\.localhost'"):
+            store.create_queued(metadata(), resource_key="site:a.localhost")
+        with pytest.raises(TaskConflictError, match=r"already using resource 'site:a\.localhost'"):
+            store.create_idempotent_queued(
+                metadata(), {}, "digest", "fingerprint", resource_key="site:a.localhost"
+            )
+        store.create_queued(
+            {**metadata(), "task_id": "20260715-120000-333333"}, resource_key="site:b.localhost"
+        )
+
+    store.create_queued(metadata(), resource_key="site:a.localhost")
+
+
+def test_reserve_rejects_an_active_task(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), resource_key="site:a.localhost")
+
+    with pytest.raises(TaskConflictError, match=r"site:a\.localhost"), store.reserve("site:a.localhost"):
+        pass
+
+
 def test_active_resource_can_be_handed_to_successor(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     store.create_queued(metadata(), resource_key=["bench:update", "site:example.test"])

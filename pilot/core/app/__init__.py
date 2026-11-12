@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +16,6 @@ from pilot.core.app.install_result import AppInstallResult
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError
-from pilot.internal.git import GitRepo
 from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
@@ -160,6 +160,18 @@ class App:
     def head_sha(self) -> str:
         """The commit checked out on disk, unlike installed_hash which reads dist-info."""
         return self._repository.repo.head_sha
+
+    def run_git(self, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess:
+        """Run git in this checkout with the stored credential. The token stays in the
+        environment, out of argv and .git/config. Check `returncode`; it does not raise."""
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.path,
+            env=self._repository.git_env,
+            capture_output=capture_output,
+            text=True,
+            check=False,
+        )
 
     @property
     def has_source_changes(self) -> bool:
@@ -317,12 +329,12 @@ class App:
             self._repository.clone(on_progress)
             return
 
-        GitRepo(self.path).remove()
+        shutil.rmtree(self.path, ignore_errors=True)  # leftovers from an interrupted run
         self.path.parent.mkdir(parents=True, exist_ok=True)
         apps_clone = self.existing_clone_path
         if apps_clone is not None:
             on_progress(f"'{self.config.name}' already cloned, moving it out of apps/ to validate.")
-            GitRepo(apps_clone).move(self.path)
+            shutil.move(str(apps_clone), str(self.path))
             return
 
         on_progress(f"Cloning {self.config.name}...")
@@ -409,14 +421,17 @@ class App:
         skip_assets: bool = False,
         commit: str = "",
         on_progress: Callable[[str], None] = lambda message: None,
+        on_step: Callable[[str, str], object] = lambda key, label: None,
     ) -> AppInstallResult:
         """Pinned commit based Clone, validate, install, register, and build app assets."""
         if self.bench.is_app_installed(self.config.name):
             return self._skip_already_installed(on_progress, install_dependencies, skip_assets)
 
+        name = self.config.name
         self.ensure_not_linked()
         existing_clone = self.existing_clone_path
         self.is_staged = not self.is_marketplace
+        on_step(f"download_{name}", f"Download {name}")
         if self.is_staged or existing_clone is None:
             self.clone(on_progress)
 
@@ -425,53 +440,43 @@ class App:
                 on_progress(f"Checking out {self.config.name} at {commit[:8]}...")
                 self.checkout_commit(commit)
             dependencies = (
-                self._install_dependencies(on_progress, skip_assets) if install_dependencies else []
+                self._install_dependencies(on_progress, skip_assets, on_step) if install_dependencies else []
             )
             if self.is_staged:
                 self.validate()
             self.promote()
-        except BenchError as error:
-            self._cleanup_after_failure(error, on_progress, lambda: self._undo_clone(existing_clone))
+        except BenchError:
+            self._undo_clone(existing_clone)
             raise
 
+        on_step(f"python_{name}", f"Install Python packages for {name}")
         on_progress(f"Installing {self.config.name}...")
 
         try:
             self._install_into_environment()
             self._register()
             if not skip_assets:
+                on_step(f"assets_{name}", f"Set up assets for {name}")
                 on_progress(f"\nSetting up assets for {self.config.name}...")
                 self._build_assets_via_env_manager()
             else:
                 on_progress(f"\nSkipping assets for {self.config.name}...")
-        except Exception as error:
-            self._cleanup_after_failure(
-                error,
-                on_progress,
-                lambda: self._roll_back_install(delete_clone=existing_clone is None, on_progress=on_progress),
-            )
+        except Exception:
+            self._roll_back_install(delete_clone=existing_clone is None, on_progress=on_progress)
             raise
 
         self.record_branch()
         on_progress(f"\n'{self.config.name}' installed successfully.")
         return AppInstallResult(self, already_installed=False, installed_dependencies=dependencies)
 
-    def _cleanup_after_failure(self, error: Exception, on_progress, cleanup: Callable[[], None]) -> None:
-        try:
-            cleanup()
-        except Exception as cleanup_error:
-            message = f"App cleanup failed; retained files at {self.path}: {cleanup_error}"
-            error.add_note(message)
-            on_progress(message)
-
     def _undo_clone(self, existing_clone: Path | None) -> None:
         """Undo the clone after a failure: delete a tree this run created, and put
         one that was already in apps/ back where it was. A working tree we did not
         create is not ours to remove."""
         if existing_clone is None:
-            GitRepo(self.path).remove()
+            shutil.rmtree(self.path, ignore_errors=True)
         elif self.is_staged:
-            GitRepo(self.path).move(existing_clone)
+            shutil.move(str(self.path), str(existing_clone))
 
     def promote(self) -> "App":
         if not self.path.is_dir():
@@ -483,7 +488,7 @@ class App:
         if target.exists():
             raise BenchError(f"'{target}' already exists - remove it before installing this app.")
         target.parent.mkdir(parents=True, exist_ok=True)
-        GitRepo(self.path).move(target)
+        shutil.move(str(self.path), str(target))  # a rename, unless apps/ is another filesystem
         self.config.name = module
         self.is_staged = False
         return self
@@ -497,13 +502,17 @@ class App:
         with contextlib.suppress(Exception):
             self._pip_uninstall()
         if delete_clone:
-            GitRepo(self.path).remove()
+            shutil.rmtree(self.path, ignore_errors=True)
 
     def _install_dependencies(
-        self, on_progress: Callable[[str], None], skip_assets: bool = False
+        self,
+        on_progress: Callable[[str], None],
+        skip_assets: bool = False,
+        on_step: Callable[[str, str], object] = lambda key, label: None,
     ) -> list["App"]:
         from pilot.core.app.dependency_installer import AppDependencyInstaller
 
+        on_step(f"dependencies_{self.config.name}", f"Install the apps {self.config.name} needs")
         return AppDependencyInstaller(self.bench, self).install(on_progress, skip_assets=skip_assets)
 
     def validate(self) -> None:
@@ -556,8 +565,6 @@ class App:
         """Uninstall from sites, deregister, pip-uninstall, and delete the clone.
         A symlinked checkout is only unlinked."""
         self.ensure_removable()
-        if not self.path.is_symlink():
-            GitRepo(self.path).ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
         self._deregister()
         on_progress(f"Removing '{self.config.name}' from Python environment...")
@@ -567,7 +574,7 @@ class App:
             self.path.unlink()
         else:
             on_progress(f"Deleting {self.path}...")
-            GitRepo(self.path).remove()
+            shutil.rmtree(self.path)
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:

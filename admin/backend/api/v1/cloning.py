@@ -19,25 +19,39 @@ from pilot.tasks.clone_bench import CloneBenchTask
 from pilot.tasks.clone_site import CloneSiteTask
 
 
-def clone_branch_options(name: str):
-    root = Path(current_app.config["BENCH_ROOT"])
+def clone_source(name: str) -> Bench:
     if not BENCH_NAME_RE.fullmatch(name):
-        return error_response("invalid_bench_name", "Invalid bench name.", 422)
+        raise ValueError
+    path = target_bench_dir(Path(current_app.config["BENCH_ROOT"]), name)
+    if not (path / "bench.toml").is_file():
+        raise ValueError
+    return Bench(path)
+
+
+def clone_apps(name: str):
     try:
-        path = target_bench_dir(root, name)
-        if not (path / "bench.toml").is_file():
-            return error_response("bench_not_found", "Source bench not found.", 404)
-        source = Bench(path)
-        apps = source.get_clone_branch_options()
-        provider = AppProvider(path)
-        for app in apps:
-            title, _description = provider.get_pyproject_meta(path / "apps" / app["name"], app["name"])
-            app["title"] = title or app["name"]
-        return jsonify({"apps": apps})
-    except BenchError as error:
-        return error_response("clone_branches_unavailable", str(error), 422)
+        source = clone_source(name)
     except ValueError:
         return error_response("bench_not_found", "Source bench not found.", 404)
+    provider = AppProvider(source.path)
+    apps = []
+    for app in source.apps():
+        title, _description = provider.get_pyproject_meta(app.path, app.config.name)
+        apps.append({"name": app.config.name, "title": title or app.config.name})
+    return jsonify({"apps": apps})
+
+
+def clone_app_branches(name: str, app: str):
+    try:
+        source = clone_source(name)
+    except ValueError:
+        return error_response("bench_not_found", "Source bench not found.", 404)
+    if app not in {item.config.name for item in source.apps()}:
+        return error_response("app_not_found", "App not found in the source bench.", 404)
+    try:
+        return jsonify(source.get_clone_branch_options(app))
+    except BenchError as error:
+        return error_response("clone_branches_unavailable", str(error), 422)
     except Exception:
         return error_response("clone_branches_unavailable", "Could not load app branches.", 503)
 

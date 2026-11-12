@@ -119,7 +119,7 @@ def test_changed_install_inputs_do_not_restore_cache(install, monkeypatch, chang
     source, target, cache = install
     capture_install(source, cache)
     if changed == "environment":
-        monkeypatch.setenv("NODE_OPTIONS", "--max-old-space-size=1024")
+        monkeypatch.setenv("YARN_IGNORE_OPTIONAL", "true")
     elif changed == "ancestor-config":
         (target.parents[1] / ".yarnrc").write_text("--ignore-optional true\n")
     else:
@@ -149,7 +149,7 @@ def test_unsafe_or_corrupt_installs_are_not_reused(install, unsafe):
 
 
 @pytest.mark.parametrize("branch", ["default", "current"])
-def test_cache_hit_precedes_seeding_except_for_current_checkout(install, branch):
+def test_cache_hit_precedes_seeding_and_current_checkout_is_not_copied_again(install, branch):
     from pilot.core.bench.cloning.bench import BenchClone
 
     source, target, cache = install
@@ -167,4 +167,30 @@ def test_cache_hit_precedes_seeding_except_for_current_checkout(install, branch)
     assert NodeDependencies.has_matching_install(target, NodeDependencies.get_key(target)) == (
         branch == "default"
     )
-    assert any(call.args[1] == target for call in seed.call_args_list) == (branch == "current")
+    assert not any(call.args[1] == target for call in seed.call_args_list)
+    if branch == "current":
+        seed.assert_not_called()
+
+
+def test_restore_marks_entry_recently_used(install):
+    import os
+
+    source, target, cache = install
+    capture_install(source, cache)
+    entry = cache.root / NodeDependencies.get_key(source)
+    os.utime(entry, (0, 0))
+    assert cache.restore(target)
+    assert entry.stat().st_mtime > 0
+
+
+def test_capture_prunes_entries_beyond_limit(install, monkeypatch):
+    import os
+
+    source, _target, cache = install
+    stale = cache.root / ("0" * 64)
+    (stale / "node_modules").mkdir(parents=True)
+    os.utime(stale, (0, 0))
+    monkeypatch.setattr(NodeDependencyCache, "max_entries", 1)
+    capture_install(source, cache)
+    assert not stale.exists()
+    assert (cache.root / NodeDependencies.get_key(source)).is_dir()

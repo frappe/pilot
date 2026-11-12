@@ -16,7 +16,8 @@ class NodeDependencies:
 
     @staticmethod
     def get_key(path: Path, *, include_dependencies: bool = True) -> str:
-        digest = hashlib.sha256(platform.platform().encode())
+        system = (platform.system(), platform.machine(), *platform.libc_ver())
+        digest = hashlib.sha256(json.dumps(system).encode())
         NodeDependencies.update_file_key(digest, path, include_dependencies=include_dependencies)
         for binary in (shutil.which("node"), shutil.which(YARN.bin)):
             if binary:
@@ -25,8 +26,7 @@ class NodeDependencies:
         environment = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"PWD", "OLDPWD", "SHLVL", "_", "PILOT_NONINTERACTIVE_PRIVILEGES"}
-            and not key.startswith("BENCH_TASK_")
+            if key == "NODE_ENV" or key.upper().startswith(("YARN_", "NPM_CONFIG_"))
         }
         digest.update(json.dumps(environment, sort_keys=True).encode())
         return digest.hexdigest()
@@ -113,5 +113,5 @@ class NodeDependencies:
             return False
         BenchArtifacts.copy_directory(source / "node_modules", destination / "node_modules")
         if source_key != target_key:
-            (destination / "node_modules/.pilot-install-key").unlink(missing_ok=True)
+            (destination / "node_modules/.pilot-install-key").write_text("")
         return True

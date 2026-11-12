@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import sys
 from pathlib import Path
 
-from pilot.exceptions import CommandError
+from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.utils import run_command
 
 
@@ -21,6 +24,8 @@ class BenchArtifacts:
 
     @staticmethod
     def copy_directory(source: Path, destination: Path) -> None:
+        if destination.is_symlink():
+            raise BenchError(f"Refusing to copy into a symlinked directory: {destination}")
         destination.mkdir(parents=True, exist_ok=True)
         argv = ["cp", "-a"]
         if sys.platform == "linux":
@@ -32,6 +37,23 @@ class BenchArtifacts:
             except CommandError:
                 pass  # clonefile is unavailable across volumes or on non-APFS storage.
         run_command([*argv, str(source) + "/.", str(destination)])
+
+    @staticmethod
+    def prune(root: Path, keep: int, marker: str) -> None:
+        """Delete all but the `keep` most recently used entries; `marker` goes first to invalidate."""
+        entries = []
+        for path in root.iterdir():
+            if re.fullmatch(r"[0-9a-f]{64}", path.name):
+                try:
+                    entries.append((path.stat().st_mtime, path))
+                except FileNotFoundError:
+                    continue
+        for _mtime, entry in sorted(entries, reverse=True)[keep:]:
+            with exclusive_file_lock(root / f"{entry.name}.guard"):
+                if not entry.is_dir():
+                    continue
+                (entry / marker).unlink(missing_ok=True)
+                shutil.rmtree(entry)
 
     @staticmethod
     def relocate_links(source: Path, destination: Path, *, root: Path | None = None) -> None:

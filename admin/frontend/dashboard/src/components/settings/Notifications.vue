@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
+import { Button, ErrorMessage, MultiSelect, Spinner, Switch, TextInput, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { notificationsApi } from '@/api/notifications'
 import { settingsApi } from '@/api/settings'
 import EmptyState from '@/components/common/EmptyState.vue'
-import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
+import TagsInput from '@/components/common/TagsInput.vue'
+import NotificationsIllustration from '@/components/settings/NotificationsIllustration.vue'
 import { useSession } from '@/composables/auth/useSession'
+import type { WebhookEventOption, WebhookTestResult } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
 
 interface WebhookForm {
@@ -12,29 +16,31 @@ interface WebhookForm {
   token: string
   token_set: boolean
   original_url: string
+  events: string[]
+  testing?: boolean
+  test?: { ok: boolean; message: string }
 }
 
-const { session } = useSession()
+const { session, centralServerUrl } = useSession()
 
-// Every resource alert starts off; site uptime is the only one on by default.
 const RESOURCE_ALERTS = [
   {
     key: 'cpu_usage_limit',
     label: 'CPU usage',
+    metric: 'processor use',
     description: 'Alert when processor use on this host crosses the limit.',
-    initial: 85,
   },
   {
     key: 'memory_usage_limit',
     label: 'Memory usage',
+    metric: 'memory use',
     description: 'Alert when memory use on this host crosses the limit.',
-    initial: 90,
   },
   {
     key: 'disk_space_limit',
     label: 'Disk usage',
+    metric: 'disk use',
     description: 'Alert when disk use on this host crosses the limit.',
-    initial: 90,
   },
 ]
 
@@ -46,56 +52,51 @@ const enabled = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key
 const limits = ref(Object.fromEntries(RESOURCE_ALERTS.map((alert) => [alert.key, ''])))
 const siteUptime = ref(true)
 const webhooks = ref<WebhookForm[]>([])
+const webhookEvents = ref<WebhookEventOption[]>([])
 const recipients = ref<string[]>([])
-// Recipients are useless without a mailbox to send from, and that lives in Mail settings.
 const mailConfigured = ref(false)
+const mailRoute = { name: 'Settings', params: { section: 'mail' } }
+
+const invalidRecipient = computed(() => recipients.value.find((address) => !isAddress(address)))
 
 const savedPayload = ref('')
 const dirty = computed(() => JSON.stringify(buildPayload()) !== savedPayload.value)
 
 const buildPayload = () => {
   return {
-    ...Object.fromEntries(
-      RESOURCE_ALERTS.map((alert) => [
-        alert.key,
-        enabled.value[alert.key] ? Number(limits.value[alert.key]) || 0 : 0,
-      ]),
-    ),
-    site_uptime: siteUptime.value,
+    resource_limits: {
+      ...Object.fromEntries(
+        RESOURCE_ALERTS.map((alert) => [
+          alert.key,
+          enabled.value[alert.key] ? Number(limits.value[alert.key]) || 0 : 0,
+        ]),
+      ),
+      site_uptime: siteUptime.value,
+      email_recipients: recipients.value.map((address) => address.trim()).filter(Boolean),
+    },
     // Blank token means "keep the stored one"; original_url is how it is found.
-    webhook_endpoints: webhooks.value.map((webhook) => ({
-      url: webhook.url.trim(),
-      token: webhook.token,
-      original_url: webhook.original_url,
-    })),
-    email_recipients: recipients.value.map((address) => address.trim()).filter(Boolean),
+    webhook_endpoints: webhooks.value.map(webhookEntry),
   }
 }
 
-const addRecipient = () => {
-  recipients.value.push('')
-}
+// No chosen events means every event, so an endpoint added today also gets events added later.
+const webhookEntry = (webhook: WebhookForm) => ({
+  url: webhook.url.trim(),
+  token: webhook.token,
+  original_url: webhook.original_url,
+  events: webhook.events,
+})
 
-const removeRecipient = (index: number) => {
-  recipients.value.splice(index, 1)
-}
-
-const recipientError = (address: string) => {
-  const trimmed = address.trim()
-  if (trimmed && !/^[^@\s]+@[^@\s]+$/.test(trimmed)) return 'Must be an email address.'
-  return ''
-}
+const isAddress = (address: string) => /^[^@\s]+@[^@\s]+$/.test(address.trim())
 
 const setEnabled = (key: string, on: boolean) => {
   enabled.value[key] = on
-  if (on && !Number(limits.value[key])) {
-    const alert = RESOURCE_ALERTS.find((candidate) => candidate.key === key)
-    if (alert) limits.value[key] = String(alert.initial)
-  }
+
+  if (on && !Number(limits.value[key])) limits.value[key] = '90'
 }
 
 const addWebhook = () => {
-  webhooks.value.push({ url: '', token: '', token_set: false, original_url: '' })
+  webhooks.value.push({ url: '', token: '', token_set: false, original_url: '', events: [] })
 }
 
 const removeWebhook = (index: number) => {
@@ -110,8 +111,22 @@ const webhookError = (webhook: WebhookForm) => {
   return ''
 }
 
-const webhookIsComplete = (webhook: WebhookForm) => {
-  return Boolean(webhook.url.trim()) && Boolean(webhook.token || webhook.token_set)
+const testWebhook = async (webhook: WebhookForm) => {
+  webhook.testing = true
+  webhook.test = undefined
+  try {
+    webhook.test = testOutcome(await notificationsApi.testWebhook(webhookEntry(webhook)))
+  } catch (e) {
+    webhook.test = { ok: false, message: errorMessage(e, 'Could not send the test event.') }
+  } finally {
+    webhook.testing = false
+  }
+}
+
+const testOutcome = (result: WebhookTestResult) => {
+  if (result.is_success) return { ok: true, message: `Test event delivered. The endpoint answered ${result.status}.` }
+  const body = result.body.trim().slice(0, 200)
+  return { ok: false, message: `The endpoint answered ${result.status}${body ? `: ${body}` : '.'}` }
 }
 
 const limitError = (key: string) => {
@@ -125,8 +140,8 @@ const limitError = (key: string) => {
 const canSave = computed(
   () =>
     RESOURCE_ALERTS.every((alert) => !limitError(alert.key)) &&
-    webhooks.value.every((webhook) => webhookIsComplete(webhook) && !webhookError(webhook)) &&
-    recipients.value.every((address) => !recipientError(address)),
+    webhooks.value.every((webhook) => webhook.url.trim() && !webhookError(webhook)) &&
+    !invalidRecipient.value,
 )
 
 const save = async () => {
@@ -135,8 +150,7 @@ const save = async () => {
   error.value = ''
   saving.value = true
   try {
-    const payload = buildPayload()
-    await settingsApi.update({ resource_limits: payload })
+    await settingsApi.update(buildPayload())
     // Drop the typed secrets once stored, so the form reads back like a reload.
     for (const webhook of webhooks.value) {
       webhook.token_set = webhook.token_set || Boolean(webhook.token)
@@ -164,14 +178,16 @@ onMounted(async () => {
       limits.value[alert.key] = limit ? String(limit) : ''
     }
     siteUptime.value = saved.site_uptime ?? true
-    webhooks.value = (saved.webhook_endpoints || []).map((webhook) => ({
+    webhooks.value = (data.webhook_endpoints || []).map((webhook) => ({
       url: webhook.url || '',
       token: '',
       token_set: Boolean(webhook.token_set),
       original_url: webhook.url || '',
+      events: [...(webhook.events || [])],
     }))
+    webhookEvents.value = data.webhook_events || []
     recipients.value = [...(saved.email_recipients || [])]
-    mailConfigured.value = Boolean((data.mail || {}).server)
+    mailConfigured.value = Boolean(data.mail?.server)
     savedPayload.value = JSON.stringify(buildPayload())
   } catch (e) {
     error.value = errorMessage(e, 'Could not load settings.')
@@ -186,161 +202,206 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-6">
-    <SettingsSwitch
-      label="Site uptime"
-      description="Alert when a site stops responding to its uptime check."
-      :model-value="siteUptime"
-      @update:model-value="(on: boolean) => (siteUptime = on)"
-    />
+  <div v-else class="space-y-8">
+    <p v-if="session.centralEnabled" class="text-ink-gray-6 text-p-sm">
+      This server is managed by
+      <a
+        v-if="session.centralUrl"
+        :href="centralServerUrl()"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
+      >
+        <span>Central</span>
+        <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
+      </a><template v-else>Central</template>, so alerts also show there.
+    </p>
 
-    <div v-for="alert in RESOURCE_ALERTS" :key="alert.key" class="space-y-3">
-      <SettingsSwitch
-        :label="alert.label"
-        :description="alert.description"
-        :model-value="enabled[alert.key]"
-        @update:model-value="(on: boolean) => setEnabled(alert.key, on)"
-      />
-      <div v-if="enabled[alert.key]" class="flex items-center gap-2 pl-0.5">
-        <TextInput
-          v-model="limits[alert.key]"
-          type="number"
-          min="1"
-          max="100"
-          class="w-24"
-          :aria-label="`${alert.label} limit`"
+    <div class="-mx-3 -mt-3.5 inset-dividers">
+      <div
+        class="flex justify-between items-center gap-4 px-3 py-3.5 rounded-5 transition-colors cursor-pointer hover:bg-surface-gray-2"
+        @click="siteUptime = !siteUptime"
+      >
+        <div class="flex flex-col gap-1">
+          <p class="text-base-medium text-ink-gray-8">Site uptime</p>
+
+          <p class="text-ink-gray-6 text-p-sm">
+            Alert when a site stops responding to its uptime check.
+          </p>
+        </div>
+
+        <Switch v-model="siteUptime" @click.stop />
+      </div>
+
+      <div
+        v-for="alert in RESOURCE_ALERTS"
+        :key="alert.key"
+        class="flex justify-between items-center gap-4 px-3 py-3.5 rounded-5 transition-colors cursor-pointer hover:bg-surface-gray-2"
+        @click="setEnabled(alert.key, !enabled[alert.key])"
+      >
+        <div class="flex flex-col gap-1">
+          <p class="text-base-medium text-ink-gray-8">{{ alert.label }}</p>
+
+          <p v-if="enabled[alert.key]" class="flex items-center gap-1.5 text-ink-gray-6 text-p-sm">
+            Alert when {{ alert.metric }} goes above
+            <TextInput
+              v-model="limits[alert.key]"
+              type="number"
+              min="1"
+              max="100"
+              size="xs"
+              class="-my-0.5 w-14"
+              :aria-label="`${alert.label} limit`"
+              @click.stop
+            />
+            %
+          </p>
+
+          <p v-else class="text-ink-gray-6 text-p-sm">{{ alert.description }}</p>
+        </div>
+
+        <Switch
+          :model-value="enabled[alert.key]"
+          @click.stop
+          @update:model-value="(on: boolean) => setEnabled(alert.key, on)"
         />
-        <span class="text-ink-gray-6">% and above</span>
       </div>
     </div>
 
     <div class="space-y-2">
-      <div class="flex justify-between items-center">
-        <p class="font-medium text-ink-gray-8 leading-normal">Email recipients</p>
-        <Button icon-left="lucide-plus" @click="addRecipient">Add recipient</Button>
-      </div>
+      <h4 class="text-base-medium text-ink-gray-8">Email recipients</h4>
 
-      <p class="text-ink-gray-5 text-p-sm">
-        Alerts are emailed to these addresses, using the mailbox in Mail settings.
+      <p class="text-ink-gray-6 text-p-sm">
+        Alerts are emailed to these addresses from the
+        <RouterLink :to="mailRoute" class="mail-link">mailbox</RouterLink>
+        in Mail settings.
       </p>
 
-      <EmptyState
-        compact
-        v-if="!recipients.length"
-        icon="lucide-mail"
-        title="No email recipients"
-        description="Add an address to receive alerts by email."
+      <TagsInput
+        v-model="recipients"
+        variant="outline"
+        placeholder="Add an email"
+        :is-invalid="(address) => !isAddress(address)"
       />
 
-      <div v-else class="space-y-2">
-        <div v-for="(address, index) in recipients" :key="index">
-          <div class="flex items-center gap-2">
-            <TextInput v-model="recipients[index]" placeholder="ops@example.com" class="w-full" />
-            <Button
-              icon="lucide-x"
-              label="Remove recipient"
-              tooltip="Remove recipient"
-              @click="removeRecipient(index)"
-            />
-          </div>
-          <p v-if="recipientError(address)" class="mt-1.5 text-ink-red-5 text-p-sm">
-            {{ recipientError(address) }}
-          </p>
-        </div>
-      </div>
+      <p v-if="invalidRecipient" class="text-ink-red-5 text-p-sm">
+        {{ invalidRecipient }}
+        is not an email address.
+      </p>
 
-      <p v-if="recipients.length && !mailConfigured" class="text-ink-amber-5 text-p-sm">
-        Set up a mailbox in Mail settings before these addresses receive anything.
+      <p v-else-if="recipients.length && !mailConfigured" class="text-ink-amber-6 text-p-sm">
+        Set up a mailbox before these addresses receive anything.
       </p>
     </div>
 
-    <details class="group">
-      <summary
-        class="flex items-center gap-1.5 text-ink-gray-6 cursor-pointer select-none"
+    <div class="space-y-2">
+      <h4 class="text-base-medium text-ink-gray-8">Webhook endpoints</h4>
+
+      <p class="text-ink-gray-6 text-p-sm">
+        Each endpoint gets a JSON POST for the events it chose. A token is sent in the
+        <code>Authorization</code>
+        header and signs the body in
+        <code>X-Pilot-Signature-256</code>.
+      </p>
+
+      <div
+        class="dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent rounded-7 overflow-hidden"
       >
-        <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right"></span>
-        Advanced
-      </summary>
-
-      <div class="space-y-2 pt-4">
-        <div class="flex justify-between items-center">
-          <p class="font-medium text-ink-gray-8 leading-normal">Webhook endpoints</p>
-          <Button icon-left="lucide-plus" @click="addWebhook">Add endpoint</Button>
-        </div>
-
-        <p class="text-ink-gray-5 text-p-sm">
-          <template v-if="session.centralEnabled"
-            >Alerts go to
-            <a
-              v-if="session.centralUrl"
-              :href="`${session.centralUrl}/dashboard`"
-              target="_blank"
-              rel="noopener"
-              class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
-              >Central</a
-            ><template v-else>Central</template>. Endpoints listed here receive them too, as a POST carrying an</template
-          >
-          <template v-else>Endpoints listed here receive alerts as a POST carrying an</template>
-          <code>Authorization: Bearer</code>
-          header, so the token stays out of the URL.
-        </p>
-
         <EmptyState
           compact
           v-if="!webhooks.length"
-          icon="lucide-webhook"
+          :bordered="false"
           title="No webhook endpoints"
-          :description="
-            session.centralEnabled
-              ? 'Alerts are only reported to Central. Add an endpoint to receive them yourself.'
-              : 'Nothing receives alerts yet. Add an endpoint to receive them.'
-          "
-        />
+          description="Add one to send alerts to your own service."
+          class="py-8"
+        >
+          <template #illustration>
+            <NotificationsIllustration kind="webhook" />
+          </template>
+        </EmptyState>
 
-        <div v-else class="space-y-3">
-          <div v-for="(webhook, index) in webhooks" :key="index">
-            <div class="flex items-end gap-2">
-              <div class="flex-1 space-y-1.5">
-                <p v-if="index === 0" class="font-medium text-ink-gray-7">Endpoint URL</p>
-                <TextInput
-                  v-model="webhook.url"
-                  placeholder="https://alerts.example.com/pilot"
-                  class="w-full"
-                />
-              </div>
+        <div
+          v-else
+          class="items-center gap-x-3 gap-y-2 grid grid-cols-[1fr_8rem_9rem_4.5rem] sm:grid-cols-[1fr_10rem_11rem_4.5rem] p-4"
+        >
+          <span class="text-ink-gray-5 text-sm">Endpoint URL</span>
+          <span class="text-ink-gray-5 text-sm">Token</span>
+          <span class="text-ink-gray-5 text-sm">Events</span>
+          <span />
 
-              <div class="flex-1 space-y-1.5">
-                <p v-if="index === 0" class="font-medium text-ink-gray-7">Token</p>
-                <TextInput
-                  v-model="webhook.token"
-                  type="password"
-                  :placeholder="webhook.token_set ? 'Unchanged' : 'Bearer token'"
-                  class="w-full"
-                />
-              </div>
+          <template v-for="(webhook, index) in webhooks" :key="index">
+            <TextInput v-model="webhook.url" placeholder="https://alerts.example.com/pilot" />
+
+            <TextInput
+              v-model="webhook.token"
+              type="password"
+              autocomplete="new-password"
+              :placeholder="webhook.token_set ? 'Unchanged' : 'Optional'"
+            />
+
+            <MultiSelect
+              v-model="webhook.events"
+              :options="webhookEvents"
+              placeholder="All events"
+              :filterable="false"
+              aria-label="Events"
+              class="w-full"
+            />
+
+            <div class="flex">
+              <Button
+                icon="lucide-send"
+                variant="ghost"
+                label="Send a test event"
+                tooltip="Send a test event"
+                :loading="webhook.testing"
+                :disabled="!webhook.url.trim() || Boolean(webhookError(webhook))"
+                @click="testWebhook(webhook)"
+              />
 
               <Button
                 icon="lucide-x"
+                variant="ghost"
                 label="Remove endpoint"
                 tooltip="Remove endpoint"
                 @click="removeWebhook(index)"
               />
             </div>
 
-            <p v-if="webhookError(webhook)" class="mt-1.5 text-ink-red-5 text-p-sm">
+            <p v-if="webhookError(webhook)" class="col-span-4 -mt-1 text-ink-red-5 text-p-sm">
               {{ webhookError(webhook) }}
             </p>
-          </div>
+
+            <p
+              v-else-if="webhook.test"
+              class="col-span-4 -mt-1 text-p-sm break-words"
+              :class="webhook.test.ok ? 'text-ink-green-6' : 'text-ink-red-5'"
+            >
+              {{ webhook.test.message }}
+            </p>
+          </template>
         </div>
+
+        <footer class="flex justify-between items-center px-3 py-2.5 border-outline-gray-2 border-t">
+          <Button
+            variant="ghost"
+            icon-left="lucide-plus"
+            label="Add endpoint"
+            @click="addWebhook"
+          />
+          <Button v-if="dirty" variant="solid" :loading="saving" :disabled="!canSave" @click="save">
+            Save changes
+          </Button>
+        </footer>
       </div>
-    </details>
+    </div>
 
     <ErrorMessage v-if="error" :message="error" />
-
-    <div v-if="dirty" class="flex justify-end">
-      <Button variant="solid" :loading="saving" :disabled="!canSave" @click="save">
-        Save changes
-      </Button>
-    </div>
   </div>
 </template>
+
+<style scoped>
+.mail-link {
+  @apply text-ink-gray-7 underline decoration-dotted decoration-2 decoration-[--ink-gray-4] underline-offset-2 hover:text-ink-gray-8;
+}
+</style>

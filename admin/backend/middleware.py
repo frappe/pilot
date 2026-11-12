@@ -16,6 +16,7 @@ _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
 _WINDOWS_EXTENSION = "rate_limit_windows"
 _WINDOWS_LOCK = threading.Lock()
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class AuthPolicy(StrEnum):
@@ -179,7 +180,19 @@ def _admin_session_response(bench):
         return error_response("admin_disabled", "Admin is disabled.", 503, {"enabled": False})
     if not is_request_authenticated(bench):
         return error_response("authentication_required", "Authentication is required.", 401)
+    if is_cross_site_cookie_request():
+        return error_response(
+            "cross_site_request", "Requests from another site cannot use this session.", 403
+        )
     return None
+
+
+def is_cross_site_cookie_request() -> bool:
+    """A change sent by another site's page with this browser's session cookie, such as a form posted
+    from a Frappe site on a sibling subdomain. `SameSite=Lax` still sends the cookie there."""
+    if request.method in _SAFE_METHODS or g.jwt_token != request.cookies.get("sid"):
+        return False
+    return request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site")
 
 
 def client_ip(default: str = "unknown") -> str:

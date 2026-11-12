@@ -12,7 +12,6 @@ from pilot.config.build import BuildConfig
 from pilot.core import build_memory
 from pilot.core.build_memory import (
     BUILD_MEMORY_SHARE,
-    MIN_BUILD_MEMORY_MB,
     available_memory_mb,
     build_memory_limit_mb,
 )
@@ -60,14 +59,14 @@ def test_the_limit_is_a_share_of_free_memory(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_a_manual_override_is_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
-    _free_memory(monkeypatch, MIN_BUILD_MEMORY_MB - 1)
+    _free_memory(monkeypatch, 256)
     assert build_memory_limit_mb(2048) == 2048
 
 
-def test_a_starved_host_refuses_up_front(monkeypatch: pytest.MonkeyPatch) -> None:
-    _free_memory(monkeypatch, MIN_BUILD_MEMORY_MB - 1)
-    with pytest.raises(BenchError, match="Not enough free memory"):
-        build_memory_limit_mb()
+def test_a_low_memory_host_still_gets_a_capped_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The kernel kills the scope if the build outgrows the cap; swap may let it finish."""
+    _free_memory(monkeypatch, 256)
+    assert build_memory_limit_mb() == int(256 * BUILD_MEMORY_SHARE)
 
 
 def test_systemctl_env_carries_the_bus_address(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,14 +129,15 @@ def test_a_linux_host_without_memory_control_builds_uncapped(monkeypatch: pytest
     assert calls == [["yarn", "build"]]
 
 
-def test_a_starved_host_is_refused_even_where_it_cannot_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Uncapped, the build would take the memory the host's other services need."""
-    calls = _host(monkeypatch, reads_memory=True, caps_memory=False, free_mb=MIN_BUILD_MEMORY_MB - 1)
+def test_a_low_memory_host_without_memory_control_builds_uncapped(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    calls = _host(monkeypatch, reads_memory=True, caps_memory=False, free_mb=256)
 
-    with pytest.raises(BenchError, match="Not enough free memory"):
-        _builder().run_compiler(["yarn", "build"])
+    _builder().run_compiler(["yarn", "build"])
 
-    assert calls == []
+    assert calls == [["yarn", "build"]]
+    assert "runs uncapped" in caplog.text
 
 
 def test_a_killed_build_reports_memory_not_a_signal(monkeypatch: pytest.MonkeyPatch) -> None:
