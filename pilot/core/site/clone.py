@@ -90,7 +90,7 @@ class SiteClone:
         write_private_text(site.path / "site_config.json", json.dumps(config, indent=2))
         self.prepare(site, database, on_progress)
         with CloneRuntime(self.bench, allow_existing=True):
-            self.finish(site)
+            self.finish(site, on_progress)
         on_progress(f"Site '{self.name}' cloned with scheduler and outgoing mail disabled.")
         return site
 
@@ -200,7 +200,7 @@ class SiteClone:
                 if not internal:
                     raise BenchError(f"Upload symlink escapes its upload directory: {path}")
 
-    def finish(self, site) -> None:
+    def finish(self, site, on_progress) -> None:
         from pilot.core.site.commands import SiteCommands
 
         provisioner = SiteProvisioner(self.bench, self.name, [], self.password)
@@ -217,5 +217,5 @@ class SiteClone:
         provisioner.reload_nginx()
         origin_tls = site.config.route.origin_tls if site.config.route else site.config.ssl
         if origin_tls:
-            provisioner.obtain_cert(site, print)
+            provisioner.obtain_cert(site, on_progress)
         site.set_maintenance_settings({"maintenance_mode": 0, "pause_scheduler": 1})

@@ -99,7 +99,7 @@ def test_site_clones_are_fresh_and_files_and_credentials_are_independent(source,
     original = source.site("source.localhost")
     (original.path / "public/files/alias.txt").symlink_to(original.path / "public/files/marker.txt")
     monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: imports.append(self.config.copy()))
-    monkeypatch.setattr(SiteClone, "finish", lambda self, site: None)
+    monkeypatch.setattr(SiteClone, "finish", lambda self, site, on_progress: None)
     monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
     first = source.site("source.localhost").clone("first.localhost", on_progress=lambda message: None)
     original = source.site("source.localhost")
@@ -286,3 +286,25 @@ def test_late_clone_failure_removes_owned_hosts_and_refreshes_nginx(
         + ["database removed", "nginx cleared"]
     )
     assert (source.sites_path / "failed.localhost").exists() == (cleanup_failure == "database")
+
+
+def test_clone_reports_certificate_progress_through_task_progress(source, monkeypatch):
+    from pilot.core.site import Site
+    from pilot.core.site.commands import SiteCommands
+    from pilot.core.site.provisioning import SiteProvisioner
+
+    for name in ("write_route_policy", "write_pilot_communication_config", "add_to_hosts", "reload_nginx"):
+        monkeypatch.setattr(SiteProvisioner, name, lambda *args: None)
+    monkeypatch.setattr(SiteCommands, "set_admin_password", lambda *args: None)
+    monkeypatch.setattr(Site, "set_maintenance_settings", lambda *args: None)
+    monkeypatch.setattr(
+        SiteProvisioner, "obtain_cert", lambda self, site, progress: progress("certificate issued")
+    )
+    site = source.site("copy.localhost")
+    site.config.route = None
+    site.config.ssl = True
+    progress = []
+    SiteClone(source.site("source.localhost"), source, "copy.localhost", "secret").finish(
+        site, progress.append
+    )
+    assert progress == ["certificate issued"]
