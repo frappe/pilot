@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pilot.core.site.restore import BackupRun, BackupStream
+from pilot.core.site.backups.restore import BackupRun, BackupStream
 from pilot.exceptions import BenchError, RemoteSiteError
 from pilot.internal.private_files import PrivateDirectory
 from pilot.tasks import Arg, Task, on_cancel, on_failure, step

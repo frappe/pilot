@@ -153,7 +153,7 @@ def execute_query() -> ResponseReturnValue:
 
 
 def _provider():
-    from admin.backend.providers.database import DatabaseDiagnosticsProvider
+    from admin.backend.providers.database.diagnostics import DatabaseDiagnosticsProvider
 
     return DatabaseDiagnosticsProvider(ApiRequest.get_bench_root())
 

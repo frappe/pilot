@@ -31,7 +31,7 @@ def _make_site(bench_root: Path, name: str, db_name: str, content: bytes = b"x" 
 
 
 def test_bench_breakdown_sums_apps_sites_and_logs(tmp_path: Path) -> None:
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     _write_bench(tmp_path)
     _make_app(tmp_path, "frappe", b"a" * 4096)
@@ -50,7 +50,7 @@ def test_bench_breakdown_sums_apps_sites_and_logs(tmp_path: Path) -> None:
 
 
 def test_site_storage_splits_private_public_and_backups(tmp_path: Path) -> None:
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     _write_bench(tmp_path)
     site_dir = tmp_path / "sites" / "site1.local"
@@ -96,7 +96,7 @@ def _mock_database(
 
 
 def test_mariadb_breakdown_shapes_schemas_and_reconciles_core(tmp_path: Path) -> None:
-    from admin.backend.providers.storage import DatabaseBreakdown, DatabaseRow, StorageProvider
+    from admin.backend.providers.server.storage import DatabaseBreakdown, DatabaseRow, StorageProvider
 
     _write_bench(tmp_path)
     _make_site(tmp_path, "site1.local", "site1_db")
@@ -109,8 +109,8 @@ def test_mariadb_breakdown_shapes_schemas_and_reconciles_core(tmp_path: Path) ->
     db = _mock_database({"site1_db": 500, "mysql": 100}, components, str(tmp_path))
 
     with (
-        patch("admin.backend.providers.storage.make_database", return_value=db),
-        patch("admin.backend.providers.storage.directory_size_bytes", return_value=1000),
+        patch("admin.backend.providers.server.storage.make_database", return_value=db),
+        patch("admin.backend.providers.server.storage.directory_size_bytes", return_value=1000),
     ):
         breakdown = StorageProvider(tmp_path)._database_breakdown()
 
@@ -131,7 +131,7 @@ def test_mariadb_breakdown_shapes_schemas_and_reconciles_core(tmp_path: Path) ->
 def test_postgres_breakdown_reports_wal_and_server_log(tmp_path: Path) -> None:
     """The engine names its own artifacts; postgres has no binlog, so
     binlog_bytes stays 0 and the purge alert has nothing to act on."""
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     _write_bench(tmp_path, db_type="postgres")
     _make_site(tmp_path, "site1.local", "site1_db")
@@ -142,8 +142,8 @@ def test_postgres_breakdown_reports_wal_and_server_log(tmp_path: Path) -> None:
     db = _mock_database({"site1_db": 500, "postgres": 60}, components, "/pg/data")
 
     with (
-        patch("admin.backend.providers.storage.make_database", return_value=db),
-        patch("admin.backend.providers.storage.directory_size_bytes", return_value=2000),
+        patch("admin.backend.providers.server.storage.make_database", return_value=db),
+        patch("admin.backend.providers.server.storage.directory_size_bytes", return_value=2000),
     ):
         breakdown = StorageProvider(tmp_path)._database_breakdown()
 
@@ -159,7 +159,7 @@ def test_postgres_breakdown_reports_wal_and_server_log(tmp_path: Path) -> None:
 def test_core_bytes_is_unknown_when_the_data_directory_cannot_be_read(tmp_path: Path) -> None:
     """An unreadable data directory is not an empty one - core_bytes goes None
     and used_bytes falls back to what was actually measured."""
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
     from pilot.exceptions import CommandError
 
     _write_bench(tmp_path, db_type="postgres")
@@ -167,9 +167,9 @@ def test_core_bytes_is_unknown_when_the_data_directory_cannot_be_read(tmp_path: 
     db = _mock_database({"postgres": 60}, components, "/pg/data")
 
     with (
-        patch("admin.backend.providers.storage.make_database", return_value=db),
+        patch("admin.backend.providers.server.storage.make_database", return_value=db),
         patch(
-            "admin.backend.providers.storage.directory_size_bytes",
+            "admin.backend.providers.server.storage.directory_size_bytes",
             side_effect=CommandError("Permission denied"),
         ),
     ):
@@ -180,12 +180,12 @@ def test_core_bytes_is_unknown_when_the_data_directory_cannot_be_read(tmp_path: 
 
 
 def test_core_bytes_is_unknown_for_a_remote_database_server(tmp_path: Path) -> None:
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     _write_bench(tmp_path)
     db = _mock_database({"site1_db": 500}, [StorageComponent("binlog", "binary log", 50)], None)
 
-    with patch("admin.backend.providers.storage.make_database", return_value=db):
+    with patch("admin.backend.providers.server.storage.make_database", return_value=db):
         breakdown = StorageProvider(tmp_path)._database_breakdown()
 
     assert breakdown.core_bytes is None
@@ -193,7 +193,7 @@ def test_core_bytes_is_unknown_for_a_remote_database_server(tmp_path: Path) -> N
 
 
 def test_sqlite_engine_is_not_supported(tmp_path: Path) -> None:
-    from admin.backend.providers.storage import DatabaseBreakdown, StorageProvider
+    from admin.backend.providers.server.storage import DatabaseBreakdown, StorageProvider
 
     _write_bench(tmp_path, db_type="sqlite")
 
@@ -207,13 +207,13 @@ def test_sqlite_engine_is_not_supported(tmp_path: Path) -> None:
 def test_get_breakdown_remeasures_instead_of_serving_the_cache(tmp_path: Path) -> None:
     """directory_size_bytes is cached and never expires, so a refresh would
     otherwise report the first reading forever."""
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
     _write_bench(tmp_path)
     _make_app(tmp_path, "frappe", b"a" * 4096)
     db = _mock_database({"site1_db": 500}, [], str(tmp_path))
 
-    with patch("admin.backend.providers.storage.make_database", return_value=db):
+    with patch("admin.backend.providers.server.storage.make_database", return_value=db):
         provider = StorageProvider(tmp_path)
         first = provider.get_breakdown(1000, 500).bench.apps_bytes
         (tmp_path / "apps" / "frappe" / "grew.bin").write_bytes(b"a" * 200_000)
@@ -225,7 +225,7 @@ def test_get_breakdown_remeasures_instead_of_serving_the_cache(tmp_path: Path) -
 def test_directory_size_bytes_measures_a_real_tree(tmp_path: Path) -> None:
     """Guards the du flags: GNU-only `-b` fails outright on BSD/macOS, which
     used to be swallowed into a silent 0."""
-    from admin.backend.providers.storage import directory_size_bytes
+    from admin.backend.providers.server.storage import directory_size_bytes
 
     (tmp_path / "payload.bin").write_bytes(b"x" * 40960)
 

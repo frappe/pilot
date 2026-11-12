@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from admin.backend.providers.site_uptime import SiteUptimeProvider
+from admin.backend.providers.site.uptime import SiteUptimeProvider
 
 
 def _record(site: str, when: datetime, up: bool) -> dict:

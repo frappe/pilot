@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from admin.backend.providers import os as os_provider
-from admin.backend.providers.os import OSProvider
+from admin.backend.providers.server import os as os_provider
+from admin.backend.providers.server.os import OSProvider
 
 
 def _provider(bench_root: Path) -> OSProvider:

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from admin.backend.internal.timeline import TimelinePoint, build_timeline, build_total_timeline
-from admin.backend.providers.site_access_log import SiteAccessLogProvider
+from admin.backend.providers.site.access_log import SiteAccessLogProvider
 from admin.backend.providers.windowed_log import WindowedLogProvider
 from pilot.core.site.uptime_monitoring import PING_PATH
 from pilot.internal.site_paths import site_config_path

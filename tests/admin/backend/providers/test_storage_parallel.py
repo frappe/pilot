@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from admin.backend.providers import storage
+from admin.backend.providers.server import storage
 from pilot.internal.host_resources import DiskUsage
 
 

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pilot.core.site.restore import BackupRun, BackupStream, SiteRestore, backup_part
+from pilot.core.site.backups.restore import BackupRun, BackupStream, SiteRestore, backup_part
 from pilot.exceptions import BenchError
 
 

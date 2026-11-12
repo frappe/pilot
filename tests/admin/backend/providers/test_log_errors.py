@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from admin.backend.providers.logs import LogProvider
+from admin.backend.providers.server.logs import LogProvider
 
 
 def test_info_lines_on_stderr_are_not_errors(tmp_path: Path) -> None:

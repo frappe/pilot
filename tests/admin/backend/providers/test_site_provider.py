@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from admin.backend.providers.sites import SiteProvider
+from admin.backend.providers.site.listing import SiteProvider
 from pilot.core.database.base import QueryResult
 from pilot.exceptions import DatabaseError
 

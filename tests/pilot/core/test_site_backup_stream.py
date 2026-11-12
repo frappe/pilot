@@ -8,7 +8,7 @@ import pytest
 
 from pilot.config import SiteConfig
 from pilot.core.site import Site
-from pilot.core.site.backup_stream import IncompleteBackupError, SiteBackupStream
+from pilot.core.site.backups.stream import IncompleteBackupError, SiteBackupStream
 from pilot.exceptions import CommandError
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3, S3IntegrationError
@@ -89,7 +89,7 @@ def fail_second_holder(monkeypatch) -> None:
                 raise OSError(errno.EMFILE, "Too many open files")
         return real_open(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr("pilot.core.site.backup_stream.os.open", open_fifo)
+    monkeypatch.setattr("pilot.core.site.backups.stream.os.open", open_fifo)
 
 
 @pytest.mark.parametrize("failure", ["backup", "upload", "holder"])

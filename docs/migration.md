@@ -343,7 +343,7 @@ pilot/core/bench/migration/
   store.py        atomic JSON persistence and operation lookup
   diagnosis.py    migration-output classification
 
-pilot/core/site/migration_backup.py
+pilot/core/site/backups/migration.py
   private per-table snapshot and restore service
 
 pilot/tasks/

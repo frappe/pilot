@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from pilot.config.backup import BackupConfig
 from pilot.config.site_backup import clear_retention, read_retention, write_retention
-from pilot.core.site.retention import BackupRetentionPolicy
+from pilot.core.site.backups.retention import BackupRetentionPolicy
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.internal.atomic_file import exclusive_file_lock
 
@@ -120,7 +120,7 @@ class SiteBackups:
 
     def stream(self, with_files: bool = True) -> tuple[str, dict[str, int]]:
         """Back up straight into S3 and return the run's timestamp and file sizes."""
-        from pilot.core.site.backup_stream import SiteBackupStream
+        from pilot.core.site.backups.stream import SiteBackupStream
 
         offsite = OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)
         return SiteBackupStream(self.site, offsite).run(with_files)

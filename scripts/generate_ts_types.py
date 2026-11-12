@@ -48,7 +48,7 @@ from admin.backend.api.v1.types import (
     tasks,
 )
 from admin.backend.providers.apps import AppInfo
-from admin.backend.providers.storage import StorageBreakdown
+from admin.backend.providers.server.storage import StorageBreakdown
 from pilot.core.bench.audit_log import AuditEntry
 from pilot.core.database.base import (
     BinlogFile,

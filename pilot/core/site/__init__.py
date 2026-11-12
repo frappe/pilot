@@ -16,14 +16,14 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
     from pilot.core.site.backups import SiteBackups
+    from pilot.core.site.backups.migration import SiteMigrationBackup
+    from pilot.core.site.backups.restore import BackupRun
     from pilot.core.site.config.database_state import SiteDatabaseState
     from pilot.core.site.config.file import SiteConfigFile
     from pilot.core.site.console.completions import ConsoleCompletions
     from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
-    from pilot.core.site.migration_backup import SiteMigrationBackup
-    from pilot.core.site.restore import BackupRun
 
 
 class Site:
@@ -77,7 +77,7 @@ class Site:
 
     @cached_property
     def migration_backup(self) -> "SiteMigrationBackup":
-        from pilot.core.site.migration_backup import SiteMigrationBackup
+        from pilot.core.site.backups.migration import SiteMigrationBackup
 
         return SiteMigrationBackup(self)
 
@@ -163,7 +163,7 @@ class Site:
         skip_failing_patches: bool = False,
     ) -> None:
         """Restore `parts` of a backup run in maintenance mode, then migrate."""
-        from pilot.core.site.restore import SiteRestore
+        from pilot.core.site.backups.restore import SiteRestore
 
         SiteRestore(self).restore(run, parts, on_progress, skip_failing_patches)
         # The restored database decides which apps the site runs.
