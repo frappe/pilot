@@ -59,6 +59,7 @@ def register_blueprints(app: Flask) -> None:
     from admin.backend.api.v1.apps import apps_bp, marketplace_bp
     from admin.backend.api.v1.auth import auth_bp
     from admin.backend.api.v1.benches import bench_readiness_bp, benches_bp
+    from admin.backend.api.v1.console import console_bp
     from admin.backend.api.v1.core import core_bp
     from admin.backend.api.v1.databases import database_bp
     from admin.backend.api.v1.editor import editor_bp
@@ -81,6 +82,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(benches_bp, url_prefix=f"{API_V1_PREFIX}/benches")
     app.register_blueprint(bench_readiness_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
+    app.register_blueprint(console_bp, url_prefix=f"{API_V1_PREFIX}/console")
     app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
     app.register_blueprint(database_bp, url_prefix=f"{API_V1_PREFIX}/database")
     app.register_blueprint(tasks_bp, url_prefix=f"{API_V1_PREFIX}/tasks")
@@ -105,10 +107,10 @@ def register_editor_frontend(app: Flask) -> None:
     @app.route("/editor/<app_name>")
     @allow_unauthenticated
     def serve_editor(app_name):
-        from admin.backend.api.v1.editor import is_developer_mode_enabled
+        from admin.backend.api.v1.editor import is_code_editor_enabled
 
-        if not is_developer_mode_enabled(Path(app.config["BENCH_ROOT"])):
-            return "Code editor is disabled. Enable Developer Mode in Settings.", 404
+        if not is_code_editor_enabled(Path(app.config["BENCH_ROOT"])):
+            return "Code editor is turned off. Turn it on in Settings.", 404
         index = editor_dist / "index.html"
         if not index.exists():
             return "Editor not built. Run: cd admin/frontend/editor && npm install && npm run build", 503

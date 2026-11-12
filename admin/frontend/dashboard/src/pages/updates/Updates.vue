@@ -152,7 +152,7 @@ onMounted(load)
 
     <Table v-else-if="rows.length" :columns="columns" :rows="rows">
       <template #title="{ row }">
-        <router-link :to="getRowRoute(row)">{{ row.title }}</router-link>
+        <router-link :to="getRowRoute(row)" class="after:absolute after:inset-0">{{ row.title }}</router-link>
       </template>
 
       <template #site="{ row }">

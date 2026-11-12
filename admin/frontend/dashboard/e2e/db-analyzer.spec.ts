@@ -11,7 +11,7 @@ test('Shows server-wide size', async ({ page }) => {
   await page.goto('/database/analyzer')
 
   await expect(page.getByText('Server-wide')).toBeVisible()
-  await expect(page.getByRole('term').filter({ hasText: 'Data Size' })).toBeVisible()
+  await expect(page.getByText('Total size')).toBeVisible()
 })
 
 test('Shows table sizes for a site', async ({ page }) => {
@@ -20,10 +20,9 @@ test('Shows table sizes for a site', async ({ page }) => {
   await page.goto('/database/analyzer')
   await page.getByRole('banner').getByRole('combobox').click()
   await page.getByRole('option', { name: site, exact: true }).click()
-  await page.getByRole('button', { name: 'View Details' }).click()
+  await page.getByPlaceholder('Search tables').fill('tabDocType')
 
-  const dialog = page.getByRole('dialog', { name: `Table sizes on ${site}` })
-  await expect(dialog.getByRole('cell', { name: 'tabDocType', exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'tabDocType', exact: true })).toBeVisible()
 })
 
 test('Kills a running query', async ({ page }) => {
@@ -35,8 +34,7 @@ test('Kills a running query', async ({ page }) => {
     .poll(async () => (await page.request.get('/api/v1/database/processlist')).text())
     .toContain(query)
 
-  await page.goto('/database/analyzer')
-  await page.getByRole('heading', { name: 'Database Processes' }).click()
+  await page.goto('/database/analyzer/processes')
 
   const row = page.getByRole('row').filter({ hasText: query })
   await row.getByRole('button', { name: 'Kill' }).click()

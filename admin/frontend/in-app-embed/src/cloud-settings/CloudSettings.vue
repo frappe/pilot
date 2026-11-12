@@ -150,6 +150,13 @@ const keepPopoverPointerInside = (event: PointerEvent) => {
   if (layer && layer.getAttribute('role') !== 'dialog') event.stopPropagation()
 }
 
+// Reka's combobox looks up its list with `document`, which cannot see into this shadow root, so focus
+// moving to a pressed option reads as leaving the list and closes it before the click selects.
+const keepFocusOffPressedOption = (event: MouseEvent) => {
+  const target = event.composedPath()[0]
+  if (target instanceof Element && target.closest('[role="listbox"] [role="option"]')) event.preventDefault()
+}
+
 const isOpen = ref(props.open)
 const tab = ref(getFirstTab())
 
@@ -186,7 +193,7 @@ const isDark = computed(
     :data-theme="isDark ? 'dark' : 'light'"
   >
     <ConfigProvider :teleport-to="overlays">
-      <div ref="overlays" @pointerdown="keepPopoverPointerInside" />
+      <div ref="overlays" @pointerdown="keepPopoverPointerInside" @mousedown="keepFocusOffPressedOption" />
       <template v-if="overlays">
         <TabsRoot
           v-if="inline"

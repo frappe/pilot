@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import {
   Button,
   Checkbox,
@@ -8,24 +6,23 @@ import {
   ErrorMessage,
   LoadingText,
   Select,
-  Skeleton,
   Switch,
+  TabList,
+  TabTrigger,
+  Tabs,
   Tooltip,
   toast,
 } from 'frappe-ui'
-
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { apiErrorMessage, hasApiError } from '@/api/client'
+import { databaseApi } from '@/api/database'
+import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
 import IndexAnalysisPanel from '@/components/database/IndexAnalysisPanel.vue'
 import QueryAnalysisPanel from '@/components/database/QueryAnalysisPanel.vue'
-import SizeBreakup from '@/components/database/SizeBreakup.vue'
-import TableSizesDialog from '@/components/database/TableSizesDialog.vue'
-
-import { databaseApi } from '@/api/database'
-import { apiErrorMessage, hasApiError } from '@/api/client'
-import { errorMessage } from '@/utils/error'
-import { formatBytes } from '@/utils/format'
-import { relativeTime } from '@/utils/time'
+import SizeOverview from '@/components/database/SizeOverview.vue'
 import type {
   BinlogFile,
   DatabaseDiagnostics,
@@ -35,6 +32,9 @@ import type {
   LockWaitRow,
   UnsupportedDatabaseDiagnostics,
 } from '@/types/database'
+import { errorMessage } from '@/utils/error'
+import { formatBytes } from '@/utils/format'
+import { relativeTime } from '@/utils/time'
 
 const AUTO_REFRESH_INTERVAL_MS = 2000
 
@@ -74,6 +74,10 @@ const binlogColumns = [
 ]
 
 const route = useRoute()
+const router = useRouter()
+
+const picked = ref(String(route.params.tab || 'size'))
+const openedSections = new Set<string>()
 
 const loading = ref(false)
 const error = ref('')
@@ -103,7 +107,6 @@ const binlogsError = ref('')
 const size = ref<DatabaseSize | null>(null)
 const sizeLoading = ref(false)
 const sizeError = ref('')
-const showTableSizes = ref(false)
 
 const killTarget = ref<DatabaseProcess | null>(null)
 const showKillDialog = ref(false)
@@ -210,6 +213,17 @@ const siteOptions = computed(() => [
 ])
 
 const scopeBadge = computed(() => selectedSite.value)
+
+const sections = computed(() => [
+  { value: 'size', label: 'Size', iconLeft: 'lucide-hard-drive' },
+  { value: 'processes', label: 'Processes', iconLeft: 'lucide-activity' },
+  { value: 'locks', label: 'Locks', iconLeft: 'lucide-lock' },
+  { value: 'queries', label: 'Queries', iconLeft: 'lucide-scan-search' },
+  { value: 'indexes', label: 'Indexes', iconLeft: 'lucide-list-tree' },
+  ...(hasBinlogs.value
+    ? [{ value: 'binlogs', label: 'Binary logs', iconLeft: 'lucide-scroll-text' }]
+    : []),
+])
 
 const siteByDatabase = computed(() =>
   Object.fromEntries(
@@ -369,11 +383,6 @@ const loadSize = async () => {
   }
 }
 
-const openLockWaits = () => {
-  loadLockWaits()
-  if (autoRefreshLocks.value) startLockWaitsAutoRefresh()
-}
-
 const loadBinlogs = async () => {
   binlogsLoading.value = true
   binlogsError.value = ''
@@ -412,11 +421,44 @@ watch(autoRefreshLocks, (enabled) => {
   else stopLockWaitsAutoRefresh()
 })
 
-// Binary logs are server-wide, so only the scoped panels refetch.
-watch(selectedSite, () => {
-  loadProcesses()
-  loadLockWaits()
+watch(
+  picked,
+  (section, previous) => {
+    openedSections.add(section)
+
+    if (section !== String(route.params.tab || 'size')) {
+      router.replace({
+        params: { tab: section === 'size' ? '' : section },
+        query: route.query,
+      })
+    }
+
+    if (previous === 'locks') stopLockWaitsAutoRefresh()
+    if (section === 'locks' && autoRefreshLocks.value) startLockWaitsAutoRefresh()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => String(route.params.tab || 'size'),
+  (section) => (picked.value = section),
+)
+
+watch(
+  () => String(route.query.site ?? ''),
+  (site) => (selectedSite.value = site),
+)
+
+// Binary logs are server-wide, so only the scoped panels refetch, and only once opened.
+watch(selectedSite, (site) => {
+  if (site !== String(route.query.site ?? '')) {
+    router.push({ query: { ...route.query, site: site || undefined } })
+  }
+
   loadSize()
+
+  if (openedSections.has('processes')) loadProcesses()
+  if (openedSections.has('locks')) loadLockWaits()
 })
 
 onUnmounted(stopLockWaitsAutoRefresh)
@@ -434,7 +476,7 @@ const load = async () => {
     diagnostics.value = result
     configuredEngine.value = result.engine
     if (!result.supported) return
-    // The rest of the panels start collapsed and load themselves on first expand.
+    // The rest of the sections load themselves when first picked.
     await Promise.all([loadSites(), loadSize()])
   } catch (caught) {
     error.value = errorMessage(caught, 'Could not load database diagnostics.')
@@ -466,73 +508,69 @@ onMounted(load)
     />
   </Teleport>
 
-  <div class="p-3 md:p-4 flex flex-col gap-4">
-    <LoadingText v-if="loading && !diagnostics" class="justify-center py-16" />
+  <LoadingText v-if="loading && !diagnostics" class="justify-center py-16" />
 
-    <div
-      v-else-if="diagnostics && !diagnostics.supported"
-      class="flex flex-col items-center gap-1 bg-surface-white py-14 border rounded-6 border-outline-gray-2 text-center"
-    >
-      <span class="size-6 text-ink-gray-3 lucide-database" />
-      <p class="font-medium text-ink-gray-7 text-sm">No database server</p>
-      <p class="max-w-sm text-ink-gray-5 text-p-xs">{{ diagnostics.reason }}</p>
-    </div>
+  <div
+    v-else-if="diagnostics && !diagnostics.supported"
+    class="flex flex-col items-center gap-1 bg-surface-white m-3 md:m-4 py-14 border rounded-6 border-outline-gray-2 text-center"
+  >
+    <span class="size-6 text-ink-gray-3 lucide-database" />
+    <p class="font-medium text-ink-gray-7 text-sm">No database server</p>
+    <p class="max-w-sm text-ink-gray-5 text-p-xs">{{ diagnostics.reason }}</p>
+  </div>
 
-    <ErrorMessage v-else-if="error" :message="error" />
+  <ErrorMessage v-else-if="error" :message="error" class="m-3 md:m-4" />
 
-    <template v-else-if="diagnostics">
+  <template v-else-if="diagnostics">
+    <Tabs v-model="picked">
+      <TabList variant="underline" size="md" class="px-3 md:px-4">
+        <TabTrigger
+          v-for="section in sections"
+          :key="section.value"
+          :value="section.value"
+          :label="section.label"
+          :icon-left="section.iconLeft"
+          class="py-1.5"
+        />
+
+        <div id="analyzer-actions" class="flex items-center gap-3 ml-auto shrink-0" />
+      </TabList>
+    </Tabs>
+
+    <SizeOverview
+      v-if="diagnostics.supported"
+      v-show="picked === 'size'"
+      :size="size"
+      :loading="sizeLoading"
+      :error="sizeError"
+      :diagnostics="diagnostics"
+      :site-by-database="siteByDatabase"
+      :site="selectedSite"
+      @refresh="loadSize"
+    />
+
+    <main v-show="picked !== 'size'" class="md:h-[calc(100dvh-93px)] p-3 md:p-4">
       <DatabasePanel
-        title="Database Size Breakup"
-        subtitle="Analyze how storage is used"
-        hide-chevron
-        :badge="selectedSite ? scopeBadge : 'Server-wide'"
-        :loading="sizeLoading"
-        @refresh="loadSize"
-      >
-        <template v-if="selectedSite" #actions>
-          <Button @click="showTableSizes = true">View Details</Button>
-        </template>
-
-        <ErrorMessage v-if="sizeError" :message="sizeError" class="m-4" />
-
-        <div v-else-if="sizeLoading" class="px-4 pb-4">
-          <Skeleton class="rounded-full w-full h-5" />
-          <div v-for="row in 3" :key="row" class="flex justify-between gap-4 py-2">
-            <Skeleton class="rounded-4 w-32 h-4" />
-            <Skeleton class="rounded-4 w-16 h-4" />
-          </div>
-        </div>
-
-        <p
-          v-else-if="!size"
-          class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center"
-        >
-          No results to display
-        </p>
-
-        <SizeBreakup v-else :size="size" />
-      </DatabasePanel>
-
-      <DatabasePanel
-        title="Database Processes"
-        subtitle="Analyze the processes of the database"
+        :active="picked === 'processes'"
         :badge="scopeBadge"
         :loading="processesLoading"
         @open="loadProcesses"
         @refresh="loadProcesses"
       >
-        <ErrorMessage v-if="processesError" :message="processesError" class="m-4" />
+        <ErrorMessage v-if="processesError" :message="processesError" />
+
         <Table
           v-else-if="processRows.length"
-          class="px-4 pb-4"
           :columns="processColumns"
           :rows="processRows"
+          height="flex-1"
+         
         >
           <template #actions="{ row }">
             <Button
               variant="ghost"
-              theme="red"
               iconLeft="lucide-x"
+              class="!text-ink-gray-5 hover:!text-ink-red-6"
               @click="confirmKill(row.process)"
             >
               Kill
@@ -540,17 +578,21 @@ onMounted(load)
           </template>
         </Table>
 
-        <p v-else class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center">
-          No results to display
-        </p>
+        <EmptyState
+          v-else
+          icon="lucide-activity"
+          title="No processes"
+          :description="selectedSite ? 'Nothing is connected to this database' : 'Nothing is connected to the server'"
+          :bordered="false"
+          class="flex-1 justify-center pb-16"
+        />
       </DatabasePanel>
 
       <DatabasePanel
-        title="Database Locks"
-        subtitle="Analyze the lock waits of the database"
+        :active="picked === 'locks'"
         :badge="[scopeBadge, lockColumnsBadge]"
         :loading="lockWaitsLoading"
-        @open="openLockWaits"
+        @open="loadLockWaits"
         @refresh="loadLockWaits"
       >
         <template #actions>
@@ -560,20 +602,28 @@ onMounted(load)
           </label>
         </template>
 
-        <ErrorMessage v-if="lockWaitsError" :message="lockWaitsError" class="m-4" />
+        <ErrorMessage v-if="lockWaitsError" :message="lockWaitsError" />
+
         <Table
           v-else-if="lockRows.length"
-          class="px-4 pb-4"
           :columns="lockColumns"
           :rows="lockRows"
+          height="flex-1"
+         
         />
 
-        <p v-else class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center">
-          No results to display
-        </p>
+        <EmptyState
+          v-else
+          icon="lucide-lock"
+          title="No lock waits"
+          description="No query is waiting on a lock"
+          :bordered="false"
+          class="flex-1 justify-center pb-16"
+        />
       </DatabasePanel>
 
       <QueryAnalysisPanel
+        :active="picked === 'queries'"
         :site="selectedSite"
         :badge="scopeBadge"
         :enabled="Boolean(diagnostics?.performance_schema_enabled)"
@@ -582,6 +632,7 @@ onMounted(load)
       />
 
       <IndexAnalysisPanel
+        :active="picked === 'indexes'"
         :site="selectedSite"
         :badge="scopeBadge"
         :enabled="Boolean(diagnostics?.performance_schema_enabled)"
@@ -591,24 +642,25 @@ onMounted(load)
 
       <DatabasePanel
         v-if="hasBinlogs"
-        title="Database Binary Logs"
-        subtitle="Manage the binary logs of the database"
+        :active="picked === 'binlogs'"
         :badge="selectedSite ? 'Server-wide' : ''"
         :loading="binlogsLoading"
         @open="loadBinlogs"
         @refresh="loadBinlogs"
       >
-        <ErrorMessage v-if="binlogsError" :message="binlogsError" class="m-4" />
+        <ErrorMessage v-if="binlogsError" :message="binlogsError" />
 
-        <p
+        <EmptyState
           v-else-if="!binlogRows.length"
-          class="py-10 border-t border-outline-gray-2 text-ink-gray-5 text-sm text-center"
-        >
-          No results to display
-        </p>
+          icon="lucide-scroll-text"
+          title="No binary logs"
+          description="The server has no binary log files"
+          :bordered="false"
+          class="flex-1 justify-center pb-16"
+        />
 
-        <div v-else class="p-4">
-          <Table :columns="binlogColumns" :rows="binlogRows">
+        <template v-else>
+          <Table :columns="binlogColumns" :rows="binlogRows" height="flex-1">
             <template #selected="{ row }">
               <Checkbox
                 :modelValue="row.index <= selectedIndex"
@@ -621,19 +673,18 @@ onMounted(load)
               <Tooltip v-if="!row.isActive" text="Delete this file and every older one">
                 <Button
                   variant="ghost"
-                  theme="red"
                   icon="lucide-trash-2"
                   label="Delete binary logs"
+                  class="!text-ink-gray-5 hover:!text-ink-red-6"
                   @click="confirmPurge(row.index)"
                 />
               </Tooltip>
             </template>
           </Table>
 
-          <div v-if="binlogs.length" class="flex flex-wrap justify-between items-center gap-2 mt-3">
+          <div class="flex flex-wrap justify-between items-center gap-2">
             <p class="text-ink-gray-5 text-p-xs">
-              The newest log is in use and cannot be deleted. Selecting a file also selects every
-              older one, because the server can only purge them together.
+              The newest log is in use. Selecting a file also selects every older one.
             </p>
 
             <Button
@@ -647,12 +698,10 @@ onMounted(load)
               Delete {{ selectedIndex + 1 }} file{{ selectedIndex === 0 ? '' : 's' }}
             </Button>
           </div>
-        </div>
+        </template>
       </DatabasePanel>
-    </template>
-  </div>
-
-  <TableSizesDialog v-model:open="showTableSizes" :site="selectedSite" />
+    </main>
+  </template>
 
   <Dialog v-model="showKillDialog" title="Kill database process" size="sm">
     <p class="text-ink-gray-7 text-sm leading-relaxed">

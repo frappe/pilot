@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from functools import cached_property
@@ -27,8 +28,34 @@ class EditorGit:
         """Cached per request: EditorGit is rebuilt per request, so repo-ness is stable here."""
         return self._text("rev-parse", "--is-inside-work-tree") == "true"
 
+    @cached_property
+    def prefix(self) -> str:
+        """The app's folder inside its repository, such as `apps/widgets/`; empty at the repository root."""
+        return self._text("rev-parse", "--show-prefix")
+
+    def get_changes(self) -> list[tuple[str, str]]:
+        """`(status code, repository path)` of every change in the repository; a rename lists both paths."""
+        parts = self._run("status", "--porcelain=v1", "-z", "--untracked-files=all").stdout.split("\x00")
+        changes, index = [], 0
+        while index < len(parts):
+            entry = parts[index]
+            index += 1
+            if len(entry) < 4:
+                continue
+            changes.append((entry[:2], entry[3:]))
+            if entry[0] in "RC" and index < len(parts):
+                changes.append((entry[:2], parts[index]))
+                index += 1
+        return changes
+
     def is_sha(self, sha: str) -> bool:
         return bool(_SHA_RE.match(sha or ""))
+
+    def is_branch_name(self, name: str) -> bool:
+        """A valid branch name that git cannot read as an option."""
+        if not isinstance(name, str) or not name or name.startswith("-"):
+            return False
+        return self._run("check-ref-format", "--branch", name).returncode == 0
 
     def is_tracked(self, rel: str) -> bool:
         return self._run("ls-files", "--error-unmatch", "--", rel).returncode == 0
@@ -51,7 +78,7 @@ class EditorGit:
         if not self.is_repo:
             return {"repo": False}
         branch = self._text("rev-parse", "--abbrev-ref", "HEAD") or "none"
-        prefix = self._text("rev-parse", "--show-prefix")
+        prefix = self.prefix
         ahead, behind, has_upstream = 0, 0, False
         if self._run("rev-parse", "--abbrev-ref", "@{upstream}").returncode == 0:
             has_upstream = True
@@ -141,12 +168,12 @@ class EditorGit:
         return {"current": current, "branches": branches}
 
     def checkout(self, branch: str, create: bool) -> tuple[bool, str]:
-        args = ["checkout", "-b", branch] if create else ["checkout", branch]
+        args = ["checkout", "-b", branch] if create else ["checkout", branch, "--"]
         return self._combined(*args)
 
     def commit(self, message: str, stage_all: bool) -> tuple[bool, str]:
         if stage_all:
-            ok, out = self._combined("add", "-A")
+            ok, out = self._combined("add", "-A", "--", ".")
             if not ok:
                 return False, out
         return self._combined("commit", "-m", message)
@@ -216,7 +243,7 @@ class EditorGit:
         fields = result.stdout.rstrip("\n").split(_FIELD, 6)
         if len(fields) < 7:
             return None
-        prefix = self._text("rev-parse", "--show-prefix")
+        prefix = self.prefix
         return {
             "sha": fields[0],
             "short": fields[1],
@@ -275,12 +302,15 @@ class EditorGit:
             return subprocess.run(
                 ["git", *args],
                 cwd=self.root,
+                # Paths are plain names: `:/x` must not reach the repository root above the app.
+                env={**os.environ, "GIT_LITERAL_PATHSPECS": "1"},
                 text=True,
                 input=input,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT if combine else subprocess.PIPE,
             )
-        except (OSError, subprocess.SubprocessError):
+        # ValueError: an argument holds a NUL byte.
+        except (OSError, ValueError, subprocess.SubprocessError):
             return subprocess.CompletedProcess(args, 1, "", "")
 
 

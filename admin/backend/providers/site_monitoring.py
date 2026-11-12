@@ -34,7 +34,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     def get_analytics(self) -> dict:
         entries = list(self._entries_in_window())
-        request_points = self._points(entries, "request", self._non_ping_path)
+        request_points = self._points(entries, "request", self.get_non_ping_path)
         job_points = self._points(entries, "job", self._job_method)
         now_ms = self.now_ms()
         return {
@@ -44,9 +44,9 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "requests_over_time": build_total_timeline(
                 request_points, self._bucket_seconds, "Requests", self._start_ms, now_ms
             ),
-            "top_paths": self._timeline(entries, "request", self._non_ping_path, "count"),
+            "top_paths": self._timeline(entries, "request", self.get_non_ping_path, "count"),
             "slowest_requests": self._timeline(entries, "request", self._request_path, "duration"),
-            "avg_request_duration": self._timeline(entries, "request", self._non_ping_path, "average"),
+            "avg_request_duration": self._timeline(entries, "request", self.get_non_ping_path, "average"),
             "background_jobs_over_time": build_total_timeline(
                 job_points, self._bucket_seconds, "Jobs", self._start_ms, now_ms
             ),
@@ -67,7 +67,9 @@ class SiteMonitoringProvider(WindowedLogProvider):
             points = []
         else:
             points = [
-                TimelinePoint(self.to_epoch_ms(when), record["query"], (record.get("query_time") or 0) * 1_000_000)
+                TimelinePoint(
+                    self.to_epoch_ms(when), record["query"], (record.get("query_time") or 0) * 1_000_000
+                )
                 for record in SlowQueryLog(slow_query_log_path()).records()
                 if record.get("db") == self._db_name
                 and (when := self.get_time(record.get("time"))) is not None
@@ -132,7 +134,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
         return (entry.get("request") or {}).get("path")
 
     @classmethod
-    def _non_ping_path(cls, entry: dict) -> str | None:
+    def get_non_ping_path(cls, entry: dict) -> str | None:
         """Uptime checks hit /api/method/ping constantly and would drown out real traffic."""
         path = cls._request_path(entry)
         return None if path == PING_PATH else path

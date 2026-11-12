@@ -1297,7 +1297,6 @@ def test_write_common_site_config_leaves_developer_mode_to_sites(tmp_path: Path)
     bench = make_bench(tmp_path)
     bench.sites_path.mkdir(parents=True)
     config_path = bench.sites_path / "common_site_config.json"
-    bench.config.allow_developer_mode = True
 
     bench.write_common_site_config()
 

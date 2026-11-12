@@ -58,7 +58,7 @@ FLAT_KEYS = {
     "reload_python": "reload_python",
     "watch_admin_js": "watch_admin_js",
     "db_type": "db_type",
-    "allow_developer_mode": "allow_developer_mode",
+    "enable_code_editor": "enable_code_editor",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_socket_path": "mariadb.socket_path",
@@ -128,8 +128,7 @@ class BenchConfig:
     # The single database engine for this bench's sites: "mariadb" or "postgres".
     db_type: str = "mariadb"
     default_branch: str = ""
-    # Gates whether developer mode can be toggled per site; sets nothing itself.
-    allow_developer_mode: bool = False
+    enable_code_editor: bool = True
     # Whether `uv pip install -e` pulls an app's `dev` extra, such as frappe's watchdog.
     install_dev_extra: bool = True
     onboarding: str = ""
@@ -232,7 +231,7 @@ class BenchConfig:
             watch_admin_js=bench_data.get("watch_admin_js", False),
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
-            allow_developer_mode=bench_data.get("allow_developer_mode", False),
+            enable_code_editor=bench_data.get("enable_code_editor", True),
             install_dev_extra=bench_data.get("install_dev_extra", True),
             onboarding=bench_data.get("onboarding", ""),
             apps=apps,
@@ -570,7 +569,7 @@ class BenchConfig:
             "reload_python": self.reload_python,
             "watch_admin_js": self.watch_admin_js,
             "db_type": self.db_type,
-            "allow_developer_mode": self.allow_developer_mode,
+            "enable_code_editor": self.enable_code_editor,
             "install_dev_extra": self.install_dev_extra,
         }
         if self.default_branch:
@@ -947,11 +946,12 @@ _BENCH_KEYS = {
     "watch_admin_js",
     "db_type",
     "default_branch",
-    "allow_developer_mode",
+    "enable_code_editor",
     "install_dev_extra",
     "onboarding",
 }
 # Keys older Pilot versions wrote that the parser still tolerates.
+_BENCH_LEGACY = {"allow_developer_mode"}
 _PRODUCTION_LEGACY = {"lightweight", "nginx", "use_companion_manager"}
 _GUNICORN_LEGACY = {"malloc_arena_max"}
 _WORKER_LEGACY = {"queue"}
@@ -960,7 +960,7 @@ _WORKER_LEGACY = {"queue"}
 def _bench_schema() -> TomlSchema:
     return TomlSchema(
         tables={
-            "bench": TomlSchema(keys=set(_BENCH_KEYS)),
+            "bench": TomlSchema(keys=set(_BENCH_KEYS) | _BENCH_LEGACY),
             "redis": TomlSchema(keys=field_names(RedisConfig)),
             "production": TomlSchema(keys=field_names(ProductionConfig) | _PRODUCTION_LEGACY),
             "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),

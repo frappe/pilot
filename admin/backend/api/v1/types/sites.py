@@ -12,10 +12,12 @@ class SiteResource(TypedDict):
     provisioning: bool
     setup_complete: bool
     primary_domain: str
+    ssl: bool
+    uptime_percent: NotRequired[float | None]
+    requests: NotRequired[list[int]]
 
 
 class SiteDetail(SiteResource):
-    ssl: bool
     tls: bool
     installable_apps: list[str]
     http_port: int

@@ -93,7 +93,7 @@ const openLink = (url: string) => {
 const menuOptions = (app: AppCardEntry): DropdownItem[] => {
   const options: DropdownItem[] = []
 
-  if (session.developerMode)
+  if (session.codeEditor)
     options.push({
       label: 'Open in editor',
       icon: 'lucide-code',

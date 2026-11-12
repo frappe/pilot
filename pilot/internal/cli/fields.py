@@ -8,6 +8,16 @@ from typing import Annotated, Any, Literal, NamedTuple, get_args, get_origin, ge
 from pilot.commands import Arg
 
 
+class _NotProvided:
+    """Marker for a flag the user did not pass."""
+
+    def __repr__(self) -> str:
+        return "NOT_PROVIDED"
+
+
+NOT_PROVIDED = _NotProvided()
+
+
 class ArgField(NamedTuple):
     name: str
     hint: Any
@@ -33,7 +43,10 @@ def arg_fields(
         if field.default is not MISSING:
             has_default, default = True, field.default
         elif field.default_factory is not MISSING:
-            has_default, default = True, field.default_factory()
+            # The dataclass runs the factory when the command is built. Running it
+            # here would run every command's default just to print --help, and a
+            # default can pull in a heavy import.
+            has_default, default = True, argparse.SUPPRESS
         else:
             has_default, default = False, None
         result.append(ArgField(field.name, hint, metadata, has_default, default))
@@ -107,7 +120,9 @@ def option_flags(arg_field: ArgField) -> list[str]:
 
 
 def value_from_namespace(args: argparse.Namespace, arg_field: ArgField) -> Any:
-    value = getattr(args, arg_field.name)
+    value = getattr(args, arg_field.name, argparse.SUPPRESS)
+    if value is argparse.SUPPRESS:
+        return NOT_PROVIDED
     return tuple(value) if strip_optional(arg_field.hint) == tuple[str, ...] else value
 
 

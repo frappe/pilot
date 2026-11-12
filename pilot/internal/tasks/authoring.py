@@ -52,7 +52,16 @@ def task_from_args(
     bench_root: Path,
     args: argparse.Namespace,
 ) -> Task:
-    kwargs = {arg_field.name: value_from_namespace(args, arg_field) for arg_field in task_fields(cls)}
+    from pilot.internal.cli.fields import NOT_PROVIDED
+
+    kwargs = {}
+    for arg_field in task_fields(cls):
+        value = value_from_namespace(args, arg_field)
+        if value is NOT_PROVIDED:
+            # The dataclass supplies the default, so a factory runs here only when
+            # the task is actually built.
+            continue
+        kwargs[arg_field.name] = value
     return cls(bench=bench, bench_root=bench_root, **kwargs)
 
 
