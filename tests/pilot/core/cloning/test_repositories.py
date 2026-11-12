@@ -340,17 +340,34 @@ def test_clone_branch_options_list_origin_branches_with_default_first(source):
     git(app, "branch", "feature/test")
     git(app, "push", "origin", "feature/test")
     git(app, "branch", "local-only")
+    (app / "untracked.txt").write_text("local edit")
     before = git(app, "status", "--porcelain")
     assert source.get_clone_branch_options() == [
-        {"name": "frappe", "default_branch": "main", "branches": ["main", "feature/test"]}
+        {
+            "name": "frappe",
+            "default_branch": "main",
+            "branches": ["main", "feature/test"],
+            "current_branch": "main",
+            "changed_files": 1,
+            "error": "",
+        }
     ]
     assert git(app, "status", "--porcelain") == before
 
 
-def test_clone_branch_options_fail_when_origin_is_unavailable(source):
-    git(source.apps_path / "frappe", "remote", "set-url", "origin", "/missing-pilot-test-origin")
-    with pytest.raises(BenchError, match="Could not read branches for frappe"):
-        source.get_clone_branch_options()
+@pytest.mark.parametrize("origin", ["unreachable", "missing"])
+def test_clone_branch_options_keep_the_checkout_when_origin_fails(source, origin):
+    app = source.apps_path / "frappe"
+    if origin == "missing":
+        git(app, "remote", "remove", "origin")
+    else:
+        git(app, "remote", "set-url", "origin", "/missing-pilot-test-origin")
+    [option] = source.get_clone_branch_options()
+    assert option["branches"] == []
+    assert option["default_branch"] == ""
+    assert option["current_branch"] == "main"
+    expected = "no origin remote" if origin == "missing" else "Could not read branches for frappe"
+    assert expected in option["error"]
 
 
 def test_current_copy_does_not_inherit_local_hooks_or_configuration(source):

@@ -32,6 +32,9 @@ class CloneAppBranches(TypedDict):
     title: str
     default_branch: str
     branches: list[str]
+    current_branch: str
+    changed_files: int
+    error: str
 
 
 class CloneBranchOptions(TypedDict):

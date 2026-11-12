@@ -67,15 +67,26 @@ def get_remote_branches(source: Path, git_config: dict[str, str] | None = None) 
 
 
 def get_app_branch_options(source) -> list[dict]:
-    apps = source.apps()
     with ThreadPoolExecutor(max_workers=4) as executor:
-        return list(
-            executor.map(
-                get_remote_branches,
-                [app.path for app in apps],
-                [auth_config_for(app.bench.path, app.config.repo) for app in apps],
-            )
-        )
+        return list(executor.map(get_app_branch_option, source.apps()))
+
+
+def get_app_branch_option(app) -> dict:
+    """Origin branches and the local checkout; an unreadable origin leaves only the checkout."""
+    repository = GitRepo(app.path)
+    option = {
+        "name": app.path.name,
+        "default_branch": "",
+        "branches": [],
+        "current_branch": repository.branch,
+        "changed_files": len(repository.changed_paths),
+        "error": "",
+    }
+    try:
+        option.update(get_remote_branches(app.path, auth_config_for(app.bench.path, app.config.repo)))
+    except BenchError as error:
+        option["error"] = str(error)
+    return option
 
 
 def clone_branch(
