@@ -183,18 +183,18 @@ class PythonEnvManager:
             self._install_editable(str(app.path))
 
     def install_apps(self, apps: list["App"]) -> None:
-        """Resolve editable apps together in the destination environment."""
+        """Resolve editable apps together; per app, a dev extra that does not resolve does not block it."""
         if not apps:
             return
         targets = [app.editable_target for app in apps]
-        bare_targets = [str(app.path) for app in apps]
         try:
             self._install_editable(*targets)
         except CommandError:
-            if targets == bare_targets:
+            if targets == [str(app.path) for app in apps]:
                 raise
-            print("Warning: the dev extras do not install; installing apps without them.")
-            self._install_editable(*bare_targets)
+            print("Warning: the dev extras do not install together; installing apps one at a time.")
+            for app in apps:
+                self.install_app(app)
 
     def _install_editable(self, *targets: str) -> None:
         uv = ensure_uv()
