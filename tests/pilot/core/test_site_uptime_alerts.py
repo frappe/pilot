@@ -255,7 +255,7 @@ def _app_server(monitor: UptimeMonitor, status: int) -> Iterator[ThreadingHTTPSe
     server = ThreadingHTTPServer(("127.0.0.1", 0), _AppServer)
     server.status, server.requests = status, []
     monitor.bench.config.http_port = server.server_port
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield server
