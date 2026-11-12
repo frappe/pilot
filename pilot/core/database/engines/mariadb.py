@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.core.database.base import (
@@ -16,6 +18,7 @@ from pilot.core.database.base import (
     StorageComponent,
     TableSize,
 )
+from pilot.core.database.deadlocks import DeadlockLog, DeadlockReport
 from pilot.core.database.engines.helpers import (
     DEFAULT_CONNECT_TIMEOUT,
     MAX_ROWS,
@@ -25,7 +28,12 @@ from pilot.core.database.engines.helpers import (
     validated_process_id,
 )
 from pilot.core.database.engines.mariadb_performance import MariaDBPerformanceReport
+from pilot.core.database.slow_log import SlowLogFile, SlowQueryReport
+from pilot.core.database.slow_queries import slow_row_key
 from pilot.exceptions import DatabaseError
+
+# The monitor collects every minute, so a short tail holds everything new.
+SLOW_LOG_COLLECT_BYTES = 2 * 1024 * 1024
 
 
 class MariaDB(Database):
@@ -67,11 +75,13 @@ class MariaDB(Database):
 
     def execute(self, query: str, read_only: bool = True) -> QueryResult:
         import pymysql
+        import pymysql.cursors
 
         conn = self._connect()
         start = time.monotonic()
         try:
-            with conn.cursor() as cursor:
+            # Tuples, not dicts: a dict row keeps one value per column name, so `a.name, b.name` would repeat a.name.
+            with conn.cursor(pymysql.cursors.Cursor) as cursor:
                 if read_only:
                     cursor.execute("START TRANSACTION READ ONLY")
                 cursor.execute(query)
@@ -79,7 +89,7 @@ class MariaDB(Database):
                     columns = [d[0] for d in cursor.description]
                     raw = list(cursor.fetchmany(MAX_ROWS + 1))
                     truncated = len(raw) > MAX_ROWS
-                    rows = [[r[c] for c in columns] for r in raw[:MAX_ROWS]]
+                    rows = [list(row) for row in raw[:MAX_ROWS]]
                 else:
                     columns, rows, truncated = [], [], False
                 affected = cursor.rowcount or 0
@@ -143,19 +153,31 @@ class MariaDB(Database):
         return self._name_value_pairs("SHOW GLOBAL VARIABLES")
 
     def is_slow_log_enabled(self) -> bool:
-        variables = self.get_global_variables()
-        return variables.get("slow_query_log") == "ON" and "TABLE" in (variables.get("log_output") or "")
+        return self.get_global_variables().get("slow_query_log") == "ON"
 
-    def enable_slow_log(self, long_query_time: float = 1.0) -> None:
-        """Mutates shared server globals; only call on an explicit user action."""
-        conn = self._connect()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("SET GLOBAL slow_query_log = ON")
-                cursor.execute("SET GLOBAL log_output = 'TABLE'")
-                cursor.execute("SET GLOBAL long_query_time = %s", (long_query_time,))
-        finally:
-            conn.close()
+    def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:
+        """Slow log entries grouped by normalized query, read from the slow log file."""
+        variables = self.get_global_variables()
+        enabled = variables.get("slow_query_log") == "ON"
+        long_query_time = float(variables.get("long_query_time") or 0)
+        path = self.get_slow_log_path()
+        if path is None:
+            return SlowQueryReport(log_path=None, enabled=enabled, long_query_time=long_query_time)
+        queries = SlowLogFile(path).get_top_queries(database, limit)
+        return SlowQueryReport(str(path), enabled, long_query_time, queries)
+
+    def get_new_slow_queries(self, since: tuple[str, str, int] | None) -> list[dict]:
+        """Slow log rows after `since`, from the log file when the server writes one, else mysql.slow_log."""
+        path = self.get_slow_log_path()
+        if path is None:
+            return self.scan_slow_queries(since=since)
+        rows = [entry.to_row() for entry in SlowLogFile(path).get_entries(SLOW_LOG_COLLECT_BYTES)]
+        return [row for row in rows if since is None or slow_row_key(row) > since]
+
+    def get_slow_log_path(self) -> Path | None:
+        if "FILE" not in str(self.get_scalar("SELECT @@log_output")):
+            return None
+        return self.get_local_log_path("@@slow_query_log_file")
 
     def scan_slow_queries(self, since: tuple[str, str, int] | None = None, limit: int = 5000) -> list[dict]:
         """New mysql.slow_log rows across all schemas, oldest first, for aggregation.
@@ -270,15 +292,17 @@ class MariaDB(Database):
         )
 
     def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
-        """Each row is the waiting side of a lock wait, joined to its own
-        transaction for state/query/row-count context. INNODB_TRX has no
-        database column, so the owning connection supplies it."""
+        """Each row is one lock wait: the waiting transaction with its state, query and row
+        counts, and the transaction blocking it. INNODB_TRX has no database column, so the
+        owning connection supplies it."""
         result = self.execute(
             "SELECT w.requesting_trx_id, l.lock_type, l.lock_mode, l.lock_table, l.lock_index, "
-            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB "
+            "t.trx_state, UNIX_TIMESTAMP(t.trx_started), t.trx_query, t.trx_rows_locked, t.trx_rows_modified, p.DB, "
+            "w.blocking_trx_id, b.trx_mysql_thread_id AS blocking_thread_id, b.trx_query AS blocking_query "
             "FROM information_schema.INNODB_LOCK_WAITS w "
             "JOIN information_schema.INNODB_LOCKS l ON l.lock_id = w.requested_lock_id "
             "JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id "
+            "LEFT JOIN information_schema.INNODB_TRX b ON b.trx_id = w.blocking_trx_id "
             "LEFT JOIN information_schema.PROCESSLIST p ON p.ID = t.trx_mysql_thread_id"
         )
         rows = [row for row in result.rows if not database or row[10] == database]
@@ -290,13 +314,42 @@ class MariaDB(Database):
                 table=row[3],
                 index=row[4],
                 state=row[5],
-                started=str(row[6]) if row[6] is not None else None,
+                started=_utc_iso(row[6]),
                 query=row[7],
                 rows_locked=int(row[8]) if row[8] is not None else None,
                 rows_modified=int(row[9]) if row[9] is not None else None,
+                blocking_id=str(row[11]) if row[11] is not None else None,
+                blocking_thread_id=int(row[12]) if row[12] is not None else None,
+                blocking_query=row[13],
             )
             for row in rows
         ]
+
+    def get_deadlocks(
+        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+    ) -> DeadlockReport:
+        """Deadlocks InnoDB printed to the error log, which must be a file on this host."""
+        print_all = str(self.get_scalar("SELECT @@innodb_print_all_deadlocks")) in ("1", "ON")
+        path = self.get_error_log_path()
+        if path is None:
+            return DeadlockReport(log_path=None, print_all_deadlocks=print_all)
+        return DeadlockReport(str(path), print_all, DeadlockLog(path).get_deadlocks(database, limit, since, until))
+
+    def get_error_log_path(self) -> Path | None:
+        """None when errors go to stderr (the journal) or the file is out of reach."""
+        return self.get_local_log_path("@@log_error")
+
+    def get_local_log_path(self, variable: str) -> Path | None:
+        """The readable file a log variable names, on this host only."""
+        if not is_local_host(self._host, self._socket):
+            return None
+        value = str(self.get_scalar(f"SELECT {variable}") or "")
+        if not value:
+            return None
+        path = Path(value)
+        if not path.is_absolute():
+            path = Path(self.get_data_directory() or ".") / path
+        return path if path.is_file() and os.access(path, os.R_OK) else None
 
     def get_time_consuming_queries(
         self, database: str = "", limit: int = 20, offset: int = 0
@@ -415,3 +468,10 @@ class MariaDB(Database):
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")
         return int(result.rows[0][1])
+
+
+def _utc_iso(epoch: object) -> str | None:
+    """INNODB_TRX times are server-local with no zone; an epoch turned UTC reads the same everywhere."""
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(float(epoch), tz=UTC).isoformat()

@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pilot.exceptions import DatabaseError
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from pilot.core.database.deadlocks import DeadlockReport
+    from pilot.core.database.slow_log import SlowQueryReport
 
 
 @dataclass
@@ -55,6 +61,9 @@ class LockWaitRow:
     query: str | None
     rows_locked: int | None
     rows_modified: int | None
+    blocking_id: str | None = None
+    blocking_thread_id: int | None = None
+    blocking_query: str | None = None
 
 
 @dataclass
@@ -200,6 +209,14 @@ class Database(ABC):
 
     def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
         """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    def get_deadlocks(
+        self, database: str = "", limit: int = 50, since: datetime | None = None, until: datetime | None = None
+    ) -> DeadlockReport:
+        raise NotImplementedError
+
+    def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:
         raise NotImplementedError
 
     def get_time_consuming_queries(

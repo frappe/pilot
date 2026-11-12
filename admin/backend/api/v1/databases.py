@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
@@ -431,6 +432,41 @@ def get_lock_wait_rows():
         return error_response("lockwaits_unavailable", str(exc), 422)
     except Exception:
         return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
+
+
+@database_bp.get("/deadlocks")
+def get_deadlocks():
+    try:
+        since, until = _moment_arg("since"), _moment_arg("until")
+    except ValueError as exc:
+        return error_response("invalid_filter", str(exc), 422)
+    try:
+        return jsonify(_provider().get_deadlocks(request.args.get("site", ""), since, until))
+    except DatabaseError as exc:
+        return error_response("deadlocks_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("deadlocks_unavailable", "Could not read database deadlocks.", 500)
+
+
+def _moment_arg(name: str) -> datetime | None:
+    """An ISO time with an offset, so the browser's timezone never reaches the server unstated."""
+    value = request.args.get(name)
+    if not value:
+        return None
+    moment = datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        raise ValueError(f"{name} must include a timezone offset.")
+    return moment
+
+
+@database_bp.get("/slow-queries")
+def get_slow_queries():
+    try:
+        return jsonify(_provider().get_slow_queries(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("slow_queries_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("slow_queries_unavailable", "Could not read the slow query log.", 500)
 
 
 @database_bp.get("/performance-report")

@@ -10,6 +10,7 @@ import {
   SETTINGS_PAGES,
 } from '@/components/settings/sections'
 import { useSession } from '@/composables/auth/useSession'
+import { useSites } from '@/composables/sites/useSites'
 
 export interface SearchItem {
   name: string
@@ -24,6 +25,7 @@ export const useSearchIndex = () => {
   const { session } = useSession()
   const { setColorScheme } = useColorScheme()
   const { showBenches, showNewBench } = useAppMenu()
+  const { sites } = useSites()
 
   return computed((): SearchGroups => {
     const groups: SearchGroups = {}
@@ -34,6 +36,15 @@ export const useSearchIndex = () => {
       .map((item) => ({ name: item.label, icon: item.icon, route: item.to }))
 
     if (pages.length) groups.Pages = { items: pages }
+
+    if (sites.value.length)
+      groups.Sites = {
+        items: sites.value.map((site) => ({
+          name: site.name,
+          icon: 'lucide-globe',
+          route: `/sites/${encodeURIComponent(site.name)}`,
+        })),
+      }
 
     const actions: SearchItem[] = [
       { name: 'New site', icon: 'lucide-plus', route: '/sites?new=1' },

@@ -70,7 +70,12 @@ class SiteUptimeProvider(WindowedLogProvider):
 
     @staticmethod
     def _percent(entries: list[dict]) -> float | None:
-        ups = [entry["up"] for entry in entries if isinstance(entry.get("up"), bool)]
+        # A site in maintenance is down on purpose, so those checks do not count against it.
+        ups = [
+            entry["up"]
+            for entry in entries
+            if isinstance(entry.get("up"), bool) and not entry.get("maintenance")
+        ]
         if not ups:
             return None
         return round(sum(ups) / len(ups) * 100, 2)

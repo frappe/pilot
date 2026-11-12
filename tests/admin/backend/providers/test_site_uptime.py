@@ -145,3 +145,13 @@ def test_malformed_entry_skipped(tmp_path: Path) -> None:
     result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
 
     assert result["overall_percent"] == 100.0
+
+
+def test_maintenance_checks_do_not_count_as_downtime(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    maintenance = {**_record("site-a.local", now - timedelta(seconds=5), False), "maintenance": True}
+    root = _write_log(tmp_path, [_record("site-a.local", now, True), maintenance])
+
+    result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
+
+    assert result["overall_percent"] == 100.0

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 
 import TerminalOutput from '@/components/common/TerminalOutput.vue'
 
+import { STEP_MARKER_RE } from '@/composables/tasks/useTaskSteps'
 import { useTaskStream } from '@/composables/tasks/useTaskStream'
 import { processLine } from '@/utils/ansi'
 
@@ -31,6 +32,11 @@ const emit = defineEmits(['line', 'status', 'done', 'error'])
 
 const stream = useTaskStream({ guardHiddenTab: props.guardHiddenTab })
 const { terminal, lines, rawLines, streaming } = stream
+
+// STEP markers drive the step view; the plain terminal shows only real output.
+const visibleLines = computed(() =>
+  lines.value.filter((_, index) => !STEP_MARKER_RE.test(rawLines.value[index] ?? '')),
+)
 
 const setTerminal = (el: { scrollToBottom: () => void } | null) => {
   terminal.value = el
@@ -88,7 +94,7 @@ defineExpose({
   >
     <TerminalOutput
       ref="terminal"
-      :lines="lines"
+      :lines="visibleLines"
       :streaming="streaming"
       :line-numbers="lineNumbers"
       :empty-text="emptyText"

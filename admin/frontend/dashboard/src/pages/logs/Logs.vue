@@ -21,10 +21,6 @@ const router = useRouter()
 
 const { name: benchName, load: loadBench } = useBench()
 
-const hasErrors = (log: LogFile) => {
-  return log.filename.endsWith('.error.log') && log.size_bytes > 0
-}
-
 // ── Log list ─────────────────────────────────────────────────────────────
 const logs = ref<LogFile[]>([])
 const logsLoading = ref(true)
@@ -43,7 +39,7 @@ const fileOptions = computed(() =>
     value: log.filename,
     size: formatBytes(log.size_bytes),
     time: relativeTime(log.last_modified),
-    errors: hasErrors(log),
+    errors: log.has_errors,
   })),
 )
 
@@ -257,7 +253,7 @@ onUnmounted(() => stopLive())
             {{ log.filename }}
           </span>
 
-          <Tooltip v-if="hasErrors(log)" text="Contains errors">
+          <Tooltip v-if="log.has_errors" text="Contains errors">
             <span
               class="bg-surface-red-5 rounded-full size-1.5 shrink-0"
               role="img"

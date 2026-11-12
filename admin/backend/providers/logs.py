@@ -12,6 +12,12 @@ from pilot.managers.task.reader import HEARTBEAT_SECONDS
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
 
 _MAX_STREAM_LINES = 5000  # cap on lines a single log tail-stream connection emits
+# Error lines from Python logging, gunicorn, nginx and tracebacks. Servers log INFO to stderr,
+# so a *.error.log file name alone says nothing.
+_ERROR_LINE_RE = re.compile(
+    r"\b(ERROR|CRITICAL|FATAL)\b|\[(error|crit|alert|emerg)\]|Traceback \(most recent call last\)"
+)
+_ERROR_SCAN_BYTES = 64 * 1024
 
 
 def _read_tail_text(path: Path, min_lines: int, block_size: int = 65536) -> str:
@@ -34,6 +40,7 @@ class LogFileInfo:
     last_modified: datetime
     process_name: str
     line_count: int
+    has_errors: bool
 
 
 class LogProvider:
@@ -55,6 +62,7 @@ class LogProvider:
                     last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
                     process_name=path.stem,
                     line_count=self.count_lines(path),
+                    has_errors=self.has_recent_errors(path),
                 )
             )
         return infos
@@ -93,6 +101,16 @@ class LogProvider:
                     last_write = time.monotonic()
                 else:
                     time.sleep(0.2)
+
+    @staticmethod
+    def has_recent_errors(path: Path) -> bool:
+        """Whether the end of the log holds an error line."""
+        try:
+            with path.open("rb") as handle:
+                handle.seek(max(0, handle.seek(0, 2) - _ERROR_SCAN_BYTES))
+                return bool(_ERROR_LINE_RE.search(handle.read().decode(errors="replace")))
+        except OSError:
+            return False
 
     @staticmethod
     def count_lines(path: Path) -> int:

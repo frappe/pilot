@@ -124,6 +124,7 @@ def test_get_lock_wait_rows_shapes_rows_as_dicts() -> None:
             "id": "42", "type": "RECORD", "mode": "X", "table": "tabDoc", "index": "PRIMARY",
             "state": "LOCK WAIT", "started": "2026-01-01T00:00:00", "query": "UPDATE tabDoc SET x=1",
             "rows_locked": 3, "rows_modified": 1,
+            "blocking_id": None, "blocking_thread_id": None, "blocking_query": None,
         }
     ]
 

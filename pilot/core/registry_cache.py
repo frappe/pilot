@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 from pilot.exceptions import CommandError, RegistryUnavailableError
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.internal.git import GitRepo
 from pilot.managers.cron import CronManager, cron_module_command
 from pilot.utils import run_command
@@ -85,26 +88,35 @@ class RegistryCache:
             ) from exc
 
     def ensure_fresh(self) -> None:
-        """Clone on first use; later reject tampering and refresh hourly."""
-        if not self._is_cloned():
-            self._clone()
-            self._touch_last_checked()
-            return
+        """Clone on first use; later reject tampering and refresh hourly.
 
-        self._reject_if_tampered()
-        if self._refresh_due():
-            self._refresh()
-            self._touch_last_checked()
+        Admin pages ask for the registry in parallel, so one lock serializes the clone and refresh."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(self.path.with_name("registry-cache.guard")):
+            if not self._is_cloned():
+                self._clone()
+                self._touch_last_checked()
+                return
+
+            self._reject_if_tampered()
+            if self._refresh_due():
+                self._refresh()
+                self._touch_last_checked()
 
     def _is_cloned(self) -> bool:
         return (self.path / ".git").is_dir()
 
     def _clone(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        """Clone beside the cache and rename it in, so a failed clone leaves no partial directory."""
+        staging = Path(tempfile.mkdtemp(prefix=".registry-cache-", dir=self.path.parent))
         try:
-            run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(self.path)])
+            run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(staging)])
+            shutil.rmtree(self.path, ignore_errors=True)
+            staging.rename(self.path)
         except CommandError as exc:
             raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}") from exc
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
         self.install_daily_refresh_cron()
 
     def _reject_if_tampered(self) -> None:

@@ -22,6 +22,14 @@ from pilot.utils import open_private
 _TASK_POLL_SECONDS = 0.5
 # A write is the only way to see that a client went away, so a quiet stream still writes.
 HEARTBEAT_SECONDS = 15
+# Tasks that write a site's site_config.json before its database is ready, mapped to the
+# argument that names that site. A clone's `site` is its source, which stays up.
+SITE_PROVISIONING_ARGS = {
+    "new-site": "name",
+    "new-site-from-backup": "name",
+    "reinstall-site": "site",
+    "clone-site": "name",
+}
 _SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
 _STEP_RE = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
 _STEP_FAILED_RE = re.compile(r"^STEP-FAILED ([\w-]+),")
@@ -140,6 +148,16 @@ class TaskReader:
 
         tasks.sort(key=lambda task: task.queued_at, reverse=True)
         return tasks if limit is None else tasks[:limit]
+
+    def get_provisioning_site_names(self) -> set[str]:
+        """Sites an active task is still creating, so neither ready nor broken yet."""
+        return {
+            name
+            for task in self.list_tasks(limit=None, include_unlisted=True)
+            if task.status.is_active
+            and (key := SITE_PROVISIONING_ARGS.get(task.command))
+            and (name := task.args.get(key))
+        }
 
     def read_task(self, task_id: str) -> TaskInfo:
         task_dir = self._files.existing_task_dir(task_id)

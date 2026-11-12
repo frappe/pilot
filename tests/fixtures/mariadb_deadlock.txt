@@ -1,0 +1,44 @@
+2026-11-12 12:28:11 580 [Note] InnoDB: Transactions deadlock detected, dumping detailed information.
+2026-11-12 12:28:11 580 [Note] InnoDB:
+*** (1) TRANSACTION:
+TRANSACTION 8172, ACTIVE 2 sec starting index read
+mysql tables in use 1, locked 1
+LOCK WAIT 3 lock struct(s), heap size 1120, 2 row lock(s), undo log entries 1
+MariaDB thread id 580, OS thread handle 128749429679808, query id 74882 localhost root Updating
+update pilot_dl_test set v=v+1 where id=2
+2026-11-12 12:28:11 580 [Note] InnoDB: *** WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 772 page no 3 n bits 320 index PRIMARY of table `_b55b229d4134569a`.`pilot_dl_test` trx id 8172 lock_mode X locks rec but not gap waiting
+Record lock, heap no 3 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+ 0: len 4; hex 80000002; asc     ;;
+ 1: len 6; hex 000000001fed; asc       ;;
+ 2: len 7; hex 33000000fe0250; asc 3     P;;
+ 3: len 4; hex 80000001; asc     ;;
+2026-11-12 12:28:11 580 [Note] InnoDB: *** CONFLICTING WITH:
+RECORD LOCKS space id 772 page no 3 n bits 320 index PRIMARY of table `_b55b229d4134569a`.`pilot_dl_test` trx id 8173 lock_mode X locks rec but not gap
+Record lock, heap no 3 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+ 0: len 4; hex 80000002; asc     ;;
+ 1: len 6; hex 000000001fed; asc       ;;
+ 2: len 7; hex 33000000fe0250; asc 3     P;;
+ 3: len 4; hex 80000001; asc     ;;
+2026-11-12 12:28:11 580 [Note] InnoDB:
+*** (2) TRANSACTION:
+TRANSACTION 8173, ACTIVE 1 sec starting index read
+mysql tables in use 1, locked 1
+LOCK WAIT 3 lock struct(s), heap size 1120, 2 row lock(s), undo log entries 1
+MariaDB thread id 582, OS thread handle 128749430601408, query id 74881 localhost root Updating
+update pilot_dl_test set v=v+1 where id=1
+2026-11-12 12:28:11 580 [Note] InnoDB: *** WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 772 page no 3 n bits 320 index PRIMARY of table `_b55b229d4134569a`.`pilot_dl_test` trx id 8173 lock_mode X locks rec but not gap waiting
+Record lock, heap no 2 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+ 0: len 4; hex 80000001; asc     ;;
+ 1: len 6; hex 000000001fec; asc       ;;
+ 2: len 7; hex 320000009e1e2a; asc 2     *;;
+ 3: len 4; hex 80000001; asc     ;;
+2026-11-12 12:28:11 580 [Note] InnoDB: *** CONFLICTING WITH:
+RECORD LOCKS space id 772 page no 3 n bits 320 index PRIMARY of table `_b55b229d4134569a`.`pilot_dl_test` trx id 8172 lock_mode X locks rec but not gap
+Record lock, heap no 2 PHYSICAL RECORD: n_fields 4; compact format; info bits 0
+ 0: len 4; hex 80000001; asc     ;;
+ 1: len 6; hex 000000001fec; asc       ;;
+ 2: len 7; hex 320000009e1e2a; asc 2     *;;
+ 3: len 4; hex 80000001; asc     ;;
+2026-11-12 12:28:11 580 [Note] InnoDB: *** WE ROLL BACK TRANSACTION (1)

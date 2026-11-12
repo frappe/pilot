@@ -8,11 +8,6 @@ from pilot.core.site import exclude_disabled_apps, is_setup_complete, query_inst
 from pilot.internal.site_paths import resolve_site_path
 from pilot.managers.task import TaskReader
 
-# These write site_config.json well before the DB is queryable, so a failed
-# DB probe during one means "not ready yet", not "broken".
-_PROVISIONING_COMMANDS = {"new-site", "new-site-from-backup", "reinstall-site"}
-_PROVISIONING_ARG_KEYS = ("name", "site")
-
 
 @dataclass
 class SiteInfo:
@@ -52,21 +47,11 @@ class SiteProvider:
 
     @property
     def provisioning_site_names(self) -> set[str]:
-        """Sites with an active provisioning task - cheap local file reads,
-        versus the DB probe they let us skip."""
+        """Sites with an active provisioning task: a failed DB probe there means "not ready yet"."""
         try:
-            tasks = TaskReader(self._bench_root).list_tasks()
+            return TaskReader(self._bench_root).get_provisioning_site_names()
         except Exception:
             return set()
-
-        names = set()
-        for task in tasks:
-            if not task.status.is_active or task.command not in _PROVISIONING_COMMANDS:
-                continue
-            for key in _PROVISIONING_ARG_KEYS:
-                if name := task.args.get(key):
-                    names.add(name)
-        return names
 
     def get_site(self, site_name: str, provisioning: set[str]) -> SiteInfo:
         site_path = resolve_site_path(self._bench_root, site_name)
