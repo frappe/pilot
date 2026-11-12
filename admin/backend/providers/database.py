@@ -65,6 +65,9 @@ class DatabaseDiagnosticsProvider:
     def get_deadlocks(self, site: str = "") -> dict:
         return asdict(self._call(self._require_server().get_deadlocks, self._database_for(site)))
 
+    def get_slow_queries(self, site: str = "") -> dict:
+        return asdict(self._call(self._require_server().get_slow_queries, self._database_for(site)))
+
     def get_time_consuming_queries(self, site: str = "", limit: int = 20, offset: int = 0) -> dict:
         section = self._call(
             self._require_server().get_time_consuming_queries, self._database_for(site), limit, offset

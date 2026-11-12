@@ -27,7 +27,12 @@ from pilot.core.database.engines.helpers import (
     validated_process_id,
 )
 from pilot.core.database.engines.mariadb_performance import MariaDBPerformanceReport
+from pilot.core.database.slow_log import SlowLogFile, SlowQueryReport
+from pilot.core.database.slow_queries import slow_row_key
 from pilot.exceptions import DatabaseError
+
+# The monitor collects every minute, so a short tail holds everything new.
+SLOW_LOG_COLLECT_BYTES = 2 * 1024 * 1024
 
 
 class MariaDB(Database):
@@ -147,19 +152,31 @@ class MariaDB(Database):
         return self._name_value_pairs("SHOW GLOBAL VARIABLES")
 
     def is_slow_log_enabled(self) -> bool:
-        variables = self.get_global_variables()
-        return variables.get("slow_query_log") == "ON" and "TABLE" in (variables.get("log_output") or "")
+        return self.get_global_variables().get("slow_query_log") == "ON"
 
-    def enable_slow_log(self, long_query_time: float = 1.0) -> None:
-        """Mutates shared server globals; only call on an explicit user action."""
-        conn = self._connect()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("SET GLOBAL slow_query_log = ON")
-                cursor.execute("SET GLOBAL log_output = 'TABLE'")
-                cursor.execute("SET GLOBAL long_query_time = %s", (long_query_time,))
-        finally:
-            conn.close()
+    def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:
+        """Slow log entries grouped by normalized query, read from the slow log file."""
+        variables = self.get_global_variables()
+        enabled = variables.get("slow_query_log") == "ON"
+        long_query_time = float(variables.get("long_query_time") or 0)
+        path = self.get_slow_log_path()
+        if path is None:
+            return SlowQueryReport(log_path=None, enabled=enabled, long_query_time=long_query_time)
+        queries = SlowLogFile(path).get_top_queries(database, limit)
+        return SlowQueryReport(str(path), enabled, long_query_time, queries)
+
+    def get_new_slow_queries(self, since: tuple[str, str, int] | None) -> list[dict]:
+        """Slow log rows after `since`, from the log file when the server writes one, else mysql.slow_log."""
+        path = self.get_slow_log_path()
+        if path is None:
+            return self.scan_slow_queries(since=since)
+        rows = [entry.to_row() for entry in SlowLogFile(path).get_entries(SLOW_LOG_COLLECT_BYTES)]
+        return [row for row in rows if since is None or slow_row_key(row) > since]
+
+    def get_slow_log_path(self) -> Path | None:
+        if "FILE" not in str(self.get_scalar("SELECT @@log_output")):
+            return None
+        return self.get_local_log_path("@@slow_query_log_file")
 
     def scan_slow_queries(self, since: tuple[str, str, int] | None = None, limit: int = 5000) -> list[dict]:
         """New mysql.slow_log rows across all schemas, oldest first, for aggregation.
@@ -317,9 +334,13 @@ class MariaDB(Database):
 
     def get_error_log_path(self) -> Path | None:
         """None when errors go to stderr (the journal) or the file is out of reach."""
+        return self.get_local_log_path("@@log_error")
+
+    def get_local_log_path(self, variable: str) -> Path | None:
+        """The readable file a log variable names, on this host only."""
         if not is_local_host(self._host, self._socket):
             return None
-        value = str(self.get_scalar("SELECT @@log_error") or "")
+        value = str(self.get_scalar(f"SELECT {variable}") or "")
         if not value:
             return None
         path = Path(value)

@@ -8,6 +8,7 @@ from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:
     from pilot.core.database.deadlocks import DeadlockReport
+    from pilot.core.database.slow_log import SlowQueryReport
 
 
 @dataclass
@@ -209,6 +210,9 @@ class Database(ABC):
         raise NotImplementedError
 
     def get_deadlocks(self, database: str = "", limit: int = 50) -> DeadlockReport:
+        raise NotImplementedError
+
+    def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:
         raise NotImplementedError
 
     def get_time_consuming_queries(

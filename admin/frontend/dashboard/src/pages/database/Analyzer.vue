@@ -177,12 +177,16 @@ const binlogRows = computed(() =>
 const killDetails = computed(() => {
   const process = killTarget.value
   if (!process) return []
+  // A blocker picked from the Locks tab carries only its id and query.
   return [
-    { label: 'User', value: process.user || '—' },
-    { label: 'Database', value: process.database || '—' },
-    { label: 'State', value: process.command || '—' },
-    { label: 'Running for', value: formatSeconds(process.duration_seconds) },
-  ]
+    { label: 'User', value: process.user },
+    { label: 'Database', value: process.database },
+    { label: 'State', value: process.command },
+    {
+      label: 'Running for',
+      value: process.duration_seconds === null ? null : formatSeconds(process.duration_seconds),
+    },
+  ].filter((detail) => detail.value)
 })
 
 const killQuery = computed(() => killTarget.value?.query || '')
@@ -212,6 +216,11 @@ const lockColumnsBadge = computed(() =>
 )
 
 // Binary logs are a MariaDB concept; the engine reports no status when it has none.
+const binlogEnabled = computed(() => {
+  const current = diagnostics.value
+  return current?.supported === true && Boolean(current.binlog?.enabled)
+})
+
 const hasBinlogs = computed(() => {
   const current = diagnostics.value
   return current?.supported === true && Boolean(current.binlog)
@@ -697,8 +706,8 @@ onMounted(load)
         <EmptyState
           v-else-if="!binlogRows.length"
           icon="lucide-scroll-text"
-          title="No binary logs"
-          description="The server has no binary log files"
+          :title="binlogEnabled ? 'No binary logs' : 'Binary logging is off'"
+          :description="binlogEnabled ? 'The server has no binary log files' : 'The server does not write binary logs (log_bin is off)'"
           :bordered="false"
           class="flex-1 justify-center pb-16"
         />

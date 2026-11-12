@@ -41,6 +41,11 @@ def to_iso(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def slow_row_key(row: dict) -> tuple[str, str, int]:
+    """The keyset cursor of a slow log row, comparable with SlowQueryLog.watermark()."""
+    return (to_iso(row.get("start_time")) or "", to_text(row.get("sql_text")), row.get("thread_id") or 0)
+
+
 def fingerprint(db: str, raw_text: str, query_time: float, thread_id: object) -> str:
     """A content identity for a row, used as a defense-in-depth duplicate
     check alongside the (start_time, sql_text, thread_id) keyset cursor - see

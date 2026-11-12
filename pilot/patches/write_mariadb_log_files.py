@@ -6,7 +6,7 @@ PATCH_NAME = Path(__file__).stem
 
 
 def run(benches_root: Path) -> None:
-    """Point the shared MariaDB error log at a file for its next start, so deadlocks can be read."""
+    """Point the shared MariaDB error and slow logs at files for its next start."""
     from pilot.config import BenchConfig
     from pilot.internal.patch_state import is_applied, mark_applied
     from pilot.managers.database import MariaDBManager
@@ -18,7 +18,7 @@ def run(benches_root: Path) -> None:
             continue
         config = BenchConfig.read(bench_dir)
         if config.db_type == "mariadb":
-            MariaDBManager(config.mariadb).log_errors_to_file()
+            MariaDBManager(config.mariadb).write_log_files()
         mark_applied(bench_dir, PATCH_NAME)
 
 

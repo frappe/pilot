@@ -12,6 +12,7 @@ import type {
   DeadlockReport,
   LockWaitRow,
   PerformanceSection,
+  SlowQueryReport,
   TableSchema,
   TableSize,
   UnsupportedDatabaseDiagnostics,
@@ -38,6 +39,9 @@ export const databaseApi = {
 
   deadlocks: (site = ''): Promise<DeadlockReport> =>
     request.get('database/deadlocks', { searchParams: site ? { site } : {} }).json(),
+
+  slowQueries: (site = ''): Promise<SlowQueryReport> =>
+    request.get('database/slow-queries', { searchParams: site ? { site } : {} }).json(),
 
   size: (site = ''): Promise<DatabaseSize> =>
     request.get('database/size', { searchParams: site ? { site } : {} }).json(),

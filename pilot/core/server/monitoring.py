@@ -281,7 +281,7 @@ class Monitor:
             if not isinstance(database, MariaDB) or not database.is_slow_log_enabled():
                 return
             log = SlowQueryLog(self.slow_query_log_path)
-            log.append(database.scan_slow_queries(since=log.watermark()))
+            log.append(database.get_new_slow_queries(since=log.watermark()))
         except Exception:
             return
 

@@ -443,6 +443,16 @@ def get_deadlocks():
         return error_response("deadlocks_unavailable", "Could not read database deadlocks.", 500)
 
 
+@database_bp.get("/slow-queries")
+def get_slow_queries():
+    try:
+        return jsonify(_provider().get_slow_queries(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("slow_queries_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("slow_queries_unavailable", "Could not read the slow query log.", 500)
+
+
 @database_bp.get("/performance-report")
 def get_performance_report() -> ResponseReturnValue:
     provider = _provider()

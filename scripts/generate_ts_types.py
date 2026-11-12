@@ -64,6 +64,7 @@ from pilot.core.database.base import (
 )
 from pilot.core.database.configurations import DatabaseConfigurationEditor
 from pilot.core.database.deadlocks import DeadlockReport
+from pilot.core.database.slow_log import SlowQueryReport
 from pilot.core.notification import Notification
 from pilot.core.site.storage import SiteStorageReport
 from pilot.managers.task.reader import DoneEvent, OutputEvent, StatusEvent
@@ -100,6 +101,7 @@ _TARGETS = (
             DatabaseProcess,
             LockWaitRow,
             DeadlockReport,
+            SlowQueryReport,
             PerformanceSection,
             TimeConsumingQuery,
             FullTableScanQuery,

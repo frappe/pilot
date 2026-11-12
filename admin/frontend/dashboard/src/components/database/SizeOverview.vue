@@ -174,10 +174,10 @@ const groups = computed(() => {
         },
         {
           label: 'Binary logs',
-          value: binlog
+          value: binlog?.enabled
             ? `${binlog.file_count} ${binlog.file_count === 1 ? 'file' : 'files'} · ${formatBytes(binlog.size_bytes)}`
             : 'Off',
-          dot: binlog ? 'bg-surface-green-7' : 'bg-surface-gray-4',
+          dot: binlog?.enabled ? 'bg-surface-green-7' : 'bg-surface-gray-4',
         },
       ],
     },

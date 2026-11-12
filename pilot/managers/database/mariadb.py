@@ -112,6 +112,10 @@ class MariaDBManager(UserOwnedDBManager):
         return cli_root() / "system" / "logs" / "mariadb-error.log"
 
     @property
+    def slow_log_path(self) -> Path:
+        return cli_root() / "system" / "logs" / "mariadb-slow.log"
+
+    @property
     def socket_path(self) -> str:
         if self.config.socket_path:
             return self.config.socket_path
@@ -178,6 +182,10 @@ class MariaDBManager(UserOwnedDBManager):
             f"port = {self.config.port}\n"
             f"pid-file = {self.pid_file}\n"
             f"log-error = {self.error_log_path}\n"
+            "slow-query-log = ON\n"
+            f"slow-query-log-file = {self.slow_log_path}\n"
+            "long-query-time = 1\n"
+            "log-output = FILE\n"
             "bind-address = 127.0.0.1\n"
             "\n"
             "default-storage-engine = InnoDB\n"
@@ -411,11 +419,11 @@ class MariaDBManager(UserOwnedDBManager):
         with self.database_action_lock():
             self._write_config()
 
-    def log_errors_to_file(self) -> None:
-        """Write the error log setting for the next start, so deadlock dumps reach a file."""
+    def write_log_files(self) -> None:
+        """Write the error and slow log settings for the next start. Deadlocks and slow queries are read from those files."""
         if is_macos() or self.config.existing or not self.my_cnf_path.exists():
             return
-        if "log-error" in self.my_cnf_path.read_text():
+        if "slow-query-log-file" in self.my_cnf_path.read_text():
             return
         with self.database_action_lock():
             self._write_config()

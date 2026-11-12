@@ -281,7 +281,7 @@ def test_an_existing_server_gets_its_aria_page_cache_sized_once(tmp_path: Path) 
         write_config.assert_called_once()
 
 
-def test_an_existing_server_gets_its_error_log_file_once(tmp_path: Path) -> None:
+def test_an_existing_server_gets_its_log_files_once(tmp_path: Path) -> None:
     manager = MariaDBManager(MariaDBConfig())
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -295,8 +295,9 @@ def test_an_existing_server_gets_its_error_log_file_once(tmp_path: Path) -> None
         patch.object(manager, "database_action_lock", return_value=nullcontext()),
         patch.object(manager, "_write_config", wraps=manager._write_config) as write_config,
     ):
-        manager.log_errors_to_file()
+        manager.write_log_files()
         assert f"log-error = {error_log}" in manager.my_cnf_path.read_text()
+        assert "slow-query-log-file = " in manager.my_cnf_path.read_text()
         assert error_log.parent.is_dir()
-        manager.log_errors_to_file()
+        manager.write_log_files()
         write_config.assert_called_once()
