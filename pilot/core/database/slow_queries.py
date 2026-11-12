@@ -6,18 +6,13 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
-_STRING = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
-_NUMERIC = re.compile(r"\b\d+\.?\d*\b")
-_WHITESPACE = re.compile(r"\s+")
-
 
 def normalize(sql: str) -> str:
     """Strip comments and literals so queries differing only by values group together."""
-    sql = _COMMENT.sub(" ", sql)
-    sql = _STRING.sub("?", sql)
-    sql = _NUMERIC.sub("?", sql)
-    return _WHITESPACE.sub(" ", sql).strip()
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    sql = re.sub(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"", "?", sql)
+    sql = re.sub(r"\b\d+\.?\d*\b", "?", sql)
+    return re.sub(r"\s+", " ", sql).strip()
 
 
 def to_text(value: object) -> str:

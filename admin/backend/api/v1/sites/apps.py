@@ -41,10 +41,6 @@ if TYPE_CHECKING:
     from admin.backend.api.v1.types.site_apps import SiteApp
     from pilot.core.app import App
 
-# frappe's CLI prints a traceback, so its reason arrives behind the exception class.
-_EXCEPTION_PREFIX = re.compile(r"^[\w.]+(?:Error|Exception): ")
-_COMMAND_FAILURE = re.compile(r"^Command '.+' (?:failed with exit code -?\d+|timed out)")
-
 
 @sites_bp.get("/<name>/apps")
 @require_scope(site_name)
@@ -178,8 +174,12 @@ def _frappe_reason(error: Exception, fallback: str) -> str:
     """The last line of a failed frappe command is its reason; the rest is plumbing.
     A command that printed nothing leaves only the wrapper line, which names the bench
     Python - the fallback says the same thing without the path."""
-    reason = _EXCEPTION_PREFIX.sub("", str(error).strip().rsplit("\n", 1)[-1].strip())
-    return fallback if not reason or _COMMAND_FAILURE.match(reason) else reason
+    reason = re.sub(r"^[\w.]+(?:Error|Exception): ", "", str(error).strip().rsplit("\n", 1)[-1].strip())
+    return (
+        fallback
+        if not reason or re.match(r"^Command '.+' (?:failed with exit code -?\d+|timed out)", reason)
+        else reason
+    )
 
 
 def _enable_disabled_app(bench: Bench, site: str, cloned: "App | None") -> str | None:

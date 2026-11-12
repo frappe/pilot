@@ -22,11 +22,6 @@ if TYPE_CHECKING:
     from pilot.config import BenchConfig
 
 
-_MARIADB_ONLY = "Database configurations are available only when the bench uses MariaDB."
-_UNREACHABLE = "MariaDB is not reachable with Pilot's admin credentials."
-_MEBIBYTE = 1024 * 1024
-
-
 class DatabaseConfigurationEditor(TypedDict):
     action: VariableEditAction
     value: MariaDBValue | None
@@ -55,6 +50,9 @@ class GuardedEditor(TypedDict):
 
 class DatabaseConfigurations:
     """Read the MariaDB catalog and authorize its small editable subset."""
+
+    mariadb_only = "Database configurations are available only when the bench uses MariaDB."
+    mebibyte = 1024 * 1024
 
     external_read_only = (
         "External MariaDB configurations are read-only. Pilot changes only the MariaDB instance it "
@@ -286,14 +284,14 @@ class DatabaseConfigurations:
                 editors["innodb_buffer_pool_size"] = {
                     "edit": self._editor_contract(
                         action="innodb_buffer_pool_size",
-                        value=buffer_pool_size // _MEBIBYTE,
+                        value=buffer_pool_size // self.mebibyte,
                         value_type="integer",
                         unit="MB",
                         minimum=limits.innodb_buffer_pool_min_mb,
                         maximum=limits.innodb_buffer_pool_max_mb,
                         step=1,
                         recommended=limits.innodb_buffer_pool_recommended_mb,
-                        dynamic_max=dynamic_max // _MEBIBYTE,
+                        dynamic_max=dynamic_max // self.mebibyte,
                         requires_restart=False,
                     ),
                     "reason": "",
@@ -363,7 +361,7 @@ class DatabaseConfigurations:
     def _read_reason(self) -> str:
         """Why the variables cannot be read, or an empty string."""
         if self.config.db_type != "mariadb":
-            return _MARIADB_ONLY
+            return self.mariadb_only
         manager = self._manager()
         if not self.config.mariadb.existing:
             if not manager.is_installed():
@@ -371,13 +369,13 @@ class DatabaseConfigurations:
             if not manager.is_provisioned():
                 return "Pilot's MariaDB server has not been provisioned."
         if not manager.is_healthy():
-            return _UNREACHABLE
+            return "MariaDB is not reachable with Pilot's admin credentials."
         return ""
 
     def _edit_reason(self, *, require_reachable: bool = False) -> str:
         """Why the variables cannot be edited, or an empty string."""
         if self.config.db_type != "mariadb":
-            return _MARIADB_ONLY
+            return self.mariadb_only
         if self.config.mariadb.existing:
             return self.external_read_only
         if not HostPlatform().is_linux:
@@ -389,7 +387,7 @@ class DatabaseConfigurations:
     def _manager(self) -> MariaDBManager:
         """The MariaDB manager; raise when there is none."""
         if self.manager is None:
-            raise DatabaseError(_MARIADB_ONLY)
+            raise DatabaseError(self.mariadb_only)
         return self.manager
 
     def _quick_actions(self) -> DatabaseQuickActions:

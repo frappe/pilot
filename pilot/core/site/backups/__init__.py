@@ -20,7 +20,6 @@ MAX_DAILY_FAILURES = 6
 # A dump grows between runs; the newest one plus this margin predicts the next.
 # Kept free after a backup, so the database and the system can still write.
 SYSTEM_RESERVED_BYTES = 500 * 1024**2
-_TS_RE = re.compile(r"^(\d{8}_\d{6})")
 
 
 def ensure_free_space(path: Path, needed_bytes: int, purpose: str) -> None:
@@ -36,7 +35,7 @@ def ensure_free_space(path: Path, needed_bytes: int, purpose: str) -> None:
 
 def parse_backup_timestamp(filename: str) -> str | None:
     """Return a Frappe backup filename's YYYYMMDD_HHMMSS prefix."""
-    match = _TS_RE.match(filename)
+    match = re.match(r"^(\d{8}_\d{6})", filename)
     return match.group(1) if match else None
 
 

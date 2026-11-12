@@ -22,7 +22,6 @@ WAF_RULE_ACTIONS = ("block", "log", "skip")
 WAF_RULE_MATCH = ("all", "any")
 
 _SIZE_UNITS = {"k": 1024, "m": 1024**2, "g": 1024**3}
-_WAF_HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
 def parse_nginx_size(value: str) -> int:
@@ -211,7 +210,7 @@ class WafConfig:
 
 def _validate_header_condition(prefix: str, cond: WafCondition) -> None:
     """Raise when a header condition has an invalid header name."""
-    if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
+    if cond.field == "header" and not re.match(r"^[A-Za-z0-9-]{1,64}$", cond.header_name):
         raise ConfigError(
             f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen)."
         )

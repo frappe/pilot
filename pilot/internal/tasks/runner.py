@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import importlib
 import logging
@@ -22,10 +23,6 @@ from pilot.tasks.callbacks import TaskCallback as TaskCallback
 from pilot.tasks.callbacks import TaskCallbacks
 
 TASK_RETENTION_LIMIT = 100
-_TASK_PACKAGE_DIR = Path(__file__).resolve().parents[2] / "tasks"
-_NOT_A_TASK_MODULE = {"base"}
-_REGISTRY: tuple[dict[str, type[Task]], dict[str, list[str]]] | None = None
-_RUNNER_CLASS: type | None = None
 
 
 def generate_task_id() -> str:
@@ -165,30 +162,25 @@ class TaskRunner:
         return hashlib.sha256(key.encode()).hexdigest()
 
 
+@functools.cache
 def runner_class() -> type:
     """The TaskRunner subclass bound to the discovered task registry."""
-    global _RUNNER_CLASS
-    if _RUNNER_CLASS is not None:
-        return _RUNNER_CLASS
 
     class BoundTaskRunner(TaskRunner):
         def __init__(self, bench_root: Path) -> None:
             jobs, required_args = task_registry()
             super().__init__(bench_root, jobs, required_args)
 
-    _RUNNER_CLASS = BoundTaskRunner
-    return _RUNNER_CLASS
+    return BoundTaskRunner
 
 
+@functools.cache
 def task_registry() -> tuple[dict[str, type[Task]], dict[str, list[str]]]:
     """Every task class by command, with each command's required arguments."""
-    global _REGISTRY
-    if _REGISTRY is None:
-        tasks = discover_tasks()
-        jobs = {cls.command: cls for cls in tasks}
-        required_args = {cls.command: required_task_args(cls) for cls in tasks}
-        _REGISTRY = (jobs, required_args)
-    return _REGISTRY
+    tasks = discover_tasks()
+    jobs = {cls.command: cls for cls in tasks}
+    required_args = {cls.command: required_task_args(cls) for cls in tasks}
+    return jobs, required_args
 
 
 def is_command_cancellable_while_running(command: str) -> bool:
@@ -209,8 +201,10 @@ def is_command_listed(command: str) -> bool:
 def discover_tasks() -> list[type[Task]]:
     """Every Task subclass in the pilot.tasks modules."""
     tasks = []
-    for module_info in pkgutil.iter_modules([str(_TASK_PACKAGE_DIR)], prefix="pilot.tasks."):
-        if module_info.name.rsplit(".", 1)[-1] in _NOT_A_TASK_MODULE:
+    for module_info in pkgutil.iter_modules(
+        [str(Path(__file__).resolve().parents[2] / "tasks")], prefix="pilot.tasks."
+    ):
+        if module_info.name.rsplit(".", 1)[-1] in {"base"}:
             continue
         module = importlib.import_module(module_info.name)
         for value in vars(module).values():

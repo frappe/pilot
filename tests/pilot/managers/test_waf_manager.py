@@ -35,7 +35,7 @@ def fake_download(monkeypatch, tmp_path):
 
     def _install(payload: bytes, expected_sha: str | None = None):
         if expected_sha is not None:
-            monkeypatch.setattr(waf, "_CRS_SHA256", expected_sha)
+            monkeypatch.setattr(WafManager, "crs_sha256", expected_sha)
 
         def _urlretrieve(url, dest):
             Path(dest).write_bytes(payload)
@@ -64,5 +64,5 @@ def test_install_crs_accepts_matching_archive(fake_download) -> None:
 
 
 def test_pinned_digest_is_a_sha256() -> None:
-    assert len(waf._CRS_SHA256) == 64
-    int(waf._CRS_SHA256, 16)  # hex
+    assert len(WafManager.crs_sha256) == 64
+    int(WafManager.crs_sha256, 16)  # hex

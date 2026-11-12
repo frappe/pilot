@@ -15,7 +15,6 @@ from pilot.exceptions import BenchError
 from pilot.internal.archive import TarArchive
 
 RELEASE_REPO = "frappe/pilot"
-_RELEASES_API = f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=1"
 _TARBALL_ASSET = "pilot.tar.gz"
 
 Progress = Callable[[str], None]
@@ -24,7 +23,7 @@ Progress = Callable[[str], None]
 def latest_release() -> dict | None:
     """Newest release as {tag, asset_url, body}, or None. Uses the releases list (prereleases included)."""
     request = urllib.request.Request(
-        _RELEASES_API,
+        f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=1",
         headers={"Accept": "application/vnd.github+json", "User-Agent": "pilot"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:

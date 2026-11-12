@@ -9,11 +9,6 @@ from admin.backend.providers.windowed_log import WindowedLogProvider
 from pilot.core.site.uptime_monitoring import PING_PATH
 from pilot.internal.jsonl_log import JsonLines
 
-_MAX_BUCKETS = 30
-_TOP_LIMIT = 5
-
-_TIME_FORMAT = "%d/%b/%Y:%H:%M:%S %z"
-
 
 class SiteAccessLogProvider(WindowedLogProvider):
     """Aggregates one site's slice of the shared nginx access log - real,
@@ -29,7 +24,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
         super().__init__(window)
         self._log_path = bench_root / "logs" / "nginx-access.log"
         self._site_name = site_name
-        self._bucket_seconds = max(60, self.window_seconds // _MAX_BUCKETS)
+        self._bucket_seconds = max(60, self.window_seconds // 30)
 
     def is_available(self) -> bool:
         """Whether the access log exists."""
@@ -38,7 +33,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
     def get_top_ips(self) -> dict:
         """The top client IPs over time."""
         return build_timeline(
-            self._points(), _TOP_LIMIT, self._bucket_seconds, "count", self.to_epoch_ms(self.cutoff), self.now_ms()
+            self._points(), 5, self._bucket_seconds, "count", self.to_epoch_ms(self.cutoff), self.now_ms()
         )
 
     def _points(self) -> list[TimelinePoint]:
@@ -67,7 +62,7 @@ class SiteAccessLogProvider(WindowedLogProvider):
     def _parse_time(value: str) -> datetime | None:
         """The time of a log value, or None."""
         try:
-            return datetime.strptime(value, _TIME_FORMAT)
+            return datetime.strptime(value, "%d/%b/%Y:%H:%M:%S %z")
         except ValueError:
             return None
 

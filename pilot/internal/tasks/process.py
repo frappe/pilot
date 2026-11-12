@@ -24,7 +24,6 @@ from pilot.internal.tasks.process_identity import (
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.platform import Privileges
 
-_LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
 # Lets a running task hand its resources to the task it queues next.
 TASK_ID_ENV = "BENCH_TASK_ID"
 WRAPPER_MODULE = "pilot.internal.tasks.wrapper"
@@ -217,7 +216,7 @@ class TaskProcess:
         environment = {
             **os.environ,
             "BENCH_TASK_READY_FD": str(read_fd),
-            _LAUNCH_ID_ENV: launch_id,
+            "BENCH_TASK_LAUNCH_ID": launch_id,
             TASK_ID_ENV: task_dir.name,
             Privileges.environment_key: "1",
         }

@@ -42,9 +42,6 @@ from pilot.internal.atomic_file import (
 )
 from pilot.internal.toml import ConfigDict, Toml
 
-_PORT_MIN = 1
-_PORT_MAX = 65535
-
 # Wizard-editable flat key -> BenchConfig attribute path.
 FLAT_KEYS = {
     "bench_name": "name",
@@ -97,6 +94,9 @@ class _Section:
 @dataclass
 class BenchConfig:
     """A bench's configuration, validation, persistence, and wizard view."""
+
+    port_min = 1
+    port_max = 65535
 
     bench_name_pattern = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
     # Every host-wide user unit is named "pilot-<what>.service". A bench owns
@@ -432,9 +432,9 @@ class BenchConfig:
             "postgres.port": self.postgres.port,
         }
         for name, port in ports.items():
-            if not (_PORT_MIN <= port <= _PORT_MAX):
+            if not (self.port_min <= port <= self.port_max):
                 raise ConfigError(
-                    f"{name} {port} is out of range. Must be between {_PORT_MIN} and {_PORT_MAX}."
+                    f"{name} {port} is out of range. Must be between {self.port_min} and {self.port_max}."
                 )
 
     def _validate_socketio_backend(self) -> None:
@@ -988,22 +988,19 @@ _BENCH_KEYS = {
     "install_dev_extra",
     "onboarding",
 }
-# Keys older Pilot versions wrote that the parser still tolerates.
-_BENCH_LEGACY = {"allow_developer_mode"}
-_PRODUCTION_LEGACY = {"lightweight", "nginx", "use_companion_manager"}
-_GUNICORN_LEGACY = {"malloc_arena_max"}
-_WORKER_LEGACY = {"queue"}
 
 
 def _bench_schema() -> TomlSchema:
     """The schema of known bench.toml keys."""
     return TomlSchema(
         tables={
-            "bench": TomlSchema(keys=set(_BENCH_KEYS) | _BENCH_LEGACY),
+            "bench": TomlSchema(keys=set(_BENCH_KEYS) | {"allow_developer_mode"}),
             "redis": TomlSchema(keys=field_names(RedisConfig)),
-            "production": TomlSchema(keys=field_names(ProductionConfig) | _PRODUCTION_LEGACY),
+            "production": TomlSchema(
+                keys=field_names(ProductionConfig) | {"lightweight", "nginx", "use_companion_manager"}
+            ),
             "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),
-            "gunicorn": TomlSchema(keys=field_names(GunicornConfig) | _GUNICORN_LEGACY),
+            "gunicorn": TomlSchema(keys=field_names(GunicornConfig) | {"malloc_arena_max"}),
             "build": TomlSchema(keys=field_names(BuildConfig)),
             "processes": TomlSchema(keys=field_names(ProcessesConfig)),
             "admin": TomlSchema(keys=field_names(AdminConfig)),
@@ -1025,7 +1022,7 @@ def _bench_schema() -> TomlSchema:
         },
         arrays={
             "apps": TomlSchema(keys=field_names(AppConfig)),
-            "workers": TomlSchema(keys=field_names(WorkerGroup) | _WORKER_LEGACY),
+            "workers": TomlSchema(keys=field_names(WorkerGroup) | {"queue"}),
         },
     )
 

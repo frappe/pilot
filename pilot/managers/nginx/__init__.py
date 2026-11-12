@@ -30,8 +30,6 @@ if TYPE_CHECKING:
     from pilot.config import HostnameAlias, SiteConfig
     from pilot.core.bench import Bench
 
-_NGINX_CONF = Path("/etc/nginx/nginx.conf")
-
 
 _TEMPLATES = Path(__file__).parent / "templates"
 ADMIN_CLIENT_MAX_BODY_SIZE = "1024m"
@@ -67,8 +65,6 @@ ERROR_PAGES = {
 }
 
 LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
-# Debian loads dynamic modules from modules-enabled, Fedora from /usr/share/nginx/modules.
-_MODULE_DIRS = (Path("/etc/nginx/modules-enabled"), Path("/usr/share/nginx/modules"))
 
 
 def _shared_nginx_dir() -> Path:
@@ -356,6 +352,10 @@ class NginxConfigRenderer:
 
 class NginxManager:
     """Installs, configures, and reloads nginx for a bench, via NginxConfigRenderer."""
+
+    nginx_conf = Path("/etc/nginx/nginx.conf")
+    # Debian loads dynamic modules from modules-enabled, Fedora from /usr/share/nginx/modules.
+    module_dirs = (Path("/etc/nginx/modules-enabled"), Path("/usr/share/nginx/modules"))
 
     pilot_include = Path("/etc/nginx/conf.d/00-pilot.conf")
     user_directive = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
@@ -651,18 +651,18 @@ class NginxManager:
         module_path = WafManager.module_path()
         if module_path is None:
             return
-        original = _NGINX_CONF.read_text()
-        self._stage_and_copy(f"load_module {module_path};\n" + original, _NGINX_CONF)
+        original = self.nginx_conf.read_text()
+        self._stage_and_copy(f"load_module {module_path};\n" + original, self.nginx_conf)
 
     @staticmethod
     def _module_already_loaded() -> bool:
         """Whether nginx.conf already loads ModSecurity."""
         try:
-            if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
+            if "ngx_http_modsecurity_module" in NginxManager.nginx_conf.read_text():
                 return True
         except OSError:
             return True
-        for modules_dir in _MODULE_DIRS:
+        for modules_dir in NginxManager.module_dirs:
             if modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir()):
                 return True
         return False
@@ -698,14 +698,14 @@ class NginxManager:
         """Run nginx workers as the bench owner. Idempotent."""
         owner = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
         directive = f"user {owner};"
-        original = _NGINX_CONF.read_text()
+        original = self.nginx_conf.read_text()
         if self.user_directive.search(original):
             updated = self.user_directive.sub(directive, original, count=1)
         else:
             updated = directive + "\n" + original
         if updated == original:
             return
-        self._stage_and_copy(updated, _NGINX_CONF)
+        self._stage_and_copy(updated, self.nginx_conf)
 
     def uninstall_config(self) -> None:
         """Take this bench's vhost out of nginx and reload. Certs are kept."""

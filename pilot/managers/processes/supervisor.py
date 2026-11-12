@@ -22,9 +22,6 @@ from pilot.managers.processes.base import (
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
 
-# Above the longest stop timeout a program gets, the lite runner's job drain.
-_SHUTDOWN_TIMEOUT = 900
-
 
 def is_redis(pd: ProcessDefinition) -> bool:
     """Whether the process is a Redis server."""
@@ -132,6 +129,9 @@ class SupervisorRenderer(ServiceRenderer):
 
 class SupervisorProcessManager(ManagedProcessManager):
     """Manages bench processes via a bench-owned supervisord instance (no sudo required)."""
+
+    # Above the longest stop timeout a program gets, the lite runner's job drain.
+    shutdown_timeout = 900
 
     boot_job = "supervisord-boot"
     # `group:program   RUNNING   pid 123, uptime 0:01:02`
@@ -325,10 +325,10 @@ class SupervisorProcessManager(ManagedProcessManager):
 
         run_command([*self._supervisorctl(), "shutdown"])
         # shutdown returns at once, and the programs hold their ports until supervisord exits.
-        deadline = time.monotonic() + _SHUTDOWN_TIMEOUT
+        deadline = time.monotonic() + self.shutdown_timeout
         while self.is_alive():
             if time.monotonic() > deadline:
-                raise BenchError(f"supervisord did not exit within {_SHUTDOWN_TIMEOUT} seconds of shutdown.")
+                raise BenchError(f"supervisord did not exit within {self.shutdown_timeout} seconds of shutdown.")
             time.sleep(0.5)
 
     def _supervisorctl(self) -> list[str]:

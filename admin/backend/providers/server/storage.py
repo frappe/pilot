@@ -91,9 +91,6 @@ def _data_directory_bytes(path: str | None) -> int | None:
         return None
 
 
-_PRIVATE_SUBDIRS_EXCLUDED_FROM_OTHER = {"files", "backups"}
-
-
 def _site_backup_dirs(site_path: Path) -> tuple[Path, Path]:
     """Pilot's backups, and Frappe's own under private/."""
     return site_path / "backups", site_path / "private" / "backups"
@@ -144,7 +141,7 @@ def _site_other_entries(site_path: Path) -> list[StorageItem]:
             entries.extend(
                 _storage_entry(grandchild)
                 for grandchild in child.iterdir()
-                if grandchild.name not in _PRIVATE_SUBDIRS_EXCLUDED_FROM_OTHER
+                if grandchild.name not in {"files", "backups"}
             )
             continue
         entries.append(_storage_entry(child))

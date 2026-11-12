@@ -7,7 +7,7 @@ import pytest
 from flask import Flask
 
 from admin.backend.api.v1.settings import settings_bp
-from admin.backend.api.v1.settings.config import _GROUP_TYPES
+from admin.backend.api.v1.settings.config import ConfigPatcher
 from pilot.config import BenchConfig
 
 
@@ -33,7 +33,7 @@ def _worker_update() -> dict:
     return {"workers": [{"queues": ["default"], "count": 2}]}
 
 
-@pytest.mark.parametrize("group", sorted(_GROUP_TYPES))
+@pytest.mark.parametrize("group", sorted(ConfigPatcher.group_types))
 @pytest.mark.parametrize("value", [1, "text", True])
 def test_settings_reject_a_malformed_group(tmp_path: Path, group: str, value) -> None:
     bench_root = tmp_path / "bench"

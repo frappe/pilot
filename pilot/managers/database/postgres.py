@@ -11,12 +11,12 @@ from pilot.internal.command import run_command
 from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.platform import HostPlatform
 
-_CLIENT_TIMEOUT = 5
-_DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
-
 
 class PostgresManager(UserOwnedDBManager):
     """Manages the shared per-user PostgreSQL server."""
+
+    client_timeout = 5
+    debian_postgres_root = Path("/usr/lib/postgresql")
 
     _UNIT_NAME = "pilot-postgres.service"
     _DISPLAY_NAME = "PostgreSQL"
@@ -85,7 +85,7 @@ class PostgresManager(UserOwnedDBManager):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=_CLIENT_TIMEOUT,
+                timeout=self.client_timeout,
             )
         except subprocess.TimeoutExpired:
             return False
@@ -208,11 +208,11 @@ class PostgresManager(UserOwnedDBManager):
                 env={
                     **os.environ,
                     "PGPASSWORD": pw,
-                    "PGCONNECT_TIMEOUT": str(_CLIENT_TIMEOUT),
+                    "PGCONNECT_TIMEOUT": str(self.client_timeout),
                 },
                 capture_output=True,
                 text=True,
-                timeout=_CLIENT_TIMEOUT,
+                timeout=self.client_timeout,
             )
         except subprocess.TimeoutExpired:
             return False
@@ -264,7 +264,7 @@ class PostgresManager(UserOwnedDBManager):
         found = HostPlatform().get_executable_path(name)
         if found:
             return found
-        candidates = sorted(_DEBIAN_POSTGRES_ROOT.glob(f"*/bin/{name}"), key=self._debian_version_key)
+        candidates = sorted(self.debian_postgres_root.glob(f"*/bin/{name}"), key=self._debian_version_key)
         if candidates:
             return str(candidates[-1])
         return name

@@ -10,8 +10,12 @@ if TYPE_CHECKING:
 
 TIMEOUT_SECONDS = 60
 
-# Everything comes from the site's own frappe, so it matches its version and installed apps.
-_BOOTSTRAP = """\
+
+class ConsoleCompletions:
+    """Names the console editor suggests, read on demand from the site's own Frappe."""
+
+    # Everything comes from the site's own frappe, so it matches its version and installed apps.
+    bootstrap = """\
 import json
 import sys
 
@@ -49,10 +53,6 @@ finally:
     frappe.destroy()
 """
 
-
-class ConsoleCompletions:
-    """Names the console editor suggests, read on demand from the site's own Frappe."""
-
     def __init__(self, site: "Site") -> None:
         self.site = site
 
@@ -70,7 +70,7 @@ class ConsoleCompletions:
 
     def _query(self, *args: str) -> Any:
         """Run a completion query in the site and return its JSON result."""
-        argv = [str(self.site.bench.python), "-c", _BOOTSTRAP, self.site.config.name, *args]
+        argv = [str(self.site.bench.python), "-c", self.bootstrap, self.site.config.name, *args]
         result = run_command(argv, cwd=self.site.bench.sites_path, timeout=TIMEOUT_SECONDS)
         # Apps may print while Frappe loads, so the answer is the last line.
         return json.loads(result.stdout.decode().strip().splitlines()[-1])

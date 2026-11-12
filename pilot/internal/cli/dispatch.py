@@ -13,10 +13,6 @@ from pilot.exceptions import BenchError
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h", "--version"])
-# Pilot flags given before a Frappe command; Frappe commands may take their own --yes after it.
-_PILOT_ONLY_FLAGS = frozenset(["--verbose", "--yes", "-y"])
-
 
 @dataclass(frozen=True)
 class CliContext:
@@ -144,7 +140,7 @@ def is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None =
 
 def is_own_group_option(arg: str) -> bool:
     """Whether the argument is an option Pilot handles itself, with or without a value."""
-    if arg in _OWN_GROUP_OPTIONS:
+    if arg in frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h", "--version"]):
         return True
     if "=" not in arg:
         return False
@@ -207,7 +203,7 @@ def forwarded_frappe_args(remaining: list[str]) -> list[str] | None:
     if remaining and remaining[0] == "frappe":
         return remaining[1:]
     if is_frappe_passthrough(remaining):
-        return list(dropwhile(lambda arg: arg in _PILOT_ONLY_FLAGS, remaining))
+        return list(dropwhile(lambda arg: arg in frozenset(["--verbose", "--yes", "-y"]), remaining))
     return None
 
 

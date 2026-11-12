@@ -15,9 +15,6 @@ from typing import ClassVar
 from pilot.exceptions import BenchError
 from pilot.integrations.llm import read_system_prompt
 
-# Answers are small; the cap only stops a long-lived process growing without bound.
-_CACHE_LIMIT = 32
-
 
 class LLMError(BenchError):
     """An LLM provider call failed."""
@@ -31,6 +28,9 @@ class LLMIntegration:
     """One kind of LLM integration. Subclasses declare the provider slugs they
     handle (`providers`), their models (`get_models`), and the class attributes
     below. The registry relies only on these class APIs."""
+
+    # Answers are small; the cap only stops a long-lived process growing without bound.
+    cache_limit = 32
 
     base_api: ClassVar[str] = ""  # fixed endpoint baked into the provider
     requires_api_base: ClassVar[bool] = False  # user must supply an api_base
@@ -79,7 +79,7 @@ class LLMIntegration:
         if not text:
             return
         self._cached_responses[cache_key] = text
-        while len(self._cached_responses) > _CACHE_LIMIT:
+        while len(self._cached_responses) > self.cache_limit:
             self._cached_responses.pop(next(iter(self._cached_responses)))
 
     def prompt(

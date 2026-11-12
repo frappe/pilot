@@ -8,7 +8,6 @@ from pilot.config.backup import BackupConfig
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
 _KEY = "backup_retention"
-_FIELDS = set(BackupConfig().__dict__)
 
 
 def read_retention(site_config_path: Path) -> BackupConfig | None:
@@ -19,7 +18,7 @@ def read_retention(site_config_path: Path) -> BackupConfig | None:
         return None
     if not isinstance(block, dict):
         return None
-    return BackupConfig(**{k: v for k, v in block.items() if k in _FIELDS})
+    return BackupConfig(**{k: v for k, v in block.items() if k in set(BackupConfig().__dict__)})
 
 
 def write_retention(site_config_path: Path, config: BackupConfig) -> None:

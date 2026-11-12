@@ -38,11 +38,6 @@ from pilot.managers.database.base import UserOwnedDBManager
 from pilot.managers.database.memory import MariaDBMemory
 from pilot.managers.platform import HostPlatform
 
-_CLIENT_TIMEOUT = 5
-# A host whose memory moved by less than this keeps its sizing.
-_OPTION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-_MEBIBYTE = 1024 * 1024
-
 
 class _ManagedCnfParser(configparser.ConfigParser):
     def optionxform(self, optionstr: str) -> str:
@@ -51,6 +46,9 @@ class _ManagedCnfParser(configparser.ConfigParser):
 
 
 class MariaDBManager(UserOwnedDBManager):
+    client_timeout = 5
+    mebibyte = 1024 * 1024
+
     sized_for = re.compile(r"^# pilot-sized-for-memory-mb = (\d+)$", re.M)
     global_integer_variables = frozenset(
         {
@@ -300,7 +298,7 @@ class MariaDBManager(UserOwnedDBManager):
         for raw_name, raw_value in parser.items("mysqld"):
             name = raw_name.strip().lower().replace("_", "-")
             value = raw_value.strip()
-            if not _OPTION_NAME.fullmatch(name) or "\n" in value or "\r" in value:
+            if not re.fullmatch(r"^[a-z0-9][a-z0-9-]*$", name) or "\n" in value or "\r" in value:
                 raise DatabaseError("Pilot's managed MariaDB configuration contains an invalid option.")
             if name in options:
                 raise DatabaseError(f"Pilot's managed MariaDB configuration repeats '{name}'.")
@@ -518,7 +516,7 @@ class MariaDBManager(UserOwnedDBManager):
         )
         value = result.stdout.strip()
         # systemd prints "[not set]" for an unknown value and "infinity" for no limit.
-        return int(value) // _MEBIBYTE if value.isdigit() else None
+        return int(value) // self.mebibyte if value.isdigit() else None
 
     def performance_schema_enabled(self) -> bool:
         """Whether the Performance Schema is on."""
@@ -598,11 +596,11 @@ class MariaDBManager(UserOwnedDBManager):
 
     def innodb_buffer_pool_size_mb(self) -> int:
         """The InnoDB buffer pool size in MB."""
-        return self._read_global_integer("innodb_buffer_pool_size") // _MEBIBYTE
+        return self._read_global_integer("innodb_buffer_pool_size") // self.mebibyte
 
     def innodb_buffer_pool_size_max_mb(self) -> int:
         """The largest InnoDB buffer pool size in MB."""
-        return self._read_global_integer("innodb_buffer_pool_size_max") // _MEBIBYTE
+        return self._read_global_integer("innodb_buffer_pool_size_max") // self.mebibyte
 
     def max_connections(self) -> int:
         """The max_connections value."""
@@ -639,10 +637,10 @@ class MariaDBManager(UserOwnedDBManager):
                 if restart_required:
                     self._restart_and_wait_healthy()
                 elif previous_size_mb != size_mb:
-                    self._set_global_integer("innodb_buffer_pool_size", size_mb * _MEBIBYTE)
+                    self._set_global_integer("innodb_buffer_pool_size", size_mb * self.mebibyte)
                 self._verify_global_integer(
                     "innodb_buffer_pool_size",
-                    size_mb * _MEBIBYTE,
+                    size_mb * self.mebibyte,
                     "InnoDB Buffer Pool size",
                 )
                 if self.innodb_buffer_pool_size_max_mb() < size_mb:
@@ -653,7 +651,7 @@ class MariaDBManager(UserOwnedDBManager):
                 self._rollback_integer_variable(
                     previous_content,
                     "innodb_buffer_pool_size",
-                    previous_size_mb * _MEBIBYTE,
+                    previous_size_mb * self.mebibyte,
                     "InnoDB Buffer Pool size",
                     restart_required,
                     apply_error,
@@ -1086,7 +1084,7 @@ class MariaDBManager(UserOwnedDBManager):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=_CLIENT_TIMEOUT,
+                timeout=self.client_timeout,
             )
         except subprocess.TimeoutExpired:
             return False
@@ -1101,7 +1099,7 @@ class MariaDBManager(UserOwnedDBManager):
                 env={**os.environ, "MYSQL_PWD": pw},
                 capture_output=True,
                 text=True,
-                timeout=_CLIENT_TIMEOUT,
+                timeout=self.client_timeout,
             )
         except subprocess.TimeoutExpired:
             return False
@@ -1111,7 +1109,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Client argv for the admin account, over the socket when there is one."""
         cmd = [
             "mariadb",
-            f"--connect-timeout={_CLIENT_TIMEOUT}",
+            f"--connect-timeout={self.client_timeout}",
             "-u",
             self.config.admin_user,
             "--batch",
@@ -1131,7 +1129,7 @@ class MariaDBManager(UserOwnedDBManager):
             text=True,
             check=True,
             capture_output=True,
-            timeout=_CLIENT_TIMEOUT,
+            timeout=self.client_timeout,
             env={**os.environ, "MYSQL_PWD": self.config.root_password},
         )
 
@@ -1252,9 +1250,9 @@ class MariaDBManager(UserOwnedDBManager):
             password=self.config.root_password if password is None else password,
             unix_socket=socket,
             cursorclass=cursorclass or pymysql.cursors.Cursor,
-            connect_timeout=_CLIENT_TIMEOUT,
-            read_timeout=_CLIENT_TIMEOUT,
-            write_timeout=_CLIENT_TIMEOUT,
+            connect_timeout=self.client_timeout,
+            read_timeout=self.client_timeout,
+            write_timeout=self.client_timeout,
             # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
             ssl_disabled=is_local_host(self.config.host, socket),
         )

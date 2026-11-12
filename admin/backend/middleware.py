@@ -15,7 +15,6 @@ from pilot.core.bench import Bench
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
 _WINDOWS_LOCK = threading.Lock()
-_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class AuthPolicy(StrEnum):
@@ -205,7 +204,7 @@ def _admin_session_response(bench):
 def is_cross_site_cookie_request() -> bool:
     """A change sent by another site's page with this browser's session cookie, such as a form posted
     from a Frappe site on a sibling subdomain. `SameSite=Lax` still sends the cookie there."""
-    if request.method in _SAFE_METHODS or g.jwt_token != request.cookies.get("sid"):
+    if request.method in frozenset({"GET", "HEAD", "OPTIONS"}) or g.jwt_token != request.cookies.get("sid"):
         return False
     return request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site")
 
