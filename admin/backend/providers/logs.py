@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.internal.jsonl_log import JsonLines
 from pilot.managers.task.reader import HEARTBEAT_SECONDS
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
@@ -18,19 +19,6 @@ _ERROR_LINE_RE = re.compile(
     r"\b(ERROR|CRITICAL|FATAL)\b|\[(error|crit|alert|emerg)\]|Traceback \(most recent call last\)"
 )
 _ERROR_SCAN_BYTES = 64 * 1024
-
-
-def _read_tail_text(path: Path, min_lines: int, block_size: int = 65536) -> str:
-    """Read a bounded tail window large enough for min_lines."""
-    size = path.stat().st_size
-    read_size = min(block_size, size)
-    with path.open("rb") as handle:
-        while True:
-            handle.seek(size - read_size)
-            chunk = handle.read(read_size)
-            if read_size >= size or chunk.count(b"\n") >= min_lines:
-                return chunk.decode(errors="replace")
-            read_size = min(read_size * 2, size)
 
 
 @dataclass
@@ -72,7 +60,7 @@ class LogProvider:
         if not log_path.exists():
             raise FileNotFoundError(f"Log file not found: {filename}")
 
-        tail = _read_tail_text(log_path, max(lines, 0)).splitlines()
+        tail = JsonLines(log_path).read_tail_text(max(lines, 0)).splitlines()
         return [_ANSI_RE.sub("", line) for line in tail[-lines:]] if lines > 0 else []
 
     def get_file_path(self, filename: str) -> Path:

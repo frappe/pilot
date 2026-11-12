@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pilot.core.site.uptime_monitoring import PING_PATH
 from pilot.internal.atomic_file import atomic_write_private_text
+from pilot.internal.jsonl_log import JsonLines
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -41,7 +42,7 @@ class HourlyRollup:
                 if not line.endswith(b"\n"):
                     break  # still being written; the next update reads it whole
                 offset += len(line)
-                record = _parse(line)
+                record = JsonLines.parse(line)
                 if record is None:
                     continue
                 hour, site = self.get_hour(record.get(self.time_key)), record.get("site")
@@ -132,11 +133,3 @@ class RequestRollup(HourlyRollup):
 
     def get_counts(self, site: str, now: datetime | None = None) -> list[int]:
         return [value or 0 for value in self.get_site_hours(site, now)]
-
-
-def _parse(line: bytes) -> dict | None:
-    try:
-        record = json.loads(line)
-    except ValueError:
-        return None
-    return record if isinstance(record, dict) else None
