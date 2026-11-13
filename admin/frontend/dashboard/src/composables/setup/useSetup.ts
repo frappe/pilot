@@ -47,8 +47,8 @@ export const useSetup = () => {
   const availableBranches = ref<string[]>([])
   const mariadbPasswordConfigured = ref(false)
   const postgresPasswordConfigured = ref(false)
-  const mariadbLocalAvailable = ref(false)
-  const postgresLocalAvailable = ref(false)
+  const mariadbReady = ref(false)
+  const postgresReady = ref(false)
   const mariadbDefaultPort = ref('')
   const postgresDefaultPort = ref('')
 
@@ -67,23 +67,15 @@ export const useSetup = () => {
   const validatingFramework = ref(false)
   const resolvedFramework = ref<{ repo: string; branch: string } | null>(null)
 
-  const localAvailable = computed(() =>
-    dbType.value === 'postgres' ? postgresLocalAvailable.value : mariadbLocalAvailable.value,
+  // Every bench shares the host's server: once another bench uses it, there is nothing to set up.
+  const databaseReady = computed(() =>
+    dbType.value === 'postgres' ? postgresReady.value : mariadbReady.value,
   )
   const dbMode = ref('new')
-  const dbModeOptions = computed(() => [
-    localAvailable.value
-      ? { label: 'Use existing database', value: 'existing_local' }
-      : { label: 'Create new database', value: 'new' },
+  const dbModeOptions = [
+    { label: 'Create new database', value: 'new' },
     { label: 'Connect to external database', value: 'external' },
-  ])
-  watch(
-    localAvailable,
-    (available) => {
-      if (dbMode.value !== 'external') dbMode.value = available ? 'existing_local' : 'new'
-    },
-    { immediate: true },
-  )
+  ]
   const dbHost = ref('')
   const dbPort = ref('')
 
@@ -126,7 +118,11 @@ export const useSetup = () => {
     if (isDone.value && isProductionHandoff.value) return 'Finishing setup'
     return STEP_TITLES[currentStep.value] || benchName.value
   })
-  const stepSubtitle = computed(() => STEP_SUBTITLES[currentStep.value] || null)
+  const stepSubtitle = computed(() =>
+    currentStep.value === 'database' && databaseReady.value
+      ? 'Choose your database engine'
+      : STEP_SUBTITLES[currentStep.value] || null,
+  )
 
   // Loading
   const loadConfig = async () => {
@@ -144,8 +140,8 @@ export const useSetup = () => {
       const processManager = config.production_process_manager
       isProductionHandoff.value = Boolean(processManager) && processManager !== 'none'
 
-      mariadbLocalAvailable.value = config.mariadb_local_available === true
-      postgresLocalAvailable.value = config.postgres_local_available === true
+      mariadbReady.value = config.mariadb_ready === true
+      postgresReady.value = config.postgres_ready === true
       mariadbDefaultPort.value = String(config.mariadb_port)
       postgresDefaultPort.value = String(config.postgres_port)
 
@@ -266,7 +262,7 @@ export const useSetup = () => {
   })
 
   const validateDatabaseStep = async () => {
-    if (dbMode.value !== 'external') return null
+    if (databaseReady.value || dbMode.value !== 'external') return null
     const databaseName = dbType.value === 'postgres' ? 'PostgreSQL' : 'MariaDB'
     if (!dbHost.value) return 'Host is required for an external database'
     if (!dbPassword.value && !dbPasswordConfigured.value)
@@ -331,9 +327,7 @@ export const useSetup = () => {
       app_repo: appRepo.value.trim(),
       app_branch: appBranch.value.trim(),
     }
-    if (dbMode.value === 'existing_local') {
-      return { ...base, db_mode: 'existing_local' }
-    }
+    if (databaseReady.value) return base
     if (dbMode.value === 'new') {
       const passwordField = dbType.value === 'postgres' ? 'postgres_password' : 'mariadb_password'
       return {
@@ -425,6 +419,7 @@ export const useSetup = () => {
     dbPassword,
     dbMode,
     dbModeOptions,
+    databaseReady,
     dbHost,
     dbPort,
     dbPortPlaceholder,

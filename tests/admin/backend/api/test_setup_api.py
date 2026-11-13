@@ -3,10 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from admin.backend.app import create_app
 from pilot.config import BenchConfig, MariaDBConfig
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.task.models import TaskStatus
+
+
+@pytest.fixture
+def tmp_path(tmp_path: Path) -> Path:
+    """A bench folder alone in its own benches directory. Setup reads common_config.toml
+    and sibling benches from the parent, which pytest otherwise shares between tests."""
+    bench_root = tmp_path / "bench"
+    bench_root.mkdir()
+    return bench_root
 
 
 def setup_client(bench_root: Path, *, authenticated: bool = True):
@@ -172,7 +183,7 @@ def test_setup_configuration_needs_a_session(tmp_path: Path) -> None:
     assert write.get_json()["error"]["code"] == "authentication_required"
 
 
-def _write_sibling_local_database(benches: Path, name: str, password: str) -> None:
+def _write_sibling_bench(benches: Path, name: str, password: str, initialized: bool = True) -> None:
     sibling = benches / name
     sibling.mkdir()
     BenchConfig.write_flat(
@@ -185,72 +196,63 @@ def _write_sibling_local_database(benches: Path, name: str, password: str) -> No
             "mariadb_port": 3306,
         },
     )
+    if initialized:
+        (sibling / "env" / "bin").mkdir(parents=True)
+        (sibling / "env" / "bin" / "python").touch()
 
 
-def test_local_database_available_reflects_a_sibling_benchs_local_server(
-    tmp_path: Path,
-) -> None:
+def test_database_is_ready_once_another_bench_uses_the_server(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     benches.mkdir()
-    _write_sibling_local_database(benches, "existing-bench", "sibling-secret")
+    _write_sibling_bench(benches, "existing-bench", "sibling-secret")
     client = setup_client(benches / "new-bench")
 
     configuration = client.get("/api/v1/setup/configuration").get_json()
 
-    assert configuration["mariadb_local_available"] is True
-    assert configuration["postgres_local_available"] is False
+    assert configuration["mariadb_ready"] is True
+    assert configuration["postgres_ready"] is False
+    assert "sibling-secret" not in str(configuration)
 
 
-def test_local_database_unavailable_without_a_configured_sibling(tmp_path: Path) -> None:
+def test_database_is_not_ready_without_an_initialized_sibling(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     benches.mkdir()
+    _write_sibling_bench(benches, "unfinished-bench", "sibling-secret", initialized=False)
     solo_bench = benches / "solo-bench"
     solo_bench.mkdir()
     client = setup_client(solo_bench)
 
     configuration = client.get("/api/v1/setup/configuration").get_json()
 
-    assert configuration["mariadb_local_available"] is False
-    assert configuration["postgres_local_available"] is False
+    assert configuration["mariadb_ready"] is False
+    assert configuration["postgres_ready"] is False
 
 
-def test_existing_local_database_mode_copies_sibling_credentials(tmp_path: Path) -> None:
+def test_setup_keeps_the_database_settings_of_a_ready_server(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     benches.mkdir()
-    _write_sibling_local_database(benches, "existing-bench", "sibling-secret")
+    _write_sibling_bench(benches, "existing-bench", "sibling-secret")
     bench_root = benches / "new-bench"
     bench_root.mkdir()
     client = setup_client(bench_root)
 
-    response = client.put(
+    accepted = client.put("/api/v1/setup/configuration", json={"db_type": "mariadb"})
+    refused = client.put(
         "/api/v1/setup/configuration",
-        json={"db_type": "mariadb", "db_mode": "existing_local"},
+        json={
+            "db_type": "mariadb",
+            "mariadb_existing": True,
+            "mariadb_host": "db.example.com",
+            "mariadb_password": "x",
+        },
     )
 
-    assert response.status_code == 200
-    assert "mariadb_password" not in response.get_json()
+    assert accepted.status_code == 200
+    assert refused.status_code == 422
+    assert refused.get_json()["error"]["code"] == "invalid_setup_configuration"
     config = BenchConfig.read(bench_root)
     assert config.mariadb.root_password == "sibling-secret"
-    assert config.mariadb.existing is False
     assert config.mariadb.host == "localhost"
-
-
-def test_existing_local_database_mode_without_a_sibling_still_requires_a_password(
-    tmp_path: Path,
-) -> None:
-    benches = tmp_path / "benches"
-    benches.mkdir()
-    solo_bench = benches / "solo-bench"
-    solo_bench.mkdir()
-    client = setup_client(solo_bench)
-
-    response = client.put(
-        "/api/v1/setup/configuration",
-        json={"db_type": "mariadb", "db_mode": "existing_local"},
-    )
-
-    assert response.status_code == 422
-    assert response.get_json()["error"]["code"] == "invalid_setup_configuration"
 
 
 def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) -> None:
