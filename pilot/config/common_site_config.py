@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from pilot.exceptions import MalformedSiteConfig
-from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.atomic_file import exclusive_file_lock, overwrite_private_text_locked
 
 
 def read_common_site_config(sites_path: Path) -> dict:
@@ -32,4 +32,4 @@ def update_common_site_config(sites_path: Path) -> Iterator[dict]:
     with exclusive_file_lock(path):
         config = read_common_site_config(sites_path)
         yield config
-        path.write_text(json.dumps(config, indent=2) + "\n")
+        overwrite_private_text_locked(path, json.dumps(config, indent=2) + "\n")
