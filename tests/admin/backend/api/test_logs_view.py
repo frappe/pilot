@@ -57,6 +57,27 @@ def test_log_content_serves_the_raw_file(tmp_path: Path) -> None:
     assert "web.log" in response.headers["Content-Disposition"]
 
 
+
+def test_log_content_refuses_a_workload_symlink(tmp_path: Path) -> None:
+    from pilot.managers.processes.sandbox import WORKLOAD_LOGS
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    workload_dir = bench_root / "logs" / WORKLOAD_LOGS
+    workload_dir.mkdir(parents=True)
+    (workload_dir / "leak.log").symlink_to(bench_root / "bench.toml")
+
+    response = client.get("/api/v1/logs/leak.log/content")
+
+    assert response.status_code == 422
+    assert b"admin_password" not in response.data
+
+
+def test_log_content_returns_not_found_for_a_missing_log(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.get("/api/v1/logs/missing.log/content").status_code == 404
+
 def test_log_events_emits_structured_json_lines(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_log(bench_root, "web.log", "")

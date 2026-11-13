@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+import errno
+import io
+import os
 import re
+import stat
 import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import BinaryIO
 
 from pilot.internal.jsonl_log import JsonLines
 from pilot.managers.processes.sandbox import WORKLOAD_LOGS
@@ -33,56 +39,64 @@ class LogProvider:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
 
+    @property
+    def logs_dir(self) -> Path:
+        """The bench's own logs folder."""
+        return self._bench_root / "logs"
+
     def get_all(self) -> list[LogFileInfo]:
         """The log files."""
-        logs_dir = self._bench_root / "logs"
-        if not logs_dir.exists():
+        if not self.logs_dir.exists():
             return []
 
-        # The workload owns this folder, so a link or a pipe there is not read.
-        candidates = (logs_dir / WORKLOAD_LOGS).glob("*.log")
-        workload_paths = [path for path in candidates if path.is_file() and not path.is_symlink()]
-        paths = {path.name: path for path in [*workload_paths, *logs_dir.glob("*.log")]}
+        paths = [*(self.logs_dir / WORKLOAD_LOGS).glob("*.log"), *self.logs_dir.glob("*.log")]
+        infos = [self.get_info(name) for name in sorted({path.name for path in paths})]
+        return [info for info in infos if info is not None]
 
-        infos = []
-        for path in sorted(paths.values(), key=lambda path: path.name):
-            stat = path.stat()
-            infos.append(
-                LogFileInfo(
-                    filename=path.name,
-                    size_bytes=stat.st_size,
-                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
-                    process_name=path.stem,
-                    line_count=self.count_lines(path),
-                    has_errors=self.has_recent_errors(path),
-                )
+    def get_info(self, filename: str) -> LogFileInfo | None:
+        """The details of a log file, or None when it cannot be opened safely."""
+        try:
+            handle = self.open_file(filename)
+        except (ValueError, OSError):
+            return None
+
+        with handle:
+            file_stat = os.fstat(handle.fileno())
+            return LogFileInfo(
+                filename=filename,
+                size_bytes=file_stat.st_size,
+                last_modified=datetime.fromtimestamp(file_stat.st_mtime, tz=UTC),
+                process_name=Path(filename).stem,
+                line_count=self.count_lines(handle),
+                has_errors=self.has_recent_errors(handle),
             )
-        return infos
+
+    def open_file(self, filename: str) -> BinaryIO:
+        """Open a log file from logs/, else from the workload's logs/workload/.
+        Links, pipes and anything else that is not a regular file raise ValueError."""
+        if "/" in filename or "\\" in filename:
+            raise ValueError(f"Invalid filename: {filename!r}")
+
+        for folder in (self.logs_dir, self.logs_dir / WORKLOAD_LOGS):
+            with contextlib.suppress(FileNotFoundError):
+                return self._open_regular_file(folder / filename)
+        raise FileNotFoundError(f"Log file not found: {filename}")
 
     def tail_file(self, filename: str, lines: int = 200) -> list[str]:
         """The last lines of a log file."""
-        log_path = self._validated_path(filename)
-        if not log_path.exists():
-            raise FileNotFoundError(f"Log file not found: {filename}")
-
-        tail = JsonLines(log_path).read_tail_text(max(lines, 0)).splitlines()
+        with self.open_file(filename) as handle:
+            tail = JsonLines.read_tail_text_from(handle, max(lines, 0)).splitlines()
         return [self.ansi_re.sub("", line) for line in tail[-lines:]] if lines > 0 else []
-
-    def get_file_path(self, filename: str) -> Path:
-        """The validated path of a log file."""
-        return self._validated_path(filename)
 
     def follow_file(
         self, filename: str, should_stop: Callable[[], bool] = lambda: False
     ) -> Generator[str | None, None, None]:
         """Yield new lines as they're written, like `tail -f`, until `should_stop`. None is a
         heartbeat, sent when the file stays quiet for HEARTBEAT_SECONDS."""
-        log_path = self._validated_path(filename)
-        log_path.touch()
         yielded = 0
         last_write = time.monotonic()
 
-        with open(log_path, "r", errors="replace") as file_handle:
+        with io.TextIOWrapper(self.open_or_create_file(filename), errors="replace") as file_handle:
             file_handle.seek(0, 2)  # seek to end
             while yielded < 5000 and not should_stop():
                 line = file_handle.readline()
@@ -96,44 +110,38 @@ class LogProvider:
                 else:
                     time.sleep(0.2)
 
-    @staticmethod
-    def has_recent_errors(path: Path) -> bool:
-        """Whether the end of the log holds an error line."""
+    def open_or_create_file(self, filename: str) -> BinaryIO:
+        """Open a log file, first creating it in logs/ when neither folder has it."""
         try:
-            with path.open("rb") as handle:
-                handle.seek(max(0, handle.seek(0, 2) - (64 * 1024)))
-                return bool(LogProvider.error_line_re.search(handle.read().decode(errors="replace")))
-        except OSError:
-            return False
+            return self.open_file(filename)
+        except FileNotFoundError:
+            with contextlib.suppress(FileExistsError):
+                (self.logs_dir / filename).touch(exist_ok=False)
+            return self.open_file(filename)
 
     @staticmethod
-    def count_lines(path: Path) -> int:
-        """The line count of a file."""
-        from pilot.exceptions import CommandError
-        from pilot.internal.command import run_command
+    def has_recent_errors(handle: BinaryIO) -> bool:
+        """Whether the end of the open log holds an error line."""
+        handle.seek(max(0, handle.seek(0, 2) - (64 * 1024)))
+        return bool(LogProvider.error_line_re.search(handle.read().decode(errors="replace")))
 
+    @staticmethod
+    def count_lines(handle: BinaryIO) -> int:
+        """The line count of an open file."""
+        handle.seek(0)
+        return sum(chunk.count(b"\n") for chunk in iter(lambda: handle.read(1024 * 1024), b""))
+
+    @staticmethod
+    def _open_regular_file(path: Path) -> BinaryIO:
+        """Open path without following a link or blocking on a pipe, and check what was opened."""
         try:
-            return int(run_command(["wc", "-l", str(path)]).stdout.split()[0])
-        except (OSError, CommandError, IndexError, ValueError):
-            return 0
+            descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        except OSError as error:
+            if error.errno == errno.ELOOP:
+                raise ValueError(f"Refusing a linked log file: {path.name!r}") from error
+            raise
 
-    def _validated_path(self, filename: str) -> Path:
-        """Resolves filename in logs/, then in the workload's logs/workload/, rejecting
-        separators/traversal so callers can't escape either folder."""
-        if "/" in filename or "\\" in filename:
-            raise ValueError(f"Invalid filename: {filename!r}")
-
-        logs_dir = self._bench_root / "logs"
-        pilot_path = self._resolve_inside(logs_dir, filename)
-        if pilot_path.exists():
-            return pilot_path
-
-        workload_path = self._resolve_inside(logs_dir / WORKLOAD_LOGS, filename)
-        return workload_path if workload_path.is_file() else pilot_path
-
-    @staticmethod
-    def _resolve_inside(folder: Path, filename: str) -> Path:
-        resolved = (folder / filename).resolve()
-        if resolved.parent != folder.resolve():
-            raise ValueError(f"Path traversal detected in filename: {filename!r}")
-        return resolved
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            os.close(descriptor)
+            raise ValueError(f"Not a regular log file: {path.name!r}")
+        return os.fdopen(descriptor, "rb")
