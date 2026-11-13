@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -197,8 +198,8 @@ def test_list_active_apps_drops_disabled_apps(tmp_path: Path) -> None:
     _make_sqlite_site(tmp_path, "sqlite.localhost", "1", ["frappe", "erpnext"], disabled=["erpnext"])
     site_config_json = {"installed_apps": ["frappe", "erpnext"]}
 
-    installed = site_config.list_installed_apps(site_config_json, tmp_path, "sqlite.localhost")
-    active = site_config.list_active_apps(site_config_json, tmp_path, "sqlite.localhost")
+    installed = site_config.list_installed_apps(site_config_json, tmp_path, "sqlite.localhost", [])
+    active = site_config.list_active_apps(site_config_json, tmp_path, "sqlite.localhost", [])
 
     assert installed == ["frappe", "erpnext"]
     assert active == ["frappe"]
@@ -209,7 +210,31 @@ def test_list_active_apps_keeps_everything_on_a_frappe_without_the_disabled_colu
 ) -> None:
     _make_sqlite_site(tmp_path, "sqlite.localhost", "1", ["frappe", "erpnext"])
 
-    assert site_config.list_active_apps({}, tmp_path, "sqlite.localhost") == ["frappe", "erpnext"]
+    assert site_config.list_active_apps({}, tmp_path, "sqlite.localhost", []) == ["frappe", "erpnext"]
+
+
+def test_the_frappe_app_list_fallback_runs_the_bench_python_with_its_safe_argv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pilot.core.site.apps import SiteApps
+    from tests.pilot.commands.test_commands import make_bench
+
+    bench = make_bench(tmp_path)
+    bench.env_path.mkdir(parents=True)
+    (bench.env_path / "pyvenv.cfg").write_text("version_info = 3.14.2\n")
+    site_path = bench.sites_path / "site1"
+    site_path.mkdir(parents=True)
+    (site_path / "site_config.json").write_text("{}")
+    config = type("Config", (), {"name": "site1"})()
+    site = type("Site", (), {"bench": bench, "path": site_path, "config": config})()
+    monkeypatch.setattr(site_config, "query_installed_apps_via_db", lambda *args: None)
+    with patch("subprocess.run") as run:
+        run.return_value.returncode = 0
+        run.return_value.stdout = "frappe 16.0.0\n"
+        assert SiteApps(site).installed_apps() == ["frappe"]
+
+    assert run.call_args.args[0][:2] == [str(bench.python), "-P"]
+    assert run.call_args.kwargs["cwd"] == str(bench.sites_path)
 
 
 def _make_wizard_site(bench_root: Path, site_name: str, wizard_apps: dict[str, int], disabled: list[str]) -> None:

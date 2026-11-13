@@ -461,18 +461,22 @@ def _register_with_provider(bench: "Bench", name: str) -> None:
     register_with_provider(bench, name)
 
 
-def list_installed_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
+def list_installed_apps(
+    site_config: dict, bench_root: Path, site_name: str, frappe_call: list[str]
+) -> list[str]:
     """Return installed app names for a site, using the fastest available method."""
     from pilot.core.site.config import list_installed_apps as _list_installed_apps
 
-    return _list_installed_apps(site_config, bench_root, site_name)
+    return _list_installed_apps(site_config, bench_root, site_name, frappe_call)
 
 
-def list_active_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
+def list_active_apps(
+    site_config: dict, bench_root: Path, site_name: str, frappe_call: list[str]
+) -> list[str]:
     """Installed apps the site actually runs, disabled ones dropped."""
     from pilot.core.site.config import list_active_apps as _list_active_apps
 
-    return _list_active_apps(site_config, bench_root, site_name)
+    return _list_active_apps(site_config, bench_root, site_name, frappe_call)
 
 
 def query_installed_apps_via_db(bench_root: Path, site_name: str) -> list[str] | None:
@@ -507,7 +511,7 @@ def _safe_site_config_path(sites_root: Path, site_name: str) -> Path:
     return safe_site_config_path(sites_root, site_name)
 
 
-def _query_installed_apps_via_frappe(bench_root: Path, site_name: str) -> list[str]:
+def _query_installed_apps_via_frappe(frappe_call: list[str], bench_root: Path, site_name: str) -> list[str]:
     from pilot.core.site.config import query_installed_apps_via_frappe
 
-    return query_installed_apps_via_frappe(bench_root, site_name)
+    return query_installed_apps_via_frappe(frappe_call, bench_root, site_name)

@@ -56,19 +56,23 @@ _SENSITIVE_CONFIG_KEY_PARTS = (
 )
 
 
-def list_installed_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
-    """Every app installed on the site, the disabled ones included."""
+def list_installed_apps(
+    site_config: dict, bench_root: Path, site_name: str, frappe_call: list[str]
+) -> list[str]:
+    """Every app on the site, the disabled ones included. `frappe_call` is `Bench.frappe_call`."""
     if isinstance(site_config.get("installed_apps"), list):
         return site_config["installed_apps"]
     apps = query_installed_apps_via_db(bench_root, site_name)
     if apps is not None:
         return apps
-    return query_installed_apps_via_frappe(bench_root, site_name)
+    return query_installed_apps_via_frappe(frappe_call, bench_root, site_name)
 
 
-def list_active_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
+def list_active_apps(
+    site_config: dict, bench_root: Path, site_name: str, frappe_call: list[str]
+) -> list[str]:
     """Installed apps the site actually runs - what the Admin UI shows as installed."""
-    installed = list_installed_apps(site_config, bench_root, site_name)
+    installed = list_installed_apps(site_config, bench_root, site_name, frappe_call)
     return exclude_disabled_apps(installed, bench_root, site_name)
 
 
@@ -416,26 +420,16 @@ def _has_protected_config(value) -> bool:
     return False
 
 
-def query_installed_apps_via_frappe(bench_root: Path, site_name: str) -> list[str]:
+def query_installed_apps_via_frappe(frappe_call: list[str], bench_root: Path, site_name: str) -> list[str]:
     import os
     import subprocess
 
-    python = str(bench_root / "env" / "bin" / "python")
-    sites_dir = str(bench_root / "sites")
     try:
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
         result = subprocess.run(
-            [
-                python,
-                "-m",
-                "frappe.utils.bench_helper",
-                "frappe",
-                "--site",
-                site_name,
-                "list-apps",
-            ],
-            cwd=sites_dir,
+            [*frappe_call, "frappe", "--site", site_name, "list-apps"],
+            cwd=str(bench_root / "sites"),
             capture_output=True,
             text=True,
             timeout=15,

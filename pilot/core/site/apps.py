@@ -175,12 +175,14 @@ class SiteApps:
     def installed_apps(self) -> list[str]:
         from pilot.core.site.config import list_installed_apps
 
-        return list_installed_apps(self._site_config(), self.site.bench.path, self.site.config.name)
+        bench = self.site.bench
+        return list_installed_apps(self._site_config(), bench.path, self.site.config.name, bench.frappe_call)
 
     def active_apps(self) -> list[str]:
         from pilot.core.site.config import list_active_apps
 
-        return list_active_apps(self._site_config(), self.site.bench.path, self.site.config.name)
+        bench = self.site.bench
+        return list_active_apps(self._site_config(), bench.path, self.site.config.name, bench.frappe_call)
 
     def _site_config(self) -> dict:
         config_path = self.site.path / "site_config.json"
