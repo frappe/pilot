@@ -25,6 +25,7 @@ class PostgresManager(UserOwnedDBManager):
     _DEFAULT_VERSION = "16"
     # PostgreSQL never extends the timeout, and a crash recovery has no upper limit.
     _START_TIMEOUT = "infinity"
+    config: PostgresConfig
 
     def __init__(self, config: PostgresConfig) -> None:
         self.config = config

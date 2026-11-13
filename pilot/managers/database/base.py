@@ -3,12 +3,16 @@ from __future__ import annotations
 import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pilot.exceptions import DatabaseError
 from pilot.internal.command import run_command
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import SystemdUserMixin
+
+if TYPE_CHECKING:
+    from pilot.config import MariaDBConfig, PostgresConfig
 
 
 class UserOwnedDBManager(SystemdUserMixin):
@@ -20,6 +24,7 @@ class UserOwnedDBManager(SystemdUserMixin):
     _BREW_FORMULA_BASE: str = ""
     _DEFAULT_VERSION: str = ""
     _START_TIMEOUT: str = ""
+    config: MariaDBConfig | PostgresConfig
 
     def is_installed(self) -> bool:
         """Whether the database server is installed."""

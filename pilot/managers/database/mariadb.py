@@ -65,6 +65,7 @@ class MariaDBManager(UserOwnedDBManager):
     _DEFAULT_VERSION = "11.8"
     # The value in MariaDB's own unit. mariadbd extends it while it recovers from a crash.
     _START_TIMEOUT = "15min"
+    config: MariaDBConfig
 
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
