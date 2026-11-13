@@ -15,10 +15,12 @@ class RestartCommand(Command):
     admin: Annotated[bool, Arg(help="Also restart the admin control plane, if it's installed.")] = False
 
     def run(self) -> None:
+        """Restart the workload, and the Admin when asked."""
         self.bench.restart_workload(include_admin=self.admin, on_progress=self.report)
 
 
 def _incomplete_message(bench) -> str:
+    """The message for an incomplete production deployment."""
     from pilot.core.bench.runtime import incomplete_production_message
 
     return incomplete_production_message(bench)

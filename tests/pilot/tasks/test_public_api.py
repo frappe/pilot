@@ -176,7 +176,7 @@ def test_task_manager_public_exports_resolve_lazily() -> None:
     assert TaskStatus.QUEUED.is_active is True
     assert TaskWorkerControl.__name__ == "TaskWorkerControl"
     assert TaskWorkerControl.__module__ == "pilot.managers.task.control"
-    assert task_has_secrets.__module__ == "pilot.managers.task.policy"
+    assert task_has_secrets.__module__ == "pilot.internal.tasks.args"
 
 
 def test_task_retry_secret_policy_is_public() -> None:

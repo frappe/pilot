@@ -11,10 +11,6 @@ from typing import IO
 
 from pilot.exceptions import FrappeCloudError
 
-_REQUEST_TIMEOUT_SECONDS = 30
-_DOWNLOAD_READ_TIMEOUT_SECONDS = 300
-_API = "/api/method/press.api.v1_migration"
-_TOKEN_HEADER = "X-Press-Migration-Token"
 # Cloudflare's Browser Integrity Check blocks urllib's default User-Agent with HTTP 403.
 _HEADERS = {"User-Agent": "pilot"}
 
@@ -27,38 +23,48 @@ class FrappeCloud:
         self.token = token
 
     def request_access(self, domain: str, code: str) -> dict:
+        """Ask for access to the site."""
         return self._call("request_access", data={"domain": domain, "code": code})
 
     def get_status(self) -> dict:
+        """The connection status."""
         return self._call("get_status")
 
     def get_backups(self, start: int = 0) -> list[dict]:
+        """One page of backups."""
         return self._call("get_backups", params={"start": start})
 
     def get_running_backup(self) -> str | None:
+        """The running backup, if any."""
         return self._call("get_running_backup")
 
     def take_backup(self) -> str:
+        """Start a backup and return its name."""
         return self._call("take_backup", data={})
 
     def get_backup_status(self, backup: str) -> dict:
+        """The status of a backup."""
         return self._call("get_backup_status", params={"backup": backup})
 
     def get_download_links(self, backup: str) -> dict[str, str]:
+        """The download links of a backup."""
         return self._call("get_download_links", data={"backup": backup})
 
     def revoke(self) -> None:
+        """Revoke the access."""
         self._call("revoke", data={})
 
     def _call(self, method: str, params: dict | None = None, data: dict | None = None):
         """GET without `data`, POST with it. Frappe's error message is raised as is."""
         query = f"?{urllib.parse.urlencode(params)}" if params else ""
         body = urllib.parse.urlencode(data).encode() if data is not None else None
-        request = urllib.request.Request(f"{self.url}{_API}.{method}{query}", data=body, headers=_HEADERS)
+        request = urllib.request.Request(
+            f"{self.url}/api/method/press.api.v1_migration.{method}{query}", data=body, headers=_HEADERS
+        )
         if self.token:
-            request.add_header(_TOKEN_HEADER, self.token)
+            request.add_header("X-Press-Migration-Token", self.token)
         try:
-            with urllib.request.urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(request, timeout=30) as response:
                 return json.loads(response.read() or b"{}").get("message")
         except urllib.error.HTTPError as error:
             raise FrappeCloudError(get_error_message(error)) from error
@@ -73,7 +79,7 @@ def open_download_link(url: str) -> IO[bytes]:
         raise FrappeCloudError("Frappe Cloud sent a download link that is not HTTP.")
     try:
         request = urllib.request.Request(url, headers=_HEADERS)
-        return urllib.request.urlopen(request, timeout=_DOWNLOAD_READ_TIMEOUT_SECONDS)
+        return urllib.request.urlopen(request, timeout=300)
     except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
         raise FrappeCloudError(f"Could not download the backup: {error}") from error
 

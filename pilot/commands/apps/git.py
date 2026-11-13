@@ -19,4 +19,5 @@ class GitCommand(Command):
     args: tuple[str, ...] = ()
 
     def run(self) -> None:
+        """Run git in the app and exit with its code."""
         sys.exit(self.bench.app(self.app).run_git(*self.args).returncode)

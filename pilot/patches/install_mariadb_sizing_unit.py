@@ -26,11 +26,12 @@ def run(benches_root: Path) -> None:
 
 
 def _has_own_mariadb(config, manager) -> bool:
-    from pilot.managers.platform import is_macos
+    """Whether the bench owns a managed MariaDB on Linux."""
+    from pilot.managers.platform import HostPlatform
 
     return (
         config.db_type == "mariadb"
-        and not is_macos()
+        and not HostPlatform().is_macos
         and not config.mariadb.existing
         and manager.unit_path.exists()
     )
@@ -40,6 +41,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

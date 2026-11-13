@@ -7,8 +7,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.server import Server
 from pilot.exceptions import BenchError, ConfigError
-from pilot.utils import benches_dir
 
 if TYPE_CHECKING:
     from pilot.config import BenchConfig
@@ -41,6 +41,7 @@ class Workspace:
 
     @classmethod
     def current(cls) -> "Workspace":
+        """The workspace here; raise when this is not an app repository."""
         workspace = cls.find()
         if workspace is None:
             raise BenchError(
@@ -66,6 +67,7 @@ class Workspace:
 
     @property
     def is_frappe_app(self) -> bool:
+        """Whether the workspace is a Frappe app."""
         return bool(self.app_name) and (self.root / self.app_name / "hooks.py").exists()
 
     @property
@@ -88,6 +90,7 @@ class Workspace:
 
     @cached_property
     def bench(self) -> "Bench":
+        """The workspace bench; raise when it has none."""
         bench = self.find_bench()
         if bench is None:
             raise BenchError(f"{self.root} has no bench yet. Run: pilot dev setup")
@@ -100,9 +103,9 @@ class Workspace:
         from pilot.core.bench import Bench
 
         name = self.recorded_bench_name
-        if name and self.is_linked_by(benches_dir() / name):
-            return Bench(benches_dir() / name)
-        for toml_path in sorted(benches_dir().glob("*/bench.toml")):
+        if name and self.is_linked_by(Server().benches_dir / name):
+            return Bench(Server().benches_dir / name)
+        for toml_path in sorted(Server().benches_dir.glob("*/bench.toml")):
             try:
                 if self.is_linked_by(toml_path.parent):
                     return Bench(toml_path.parent)
@@ -111,6 +114,7 @@ class Workspace:
         return None
 
     def is_linked_by(self, bench_root: Path) -> bool:
+        """Whether the bench links this workspace."""
         from pilot.config import BenchConfig
 
         toml_path = bench_root / "bench.toml"
@@ -129,6 +133,7 @@ class Workspace:
 
     @property
     def recorded_bench_name(self) -> str:
+        """The bench name saved for the workspace, or an empty string."""
         try:
             return self.bench_record.read_text().strip() if self.bench_record else ""
         except OSError:
@@ -136,14 +141,17 @@ class Workspace:
 
     @property
     def site(self) -> "Site":
+        """The development site."""
         return self.bench.site(f"{self.bench.config.name}.localhost")
 
     @property
     def site_url(self) -> str:
+        """The development site URL."""
         return f"http://{self.site.config.name}:{self.bench.config.http_port}"
 
     @property
     def is_running(self) -> bool:
+        """Whether the bench runs."""
         from pilot.managers.processes.local import ProcessManager
 
         return ProcessManager(self.bench).is_running()
@@ -194,10 +202,12 @@ class Workspace:
             ) from error
 
     def create_bench(self, db_type: str, frappe_branch: str, on_progress: Callable[[str], None]) -> "Bench":
+        """Create a development bench that links this app."""
         from pilot.config import AppConfig
         from pilot.core.bench import Bench
 
         def configure(config: BenchConfig) -> None:
+            """Turn the Admin off and link the app."""
             config.admin.enabled = False
             config.watch_apps_js = self.has_desk_bundles
             config.apps.append(AppConfig(name=self.app_name, repo="", branch="", path=str(self.root)))
@@ -205,15 +215,20 @@ class Workspace:
         name = self.next_bench_name
         on_progress(f"Creating bench '{name}' ({db_type}, frappe {frappe_branch}) for {self.root}")
         return Bench.create_at(
-            benches_dir() / name, name, db_type=db_type, frappe_branch=frappe_branch, configure=configure
+            Server().benches_dir / name,
+            name,
+            db_type=db_type,
+            frappe_branch=frappe_branch,
+            configure=configure,
         )
 
     @property
     def next_bench_name(self) -> str:
+        """A free bench name based on the directory name."""
         slug = re.sub(r"[^a-z0-9]+", "-", self.root.name.lower()).strip("-") or "app"
         name = base = f"dev-{slug}"
         suffix = 2
-        while (benches_dir() / name).exists():
+        while (Server().benches_dir / name).exists():
             name = f"{base}-{suffix}"
             suffix += 1
         return name
@@ -264,7 +279,7 @@ class Workspace:
         without --site use."""
         from pilot.config.common_site_config import update_common_site_config
 
-        self.site.set_config_values({"developer_mode": 1})
+        self.site.config_file.set_values({"developer_mode": 1})
         with update_common_site_config(self.bench.sites_path) as config:
             config["default_site"] = self.site.config.name
 

@@ -4,7 +4,6 @@ import json
 import re
 import subprocess
 
-_MATCH_CAP = 2000
 _SED_DELIM = "\x01"
 _TIMEOUT = 30
 
@@ -21,7 +20,7 @@ def search(root, query: str, regex: bool, word: bool, case: bool) -> list[dict]:
     by_file: dict[str, int] = {}
     total = 0
     for raw in _run_ripgrep(root, query, regex, word, case).split("\n"):
-        if total >= _MATCH_CAP or not raw:
+        if total >= 2000 or not raw:
             break
         if _consume_match(raw, results, by_file):
             total += 1
@@ -55,6 +54,7 @@ def _run_ripgrep(root, query: str, regex: bool, word: bool, case: bool) -> str:
 
 
 def _consume_match(raw: str, results: list[dict], by_file: dict[str, int]) -> bool:
+    """Add one ripgrep match; return False when the limit is reached."""
     try:
         event = json.loads(raw)
     except ValueError:
@@ -107,6 +107,7 @@ def replace(workspace, query: str, replacement: str, regex: bool, case: bool, wo
 
 
 def _sed_escape(text: str, literal: bool, is_pattern: bool) -> str:
+    """The text escaped for sed."""
     out = []
     for ch in text:
         if ch == _SED_DELIM:

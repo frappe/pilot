@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from pilot.utils import cli_root
+from pilot.core.server import Server
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -117,7 +117,7 @@ def is_allowed_path(path: Path) -> bool:
 def is_protected_path(path: Path, bench_path: Path) -> bool:
     """Whether `path` is in or above a place the sandbox hides: the benches directory, the Pilot install,
     or the home directory outside the allowed home roots. An allowed system root can hold any of them."""
-    hidden = [bench_path.parent, cli_root()]
+    hidden = [bench_path.parent, Server().root]
     home_roots = _with_real_paths(Path.home() / root for root in ALLOWED_HOME_ROOTS)
     if not any(path.is_relative_to(root) for root in home_roots):
         hidden.append(Path.home())

@@ -27,6 +27,7 @@ class AppDependencyInstaller:
         *,
         skip_assets: bool = False,
     ) -> list["App"]:
+        """Install the apps this app depends on and return them."""
         resolver = self._find_resolver()
         if resolver is None:
             return []
@@ -34,6 +35,7 @@ class AppDependencyInstaller:
         return self._dependency_apps(resolver)
 
     def _find_resolver(self) -> Resolver | None:
+        """The marketplace resolver for the app, or None when it is not listed."""
         try:
             return Marketplace(self.bench).find_app(self.app.config.name)
         except AppNotFoundError as exc:
@@ -49,6 +51,7 @@ class AppDependencyInstaller:
     def _install_missing(
         self, resolver: Resolver, on_progress: Callable[[str], None], skip_assets: bool
     ) -> None:
+        """Install the dependencies the bench does not have yet."""
         if all(self.bench.is_app_installed(dep) for dep in resolver.dependencies):
             return
 
@@ -77,6 +80,7 @@ class AppDependencyInstaller:
             )
 
     def _dependency_apps(self, resolver: Resolver) -> list["App"]:
+        """The installed dependency apps, without the app itself."""
         try:
             names = [dep.app for dep in resolver.resolve()[:-1]]  # exclude self (last entry)
         except DependencyResolutionError:
@@ -95,6 +99,7 @@ class AppDependencyInstaller:
         return apps
 
     def _missing_required_apps(self) -> list[str]:
+        """The required apps that are not in the bench."""
         from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
 
         required = DependencyDeclarationsCheck().get_frappe_dependencies(self.app)

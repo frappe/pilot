@@ -15,9 +15,10 @@ class ListCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
-        from pilot.utils import cli_root
+        """Print the benches with their state and address."""
+        from pilot.core.server import Server
 
-        benches_dir = cli_root() / "benches"
+        benches_dir = Server().root / "benches"
         rows = self._collect(benches_dir)
         if not rows:
             self.report("No benches yet. Create one with: pilot new <name>")
@@ -42,6 +43,7 @@ class ListCommand(Command):
             )
 
     def _collect(self, benches_dir: Path) -> list[dict]:
+        """A row for each bench."""
         if not benches_dir.is_dir():
             return []
         rows = []
@@ -53,6 +55,7 @@ class ListCommand(Command):
         return rows
 
     def _describe(self, bench_dir: Path, toml_path: Path) -> dict:
+        """The row for one bench."""
         from pilot.config import BenchConfig
         from pilot.core.bench import Bench
 
@@ -81,11 +84,11 @@ class ListCommand(Command):
         }
 
     def _address(self, bench) -> str:
-        from pilot.utils import admin_url
 
+        """The Admin address of a bench."""
         admin = bench.config.admin
         if not admin.domain:
-            return admin_url(bench.config)
+            return bench.config.admin_url
         from pilot.managers.nginx import NginxManager
 
         scheme = "https" if admin.tls and NginxManager(bench).has_admin_cert else "http"
@@ -117,12 +120,15 @@ class ListCommand(Command):
 
 
 def _ok(text: str) -> str:
+    """The text in green."""
     return f"\033[32m{text}\033[0m"
 
 
 def _warn(text: str) -> str:
+    """The text in yellow."""
     return f"\033[33m{text}\033[0m"
 
 
 def _dim(text: str) -> str:
+    """The text in grey."""
     return f"\033[90m{text}\033[0m"

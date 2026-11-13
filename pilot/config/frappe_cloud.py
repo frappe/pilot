@@ -11,4 +11,5 @@ class FrappeCloudConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "FrappeCloudConfig":
+        """The Frappe Cloud config from its TOML table."""
         return cls(url=data.get("url") or DEFAULT_URL)

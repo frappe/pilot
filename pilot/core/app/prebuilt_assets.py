@@ -18,11 +18,10 @@ if TYPE_CHECKING:
 # Frappe builds every app's page islands here. Its archive holds only Frappe's own.
 PAGE_ISLAND_DIR = Path("frappe/public/dist/page-island")
 PAGE_ISLAND_URL = "/assets/frappe/dist/page-island/"
-_DOWNLOAD_TIMEOUT_SECONDS = 60
-_CHUNK_BYTES = 1024 * 1024
 
 
 def _asset_tables(app: App) -> list[dict]:
+    """The asset tables from the app's bench config."""
     from pilot.core.app.validator.base import bench_table
 
     assets = bench_table(app).get("assets", [])
@@ -30,6 +29,7 @@ def _asset_tables(app: App) -> list[dict]:
 
 
 def _build_dir(spa: dict) -> str:
+    """The normalized build directory of an asset table."""
     return posixpath.normpath(str(spa.get("build_dir", "")) or ".")
 
 
@@ -56,6 +56,8 @@ class PrebuiltAssets:
     """Assets the app's CI built for one commit (scripts/build-app-assets.sh), published on
     its GitHub release `assets-<branch>` as `<app>-<commit>.tar.gz` with a `.sha256`."""
 
+    download_timeout_seconds = 60
+
     def __init__(self, app: App) -> None:
         self.app = app
         # The archive's assets.json entries; None for archives without them.
@@ -72,7 +74,7 @@ class PrebuiltAssets:
             return False
         name = f"{self.app.config.name}-{commit}.tar.gz"
         try:
-            with urllib.request.urlopen(f"{base_url}/{name}.sha256", timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(f"{base_url}/{name}.sha256", timeout=self.download_timeout_seconds) as response:
                 expected = response.read().decode().split()[0]
         except (urllib.error.URLError, OSError, IndexError) as error:
             print(f"  No prebuilt assets for {self.app.config.name} at {commit[:10]} ({error}).")
@@ -93,6 +95,7 @@ class PrebuiltAssets:
 
     @property
     def release_url(self) -> str | None:
+        """The release download URL for the prebuilt assets, if any."""
         from pilot.integrations.git.base import GitProviderError
         from pilot.integrations.git.github import parse_github_owner_repo
         from pilot.internal.git import GitRepo
@@ -109,9 +112,9 @@ class PrebuiltAssets:
 
     def _swap_in(self, archive: Path, extracted: Path, commit: str) -> None:
         """Replace each published path whole, so files a newer build dropped do not linger."""
-        from pilot.utils import extract_tar_archive
+        from pilot.internal.archive import TarArchive
 
-        extract_tar_archive(archive, extracted)
+        TarArchive(archive).extract_to(extracted)
         manifest = json.loads((extracted / "manifest.json").read_text())
         if manifest.get("app") != self.app.config.name or manifest.get("commit") != commit:
             raise BenchError(f"Prebuilt assets for {self.app.config.name} were built for another commit.")
@@ -146,9 +149,11 @@ class PrebuiltAssets:
 
     @property
     def has_other_page_islands(self) -> bool:
+        """Whether another app uses page islands."""
         return any(app.has_page_islands for app in self.app.bench.apps() if app.config.name != "frappe")
 
     def _asset_maps(self, manifest: dict) -> dict[str, dict[str, str]] | None:
+        """The asset maps from the manifest, or None when it has none."""
         names = [name for name in ("assets.json", "assets-rtl.json") if name in manifest]
         if not names:
             return None
@@ -166,6 +171,7 @@ class PrebuiltAssets:
 
     @staticmethod
     def _replace(source: Path, target: Path) -> None:
+        """Replace the target with the source, keeping the old copy until it succeeds."""
         previous = target.with_name(f".{target.name}.previous")
         shutil.rmtree(previous, ignore_errors=True)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -184,9 +190,10 @@ class PrebuiltAssets:
 
     @staticmethod
     def _download(url: str, destination: Path) -> str:
+        """Download the URL to the file and return its SHA-256."""
         digest = hashlib.sha256()
-        with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, destination.open("wb") as file:
-            while chunk := response.read(_CHUNK_BYTES):
+        with urllib.request.urlopen(url, timeout=PrebuiltAssets.download_timeout_seconds) as response, destination.open("wb") as file:
+            while chunk := response.read(1024 * 1024):
                 digest.update(chunk)
                 file.write(chunk)
         return digest.hexdigest()

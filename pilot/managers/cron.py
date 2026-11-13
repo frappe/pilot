@@ -10,8 +10,6 @@ from pathlib import Path
 
 from pilot.exceptions import CronError
 
-_MARKER_PREFIX = "# bench-cron:"
-
 
 def cron_module_command(module: str, arguments: list, log_file: Path) -> str:
     """A `python -m <module>` line safe to run from cron.
@@ -22,12 +20,12 @@ def cron_module_command(module: str, arguments: list, log_file: Path) -> str:
     a job such as the S3 backup upload needs its packages. A source checkout without it uses
     the current interpreter.
     """
+    from pilot.core.server import Server
     from pilot.managers.environment import AdminEnvManager
-    from pilot.utils import cli_root
 
-    admin_python = AdminEnvManager(cli_root()).python
+    admin_python = AdminEnvManager(Server().root).python
     parts = [
-        f"PYTHONPATH={shlex.quote(str(cli_root()))}",
+        f"PYTHONPATH={shlex.quote(str(Server().root))}",
         shlex.quote(str(admin_python) if admin_python.exists() else sys.executable),
         "-m",
         module,
@@ -43,6 +41,7 @@ class CronManager:
         self._bench_root = bench_root
 
     def get_schedule(self, job_key: str) -> str | None:
+        """The schedule of a job, if it is installed."""
         lines = self._read_crontab()
         try:
             i = lines.index(self._marker(job_key))
@@ -52,6 +51,7 @@ class CronManager:
             return None
 
     def set_schedule(self, job_key: str, cron_expr: str, command: str) -> None:
+        """Install or replace a job with its schedule and command."""
         with self._lock():
             lines = self._read_crontab()
             marker = self._marker(job_key)
@@ -84,6 +84,7 @@ class CronManager:
             self._write_crontab(lines)
 
     def remove_schedule(self, job_key: str) -> None:
+        """Remove a job."""
         with self._lock():
             lines = self._read_crontab()
             marker = self._marker(job_key)
@@ -94,20 +95,22 @@ class CronManager:
             self._write_crontab(lines)
 
     def _marker(self, job_key: str) -> str:
-        return f"{_MARKER_PREFIX}{self._bench_root}:{job_key}"
+        """The comment line that marks a job."""
+        return f"# bench-cron:{self._bench_root}:{job_key}"
 
     @contextmanager
     def _lock(self) -> Iterator[None]:
         """Every bench and the registry cache share the host user's one crontab."""
+        from pilot.core.server import Server
         from pilot.internal.atomic_file import exclusive_file_lock
-        from pilot.utils import cli_root
 
-        lock_target = cli_root() / "system" / "crontab"
+        lock_target = Server().root / "system" / "crontab"
         lock_target.parent.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(lock_target):
             yield
 
     def _read_crontab(self) -> list[str]:
+        """The crontab lines; empty when there is no crontab."""
         result = self._crontab("-l")
         if result.returncode == 0:
             return result.stdout.splitlines()
@@ -117,6 +120,7 @@ class CronManager:
         raise CronError(f"Could not read the crontab: {result.stderr.strip()}")
 
     def _write_crontab(self, lines: list[str]) -> None:
+        """Write the crontab, or remove it when it is empty."""
         non_empty = [line for line in lines if line.strip()]
         if not non_empty:
             self._crontab("-r")
@@ -127,6 +131,7 @@ class CronManager:
 
     @staticmethod
     def _crontab(*arguments: str, content: str | None = None) -> subprocess.CompletedProcess:
+        """Run crontab; raise when it is missing."""
         if shutil.which("crontab") is None:
             raise CronError("The `crontab` command is missing. Install cron (cronie on Fedora and Arch).")
         return subprocess.run(

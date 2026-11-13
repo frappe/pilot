@@ -19,6 +19,7 @@ class RunPatchesCommand(Command):
     ] = "all"
 
     def run(self) -> None:
+        """Run the patches of one phase."""
         from pilot.internal.patch_runner import run_patches
 
         run_patches(self.phase, on_progress=self.report)

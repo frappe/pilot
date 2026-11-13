@@ -12,6 +12,7 @@ class ListAppsCommand(Command):
     help: ClassVar[str] = "List apps installed in the bench."
 
     def run(self) -> None:
+        """Print the apps in sites/apps.txt."""
         apps_txt = self.bench.sites_path / "apps.txt"
         if apps_txt.exists():
             apps = [a.strip() for a in apps_txt.read_text().splitlines() if a.strip()]

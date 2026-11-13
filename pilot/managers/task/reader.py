@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
+from pilot.internal.private_files import PrivateFile
 from pilot.internal.tasks.args import redact_task_args
 from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.queue import TaskQueue
@@ -17,16 +18,17 @@ from pilot.managers.task.models import (
     TaskInfo,
     TaskStatus,
 )
-from pilot.utils import open_private
 
-_TASK_POLL_SECONDS = 0.5
 # A write is the only way to see that a client went away, so a quiet stream still writes.
 HEARTBEAT_SECONDS = 15
-_SYSLOG_RE = re.compile(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$")
-_STEP_RE = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
-_STEP_FAILED_RE = re.compile(r"^STEP-FAILED ([\w-]+),")
-# A progress bar line, such as Frappe's "Updating DocTypes for erpnext : [=====     ] 45%".
-_PERCENT_RE = re.compile(r"\s*:?\s*(?:\[[^\]]*\]\s*)?(\d{1,3})%\s*$")
+# Tasks that write a site's site_config.json before its database is ready, mapped to the
+# argument that names that site. A clone's `site` is its source, which stays up.
+SITE_PROVISIONING_ARGS = {
+    "new-site": "name",
+    "new-site-from-backup": "name",
+    "reinstall-site": "site",
+    "clone-site": "name",
+}
 
 
 class TaskStep(TypedDict):
@@ -66,10 +68,12 @@ TaskStreamEvent = OutputEvent | StatusEvent | DoneEvent
 
 
 def output_event(line: str, *, overwrite: bool = False) -> OutputEvent:
+    """An output line event."""
     return {"type": "overwrite" if overwrite else "line", "line": line}
 
 
 def status_event(task: "TaskInfo") -> StatusEvent:
+    """A task status event."""
     return {
         "type": "status",
         "status": task.status.value,
@@ -79,6 +83,7 @@ def status_event(task: "TaskInfo") -> StatusEvent:
 
 
 def done_event(status: str, exit_code: int | None, failure: dict | None) -> DoneEvent:
+    """A task done event."""
     return {
         "type": "done",
         "status": status,
@@ -88,12 +93,14 @@ def done_event(status: str, exit_code: int | None, failure: dict | None) -> Done
 
 
 def sse_message(event: TaskStreamEvent, event_id: int | None = None) -> str:
+    """The event as a server-sent event message."""
     prefix = f"id: {event_id}\n" if event_id is not None else ""
     payload = json.dumps(event, separators=(",", ":"))
     return f"{prefix}data: {payload}\n\n"
 
 
 def collapse_cr(line: str) -> str:
+    """The last visible part of a line with carriage returns."""
     if "\r" not in line:
         return line
     parts = line.split("\r")
@@ -101,30 +108,36 @@ def collapse_cr(line: str) -> str:
 
 
 def display_line(raw_line: str) -> str:
+    """The line as shown to the user."""
     stripped = "\r".join(strip_syslog_envelope(segment) for segment in raw_line.split("\r"))
     return collapse_cr(stripped)
 
 
 def strip_syslog_envelope(segment: str) -> str:
-    match = _SYSLOG_RE.match(segment)
+    """The segment without its syslog prefix."""
+    match = re.match(r"^<\d+>\d+ \S+ \S+ \S+ \S+ \S+ \S+ (.*)$", segment)
     return match.group(1) if match else segment
 
 
 def _split_percent(line: str) -> tuple[str, int | None]:
     """Split a progress bar line into its text and its percentage."""
-    match = _PERCENT_RE.search(line)
+    match = re.search(r"\s*:?\s*(?:\[[^\]]*\]\s*)?(\d{1,3})%\s*$", line)
     if not match:
         return line, None
     return line[: match.start()], min(int(match[1]), 100)
 
 
 class TaskReader:
+    step_re = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
+    step_failed_re = re.compile(r"^STEP-FAILED ([\w-]+),")
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
         self._files = TaskFiles(self._bench_root / "tasks")
         self._queue = TaskQueue(bench_root)
 
     def list_tasks(self, limit: int | None = 50, include_unlisted: bool = False) -> list[TaskInfo]:
+        """The newest tasks."""
         from pilot.internal.tasks.runner import is_command_listed
 
         tasks: list[TaskInfo] = []
@@ -141,11 +154,23 @@ class TaskReader:
         tasks.sort(key=lambda task: task.queued_at, reverse=True)
         return tasks if limit is None else tasks[:limit]
 
+    def get_provisioning_site_names(self) -> set[str]:
+        """Sites an active task is still creating, so neither ready nor broken yet."""
+        return {
+            name
+            for task in self.list_tasks(limit=None, include_unlisted=True)
+            if task.status.is_active
+            and (key := SITE_PROVISIONING_ARGS.get(task.command))
+            and (name := task.args.get(key))
+        }
+
     def read_task(self, task_id: str) -> TaskInfo:
+        """One task; raise when it does not exist."""
         task_dir = self._files.existing_task_dir(task_id)
         return _read_task_dir(self, task_dir, self._queue.positions())
 
     def read_output(self, task_id: str, lines: int | None = None) -> list[str]:
+        """The task output lines, or the last ones."""
         self.read_task(task_id)  # validates task_id and existence
         output_path = self._bench_root / "tasks" / task_id / "output.log"
         if not output_path.exists():
@@ -165,7 +190,7 @@ class TaskReader:
         steps: list[TaskStep] = []
         last_line = step_line = ""
         for line in self.read_output(task.task_id):
-            if match := _STEP_RE.match(line):
+            if match := self.step_re.match(line):
                 if steps and steps[-1]["status"] == "running":
                     steps[-1]["status"] = "done"
                 step_line = ""
@@ -174,7 +199,7 @@ class TaskReader:
                     steps.append(
                         {"key": key, "label": label, "status": "running", "started_at": float(started_at)}
                     )
-            elif match := _STEP_FAILED_RE.match(line):
+            elif match := self.step_failed_re.match(line):
                 steps = [{**step, "status": "failed"} if step["key"] == match[1] else step for step in steps]
             elif line.strip():
                 last_line = step_line = line.strip()
@@ -193,6 +218,7 @@ class TaskReader:
         }
 
     def iter_output(self, task_id: str) -> Generator[str, None, None]:
+        """Yield the task output lines."""
         task = self.read_task(task_id)
         if not task.output_path.exists():
             return
@@ -216,7 +242,7 @@ class TaskReader:
         last_state = (task.status, task.queue_position)
         yield status_event(task)
 
-        open_private(output_path, "a").close()
+        PrivateFile(output_path).open("a").close()
         with open(output_path, "r", errors="replace", newline="") as log_file:
             cur = ""
             last_write = time.monotonic()
@@ -242,9 +268,10 @@ class TaskReader:
                     yield None
                     last_write = time.monotonic()
 
-                time.sleep(_TASK_POLL_SECONDS)
+                time.sleep(0.5)
 
     def _stream_chunk(self, chunk: str, cur: str) -> Generator[TaskStreamEvent, None, str]:
+        """Yield an event for each finished line; return the unfinished line."""
         for ch in chunk:
             if ch == "\n":
                 yield output_event(display_line(cur))
@@ -260,6 +287,7 @@ class TaskReader:
         task: TaskInfo,
         cur: str,
     ) -> Generator[TaskStreamEvent, None, None]:
+        """Yield the last line and the done event."""
         if cur:
             yield output_event(display_line(cur))
         failure = task.as_dict()["failure"]
@@ -271,6 +299,7 @@ def _read_task_dir(
     task_dir: Path,
     queue_positions: dict[str, int],
 ) -> TaskInfo:
+    """The task from its directory."""
     meta = json.loads((task_dir / "meta.json").read_text())
 
     pid: int | None = None

@@ -6,27 +6,24 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
-_STRING = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
-_NUMERIC = re.compile(r"\b\d+\.?\d*\b")
-_WHITESPACE = re.compile(r"\s+")
-
 
 def normalize(sql: str) -> str:
     """Strip comments and literals so queries differing only by values group together."""
-    sql = _COMMENT.sub(" ", sql)
-    sql = _STRING.sub("?", sql)
-    sql = _NUMERIC.sub("?", sql)
-    return _WHITESPACE.sub(" ", sql).strip()
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    sql = re.sub(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"", "?", sql)
+    sql = re.sub(r"\b\d+\.?\d*\b", "?", sql)
+    return re.sub(r"\s+", " ", sql).strip()
 
 
 def to_text(value: object) -> str:
+    """The value as text."""
     if isinstance(value, (bytes, bytearray)):
         return value.decode("utf-8", "replace")
     return "" if value is None else str(value)
 
 
 def to_seconds(value: object) -> float:
+    """The value in seconds, or 0.0."""
     if isinstance(value, timedelta):
         return value.total_seconds()
     try:
@@ -36,9 +33,15 @@ def to_seconds(value: object) -> float:
 
 
 def to_iso(value: object) -> str | None:
+    """The value as an ISO time, or None."""
     if isinstance(value, datetime):
         return value.isoformat()
     return value if isinstance(value, str) and value else None
+
+
+def slow_row_key(row: dict) -> tuple[str, str, int]:
+    """The keyset cursor of a slow log row, comparable with SlowQueryLog.watermark()."""
+    return (to_iso(row.get("start_time")) or "", to_text(row.get("sql_text")), row.get("thread_id") or 0)
 
 
 def fingerprint(db: str, raw_text: str, query_time: float, thread_id: object) -> str:
@@ -76,9 +79,11 @@ class SlowQueryLog:
         return (watermark["time"], watermark["sql_text"], watermark["thread_id"]) if watermark else None
 
     def records(self) -> list[dict]:
+        """The saved slow query records."""
         return self._read_all().get("records", [])
 
     def append(self, rows: list[dict]) -> None:
+        """Add new rows, skipping ones already saved."""
         data = self._read_all()
         existing = data.get("records", [])
         # Defense-in-depth: two rows can share the exact keyset cursor value
@@ -114,6 +119,7 @@ class SlowQueryLog:
         self.path.write_text(json.dumps({"watermark": watermark, "records": records[-MAX_RECORDS:]}))
 
     def _read_all(self) -> dict:
+        """The saved data, or an empty dict."""
         if not self.path.exists():
             return {}
         try:

@@ -43,6 +43,7 @@ def get_api_reference() -> str:
 
 
 def _row(rule: Rule, path: str, view) -> str:
+    """One reference table row for a route."""
     methods = ", ".join(sorted((rule.methods or set()) - {"HEAD", "OPTIONS"}))
     parameters = ", ".join(
         f"`{name}`" for name in dict.fromkeys(QUERY_PARAMETER.findall(inspect.getsource(view)))

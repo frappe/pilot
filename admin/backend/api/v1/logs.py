@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 from typing import TypedDict
 
-from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.draining import is_draining
-from admin.backend.providers.logs import LogProvider
+from admin.backend.providers.server.logs import LogProvider
 
 
 class LogFile(TypedDict):
@@ -16,6 +17,7 @@ class LogFile(TypedDict):
     last_modified: str
     process_name: str
     line_count: int
+    has_errors: bool
 
 
 class LogTail(TypedDict):
@@ -35,12 +37,11 @@ class LogErrorEvent(TypedDict):
 
 logs_bp = Blueprint("logs", __name__)
 
-_MAX_LINES = 5000
-
 
 @logs_bp.get("")
 def index():
-    bench_root = current_app.config["BENCH_ROOT"]
+    """List the log files."""
+    bench_root = ApiRequest.get_bench_root()
     try:
         log_files = LogProvider(bench_root).get_all()
     except Exception:
@@ -54,6 +55,7 @@ def index():
                 "last_modified": lf.last_modified.isoformat(),
                 "process_name": lf.process_name,
                 "line_count": lf.line_count,
+                "has_errors": lf.has_errors,
             }
             for lf in log_files
         ]
@@ -62,14 +64,15 @@ def index():
 
 @logs_bp.route("/<filename>")
 def viewer(filename: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+    """Show the matching lines of a log file."""
+    bench_root = ApiRequest.get_bench_root()
     search = request.args.get("search", "").strip()
 
     try:
         lines_param = int(request.args.get("lines", 200))
     except ValueError:
         lines_param = 200
-    lines_param = min(lines_param, _MAX_LINES)
+    lines_param = min(lines_param, 5000)
 
     try:
         provider = LogProvider(bench_root)
@@ -94,7 +97,8 @@ def viewer(filename: str):
 
 @logs_bp.get("/<filename>/content")
 def download_log(filename: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+    """Download a log file."""
+    bench_root = ApiRequest.get_bench_root()
     try:
         provider = LogProvider(bench_root)
         log_path = provider.get_file_path(filename)
@@ -113,10 +117,12 @@ def download_log(filename: str):
 
 @logs_bp.get("/<filename>/events")
 def stream_log(filename: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+    """Stream new lines of a log file."""
+    bench_root = ApiRequest.get_bench_root()
     provider = LogProvider(bench_root)
 
     def generate():
+        """Yield each new line as an event, with heartbeats."""
         try:
             for line in provider.follow_file(filename, should_stop=is_draining):
                 if line is None:

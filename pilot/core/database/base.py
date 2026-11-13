@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pilot.exceptions import DatabaseError
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from pilot.core.database.deadlocks import DeadlockReport
+    from pilot.core.database.slow_log import SlowQueryReport
 
 
 @dataclass
@@ -55,6 +61,9 @@ class LockWaitRow:
     query: str | None
     rows_locked: int | None
     rows_modified: int | None
+    blocking_id: str | None = None
+    blocking_thread_id: int | None = None
+    blocking_query: str | None = None
 
 
 @dataclass
@@ -160,7 +169,8 @@ class PerformanceSection:
 
 class Database(ABC):
     @abstractmethod
-    def execute(self, query: str, read_only: bool = True) -> QueryResult: ...
+    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+        """Run the query and return its result."""
 
     def quote_identifier(self, name: str) -> str:
         """ANSI double quoting, which PostgreSQL and SQLite both accept.
@@ -168,12 +178,15 @@ class Database(ABC):
         return '"{}"'.format(name.replace('"', ""))
 
     @abstractmethod
-    def get_tables(self) -> list[str]: ...
+    def get_tables(self) -> list[str]:
+        """The table names."""
 
     @abstractmethod
-    def get_table_columns(self, table: str) -> list[dict]: ...
+    def get_table_columns(self, table: str) -> list[dict]:
+        """The columns of a table, with their names and types."""
 
     def get_schema(self) -> list[dict]:
+        """Every table with its columns."""
         return [{"name": t, "columns": self.get_table_columns(t)} for t in self.get_tables()]
 
     def get_process_list(self, database: str = "") -> list[DatabaseProcess]:
@@ -190,16 +203,33 @@ class Database(ABC):
         raise NotImplementedError
 
     def kill_process(self, process_id: int) -> None:
+        """Kill a database connection."""
         raise NotImplementedError
 
     def get_active_connections(self) -> int:
+        """The number of open connections."""
         raise NotImplementedError
 
     def get_lock_waits(self) -> LockWaitStatus:
+        """The current and total lock waits."""
         raise NotImplementedError
 
     def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
         """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    def get_deadlocks(
+        self,
+        database: str = "",
+        limit: int = 50,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> DeadlockReport:
+        """The recent deadlocks."""
+        raise NotImplementedError
+
+    def get_slow_queries(self, database: str = "", limit: int = 100) -> SlowQueryReport:
+        """The slow query report."""
         raise NotImplementedError
 
     def get_time_consuming_queries(
@@ -214,9 +244,7 @@ class Database(ABC):
         """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
-    def get_unused_indexes(
-        self, database: str = "", limit: int = 20, offset: int = 0
-    ) -> PerformanceSection:
+    def get_unused_indexes(self, database: str = "", limit: int = 20, offset: int = 0) -> PerformanceSection:
         """`database` narrows the result to one database; empty means server-wide."""
         raise NotImplementedError
 
@@ -228,15 +256,19 @@ class Database(ABC):
 
     @property
     def is_performance_schema_enabled(self) -> bool:
+        """Whether the Performance Schema is on."""
         raise NotImplementedError
 
     def get_binlog_status(self) -> BinlogStatus:
+        """The binary log status."""
         raise NotImplementedError
 
     def get_binlog_files(self) -> list[BinlogFile]:
+        """The binary log files."""
         raise NotImplementedError
 
     def purge_binlogs(self, up_to: str) -> None:
+        """Purge the binary logs before a file."""
         raise NotImplementedError
 
     def get_storage_components(self) -> list[StorageComponent]:
@@ -270,6 +302,7 @@ class Database(ABC):
             return None
 
     def get_scalar(self, query: str):
+        """The first value of the first row; raise when there are no rows."""
         result = self.execute(query)
         if not result.rows:
             raise DatabaseError(f"Query returned no rows: {query}")

@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
-from pilot.utils import iter_sibling_benches
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -30,6 +30,7 @@ class CentralSetup:
         self.rebootstrap = rebootstrap
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Enable Central management and set up the site and Admin aliases."""
         site = self.check()
         on_progress("Enabling Central management")
         self.enable()
@@ -51,7 +52,9 @@ class CentralSetup:
         not provision would take over a live vhost."""
         from pilot.internal.validators import validate_hostname_pattern
 
-        if others := sorted(config.name for _, config in iter_sibling_benches(self.bench.path)):
+        if others := sorted(
+            config.name for _, config in BenchDirectory.siblings_of(self.bench.path).iter_configs()
+        ):
             raise BenchError(
                 f"Central manages a host with one bench, but this one also has: {', '.join(others)}. "
                 f"Write the [central] settings in common_config.toml by hand instead."
@@ -66,6 +69,7 @@ class CentralSetup:
         return self._alias_site()
 
     def enable(self) -> None:
+        """Turn Central management on for every bench on the host."""
         from pilot.config.common import CommonConfig
 
         central = self.bench.config.central
@@ -76,6 +80,7 @@ class CentralSetup:
             central.enabled, central.bootstrapped = common.central.enabled, common.central.bootstrapped
 
     def _alias_site(self) -> "Site | None":
+        """The site that the site alias pattern points at, if any."""
         if not self.site_pattern:
             return None
         sites = self.bench.sites()

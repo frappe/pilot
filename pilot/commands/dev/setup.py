@@ -25,6 +25,7 @@ class DevSetupCommand(Command):
     ] = None
 
     def run(self) -> None:
+        """Create the workspace bench and site."""
         from pilot.core.workspace import Workspace
 
         Workspace.current().setup(self.database, self.frappe_branch, on_progress=self.report)

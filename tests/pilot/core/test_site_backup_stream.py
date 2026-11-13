@@ -8,7 +8,7 @@ import pytest
 
 from pilot.config import SiteConfig
 from pilot.core.site import Site
-from pilot.core.site.backup_stream import IncompleteBackupError, SiteBackupStream
+from pilot.core.site.backups.stream import IncompleteBackupError, SiteBackupStream
 from pilot.exceptions import CommandError
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3, S3IntegrationError
@@ -65,7 +65,7 @@ def site(tmp_path) -> Site:
 
 
 def test_stream_uploads_every_file_whole_and_leaves_nothing_on_disk(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("pilot.utils.run_command", fake_frappe_backup())
+    monkeypatch.setattr("pilot.internal.command.run_command", fake_frappe_backup())
     offsite = FakeOffsite()
 
     timestamp, sizes = SiteBackupStream(site(tmp_path), offsite).run(with_files=True)
@@ -89,14 +89,14 @@ def fail_second_holder(monkeypatch) -> None:
                 raise OSError(errno.EMFILE, "Too many open files")
         return real_open(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr("pilot.core.site.backup_stream.os.open", open_fifo)
+    monkeypatch.setattr("pilot.core.site.backups.stream.os.open", open_fifo)
 
 
 @pytest.mark.parametrize("failure", ["backup", "upload", "holder"])
 def test_a_failed_run_fails_loudly_and_leaves_nothing_offsite(tmp_path, monkeypatch, failure) -> None:
     """A backup that fails after writing its database and config completes no upload. A failed upload drains its pipe and
     deletes every file that did upload, even when one of those deletes fails."""
-    monkeypatch.setattr("pilot.utils.run_command", fake_frappe_backup(fail=failure == "backup"))
+    monkeypatch.setattr("pilot.internal.command.run_command", fake_frappe_backup(fail=failure == "backup"))
     if failure == "holder":
         fail_second_holder(monkeypatch)
     offsite = FakeOffsite(

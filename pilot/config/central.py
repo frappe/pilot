@@ -10,6 +10,7 @@ class HostnameAlias:
 
     @classmethod
     def from_dict(cls, data: dict) -> "HostnameAlias":
+        """The hostname alias from its TOML table."""
         return cls(
             type=data.get("type", ""),
             pattern=data.get("pattern", ""),
@@ -33,6 +34,7 @@ class CentralConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "CentralConfig":
+        """The Central config from its TOML table."""
         return cls(
             enabled=bool(data.get("enabled", False)),
             bootstrapped=bool(data.get("bootstrapped", False)),

@@ -1,5 +1,3 @@
-"""Append-only JSONL log sharded by ISO week."""
-
 from __future__ import annotations
 
 import json
@@ -8,7 +6,69 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pilot.utils import open_private
+from pilot.internal.private_files import PrivateFile
+
+
+class JsonLines:
+    """A file with one JSON record per line, read from either end without loading it whole."""
+
+    def __init__(self, path: Path, block_size: int = 65536) -> None:
+        self.path = Path(path)
+        self.block_size = block_size
+
+    @property
+    def first_record(self) -> dict | None:
+        """The oldest record, or None when the file is missing or its first line is not a record."""
+        if not self.path.exists():
+            return None
+        with self.path.open("rb") as handle:
+            return self.parse(handle.readline())
+
+    def read_newest_first(self) -> Iterator[dict]:
+        """Every record, newest first. A line that is not a JSON object is skipped, so a
+        truncated write loses one record, not the whole file."""
+        for line in self.read_lines_newest_first():
+            if (record := self.parse(line)) is not None:
+                yield record
+
+    def read_lines_newest_first(self) -> Iterator[bytes]:
+        """Every non-empty raw line, newest first, read in blocks from the end."""
+        if not self.path.exists():
+            return
+        with self.path.open("rb") as handle:
+            position = handle.seek(0, 2)
+            remainder = b""
+            while position > 0:
+                size = min(self.block_size, position)
+                position -= size
+                handle.seek(position)
+                lines = (handle.read(size) + remainder).split(b"\n")
+                # The first piece may be a partial line that the next, earlier block completes.
+                remainder = lines.pop(0)
+                yield from (line for line in reversed(lines) if line.strip())
+            if remainder.strip():
+                yield remainder
+
+    def read_tail_text(self, min_lines: int) -> str:
+        """The end of the file as text, at least min_lines lines long when the file has them."""
+        size = self.path.stat().st_size
+        read_size = min(self.block_size, size)
+        with self.path.open("rb") as handle:
+            while True:
+                handle.seek(size - read_size)
+                chunk = handle.read(read_size)
+                if read_size >= size or chunk.count(b"\n") >= min_lines:
+                    return chunk.decode(errors="replace")
+                read_size = min(read_size * 2, size)
+
+    @staticmethod
+    def parse(line: bytes | str) -> dict | None:
+        """The line as a JSON object, or None when it is blank, invalid or not an object."""
+        try:
+            record = json.loads(line)
+        except ValueError:
+            return None
+        return record if isinstance(record, dict) else None
 
 
 class JsonlLog:
@@ -21,22 +81,19 @@ class JsonlLog:
         self._file_pattern = re.compile(rf"^{re.escape(prefix)}_\d{{4}}_\d{{2}}\.jsonl$")
 
     def append(self, record: dict) -> None:
+        """Add one record to the current week's file."""
         self.directory.mkdir(parents=True, exist_ok=True)
-        with open_private(self.current_file, "a") as handle:
+        with PrivateFile(self.current_file).open("a") as handle:
             handle.write(json.dumps(record) + "\n")
 
     def read_newest_first(self) -> Iterator[dict]:
-        """Skips lines that are not valid JSON - a truncated write loses one record,
-        not the whole feed."""
+        """Every record across the weekly files, newest first."""
         for path in self.shards:
-            for line in self._reversed_lines(path):
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+            yield from JsonLines(path).read_newest_first()
 
     @property
     def current_file(self) -> Path:
+        """The file for the current ISO week."""
         year, week, _ = datetime.now(UTC).isocalendar()
         return self.directory / f"{self.prefix}_{year}_{week:02d}.jsonl"
 
@@ -48,25 +105,7 @@ class JsonlLog:
         files = [path for path in self.directory.iterdir() if self._file_pattern.match(path.name)]
         return sorted(files, key=lambda path: path.name, reverse=True)
 
-    @staticmethod
-    def _reversed_lines(path: Path, chunk_size: int = 65536) -> Iterator[str]:
-        """Yield non-empty lines newest first without loading the whole file."""
-        with path.open("rb") as handle:
-            handle.seek(0, 2)
-            pointer = handle.tell()
-            tail = b""
-            while pointer > 0:
-                step = min(chunk_size, pointer)
-                pointer -= step
-                handle.seek(pointer)
-                lines = (handle.read(step) + tail).split(b"\n")
-                tail = lines.pop(0)  # may be a partial line completed by the next (earlier) chunk
-                for line in reversed(lines):
-                    if line:
-                        yield line.decode()
-            if tail:
-                yield tail.decode()
-
 
 def utc_now() -> str:
+    """The current time as an ISO 8601 string in UTC."""
     return datetime.now(UTC).isoformat()

@@ -16,7 +16,7 @@ const validate = (name: string) => {
 }
 
 export const useNewSite = () => {
-  const { registry, load: loadRegistry } = useAppRegistry()
+  const { registry, error: registryError, load: loadRegistry } = useAppRegistry()
   const benchApps = ref<AppInfo[]>([])
 
   const name = ref('')
@@ -80,6 +80,8 @@ export const useNewSite = () => {
     loading.value = false
   }
 
+  const reloadApps = () => Promise.all([loadRegistry(), loadBenchApps()])
+
   const toggleApp = (app: string) => {
     const index = selectedApps.value.indexOf(app)
 
@@ -116,6 +118,8 @@ export const useNewSite = () => {
   }
 
   return {
+    registryError,
+    reloadApps,
     name,
     prefix,
     wildcardDomains,

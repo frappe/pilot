@@ -15,6 +15,7 @@ class RemoveLogsCommand(Command):
     group: ClassVar[str] = "remove"
 
     def run(self) -> None:
+        """Stop shipping logs."""
         from pilot.config import BenchConfig
         from pilot.managers.fluentbit import LogsConfigurator
         from pilot.managers.systemd_user import user_service_installed

@@ -5,10 +5,10 @@ import time
 from pathlib import Path
 
 from pilot.exceptions import DatabaseError
+from pilot.internal.command import run_command
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_macos
+from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import SystemdUserMixin
-from pilot.utils import run_command
 
 
 class UserOwnedDBManager(SystemdUserMixin):
@@ -22,12 +22,15 @@ class UserOwnedDBManager(SystemdUserMixin):
     _START_TIMEOUT: str = ""
 
     def is_installed(self) -> bool:
+        """Whether the database server is installed."""
         raise NotImplementedError
 
     def is_reachable(self) -> bool:
+        """Whether the server accepts connections."""
         raise NotImplementedError
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:
+        """Wait until the server accepts connections; raise on timeout."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self.is_reachable():
@@ -36,9 +39,10 @@ class UserOwnedDBManager(SystemdUserMixin):
         raise DatabaseError(f"{self._DISPLAY_NAME} did not become reachable within {timeout:.0f}s.")
 
     def install(self) -> None:
+        """Install the database server if it is missing."""
         if self.is_installed():
             return
-        if is_macos():
+        if HostPlatform().is_macos:
             get_package_manager().install(self._brew_package())
             return
         raise DatabaseError(
@@ -49,6 +53,7 @@ class UserOwnedDBManager(SystemdUserMixin):
 
     @property
     def unit_path(self) -> Path:
+        """The user systemd unit file."""
         return self.user_unit_dir / self._UNIT_NAME
 
     @property
@@ -61,7 +66,8 @@ class UserOwnedDBManager(SystemdUserMixin):
         return self.unit_path.exists()
 
     def is_running(self) -> bool:
-        if is_macos():
+        """Whether the server runs."""
+        if HostPlatform().is_macos:
             return self._is_brew_service_running()
         result = subprocess.run(
             self._systemctl("is-active", self._UNIT_NAME),
@@ -72,17 +78,20 @@ class UserOwnedDBManager(SystemdUserMixin):
         return result.returncode == 0
 
     def start(self) -> None:
+        """Start the server."""
         self._control("start")
 
     def restart(self) -> None:
+        """Restart the server."""
         self._control("restart")
 
     def stop(self) -> None:
+        """Stop the server."""
         self._control("stop")
 
     def use_notify_type(self) -> None:
         """Make an existing unit report ready. Only the file changes: the running server is not restarted."""
-        if is_macos() or self.config.existing or not self.unit_path.exists():
+        if HostPlatform().is_macos or self.config.existing or not self.unit_path.exists():
             return
         current = self.unit_path.read_text()
         unit = current.replace("Type=simple\n", self.notify_service_lines)
@@ -97,7 +106,8 @@ class UserOwnedDBManager(SystemdUserMixin):
         run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
 
     def _control(self, action: str) -> None:
-        if is_macos():
+        """Run a service action with brew or systemctl."""
+        if HostPlatform().is_macos:
             run_command(["brew", "services", action, self._brew_package()])
         else:
             run_command(self._systemctl(action, self._UNIT_NAME), env=self._systemctl_env())
@@ -116,6 +126,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         )
 
     def _brew_package(self) -> str:
+        """The Homebrew formula to use."""
         return self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
 
     def _installed_brew_formula(self) -> str | None:
@@ -129,6 +140,7 @@ class UserOwnedDBManager(SystemdUserMixin):
         return next((f for f in formulae if f.startswith(f"{self._BREW_FORMULA_BASE}@")), None)
 
     def _is_brew_service_running(self) -> bool:
+        """Whether the Homebrew service runs."""
         result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True, timeout=10)
         for line in result.stdout.splitlines():
             parts = line.split()

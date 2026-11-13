@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from flask import current_app
-
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.providers.bench import BenchProvider
 from pilot.config import BenchConfig
@@ -18,7 +17,7 @@ ADMIN_DOMAIN_RE = re.compile(
 
 def guard_bench_management():
     """Gate bench-management routes behind admin.allow_bench_management."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read_raw(bench_root)
     except Exception:
@@ -38,6 +37,7 @@ def guard_bench_management():
 
 
 def bench_resource(bench_dir: Path) -> dict:
+    """The bench as an API resource."""
     toml_path = bench_dir / "bench.toml"
     config = BenchConfig.read_raw(toml_path)
     admin_config = config.get("admin", {})
@@ -71,6 +71,7 @@ def bench_resource(bench_dir: Path) -> dict:
 
 
 def _process_manager_name(value) -> str:
+    """The process manager name for the API."""
     if not isinstance(value, str):
         return ""
     process_manager = value.lower()
@@ -82,6 +83,7 @@ def _process_manager_name(value) -> str:
 
 
 def target_bench_dir(bench_root: Path, name: str) -> Path:
+    """The bench directory; raise when it leaves the benches directory."""
     target = bench_root.parent / name
     if target.is_symlink() or target.resolve(strict=False).parent != bench_root.parent.resolve():
         raise ValueError("Invalid bench path")
@@ -89,14 +91,17 @@ def target_bench_dir(bench_root: Path, name: str) -> Path:
 
 
 def bench_lock_target(bench_root: Path, name: str) -> Path:
+    """The lock target of a bench lifecycle action."""
     return bench_root.parent / f"{name}.lifecycle"
 
 
 def bench_management_lock_target(bench_root: Path) -> Path:
+    """The lock target of bench management."""
     return bench_root.parent / "bench-management.lock-target"
 
 
 def bench_busy_response(name: str):
+    """A 409 response for a busy bench."""
     return error_response(
         "bench_busy",
         f"Bench '{name}' is busy with another operation.",

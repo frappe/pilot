@@ -6,11 +6,11 @@ import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from pilot.core.site.restore import BackupRun, BackupStream, SiteRestore, backup_part
+from pilot.core.site.backups.restore import BackupRun, BackupStream, SiteRestore, backup_part
 from pilot.exceptions import BenchError
 
 
@@ -138,11 +138,11 @@ def test_a_restored_database_brings_its_apps_and_only_the_encryption_key_of_the_
     database = tmp_path / "20261004_010000-source-database.sql.gz"
     database.write_bytes(b"")
 
-    with patch("pilot.core.site.config.query_installed_apps_via_db", return_value=["frappe", "payments"]):
-        SiteRestore(site).restore(BackupRun.from_paths([database, config]), ["database"], lambda message: None)
+    site.database_state.installed_apps = ["frappe", "payments"]
+    SiteRestore(site).restore(BackupRun.from_paths([database, config]), ["database"], lambda message: None)
 
     site.restore.assert_called_once_with(str(database))
-    site.set_config_values.assert_called_once_with(
+    site.config_file.set_values.assert_called_once_with(
         {"encryption_key": "source-key", "installed_apps": ["frappe", "payments"]}
     )
 
@@ -153,10 +153,10 @@ def test_a_restored_site_config_keeps_the_keys_that_belong_to_this_site(tmp_path
     database.write_bytes(b"")
     run = BackupRun.from_paths([database, _source_config(tmp_path)])
 
-    with patch("pilot.core.site.config.query_installed_apps_via_db", return_value=None):
-        SiteRestore(site).restore(run, ["database", "config"], lambda message: None)
+    site.database_state.installed_apps = None
+    SiteRestore(site).restore(run, ["database", "config"], lambda message: None)
 
-    assert site.set_config_values.call_args_list[-1].args == ({"encryption_key": "source-key", "max_file_size": 50},)
+    assert site.config_file.set_values.call_args_list[-1].args == ({"encryption_key": "source-key", "max_file_size": 50},)
 
 
 def test_skipping_failing_patches_reaches_the_migration(tmp_path: Path) -> None:
@@ -223,4 +223,4 @@ def test_a_config_restored_without_its_database_keeps_this_sites_encryption_key(
 
     SiteRestore(site).restore(BackupRun.from_paths([_source_config(tmp_path)]), ["config"], lambda message: None)
 
-    site.set_config_values.assert_called_once_with({"max_file_size": 50})
+    site.config_file.set_values.assert_called_once_with({"max_file_size": 50})

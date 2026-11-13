@@ -22,6 +22,7 @@ class SetInnoDBBufferPoolSizeTask(Task):
         lambda self: f"Setting InnoDB Buffer Pool size to {self.size_mb} MB",
     )
     def run(self) -> None:
+        """Set the InnoDB buffer pool size."""
         if type(self.size_mb) is not int:
             raise DatabaseError("InnoDB Buffer Pool size must be a whole number.")
         DatabaseQuickActions(self.bench.config).set_innodb_buffer_pool_size(self.size_mb)

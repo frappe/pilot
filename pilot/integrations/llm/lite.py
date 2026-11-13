@@ -28,10 +28,12 @@ class LiteLLMIntegration(LLMIntegration):
 
     @classmethod
     def providers(cls) -> dict[str, str]:
+        """The providers this integration serves."""
         return dict(cls._SUPPORTED_LITELLM_PROVIDERS)
 
     @classmethod
     def get_models(cls, provider: str, api_key: str = "", api_base: str = "") -> list[str]:
+        """The models LiteLLM knows for the provider."""
         import litellm
 
         return sorted(litellm.models_by_provider.get(provider, set()))

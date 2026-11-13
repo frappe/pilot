@@ -23,9 +23,11 @@ class BackupSiteTask(Task):
 
     @cached_property
     def site_record(self) -> Site:
+        """The site."""
         return self.bench.site(self.site)
 
     def run(self) -> None:
+        """Back up the site, unless a scheduled backup is not due."""
         if self.automatic:
             options = self.site_record.backups.get_scheduled_backup(datetime.now(UTC))
             if options is None:
@@ -35,6 +37,7 @@ class BackupSiteTask(Task):
 
     @step("backup", lambda self: f"Backup site {self.site}")
     def backup(self) -> None:
+        """Take, upload and prune a backup, and record it."""
         try:
             timestamp, files, offsite = self.take()
         except (BenchError, OSError) as error:
@@ -56,6 +59,7 @@ class BackupSiteTask(Task):
         return timestamp, files, self.upload(timestamp, backup_files)
 
     def notify_if_failing(self) -> None:
+        """Send an alert when backups keep failing."""
         from pilot.core.notification.events import backups_failing
         from pilot.core.site.backups import MAX_DAILY_FAILURES
 
@@ -64,12 +68,14 @@ class BackupSiteTask(Task):
             backups_failing(self.bench, self.site, failures)
 
     def upload(self, timestamp: str, backup_files: list[Path]) -> bool:
+        """Upload the backup when S3 is configured; return whether it was uploaded."""
         if not self.bench.config.s3.is_configured:
             return False
         return self.upload_to_s3(timestamp, backup_files)
 
     @step("backup_upload", "Uploading backup to S3")
     def upload_to_s3(self, timestamp: str, backup_files: list[Path]) -> bool:
+        """Upload the backup to S3; return whether that worked."""
         try:
             offsite_backup = OffsiteBackup.from_config(self.bench.config.s3, self.bench_root)
             for backup_file in backup_files:
@@ -89,6 +95,7 @@ class BackupSiteTask(Task):
             return []
 
     def record(self, status: str, timestamp: str, files: dict, offsite: bool, pruned: list[str]) -> None:
+        """Record the backup in the audit log."""
         self.bench.audit_action(
             "backup",
             {

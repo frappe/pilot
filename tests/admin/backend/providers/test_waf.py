@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from admin.backend.providers.waf import WafProvider
+from admin.backend.providers.server.waf import WafProvider
 
 
 def _entry(ip: str, code: int, rules: list[tuple[str, str]], when: datetime) -> dict:

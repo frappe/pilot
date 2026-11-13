@@ -12,7 +12,19 @@ from pilot.exceptions import AppValidationError, BenchError
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
-_VERSION_AST_SCRIPT = """
+
+
+class FrappeCompatibilityCheck:
+    """Check the bench actually satisfies the app versions an app declares.
+
+    DependencyDeclarationsCheck only validates the shape of
+    `[tool.bench.frappe-dependencies]`. This compares it to what is installed,
+    which is what catches a new revision that needs a newer frappe than the
+    bench runs. An app that declares nothing is left alone, so an app older
+    than the rule still updates.
+    """
+
+    version_ast_script = """
 import ast, json, sys
 
 req = json.load(sys.stdin)
@@ -38,18 +50,8 @@ for node in tree.body:
 print(json.dumps({"version": version}))
 """
 
-
-class FrappeCompatibilityCheck:
-    """Check the bench actually satisfies the app versions an app declares.
-
-    DependencyDeclarationsCheck only validates the shape of
-    `[tool.bench.frappe-dependencies]`. This compares it to what is installed,
-    which is what catches a new revision that needs a newer frappe than the
-    bench runs. An app that declares nothing is left alone, so an app older
-    than the rule still updates.
-    """
-
     def run(self, app: "App") -> None:
+        """Raise when the app does not support the bench's Frappe version."""
         declared = (read_pyproject(app) or {}).get("tool", {}).get("bench", {}).get("frappe-dependencies", {})
         if not isinstance(declared, dict):
             return  # DependencyDeclarationsCheck reports a malformed table on install
@@ -102,7 +104,7 @@ class FrappeCompatibilityCheck:
             return None
 
         bench_python = get_bench_python(app)
-        data = run_in_bench(bench_python, _VERSION_AST_SCRIPT, {"path": str(init_file)})
+        data = run_in_bench(bench_python, FrappeCompatibilityCheck.version_ast_script, {"path": str(init_file)})
         if "syntax_error" in data:
             raise AppValidationError(
                 f"'{name}' has syntax errors in __init__.py: {data['syntax_error']}"

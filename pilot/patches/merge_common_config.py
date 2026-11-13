@@ -49,12 +49,14 @@ def _validate_consistent_shared_config(bench_dirs: list[Path]) -> None:
 
 
 def _check_agreement(raw_by_bench: dict[str, dict], key: str, build) -> None:
+    """Raise when benches disagree on a shared key."""
     values = {name: build(raw[key]) for name, raw in raw_by_bench.items() if key in raw}
     if _disagrees(values):
         _raise_divergence(key, values)
 
 
 def _check_jwks_agreement(raw_by_bench: dict[str, dict]) -> None:
+    """Raise when benches disagree on the JWKS settings."""
     values = {
         name: (raw["admin"]["jwks_url"], raw["admin"].get("jwks_audience", ""))
         for name, raw in raw_by_bench.items()
@@ -65,11 +67,13 @@ def _check_jwks_agreement(raw_by_bench: dict[str, dict]) -> None:
 
 
 def _disagrees(values: dict) -> bool:
+    """Whether the values differ."""
     first = next(iter(values.values()), None)
     return any(value != first for value in values.values())
 
 
 def _raise_divergence(key: str, values: dict) -> None:
+    """Raise a config error that lists the benches that disagree."""
     from pilot.exceptions import ConfigError
 
     benches = ", ".join(values)
@@ -82,6 +86,7 @@ def _raise_divergence(key: str, values: dict) -> None:
 
 
 def _seed_common_config(benches_root: Path, bench_dirs: list[Path]) -> None:
+    """Write the common config from the benches' shared keys."""
     from pilot.config import BenchConfig
     from pilot.config.common import CommonConfig
 
@@ -99,6 +104,7 @@ def _seed_common_config(benches_root: Path, bench_dirs: list[Path]) -> None:
 
 
 def _trim_bench_toml(bench_dir: Path) -> None:
+    """Remove the shared keys from bench.toml."""
     from pilot.config import BenchConfig
 
     raw = BenchConfig.read_raw(bench_dir)
@@ -118,6 +124,7 @@ def _trim_bench_toml(bench_dir: Path) -> None:
 
 
 def _backup_bench_toml(bench_dir: Path) -> None:
+    """Copy bench.toml to a free backup name."""
     source = bench_dir / "bench.toml"
     backup = bench_dir / "bench.toml.bak"
     counter = 1
@@ -131,6 +138,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

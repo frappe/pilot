@@ -19,6 +19,7 @@ class RenameSiteCommand(Command):
     ] = False
 
     def run(self) -> None:
+        """Rename the site."""
         self.bench.site(self.old_name).rename_to(
             self.new_name,
             on_progress=self.report,

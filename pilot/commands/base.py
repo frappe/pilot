@@ -45,9 +45,11 @@ class Command:
     bench: Bench | None = None
 
     def run(self) -> None:
+        """Run the command."""
         raise NotImplementedError
 
     def report(self, message: str) -> None:
+        """Print a progress message."""
         print(message)
         sys.stdout.flush()
 
@@ -86,6 +88,7 @@ class Command:
         return password
 
     def confirm(self, prompt: str, *, skip: bool = False, error: type[Exception] = BenchError) -> None:
+        """Ask the user to confirm; raise when they do not."""
         if skip:
             return
         try:

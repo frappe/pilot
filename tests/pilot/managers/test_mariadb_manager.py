@@ -14,6 +14,7 @@ from pilot.core.mariadb_memory import (
 )
 from pilot.exceptions import CommandError, DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
+from pilot.managers.platform import HostPlatform
 
 MODULE = "pilot.managers.database.mariadb"
 BASE_MODULE = "pilot.managers.database.base"
@@ -38,7 +39,7 @@ def test_external_server_does_not_infer_pilot_managed_socket(tmp_path) -> None:
     socket.touch()
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
     ):
         assert manager._detect_socket() == ""
 
@@ -160,7 +161,7 @@ def test_install_raises_when_missing_on_linux() -> None:
     m = _manager()
     with (
         patch.object(m, "is_installed", return_value=False),
-        patch(f"{BASE_MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         pytest.raises(DatabaseError, match=r"install\.sh"),
     ):
         m.install()
@@ -169,7 +170,7 @@ def test_install_raises_when_missing_on_linux() -> None:
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _manager()
     with (
-        patch(f"{BASE_MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch(f"{BASE_MODULE}.run_command") as rc,
     ):
         m.start()
@@ -179,7 +180,7 @@ def test_start_targets_systemctl_user_on_linux() -> None:
 def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(m, "install"),
         patch.object(type(m), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(m, "is_provisioned", return_value=False),
@@ -209,7 +210,7 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
 def test_macos_provision_does_not_write_linux_configuration() -> None:
     manager = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(manager, "install"),
         patch.object(manager, "_provision_macos") as provision_macos,
         patch.object(manager, "_write_config") as write_config,
@@ -252,6 +253,11 @@ def test_write_config_contains_all_server_settings(tmp_path) -> None:
     assert f"innodb-log-file-size = {sizing.innodb_log_file_mb}M" in content
     assert f"key-buffer-size = {sizing.key_buffer_mb}M" in content
     assert f"max-connections = {sizing.max_connections}" in content
+    assert f"log-error = {manager.error_log_path}" in content
+    assert "slow-query-log = ON" in content
+    assert f"slow-query-log-file = {manager.slow_log_path}" in content
+    assert "long-query-time = 1" in content
+    assert "log-output = FILE" in content
 
     for unsupported_or_unmanaged_option in (
         "innodb-file-format",
@@ -260,7 +266,6 @@ def test_write_config_contains_all_server_settings(tmp_path) -> None:
         "innodb-large-prefix",
         "log-bin",
         "query-cache",
-        "slow-query-log",
     ):
         assert unsupported_or_unmanaged_option not in content
 
@@ -307,7 +312,7 @@ def test_performance_schema_change_preserves_other_managed_options(tmp_path) -> 
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -333,7 +338,7 @@ def test_performance_schema_noop_does_not_restart_or_write(tmp_path) -> None:
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -355,7 +360,7 @@ def test_performance_schema_uses_task_restart_executor(tmp_path) -> None:
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -380,7 +385,7 @@ def test_failed_performance_schema_change_restores_exact_previous_config(tmp_pat
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -403,7 +408,7 @@ def test_performance_schema_reports_when_automatic_rollback_also_fails(tmp_path)
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -448,7 +453,7 @@ def test_innodb_buffer_pool_change_applies_live_and_persists_limits(tmp_path) ->
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -485,7 +490,7 @@ def test_innodb_buffer_pool_increase_restarts_when_live_ceiling_is_too_low(tmp_p
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -517,7 +522,7 @@ def test_max_connections_change_applies_live_and_preserves_other_options(tmp_pat
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -544,7 +549,7 @@ def test_failed_dynamic_variable_change_restores_exact_config_and_runtime(tmp_pa
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -639,7 +644,7 @@ def test_safe_configuration_change_applies_live_and_persists(tmp_path) -> None:
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -671,7 +676,7 @@ def test_safe_boolean_configuration_is_written_as_on_or_off(tmp_path) -> None:
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -698,7 +703,7 @@ def test_failed_catalog_change_restores_exact_config_and_runtime(tmp_path) -> No
 
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
         patch.object(manager, "is_healthy", return_value=True),
@@ -799,7 +804,7 @@ def test_linux_unit_starts_with_option_file_and_memory_limits(tmp_path) -> None:
     with (
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(type(manager), "user_unit_dir", new_callable=PropertyMock, return_value=unit_dir),
-        patch(f"{MODULE}.which", return_value="/usr/sbin/mariadbd"),
+        patch("pilot.managers.platform.HostPlatform.get_executable_path", return_value="/usr/sbin/mariadbd"),
         patch(f"{MODULE}.run_command"),
     ):
         manager._install_unit(sizing)
@@ -816,7 +821,7 @@ def test_linux_unit_starts_with_option_file_and_memory_limits(tmp_path) -> None:
 def _tune(manager, tmp_path, current_max_mb):
     order = Mock()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
@@ -939,7 +944,7 @@ def test_runtime_memory_limits_wait_for_the_next_start_when_memory_is_unknown() 
 def test_tune_to_host_keeps_manual_options(tmp_path) -> None:
     manager = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
@@ -962,7 +967,7 @@ def test_tune_to_host_keeps_manual_options(tmp_path) -> None:
 def test_tune_to_host_refuses_external_server_before_writing(tmp_path) -> None:
     manager = MariaDBManager(MariaDBConfig(existing=True))
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(manager, "_restart_and_wait_healthy") as restart,
         pytest.raises(DatabaseError, match="external MariaDB"),
@@ -977,18 +982,18 @@ def test_is_provisioned_on_macos_checks_live_server_not_a_marker_file() -> None:
     """macOS provisioning state comes from the live secured server."""
     m = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "is_running", return_value=False),
     ):
         assert m.is_provisioned() is False  # not running yet
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "is_running", return_value=True),
         patch.object(m, "is_unsecured", return_value=True),
     ):
         assert m.is_provisioned() is False  # up but still passwordless
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch.object(m, "is_running", return_value=True),
         patch.object(m, "is_unsecured", return_value=False),
     ):
@@ -999,7 +1004,7 @@ def test_is_provisioned_false_when_data_dir_wiped_but_unit_still_exists(tmp_path
     """A stale systemd unit outliving a deleted state dir must not look provisioned."""
     m = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(m), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch(f"{BASE_MODULE}.UserOwnedDBManager.is_provisioned", return_value=True),
     ):
@@ -1019,7 +1024,7 @@ def test_wait_until_reachable_raises_after_timeout() -> None:
 def test_provision_resets_failed_state_before_restarting_stopped_unit() -> None:
     m = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(m, "install"),
         patch.object(m, "is_provisioned", return_value=True),
         patch.object(m, "is_running", return_value=False),
@@ -1039,7 +1044,7 @@ def test_provision_reuses_and_enables_already_provisioned_server() -> None:
     """A retry after a pass that stopped once the unit was written still enables it at boot."""
     m = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(m, "install"),
         patch.object(m, "is_provisioned", return_value=True),
         patch.object(m, "is_running", return_value=True),
@@ -1114,7 +1119,10 @@ def test_secure_installation_escapes_malicious_admin_user() -> None:
 
 def test_run_sql_as_superuser_no_sudo() -> None:
     m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.subprocess.run") as run:
+    with (
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
+        patch(f"{MODULE}.subprocess.run") as run,
+    ):
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
     assert "sudo" not in cmd
@@ -1127,7 +1135,7 @@ def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
     m = _manager()
     with (
         patch.object(m, "is_running", return_value=True),
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
     ):
         assert m.is_reachable() is True
 
@@ -1136,7 +1144,10 @@ def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:
     """Homebrew's mariadb client owns socket resolution on macOS -
     socket_path() (our own _STATE_DIR) is never created there."""
     m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=True), patch(f"{MODULE}.subprocess.run") as run:
+    with (
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
+        patch(f"{MODULE}.subprocess.run") as run,
+    ):
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
     assert cmd == ["mariadb"]
@@ -1229,7 +1240,7 @@ def test_validate_endpoint_invalid(tmp_path) -> None:
 def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(tmp_path) -> None:
     """macOS validation checks credentials on an already-secured server."""
     with (
-        patch(f"{MODULE}.is_macos", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_running", return_value=True),
         patch(f"{MODULE}.MariaDBManager.is_unsecured", return_value=False),
@@ -1246,7 +1257,7 @@ def test_an_existing_unit_stops_mariadb_swapping_live(tmp_path: Path, monkeypatc
     unit = tmp_path / "pilot-mariadb.service"
     unit.write_text("[Service]\nMemoryHigh=384M\nMemoryMax=512M\nMemorySwapMax=100M\n")
     commands: list[list[str]] = []
-    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
     monkeypatch.setattr(type(manager), "unit_path", property(lambda self: unit))
     monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: commands.append(argv))
 
@@ -1265,7 +1276,7 @@ def test_a_failed_live_swap_limit_leaves_the_unit_for_the_retry(tmp_path: Path, 
     unit = tmp_path / "pilot-mariadb.service"
     unit.write_text("[Service]\nMemorySwapMax=100M\n")
     commands: list[list[str]] = []
-    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
     monkeypatch.setattr(type(manager), "unit_path", property(lambda self: unit))
 
     def failing_run(argv, **kwargs):
@@ -1291,7 +1302,7 @@ def test_keep_out_of_swap_applies_the_live_limit_when_the_unit_is_already_zero(
     unit = tmp_path / "pilot-mariadb.service"
     unit.write_text("[Service]\nMemorySwapMax=0\n")
     commands: list[list[str]] = []
-    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
     monkeypatch.setattr(type(manager), "unit_path", property(lambda self: unit))
     monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: commands.append(argv))
 
@@ -1309,7 +1320,7 @@ def test_an_existing_unit_gets_its_memory_high_raised_live(tmp_path: Path, monke
     unit.write_text("[Service]\nMemoryHigh=1929M\nMemoryMax=2953M\nMemorySwapMax=100M\n")
     limits = {"MemoryHigh": 1929, "MemoryMax": 2953}
     commands: list[list[str]] = []
-    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
     monkeypatch.setattr(type(manager), "unit_path", property(lambda self: unit))
     monkeypatch.setattr(manager, "_unit_memory_mb", lambda name: limits[name])
     monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: commands.append(argv))
@@ -1333,7 +1344,7 @@ def test_size_for_host_sizes_again_when_the_memory_moved_by_100_mb(
     manager = _manager()
     unit_path = tmp_path / "pilot-mariadb.service"
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(type(manager), "unit_path", new_callable=PropertyMock, return_value=unit_path),
         patch.object(manager, "_total_memory_mb", return_value=host_memory_mb),
@@ -1362,7 +1373,7 @@ def test_size_for_host_applies_unit_limits_that_a_deferred_shrink_left(tmp_path)
     manager = _manager()
     unit_path = tmp_path / "pilot-mariadb.service"
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(type(manager), "unit_path", new_callable=PropertyMock, return_value=unit_path),
         patch.object(manager, "_total_memory_mb", return_value=4096),
@@ -1391,7 +1402,7 @@ def test_a_larger_memory_share_gives_mariadb_more_of_the_host(tmp_path) -> None:
 def test_tune_to_host_drops_a_buffer_pool_size_saved_on_a_larger_host(tmp_path) -> None:
     manager = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
@@ -1417,7 +1428,7 @@ def test_tune_to_host_drops_a_buffer_pool_size_saved_on_a_larger_host(tmp_path) 
 def test_tune_to_host_keeps_the_old_unit_while_the_shrink_waits(tmp_path) -> None:
     manager = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(manager, "is_installed", return_value=True),
         patch.object(manager, "is_provisioned", return_value=True),
@@ -1452,7 +1463,7 @@ def test_the_sizing_unit_runs_before_every_mariadb_start(tmp_path) -> None:
 def test_client_command_uses_homebrew_default_socket_on_macos() -> None:
     manager = _manager()
 
-    with patch(f"{MODULE}.is_macos", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True):
         command = manager._client_command()
 
     assert command == ["mariadb", "--connect-timeout=5", "-u", "root", "--batch"]
@@ -1463,7 +1474,7 @@ def test_buffer_pool_limits_respect_effective_memory_max(maximum: int | None) ->
     manager = _manager()
     host_limits = calculate_mariadb_variable_limits(8192)
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(manager, "_total_memory_mb", return_value=8192),
         patch.object(manager, "_unit_memory_mb", return_value=maximum),
     ):
@@ -1480,7 +1491,7 @@ def test_buffer_pool_limits_respect_effective_memory_max(maximum: int | None) ->
 def test_buffer_pool_setter_rechecks_memory_max_before_writing(tmp_path, size_mb: int) -> None:
     manager = _manager()
     with (
-        patch(f"{MODULE}.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch.object(manager, "_require_linux_managed_server"),
         patch.object(manager, "_require_healthy_server"),
@@ -1497,14 +1508,16 @@ def test_buffer_pool_setter_rechecks_memory_max_before_writing(tmp_path, size_mb
 @pytest.mark.parametrize("macos", [True, False])
 def test_external_client_command_keeps_the_selected_host_and_port(macos: bool) -> None:
     manager = MariaDBManager(MariaDBConfig(existing=True, host="db.example.test", port=3307))
-    with patch(f"{MODULE}.is_macos", return_value=macos):
+    with patch(
+        "pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=macos
+    ):
         command = manager._client_command()
     assert command[-4:] == ["-h", "db.example.test", "-P", "3307"]
 
 
 def test_external_client_command_honors_an_explicit_socket_on_macos() -> None:
     manager = MariaDBManager(MariaDBConfig(existing=True, socket_path="/tmp/external-mariadb.sock"))
-    with patch(f"{MODULE}.is_macos", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=True):
         command = manager._client_command()
     assert "--socket=/tmp/external-mariadb.sock" in command
     assert "-h" not in command

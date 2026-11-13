@@ -12,4 +12,5 @@ class AppConfig:
 
     @property
     def is_linked(self) -> bool:
+        """Whether the app is linked from a local path."""
         return bool(self.path)

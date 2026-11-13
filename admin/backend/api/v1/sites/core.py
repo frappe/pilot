@@ -3,8 +3,9 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
-from flask import current_app, g, jsonify, request, url_for
+from flask import g, jsonify, request, url_for
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import (
     accepted_response,
     accepted_task_response,
@@ -29,8 +30,8 @@ from admin.backend.api.v1.sites.shared import (
 from admin.backend.internal.session import Session
 from admin.backend.middleware import rate_limit, require_scope
 from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.site_summaries import SiteSummaryProvider
-from admin.backend.providers.sites import SiteInfo, SiteProvider
+from admin.backend.providers.site.listing import SiteInfo, SiteProvider
+from admin.backend.providers.site.summaries import SiteSummaryProvider
 from pilot.core.bench import Bench
 from pilot.core.site.login import primary_host, site_url
 from pilot.internal.site_paths import site_exists
@@ -45,7 +46,8 @@ from pilot.tasks.rename_site import RenameSiteTask
 
 @sites_bp.get("")
 def list_sites():
-    bench_root = current_app.config["BENCH_ROOT"]
+    """List the sites."""
+    bench_root = ApiRequest.get_bench_root()
     try:
         sites = SiteProvider(bench_root).get_all()
         summaries = SiteSummaryProvider(Path(bench_root)).get_all(site.name for site in sites)
@@ -67,7 +69,8 @@ def list_sites():
 @sites_bp.route("/<name>")
 @require_scope(site_name)
 def detail(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Show one site."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -77,7 +80,7 @@ def detail(name: str):
 
     # Installable = apps that are cloned but not yet installed on this site
     try:
-        all_apps = [a.name for a in AppProvider(bench_root).get_all()]
+        all_apps = AppProvider(bench_root).cloned_app_names
         installable = [a for a in all_apps if a not in site.active_apps]
     except Exception:
         installable = []
@@ -116,7 +119,7 @@ def detail(name: str):
 def wildcard_domains():
     """Wildcard domain suffixes (no leading '*') new site names may be built from."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import wildcard_suffix
+    from pilot.internal.hostnames import wildcard_suffix
 
     try:
         patterns = DomainRouteProvider.wildcard_domains()
@@ -127,7 +130,8 @@ def wildcard_domains():
 
 @sites_bp.post("")
 def create_site():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue a new site."""
+    bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return malformed_body()
@@ -153,7 +157,7 @@ def create_site():
             name=name,
             admin_password=admin_password,
             apps=apps,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=[f"site:{name.lower()}", host_resource_key(name)],
         )
     except Exception as error:
@@ -165,7 +169,8 @@ def create_site():
 @sites_bp.delete("/<name>")
 @require_scope(site_name)
 def drop_site(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue a site drop."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -173,7 +178,7 @@ def drop_site(name: str):
             Bench(bench_root),
             site=name,
             no_backup=request.args.get("no_backup") in ("1", "true"),
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
@@ -184,7 +189,8 @@ def drop_site(name: str):
 @sites_bp.post("/<name>/actions/rename")
 @require_scope(site_name)
 def rename_site(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue a site rename."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     data = request.get_json(silent=True)
@@ -210,7 +216,7 @@ def rename_site(name: str):
             new_name=new_name,
             keep_old_hostname=keep_old_hostname,
             make_primary=make_primary,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             # Hold both hostnames until the old provider route is retained or released.
             resource_key=[
                 f"site:{name.lower()}",
@@ -227,7 +233,8 @@ def rename_site(name: str):
 @sites_bp.post("/<name>/actions/reinstall")
 @require_scope(site_name)
 def reinstall_site(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue a site reinstall."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     data = request.get_json(silent=True)
@@ -243,7 +250,7 @@ def reinstall_site(name: str):
             Bench(bench_root),
             site=name,
             admin_password=admin_password,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
@@ -254,14 +261,15 @@ def reinstall_site(name: str):
 @sites_bp.post("/<name>/actions/clear-cache")
 @require_scope(site_name)
 def clear_cache(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue a site cache clear."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
         task_id = ClearCacheTask.queue(
             Bench(bench_root),
             site=name,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
@@ -272,14 +280,15 @@ def clear_cache(name: str):
 @sites_bp.post("/<name>/actions/build-assets")
 @require_scope(site_name)
 def build_assets(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue a site asset build."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
         task_id = BuildTask.queue(
             Bench(bench_root),
             site=name,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             # The built assets are shared by every site, as an update's are.
             resource_key=[f"site:{name.lower()}", "bench:update"],
         )
@@ -291,7 +300,8 @@ def build_assets(name: str):
 @sites_bp.post("/<name>/actions/migrate")
 @require_scope(site_name)
 def migrate_site(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Start a site migration."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     bench = Bench(bench_root)
@@ -311,7 +321,8 @@ def migrate_site(name: str):
 @require_scope(site_name)
 @rate_limit(10, 60, user_ip=True)
 def create_login_link(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Create a one-time login link."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     user, full_name = Session.get_login_user(g.jwt_claims)
@@ -337,6 +348,7 @@ def create_login_link(name: str):
 
 
 def _site_resource(site: SiteInfo) -> dict:
+    """The site for the API."""
     framework_branch = site.site_config.get("frappe_branch", "")
     return {
         "name": site.name,

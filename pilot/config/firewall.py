@@ -23,6 +23,7 @@ class FirewallConfig:
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "FirewallConfig":
+        """The firewall config from its TOML table."""
         if not data:
             return cls()
         rules = [
@@ -40,6 +41,7 @@ class FirewallConfig:
         )
 
     def validate(self) -> None:
+        """Raise when the firewall config is invalid."""
         if self.default not in ("allow", "deny"):
             raise ConfigError(f"firewall.default '{self.default}' is invalid. Must be 'allow' or 'deny'.")
         for i, rule in enumerate(self.rules):

@@ -16,6 +16,7 @@ class ListProcesses(Command):
     app: Annotated[str, Arg(help="Only this app's declared processes, used by a site or not.")] = ""
 
     def run(self) -> None:
+        """Print the declared processes."""
         rows = self.bench.processes.get_rows(self.app or None)
         if not rows:
             self.report(f"App '{self.app}' declares no processes." if self.app else "No processes.")

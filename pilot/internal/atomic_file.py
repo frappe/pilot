@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
-from pilot.utils import PRIVATE_FILE_MODE, open_private
+from pilot.internal.private_files import PrivateFile
 
 
 def exchange_paths(first: Path, second: Path) -> None:
@@ -34,13 +34,14 @@ def exchange_paths(first: Path, second: Path) -> None:
 
 
 def _lock_path(path: Path) -> Path:
+    """The lock file that guards writes to this path."""
     return path.with_name(f".{path.name}.lock")
 
 
 @contextmanager
 def exclusive_file_lock(path: Path, *, blocking: bool = True) -> Iterator[None]:
     """Hold a process-wide advisory lock associated with ``path``."""
-    with open_private(_lock_path(path), mode="a") as lock_file:
+    with PrivateFile(_lock_path(path)).open(mode="a") as lock_file:
         existing = _existing_file_metadata(path)
         lock_metadata = os.fstat(lock_file.fileno())
         if existing is not None and lock_metadata.st_uid != existing.st_uid:
@@ -74,7 +75,7 @@ def replace_private_text_locked(path: Path, content: str) -> None:
         )
         temporary_path = Path(temporary_name)
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as temporary_file:
-            os.fchmod(temporary_file.fileno(), PRIVATE_FILE_MODE)
+            os.fchmod(temporary_file.fileno(), PrivateFile.mode)
             _preserve_owner(temporary_file.fileno(), existing)
             temporary_file.write(content)
             temporary_file.flush()
@@ -97,9 +98,9 @@ def overwrite_private_text_locked(path: Path, content: str) -> None:
     the new JSON with or without trailing spaces."""
     encoded = content.encode("utf-8")
     flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, PRIVATE_FILE_MODE)
+    descriptor = os.open(path, flags, PrivateFile.mode)
     try:
-        os.fchmod(descriptor, PRIVATE_FILE_MODE)
+        os.fchmod(descriptor, PrivateFile.mode)
         padded = encoded.ljust(os.fstat(descriptor).st_size, b" ")
         written = 0
         while written < len(padded):
@@ -111,6 +112,7 @@ def overwrite_private_text_locked(path: Path, content: str) -> None:
 
 
 def _existing_file_metadata(path: Path) -> os.stat_result | None:
+    """The file's lstat result, or None when missing; raise for a symbolic link."""
     try:
         metadata = path.lstat()
     except FileNotFoundError:
@@ -123,6 +125,7 @@ def _existing_file_metadata(path: Path) -> os.stat_result | None:
 
 
 def _preserve_owner(descriptor: int, existing: os.stat_result | None) -> None:
+    """Give the new file the owner of the file it replaces."""
     if existing is None:
         return
     temporary = os.fstat(descriptor)
@@ -131,6 +134,7 @@ def _preserve_owner(descriptor: int, existing: os.stat_result | None) -> None:
 
 
 def _verify_existing_file(path: Path, expected: os.stat_result | None) -> None:
+    """Raise when the target changed since it was first inspected."""
     current = _existing_file_metadata(path)
     if expected is None and current is None:
         return
@@ -150,6 +154,7 @@ def fsync_directory_files(path: Path) -> None:
 
 
 def _fsync_directory(path: Path) -> None:
+    """Flush a directory entry to disk so a rename survives a crash."""
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     directory_descriptor = os.open(path, directory_flags)
     try:

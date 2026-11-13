@@ -12,16 +12,17 @@ from pathlib import Path
 
 import psutil
 
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.bench.telemetry import DatumCredential
 from pilot.core.notification.events import raise_event, record_alert
+from pilot.core.notification.sustained import SustainedAlerts
+from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import MetricShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
+from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
 from pilot.managers.fluentbit import LogsConfigurator
-from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -30,28 +31,29 @@ if typing.TYPE_CHECKING:
 CPU_SAMPLE_INTERVAL = 1.0
 # Seconds from the end of one tick to the start of the next.
 METRICS_INTERVAL = 10.0
-UPTIME_INTERVAL = 5.0
+UPTIME_INTERVAL = 60.0
+ROLLUP_INTERVAL = 60.0
 
 ALERT_EVENT = "resource_limit_breached"
 
-# Raw MariaDB status counters/gauges + variables logged per cycle; the provider
-# turns consecutive samples into rates.
-_DB_STATUS_KEYS = (
-    "Com_insert",
-    "Com_update",
-    "Com_delete",
-    "Com_select",
-    "Questions",
-    "Innodb_buffer_pool_reads",
-    "Innodb_buffer_pool_read_requests",
-    "Innodb_row_lock_time",
-    "Innodb_row_lock_waits",
-    "Threads_connected",
-)
-_DB_VARIABLE_KEYS = ("innodb_buffer_pool_size", "max_connections")
 
 
 class Monitor:
+    # Raw MariaDB status counters/gauges + variables logged per cycle; the provider
+    # turns consecutive samples into rates.
+    db_status_keys = (
+        "Com_insert",
+        "Com_update",
+        "Com_delete",
+        "Com_select",
+        "Questions",
+        "Innodb_buffer_pool_reads",
+        "Innodb_buffer_pool_read_requests",
+        "Innodb_row_lock_time",
+        "Innodb_row_lock_waits",
+        "Threads_connected",
+    )
+
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._configurator = MonitorConfigurator(bench)
@@ -66,15 +68,18 @@ class Monitor:
         self._io_before: tuple[dict[str, int], dict[str, int]] | None = None
 
     def monitored_targets(self) -> dict[str, int]:
+        """The monitored processes, resolved on first use."""
         if self._targets is None:
             self._targets = ProcessResolver(self.bench).resolve()
         return self._targets
 
     def sample_cpu(self) -> None:
+        """Record the CPU counters before the sample window."""
         pids = [pid for pid in self.monitored_targets().values() if psutil.pid_exists(pid)]
         self._cpu_before = (self._cpu_fields(), {pid: self._proc_cpu_seconds(pid) for pid in pids})
 
     def compute_cpu(self) -> None:
+        """Compute the CPU usage over the sample window."""
         assert self._cpu_before is not None, "sample_cpu() must run before compute_cpu()"
         fields_before, proc_before = self._cpu_before
         fields_after = self._cpu_fields()
@@ -106,9 +111,11 @@ class Monitor:
         }
 
     def sample_io(self) -> None:
+        """Record the network and disk counters before the sample window."""
         self._io_before = (self._net_fields(), self._disk_io_fields())
 
     def compute_io(self) -> None:
+        """Compute the network and disk rates over the sample window."""
         assert self._io_before is not None, "sample_io() must run before compute_io()"
         net_before, disk_before = self._io_before
         net_after, disk_after = self._net_fields(), self._disk_io_fields()
@@ -133,22 +140,27 @@ class Monitor:
 
     @property
     def log_path(self) -> Path:
+        """The bench metrics log."""
         return self._configurator.log_path
 
     @property
     def system_log_path(self) -> Path:
+        """The system metrics log."""
         return self._configurator.system_log_path
 
     @property
     def db_log_path(self) -> Path:
+        """The database metrics log."""
         return self._configurator.db_log_path
 
     @property
     def slow_query_log_path(self) -> Path:
+        """The slow query log."""
         return self._configurator.slow_query_log_path
 
     @property
     def alerts_path(self) -> Path:
+        """The file with the resource alert state."""
         return self.system_log_path.with_suffix(".alerts")
 
     def _alert_payload(self, breached: list[str], system_record: dict) -> dict[str, typing.Any]:
@@ -170,7 +182,7 @@ class Monitor:
             "context": {
                 "bench": self.bench.config.name,
                 "time": system_record["time"],
-                "sustained_seconds": ALERT_SUSTAINED_SECONDS,
+                "sustained_seconds": SustainedAlerts.window_seconds,
                 "breached_limits": crossed,
             },
         }
@@ -192,7 +204,7 @@ class Monitor:
         if not due:
             return
 
-        if notify(self.bench, self._alert_payload(due, system_record)):
+        if self.bench.notifier.send(self._alert_payload(due, system_record)):
             alerts.mark_notified(due)
 
     def announce_recovered(self, names: list[str]) -> None:
@@ -213,6 +225,7 @@ class Monitor:
 
     @staticmethod
     def _readings(system_record: dict) -> dict[str, float]:
+        """The readings to compare with the resource limits."""
         return {
             "cpu_usage_limit": system_record["cpu_percent"],
             "memory_usage_limit": system_record["memory"]["percent"],
@@ -220,6 +233,7 @@ class Monitor:
         }
 
     def _breached_limits(self, system_record: dict) -> list[str]:
+        """The resource limits the readings exceed."""
         limits = self.bench.config.resource_limits
         breached = []
         for name, reading in self._readings(system_record).items():
@@ -229,6 +243,7 @@ class Monitor:
         return breached
 
     def collect_system_metrics(self) -> dict:
+        """The system metrics record."""
         record = {
             "time": datetime.now(UTC).isoformat(),
             "load_avg": self._load_average(),
@@ -259,9 +274,9 @@ class Monitor:
         except Exception:
             return None
         record: dict[str, typing.Any] = {"time": datetime.now(UTC).isoformat()}
-        for key in _DB_STATUS_KEYS:
+        for key in self.db_status_keys:
             record[key] = _to_int(status.get(key))
-        for key in _DB_VARIABLE_KEYS:
+        for key in ("innodb_buffer_pool_size", "max_connections"):
             record[key] = _to_int(variables.get(key))
         record["total_ram_bytes"] = self._memory_usage().get("total_bytes")
         self._append(self.db_log_path, record)
@@ -281,11 +296,12 @@ class Monitor:
             if not isinstance(database, MariaDB) or not database.is_slow_log_enabled():
                 return
             log = SlowQueryLog(self.slow_query_log_path)
-            log.append(database.scan_slow_queries(since=log.watermark()))
+            log.append(database.get_new_slow_queries(since=log.watermark()))
         except Exception:
             return
 
     def collect_application_metrics(self) -> dict:
+        """The process metrics record."""
         processes = []
         for service, pid in self.monitored_targets().items():
             try:
@@ -303,6 +319,7 @@ class Monitor:
         return record
 
     def _proc_usage(self, seconds_before: float, pid: int, delta_total: float) -> float:
+        """The CPU percent a process used in the window."""
         try:
             delta = self._proc_cpu_seconds(pid) - seconds_before
         except psutil.NoSuchProcess:
@@ -310,6 +327,7 @@ class Monitor:
         return round(delta / delta_total * 100, 2) if delta_total > 0 else 0.0
 
     def _process_metrics(self, service: str, pid: int) -> dict:
+        """The metrics of one process."""
         read_bytes, write_bytes = self._io_bytes(pid)
         return {
             "service": service,
@@ -323,51 +341,66 @@ class Monitor:
         }
 
     def _cpu_percent(self, pid: int) -> float:
+        """The computed CPU percent of a process."""
         return self._proc_cpu.get(pid, 0.0)
 
     def _cpu_fields(self) -> dict[str, float]:
+        """The system CPU counters."""
         return self._proc_reader.cpu_fields()
 
     def _proc_cpu_seconds(self, pid: int) -> float:
+        """The CPU seconds a process used."""
         return self._proc_reader.proc_cpu_seconds(pid)
 
     def _net_fields(self) -> dict[str, int]:
+        """The network counters."""
         return self._proc_reader.net_fields()
 
     def _disk_io_fields(self) -> dict[str, int]:
+        """The disk IO counters."""
         return self._proc_reader.disk_io_fields()
 
     def _process_state(self, pid: int) -> str:
+        """The process state."""
         return self._proc_reader.process_state(pid)
 
     def _proc_memory_bytes(self, pid: int) -> int:
+        """The memory a process uses."""
         return self._proc_reader.proc_memory_bytes(pid)
 
     def _io_bytes(self, pid: int) -> tuple[int, int]:
+        """The bytes a process read and wrote."""
         return self._proc_reader.io_bytes(pid)
 
     def _open_fds(self, pid: int) -> int:
+        """The open file count of a process."""
         return self._proc_reader.open_fds(pid)
 
     def _load_average(self) -> tuple[float, float, float]:
+        """The load averages."""
         return self._proc_reader.load_average()
 
     def _memory_usage(self) -> dict:
+        """The memory usage."""
         return self._proc_reader.memory_usage()
 
     def _disk_usage(self, path: Path) -> dict:
+        """The disk usage of a path."""
         return self._proc_reader.disk_usage(path)
 
     def _storage_usage(self) -> dict:
+        """The storage usage."""
         return self._proc_reader.storage_usage()
 
     @staticmethod
     def _append(path: Path, record: dict) -> None:
+        """Append a JSON record to a log."""
         with path.open("a") as log_file:
             log_file.write(json.dumps(record) + "\n")
 
 
 def _to_int(value: object) -> int:
+    """The value as an int, or 0."""
     try:
         return int(value)  # type: ignore[call-overload]
     except (TypeError, ValueError):
@@ -375,12 +408,11 @@ def _to_int(value: object) -> int:
 
 
 def _production_monitors() -> list[Monitor]:
+    """A monitor for each production bench."""
     from pilot.core.bench import Bench
-
-    sentinel = cli_root() / "benches" / ".monitor-placeholder"
     return [
         Monitor(bench=Bench(bench_config, bench_path))
-        for bench_path, bench_config in iter_sibling_benches(sentinel)
+        for bench_path, bench_config in Server().benches.iter_configs()
         if bench_config.production.enabled
     ]
 
@@ -429,10 +461,26 @@ def run_every(interval: float, job: typing.Callable[[], None]) -> None:
         time.sleep(interval)
 
 
+def update_site_rollups() -> None:
+    """Hourly per-site counts, so the Sites list reads a few KB instead of a week of logs."""
+    from pilot.core.bench import Bench
+
+    for bench_path, config in Server().benches.iter_configs():
+        bench = Bench(config, bench_path)
+        for rollup in (UptimeRollup(bench), RequestRollup(bench)):
+            try:
+                rollup.update()
+            except Exception:
+                traceback.print_exc()
+
+
 def main() -> None:
     """Uptime pings get their own thread, so a slow metrics tick cannot delay them."""
     threading.Thread(
         target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.main), name="uptime", daemon=True
+    ).start()
+    threading.Thread(
+        target=run_every, args=(ROLLUP_INTERVAL, update_site_rollups), name="rollups", daemon=True
     ).start()
     run_every(METRICS_INTERVAL, collect_metrics)
 

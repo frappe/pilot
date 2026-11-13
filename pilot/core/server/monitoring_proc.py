@@ -26,10 +26,12 @@ class ProcMetricsReader:
         return {field: float(getattr(times, field, 0.0)) for field in CPU_STAT_FIELDS}
 
     def proc_cpu_seconds(self, pid: int) -> float:
+        """The CPU seconds a process used."""
         times = psutil.Process(pid).cpu_times()
         return times.user + times.system
 
     def net_fields(self) -> dict[str, int]:
+        """The network counters, without loopback and virtual interfaces."""
         counters = psutil.net_io_counters(pernic=True)
         interfaces = [
             counter for name, counter in counters.items() if name not in NET_IFACE_EXCLUDE
@@ -50,6 +52,7 @@ class ProcMetricsReader:
         }
 
     def process_state(self, pid: int) -> str:
+        """The process state."""
         return psutil.Process(pid).status()
 
     def proc_memory_bytes(self, pid: int) -> int:
@@ -62,6 +65,7 @@ class ProcMetricsReader:
         return int(shared_aware)
 
     def io_bytes(self, pid: int) -> tuple[int, int]:
+        """The bytes a process read and wrote."""
         process = psutil.Process(pid)
         if not hasattr(process, "io_counters"):
             return 0, 0
@@ -72,16 +76,19 @@ class ProcMetricsReader:
         return counters.read_bytes, counters.write_bytes
 
     def open_fds(self, pid: int) -> int:
+        """The open file count, or -1 when it cannot be read."""
         try:
             return psutil.Process(pid).num_fds()
         except psutil.AccessDenied:
             return -1
 
     def load_average(self) -> tuple[float, float, float]:
+        """The load averages."""
         one, five, fifteen = psutil.getloadavg()
         return one, five, fifteen
 
     def memory_usage(self) -> dict:
+        """The memory and swap usage."""
         memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
         total_bytes = int(memory.total)
@@ -113,4 +120,5 @@ class ProcMetricsReader:
         }
 
     def storage_usage(self) -> dict:
+        """The disk usage of the bench."""
         return {"disk": self.disk_usage(self.bench_path)}

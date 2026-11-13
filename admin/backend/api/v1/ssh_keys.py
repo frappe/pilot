@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TypedDict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import created_response, error_response, no_content_response
-from pilot.core.bench import Bench
 from pilot.core.server import (
     InvalidSSHKeyError,
     LastSSHKeyError,
@@ -30,24 +29,21 @@ class AuthorizedSSHKeys(TypedDict):
 ssh_keys_bp = Blueprint("ssh_keys", __name__)
 
 
-def _current_bench() -> Bench:
-    return Bench(Path(current_app.config["BENCH_ROOT"]))
-
-
 def _serialize(key: SSHKey) -> dict:
+    """The key for the API."""
     return {"fingerprint": key.fingerprint, "type": key.key_type, "comment": key.comment}
 
 
 @ssh_keys_bp.get("")
 def list_keys():
+    """List the SSH keys."""
     return jsonify({"keys": [_serialize(key) for key in Server().ssh_keys.list()]})
 
 
 @ssh_keys_bp.post("")
 def add_key():
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    """Add an SSH key."""
+    data = ApiRequest.get_json_body()
     public_key = data.get("public_key", "")
     if not isinstance(public_key, str):
         return error_response("invalid_ssh_key", "Public key must be a string.", 422)
@@ -60,17 +56,18 @@ def add_key():
         return error_response("ssh_key_already_exists", "That key is already authorized.", 409)
     except InvalidSSHKeyError as error:
         return error_response("invalid_ssh_key", str(error), 422)
-    _current_bench().audit_action("ssh_key", {"event": "added", "fingerprint": key.fingerprint})
+    ApiRequest.get_bench().audit_action("ssh_key", {"event": "added", "fingerprint": key.fingerprint})
     return created_response(_serialize(key), f"/api/v1/ssh-keys/{key.fingerprint}")
 
 
 @ssh_keys_bp.delete("/<fingerprint>")
 def remove_key(fingerprint: str):
+    """Remove an SSH key."""
     try:
         Server().ssh_keys.remove(fingerprint)
     except SSHKeyNotFoundError:
         return error_response("ssh_key_not_found", "SSH key was not found.", 404)
     except LastSSHKeyError as error:
         return error_response("ssh_key_removal_rejected", str(error), 409)
-    _current_bench().audit_action("ssh_key", {"event": "removed", "fingerprint": fingerprint})
+    ApiRequest.get_bench().audit_action("ssh_key", {"event": "removed", "fingerprint": fingerprint})
     return no_content_response()

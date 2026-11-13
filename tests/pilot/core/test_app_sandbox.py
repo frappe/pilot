@@ -181,7 +181,7 @@ def test_a_system_path_cannot_reach_the_benches_directory(path: str) -> None:
 
 @pytest.mark.parametrize("path", ["/opt/frappe/pilot/databases", "/opt/frappe"])
 def test_a_system_path_cannot_reach_the_pilot_install(path: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("pilot.core.app.sandbox.cli_root", lambda: Path("/opt/frappe/pilot"))
+    monkeypatch.setattr("pilot.core.server.Server.root", Path("/opt/frappe/pilot"))
 
     with pytest.raises(ValueError, match=HIDDEN):
         _paths(write_paths=[path])

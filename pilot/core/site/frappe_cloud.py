@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from pilot.exceptions import FrappeCloudError
 from pilot.integrations.frappe_cloud import FrappeCloud
 from pilot.internal.atomic_file import atomic_write_private_text, exclusive_file_lock
-from pilot.utils import make_private_directory
+from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
@@ -28,14 +28,17 @@ class SiteFrappeCloud:
 
     @property
     def path(self) -> Path:
+        """The saved Frappe Cloud connection file."""
         return self.site.bench.config_path / "frappe_cloud" / f"{self.site.config.name}.json"
 
     @property
     def connection(self) -> dict:
+        """The saved connection, or an empty dict."""
         return json.loads(self.path.read_text()) if self.path.exists() else {}
 
     @property
     def client(self) -> FrappeCloud:
+        """The Frappe Cloud client; raise when not connected."""
         connection = self.connection
         if not connection:
             raise FrappeCloudError("Connect to Frappe Cloud first.")
@@ -53,11 +56,12 @@ class SiteFrappeCloud:
             "remote_site": response["site"],
             "approval_url": response["approval_url"],
         }
-        make_private_directory(self.path.parent, parents=True)
+        PrivateDirectory(self.path.parent).create(parents=True)
         atomic_write_private_text(self.path, json.dumps(connection))
         return connection | {"status": "Pending"}
 
     def get_status(self) -> dict:
+        """The connection status and the remote site."""
         connection = self.connection
         status = self.client.get_status()
         return {
@@ -71,7 +75,7 @@ class SiteFrappeCloud:
         """Revoke `token`, or the current one. A restore passes the token it was queued with, so
         a connection made since then stays. Frappe Cloud ends the access after 12 hours anyway,
         so a failed revoke is ignored."""
-        make_private_directory(self.path.parent, parents=True)
+        PrivateDirectory(self.path.parent).create(parents=True)
         with exclusive_file_lock(self.path):
             connection = self.connection
             token = token or connection.get("token", "")

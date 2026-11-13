@@ -16,7 +16,8 @@ from pilot.core.app.install_result import AppInstallResult
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError
-from pilot.utils import installed_app_version, run_command
+from pilot.internal.command import run_command
+from pilot.internal.host_resources import InstalledPackages
 
 if TYPE_CHECKING:
     from pilot.core.app.processes import AppProcesses
@@ -42,6 +43,7 @@ class NewAppOptions:
             raise BenchError(f"App {', '.join(missing)} cannot be blank.")
 
     def as_answers(self) -> str:
+        """The answers for the new-app prompts, one per line."""
         answers = [
             self.title,
             self.description,
@@ -120,6 +122,7 @@ class App:
 
     @staticmethod
     def _normalize_new_app_name(app_name: str) -> str:
+        """The app name as a module name; raise when it is invalid."""
         name = app_name.strip().lower().replace(" ", "_").replace("-", "_")
         if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
             raise BenchError(
@@ -130,11 +133,13 @@ class App:
 
     @property
     def path(self) -> Path:
+        """The app directory, in staging or apps."""
         root = self.bench.staging_path if self.is_staged else self.bench.apps_path
         return root / self.config.name
 
     @property
     def processes(self) -> "AppProcesses":
+        """The processes the app declares."""
         from pilot.core.app.processes import AppProcesses
 
         return AppProcesses(self)
@@ -142,18 +147,21 @@ class App:
     @property
     def installed_version(self) -> str:
         """The version pip installed for this app, read from dist-info metadata."""
-        return installed_app_version(self.bench.env_path, self.config.name)
+        return InstalledPackages(self.bench.env_path).get_version(self.config.name)
 
     @property
     def _repository(self) -> AppRepository:
+        """The app repository."""
         return AppRepository(self)
 
     @property
     def installed_hash(self) -> str:
+        """The installed commit."""
         return self._repository.installed_hash
 
     @property
     def installed_tag(self) -> str:
+        """The installed tag."""
         return self._repository.installed_tag
 
     @property
@@ -200,9 +208,11 @@ class App:
 
     @property
     def _failed_build_lockfiles_path(self) -> Path:
+        """The file that records lockfiles whose build failed."""
         return self._repository.repo.git_dir / "pilot-failed-build-lockfiles.json"
 
     def _content_hash(self, path: str) -> str:
+        """The SHA-256 of a file in the app, or an empty string."""
         file = self.path / path
         return hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else ""
 
@@ -249,9 +259,11 @@ class App:
         return self._repository.repo.branch
 
     def is_on_revision(self, pin: RevisionPin) -> bool:
+        """Whether the app is on the pinned revision."""
         return self._repository.is_on_revision(pin)
 
     def has_marketplace_update(self) -> bool:
+        """Whether the marketplace has a newer release."""
         return self._repository.has_marketplace_update()
 
     def update_target(self) -> RevisionPin | None:
@@ -259,18 +271,22 @@ class App:
         return None if self.is_linked else self._repository.update_target()
 
     def has_migrate_changes(self, pin: RevisionPin) -> bool:
+        """Whether moving to the pin changes what migrate runs."""
         return self._repository.has_migrate_changes(pin)
 
     @property
     def marketplace_entry(self) -> dict | None:
+        """The marketplace entry of the app, if any."""
         return self._repository.marketplace_entry
 
     @property
     def is_marketplace(self) -> bool:
+        """Whether the app comes from the marketplace."""
         return self.marketplace_entry is not None
 
     @property
     def existing_clone_path(self) -> Path | None:
+        """An existing clone under the config or module name, if any."""
         by_config_name = self.bench.apps_path / self.config.name
         if (by_config_name / ".git").exists():
             return by_config_name
@@ -313,11 +329,13 @@ class App:
 
     @property
     def is_cloned(self) -> bool:
+        """Whether the app is cloned."""
         if (self.path / ".git").exists():
             return True
         return self.existing_clone_path is not None
 
     def is_commit_hash(self, ref: str) -> bool:
+        """Whether the ref looks like a commit hash."""
         return AppRepository.is_commit_hash(ref)
 
     def clone(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
@@ -341,10 +359,12 @@ class App:
         self._repository.clone(on_progress)
 
     def update(self, pin: RevisionPin | None = None) -> None:
+        """Update the app, optionally to a pinned revision."""
         self.ensure_not_linked()
         self._repository.update(pin)
 
     def switch_branch(self, branch: str) -> None:
+        """Switch the app to another branch."""
         self.ensure_not_linked()
         self._repository.switch_branch(branch)
 
@@ -409,6 +429,7 @@ class App:
         install_dependencies: bool = False,
         skip_assets: bool = False,
     ) -> AppInstallResult:
+        """Report that the app is installed, installing its dependencies when asked."""
         app = self.bench.app(self.module_name)
         dependencies = app._install_dependencies(on_progress, skip_assets) if install_dependencies else []
         on_progress(f"'{app.config.name}' already installed, skipping.")
@@ -479,6 +500,7 @@ class App:
             shutil.move(str(self.path), str(existing_clone))
 
     def promote(self) -> "App":
+        """Move the staged clone into apps and return the app there."""
         if not self.path.is_dir():
             raise BenchError(f"'{self.config.name}' was never cloned into {self.path} - nothing to install.")
         module = self.module_name
@@ -510,22 +532,26 @@ class App:
         skip_assets: bool = False,
         on_step: Callable[[str, str], object] = lambda key, label: None,
     ) -> list["App"]:
+        """Install the apps this app depends on."""
         from pilot.core.app.dependency_installer import AppDependencyInstaller
 
         on_step(f"dependencies_{self.config.name}", f"Install the apps {self.config.name} needs")
         return AppDependencyInstaller(self.bench, self).install(on_progress, skip_assets=skip_assets)
 
     def validate(self) -> None:
+        """Run the app validation checks."""
         from pilot.core.app.validator import Validator
 
         Validator(self).validate()
 
     def _install_into_environment(self) -> None:
+        """Install the app into the bench environment."""
         from pilot.managers.environment import PythonEnvManager
 
         PythonEnvManager(self.bench).install_app(self)
 
     def _register(self) -> None:
+        """Add the app to sites/apps.txt."""
         existing = self.bench.registered_apps()
         if self.config.name not in existing:
             (self.bench.sites_path / "apps.txt").write_text("\n".join([*existing, self.config.name]) + "\n")
@@ -550,11 +576,13 @@ class App:
                 entry["branch"] = self.config.branch
 
     def _build_assets_via_env_manager(self) -> None:
+        """Build the app's assets."""
         from pilot.managers.environment import PythonEnvManager
 
         PythonEnvManager(self.bench).build_assets_for_app(self)
 
     def ensure_removable(self) -> None:
+        """Raise when the app cannot be removed."""
         if not self.path.exists():
             raise BenchError(f"App '{self.config.name}' not found in bench.")
         framework = self.bench.config.framework_app.name
@@ -578,6 +606,7 @@ class App:
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:
+        """Uninstall the app from every site that has it."""
         for site in self.bench.sites():
             if self.config.name not in site.list_apps():
                 continue
@@ -590,6 +619,7 @@ class App:
                 on_progress(f"Warning: could not cleanly uninstall from '{site.config.name}': {e}")
 
     def _deregister(self) -> None:
+        """Remove the app from sites/apps.txt."""
         apps_txt = self.bench.sites_path / "apps.txt"
         if not apps_txt.exists():
             return
@@ -597,6 +627,7 @@ class App:
         apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
 
     def _pip_uninstall(self) -> None:
+        """Uninstall the app's Python package."""
         from pilot.managers.environment import PythonEnvManager
 
         PythonEnvManager(self.bench).uninstall_app(self.config.name)

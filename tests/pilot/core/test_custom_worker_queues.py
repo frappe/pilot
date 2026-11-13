@@ -9,7 +9,7 @@ import pytest
 
 from pilot.config import BenchConfig, WorkerGroup
 from pilot.config.worker import WorkerConfig, parse_timeout
-from pilot.core.bench.settings import regenerate_configs
+from pilot.core.bench.settings import BenchSettings
 from pilot.exceptions import ConfigError, MalformedSiteConfig
 from tests.pilot.commands.test_commands import make_bench
 
@@ -95,7 +95,7 @@ def test_saved_settings_rewrite_common_site_config(tmp_path: Path) -> None:
         patch("pilot.managers.redis.RedisManager"),
         patch("pilot.managers.processes.local.ProcessManager.for_bench", return_value=MagicMock()),
     ):
-        regenerate_configs(bench)
+        BenchSettings(bench).regenerate_configs()
 
     assert _workers(bench) == {"guard-review": {}}
 

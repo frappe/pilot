@@ -125,11 +125,6 @@ def test_resolve_single_app_no_deps_returns_self():
     assert result == [r]
 
 
-def test_resolve_returns_list_of_resolvers():
-    r = make_resolver()
-    assert isinstance(r.resolve(), list)
-
-
 def test_resolve_installs_dependency_before_root():
     dep = make_resolver(app="payments", version="1.0.0")
     root = make_resolver(app="erpnext", dependencies={"payments": ">=1.0.0"})
@@ -610,7 +605,7 @@ def test_releases_are_reread_after_a_registry_refresh(tmp_path: Path, monkeypatc
     import json
     import os
 
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
     release_file = tmp_path / "system" / "registry-cache" / "apps" / "crm.json"
     release_file.parent.mkdir(parents=True)
     release_file.write_text(json.dumps({"releases": [{"version": "1.0.0", "frappe_core": ">=16"}]}))

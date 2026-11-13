@@ -14,6 +14,7 @@ class SetAdminPasswordCommand(Command):
     password: Annotated[str | None, Arg(help="New password; omit to be prompted securely.")] = None
 
     def run(self) -> None:
+        """Set the site Administrator password."""
         import secrets
 
         from pilot.config import BenchConfig

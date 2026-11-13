@@ -32,6 +32,7 @@ class PythonCompleter:
 
     @property
     def is_running(self) -> bool:
+        """Whether the completer process runs."""
         return self._process is not None and self._process.poll() is None
 
     def get_completions(self, code: str, line: int, column: int, controllers: dict[str, str]) -> list[dict]:
@@ -64,6 +65,7 @@ class PythonCompleter:
             return json.loads(reply) if reply else None
 
     def _start(self) -> None:
+        """Start the completer; raise when free memory is low."""
         if can_read_memory() and available_memory_mb() < MIN_AVAILABLE_MB:
             raise LowMemoryError(f"Python suggestions need {MIN_AVAILABLE_MB} MB of free memory.")
         self._process = subprocess.Popen(
@@ -77,6 +79,7 @@ class PythonCompleter:
         )
 
     def _stop(self) -> None:
+        """Kill the completer process."""
         if self._process is None:
             return
         with contextlib.suppress(ProcessLookupError):

@@ -142,7 +142,6 @@ def test_sqlite_sites_are_measured_from_their_own_database_file(tmp_path: Path) 
 
 
 def test_a_bench_that_cannot_be_measured_does_not_stop_the_others(tmp_path: Path, capsys) -> None:
-    from pilot.core.site import storage
 
     healthy = _bench(tmp_path, db_type="sqlite")
     _make_site(healthy, "site1.local")
@@ -157,7 +156,7 @@ def test_a_bench_that_cannot_be_measured_does_not_stop_the_others(tmp_path: Path
 
     benches = [(broken.path, broken.config), (healthy.path, healthy.config)]
     with (
-        patch.object(storage, "iter_sibling_benches", return_value=benches),
+        patch("pilot.core.bench.directory.BenchDirectory.iter_configs", return_value=benches),
         patch.object(SiteStorageCollector, "collect", collect),
     ):
         collect_all_benches()
@@ -172,7 +171,6 @@ def test_a_timer_pass_removes_abandoned_backup_uploads(tmp_path: Path) -> None:
     import time
 
     from pilot.core.bench.uploads import MANIFEST_NAME, STALE_SECONDS
-    from pilot.core.site import storage
 
     bench = _bench(tmp_path, db_type="sqlite")
     abandoned, recent = bench.uploads_path / "a", bench.uploads_path / "b"
@@ -184,7 +182,9 @@ def test_a_timer_pass_removes_abandoned_backup_uploads(tmp_path: Path) -> None:
     for path in abandoned.iterdir():
         os.utime(path, (old, old))
 
-    with patch.object(storage, "iter_sibling_benches", return_value=[(bench.path, bench.config)]):
+    with patch(
+        "pilot.core.bench.directory.BenchDirectory.iter_configs", return_value=[(bench.path, bench.config)]
+    ):
         collect_all_benches()
 
     assert not abandoned.exists()

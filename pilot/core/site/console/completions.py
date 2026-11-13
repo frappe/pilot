@@ -3,15 +3,19 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
 
 TIMEOUT_SECONDS = 60
 
-# Everything comes from the site's own frappe, so it matches its version and installed apps.
-_BOOTSTRAP = """\
+
+class ConsoleCompletions:
+    """Names the console editor suggests, read on demand from the site's own Frappe."""
+
+    # Everything comes from the site's own frappe, so it matches its version and installed apps.
+    bootstrap = """\
 import json
 import sys
 
@@ -49,15 +53,12 @@ finally:
     frappe.destroy()
 """
 
-
-class ConsoleCompletions:
-    """Names the console editor suggests, read on demand from the site's own Frappe."""
-
     def __init__(self, site: "Site") -> None:
         self.site = site
 
     @property
     def doctypes(self) -> list[str]:
+        """The DocType names of the site."""
         return self._query("doctypes")
 
     def get_doctype(self, doctype: str) -> dict[str, Any]:
@@ -68,7 +69,8 @@ class ConsoleCompletions:
         return found
 
     def _query(self, *args: str) -> Any:
-        argv = [*self.site.bench.python_argv, "-c", _BOOTSTRAP, self.site.config.name, *args]
+        """Run a completion query in the site and return its JSON result."""
+        argv = [*self.site.bench.python_argv, "-c", self.bootstrap, self.site.config.name, *args]
         result = run_command(argv, cwd=self.site.bench.sites_path, timeout=TIMEOUT_SECONDS)
         # Apps may print while Frappe loads, so the answer is the last line.
         return json.loads(result.stdout.decode().strip().splitlines()[-1])

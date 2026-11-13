@@ -25,3 +25,4 @@ update_auto_update_schedule
 set_sandbox_off_for_existing_benches
 use_notify_for_database_units
 refuse_symlinks_in_nginx
+write_mariadb_log_files

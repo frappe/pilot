@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Button,
@@ -33,7 +33,16 @@ const github = reactive(useGithubConnection())
 const site = reactive(useNewSite())
 
 const onboarding = ref('')
-const siteStarted = ref(false)
+// The step is done once a site finished creating, not when its task was queued.
+const siteReady = computed(() => sites.value.some((entry) => entry.exists && !entry.provisioning))
+const siteCreating = computed(() => sites.value.some((entry) => entry.provisioning))
+let sitePoll: ReturnType<typeof setInterval> | null = null
+
+watch(siteCreating, (creating) => {
+  if (sitePoll) clearInterval(sitePoll)
+  sitePoll = creating ? setInterval(loadSites, 5000) : null
+})
+onUnmounted(() => sitePoll && clearInterval(sitePoll))
 const useToken = ref(false)
 const origin = window.location.origin
 
@@ -100,9 +109,9 @@ const steps = computed(() => [
     title: 'Launch your first site',
     description: 'Pick a name and apps. Pilot handles the rest.',
     action: 'Create site',
-    savingLabel: undefined,
-    done: siteStarted.value || sites.value.length > 0,
-    saving: site.creating,
+    savingLabel: siteCreating.value ? 'Creating site' : undefined,
+    done: siteReady.value,
+    saving: site.creating || siteCreating.value,
     canSave: !site.nameError,
     save: createSite,
   },
@@ -180,8 +189,7 @@ const createSite = async () => {
 
   if (!taskId) return false
 
-  siteStarted.value = true
-  loadSites()
+  await loadSites()
   openTaskDetailPage(router, taskId)
 
   return true
@@ -487,6 +495,14 @@ onMounted(refresh)
                   </button>
                 </div>
               </template>
+
+              <div
+                v-if="site.registryError && !site.availableApps.length"
+                class="flex justify-between items-center gap-3 mt-5 text-ink-gray-6 text-p-sm"
+              >
+                Could not load the app list.
+                <Button label="Retry" @click="site.reloadApps()" />
+              </div>
 
               <ErrorMessage class="mt-4" :message="site.error" />
             </template>

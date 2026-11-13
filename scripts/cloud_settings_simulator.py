@@ -85,6 +85,7 @@ class BillingSimulation:
         self.reset()
 
     def reset(self) -> None:
+        """Reset the simulated account."""
         self.failure = False
         self.profile_complete = False
         self.card_active = False
@@ -121,6 +122,7 @@ class BillingSimulation:
 
     @staticmethod
     def _invoice(month: str, status: str, amount: str, is_whole_invoice: bool = True) -> dict:
+        """A sample invoice."""
         return {
             "name": f"SIM-INV-{month}",
             "period_start": f"{month}-01",
@@ -172,6 +174,7 @@ class BillingSimulation:
         return {"plan": PLANS[self.plan][0], "progress_url": url}
 
     def get_summary(self, base_url: str) -> dict:
+        """The billing summary."""
         title, subtitle, _ = PLANS[self.plan]
         return {
             "currency": "USD",
@@ -204,6 +207,7 @@ class BillingSimulation:
         }
 
     def call(self, method: str, data: dict, base_url: str) -> dict | list:
+        """Answer a billing method."""
         if method == "get_billing_summary":
             return self.get_summary(base_url)
         if method == "get_billing_profile":
@@ -238,6 +242,7 @@ class BillingSimulation:
         return {"saved": True}
 
     def plans(self, method: str, data: dict) -> dict:
+        """Answer a plan method."""
         if method == "change_plan":
             if data.get("plan") not in PLANS:
                 abort(400, "Unknown simulated plan.")
@@ -266,6 +271,7 @@ class BillingSimulation:
         }
 
     def invoice_call(self, method: str, data: dict, base_url: str) -> dict | list:
+        """Answer an invoice method."""
         if method == "list_server_invoices":
             return [] if self.is_trial else self.invoices
         if method == "get_server_invoice_pdf":
@@ -280,6 +286,7 @@ class BillingSimulation:
         return self.settle_invoice_checkout(data.get("reference"))
 
     def _get_whole_invoice(self, name: str | None) -> dict:
+        """One invoice with its items; abort when it does not exist."""
         invoice = next((row for row in self.invoices if row["name"] == name), None)
         if not invoice:
             abort(404, "Unknown simulated invoice.")
@@ -301,6 +308,7 @@ class BillingSimulation:
         return {"status": "paid"}
 
     def payment(self, method: str, data: dict, base_url: str) -> dict:
+        """Answer a payment method."""
         if method == "create_payment_method_checkout":
             reference = secrets.token_hex(12)
             self.checkouts[reference] = False
@@ -324,6 +332,7 @@ class BillingSimulation:
 
 
 def create_simulator(base_url: str, trial_app: str | None = None, bench_root: Path | None = None) -> Flask:
+    """The simulator Flask app."""
     app = Flask("cloud-settings-simulation")
     countries, india_states = read_reference_data(bench_root) if bench_root else ([], [])
     state = BillingSimulation(trial_app, countries, india_states)
@@ -335,6 +344,7 @@ def create_simulator(base_url: str, trial_app: str | None = None, bench_root: Pa
 
     @app.get("/")
     def controls():
+        """The simulation controls page."""
         return f"""<!doctype html><title>Cloud Settings simulation</title>
         <h1>Local Cloud Settings simulation</h1>
         <p>Sample data only. No real charges, cards, or Central account changes.</p>
@@ -351,11 +361,13 @@ def create_simulator(base_url: str, trial_app: str | None = None, bench_root: Pa
 
     @app.post("/failure")
     def failure():
+        """Turn simulated failures on or off."""
         state.failure = not state.failure
         return redirect("/")
 
     @app.post("/trial")
     def trial():
+        """Start a trial."""
         state.reset()
         state.is_trial = True
         state.invoices = []
@@ -363,6 +375,7 @@ def create_simulator(base_url: str, trial_app: str | None = None, bench_root: Pa
 
     @app.post("/trial/ended")
     def trial_ended():
+        """Start an ended trial."""
         state.reset()
         state.is_trial = True
         state.is_trial_ended = True
@@ -371,6 +384,7 @@ def create_simulator(base_url: str, trial_app: str | None = None, bench_root: Pa
 
     @app.post("/reset")
     def reset():
+        """Reset the simulation."""
         state.reset()
         return redirect("/")
 
@@ -378,8 +392,11 @@ def create_simulator(base_url: str, trial_app: str | None = None, bench_root: Pa
 
 
 def register_central(app: Flask, state: BillingSimulation, token: str, base_url: str) -> None:
+    """Register the simulated Central routes."""
+
     @app.route("/api/method/central.billing.api.billing_api.<method>", methods=["GET", "POST"])
     def billing(method: str):
+        """Answer a simulated billing call."""
         if request.headers.get("X-Pilot-Token") != token:
             abort(401)
         if state.failure:
@@ -391,18 +408,23 @@ def register_central(app: Flask, state: BillingSimulation, token: str, base_url:
     # Central locks a server past its sites while its trial is open.
     @app.get("/api/method/central.api.pilot.get_server_access")
     def server_access():
+        """Answer the server access state."""
         if request.headers.get("X-Pilot-Token") != token:
             abort(401)
         return jsonify(message={"is_locked": state.is_trial})
 
 
 def register_metadata(app: Flask, token: str, base_url: str) -> None:
+    """Register the simulated instance metadata routes."""
+
     @app.put("/latest/api/token")
     def metadata_token():
+        """The metadata session token."""
         return token
 
     @app.get("/latest/meta-data/attributes/<name>")
     def metadata(name: str):
+        """The simulated Central metadata."""
         if request.headers.get("X-metadata-token") != token:
             abort(401)
         if name != "pilot-central":
@@ -418,8 +440,11 @@ def register_metadata(app: Flask, token: str, base_url: str) -> None:
 
 
 def register_checkout(app: Flask, state: BillingSimulation) -> None:
+    """Register the simulated checkout routes."""
+
     @app.get("/checkout/<reference>")
     def checkout(reference: str):
+        """The simulated checkout page."""
         if reference not in state.checkouts:
             abort(404)
         return """<!doctype html><title>Simulated checkout</title>
@@ -429,6 +454,7 @@ def register_checkout(app: Flask, state: BillingSimulation) -> None:
 
     @app.post("/checkout/<reference>")
     def complete(reference: str):
+        """Complete a simulated checkout."""
         if reference not in state.checkouts:
             abort(404)
         state.checkouts[reference] = True
@@ -440,6 +466,7 @@ def register_progress(app: Flask, state: BillingSimulation) -> None:
 
     @app.get("/progress/status")
     def progress_status():
+        """The simulated move progress."""
         elapsed = state.move_elapsed
         if elapsed is None:
             return jsonify(done=True, step=len(MOVE_STEPS))
@@ -448,6 +475,7 @@ def register_progress(app: Flask, state: BillingSimulation) -> None:
 
     @app.get("/progress")
     def progress():
+        """The simulated move progress page."""
         steps = "".join(f"<li>{label}</li>" for label in MOVE_STEPS)
         return f"""<!doctype html><title>Upgrading your site</title>
         <style>body{{font:15px system-ui;max-width:32rem;margin:15vh auto;padding:0 16px;color:#222}}
@@ -470,6 +498,7 @@ def register_progress(app: Flask, state: BillingSimulation) -> None:
 
 
 def main() -> None:
+    """Run a local Pilot with the simulated Central."""
     parser = argparse.ArgumentParser(
         description="Run a local Pilot with disposable simulated Central billing."
     )

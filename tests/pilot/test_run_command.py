@@ -1,4 +1,4 @@
-"""Tests for pilot.utils.run_command - timeout, redaction, cancellation."""
+"""Tests for Command and run_command - timeout, redaction, cancellation."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.exceptions import CommandError
-from pilot.utils import run_command
+from pilot.internal.command import Command, run_command
 
 
 def test_successful_command_returns_completed_process() -> None:
@@ -46,10 +46,15 @@ def test_timeout_raises_command_error_mentioning_timeout() -> None:
 
 
 def test_timeout_actually_terminates_the_process_group() -> None:
+    marker = f"pilot-timeout-test-{time.monotonic_ns()}"
+    script = (
+        "import subprocess, sys; "
+        "subprocess.run([sys.executable, '-c', 'import time; time.sleep(5)', sys.argv[1]])"
+    )
     with pytest.raises(CommandError):
-        run_command(["sh", "-c", "sleep 5"], timeout=0.3)
+        run_command([sys.executable, "-c", script, marker], timeout=0.3)
     time.sleep(0.2)
-    result = subprocess.run(["pgrep", "-f", "sleep 5"], capture_output=True)
+    result = subprocess.run(["pgrep", "-f", marker], capture_output=True)
     assert result.stdout == b""
 
 
@@ -76,10 +81,8 @@ def test_explicit_child_environment_keeps_task_launch_identity(monkeypatch) -> N
     monkeypatch.setenv("PILOT_NONINTERACTIVE_PRIVILEGES", "1")
     process = MagicMock()
 
-    with patch("pilot.utils.subprocess.Popen", return_value=process) as popen:
-        from pilot.utils import _start_process
-
-        assert _start_process(["true"], None, {"PATH": "/bin"}, False) is process
+    with patch("pilot.internal.command.subprocess.Popen", return_value=process) as popen:
+        assert Command(["true"], env={"PATH": "/bin"}).start() is process
 
     assert popen.call_args.kwargs["env"]["BENCH_TASK_LAUNCH_ID"] == "task-launch"
     assert popen.call_args.kwargs["env"]["PILOT_NONINTERACTIVE_PRIVILEGES"] == "1"
@@ -87,39 +90,21 @@ def test_explicit_child_environment_keeps_task_launch_identity(monkeypatch) -> N
 
 def test_sudo_command_keeps_controlling_terminal() -> None:
     """sudo must not be setsid'd away from the tty it caches credentials against."""
-    from pilot.utils import _start_process
-
-    with patch("pilot.utils.subprocess.Popen", return_value=MagicMock()) as popen:
-        _start_process(["sudo", "mkdir", "-p", "/opt/x"], None, None, False)
+    with patch("pilot.internal.command.subprocess.Popen", return_value=MagicMock()) as popen:
+        Command(["sudo", "mkdir", "-p", "/opt/x"]).start()
 
     assert popen.call_args.kwargs["start_new_session"] is False
 
 
 def test_non_privileged_command_starts_new_session() -> None:
-    from pilot.utils import _start_process
-
-    with patch("pilot.utils.subprocess.Popen", return_value=MagicMock()) as popen:
-        _start_process(["mkdir", "-p", "/opt/x"], None, None, False)
+    with patch("pilot.internal.command.subprocess.Popen", return_value=MagicMock()) as popen:
+        Command(["mkdir", "-p", "/opt/x"]).start()
 
     assert popen.call_args.kwargs["start_new_session"] is True
 
 
 def test_timeout_kills_a_child_that_does_not_lead_its_process_group(monkeypatch) -> None:
-    from pilot import utils
-
-    original_start = utils._start_process
-
-    def start_attached(argv, cwd, env, stream_output, pipe_stdin=False):
-        with patch("pilot.utils.subprocess.Popen", wraps=subprocess.Popen) as popen:
-
-            def attached(*args, **kwargs):
-                kwargs["start_new_session"] = False
-                return popen(*args, **kwargs)
-
-            with patch("pilot.utils.subprocess.Popen", side_effect=attached):
-                return original_start(argv, cwd, env, stream_output, pipe_stdin)
-
-    monkeypatch.setattr(utils, "_start_process", start_attached)
+    monkeypatch.setattr(Command, "is_sudo", property(lambda self: True))
     started = time.monotonic()
     with pytest.raises(CommandError, match="timed out"):
         run_command([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.2)

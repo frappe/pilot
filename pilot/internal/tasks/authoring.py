@@ -18,11 +18,9 @@ from pilot.tasks import Task
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_EXCLUDED_FIELDS = frozenset({"bench", "bench_root"})
-_HINT_NAMESPACE = {"Bench": object}
-
 
 def apply_task_secrets(args: argparse.Namespace) -> None:
+    """Load secret arguments from the task's secrets file into the parsed arguments."""
     secret_path = os.environ.get("BENCH_TASK_SECRETS_FILE")
     if not secret_path:
         return
@@ -31,11 +29,13 @@ def apply_task_secrets(args: argparse.Namespace) -> None:
 
 
 def required_task_args(cls: type[Task]) -> list[str]:
+    """The argument names a task needs at submit time."""
     required = [field.name for field in task_fields(cls) if not field.has_default]
     return [*required, *cls.required_submit_args]
 
 
 def task_parser(cls: type[Task]) -> argparse.ArgumentParser:
+    """The argument parser for a task module run with python -m."""
     parser = argparse.ArgumentParser()
     parser.add_argument("bench_root")
     for arg_field in task_fields(cls):
@@ -52,6 +52,7 @@ def task_from_args(
     bench_root: Path,
     args: argparse.Namespace,
 ) -> Task:
+    """Build the task from parsed arguments."""
     from pilot.internal.cli.fields import NOT_PROVIDED
 
     kwargs = {}
@@ -66,6 +67,7 @@ def task_from_args(
 
 
 def task_argv_suffix(cls: type[Task], args: dict) -> list[str]:
+    """The command-line arguments that pass these task arguments to the task module."""
     argv: list[str] = []
     for arg_field in task_fields(cls):
         if not arg_field.metadata.cli or arg_field.name not in args:
@@ -89,6 +91,7 @@ def bool_flag_argv(arg_field, value: bool) -> list[str]:
 
 
 def run_task_main(cls: type[Task]) -> None:
+    """Parse the arguments, build the task and run it."""
     from pilot.core.bench import Bench
 
     args = task_parser(cls).parse_args()
@@ -99,6 +102,7 @@ def run_task_main(cls: type[Task]) -> None:
 
 
 def run_task(task: Task) -> None:
+    """Run the task and mark the current step failed when it exits with an error."""
     try:
         task.run()
     except SystemExit as exit_error:
@@ -114,16 +118,22 @@ def run_task(task: Task) -> None:
 
 
 def task_fields(cls: type[Task]) -> list:
-    return arg_fields(cls, exclude=_EXCLUDED_FIELDS, hint_namespace=_HINT_NAMESPACE)
+    """The task's dataclass fields that are task arguments."""
+    return arg_fields(cls, exclude=frozenset({"bench", "bench_root"}), hint_namespace={"Bench": object})
 
 
 def is_positional_arg(arg_field) -> bool:
+    """Whether the field is a positional command-line argument."""
     return not arg_field.has_default and not arg_field.metadata.required
 
 
 def argv_values(value) -> list[str]:
+    """The command-line values for one argument."""
+    if isinstance(value, dict):
+        return [json.dumps(value)]
     return [str(item) for item in value] if isinstance(value, list) else [str(value)]
 
 
 def long_flag(name: str) -> str:
+    """The long flag for an argument name."""
     return f"--{to_kebab_case(name)}"

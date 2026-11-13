@@ -16,6 +16,7 @@ class SiteDomains:
         self._provider = DomainRouteProvider(site.bench)
 
     def generate_dns_records(self, domain: str) -> dict:
+        """The DNS records the domain needs."""
         return self._provider.generate_dns_records(self.site.config.name, domain)
 
     def register(self, domain: str) -> "RoutePolicy | None":
@@ -23,25 +24,31 @@ class SiteDomains:
         return self._provider.register(self.site.config.name, domain)
 
     def attach(self, domain: str, *, primary: bool = False) -> None:
+        """Add the domain, and make it primary when asked."""
         if not primary or not self.status(domain)[0]:
             self.register(domain)
         if primary:
             self.set_primary(domain)
 
     def deregister(self, domain: str) -> None:
+        """Remove the domain."""
         self._provider.deregister(self.site.config.name, domain)
 
     def names(self) -> list[str]:
+        """The site's domains."""
         return self._provider.domains(self.site.config.name)
 
     def primary(self) -> str | None:
+        """The primary domain, if any."""
         return self._provider.primary(self.site.config.name)
 
     def set_primary(self, domain: str | None) -> None:
+        """Set or clear the primary domain."""
         self._provider.set_primary(self.site.config.name, domain)
 
     def status(self, domain: str) -> tuple[bool, bool]:
-        from pilot.utils import normalize_host
+        """Whether the domain is attached, and whether it is primary."""
+        from pilot.internal.hostnames import normalize_host
 
         normalized = normalize_host(domain)
         primary = self.primary()
@@ -64,7 +71,7 @@ class SiteDomains:
         if not attached:
             return None
 
-        from pilot.utils import normalize_host
+        from pilot.internal.hostnames import normalize_host
 
         config = self._site_config()
         normalized = normalize_host(domain)
@@ -102,6 +109,7 @@ class SiteDomains:
 
     @property
     def is_tls_enabled(self) -> bool:
+        """Whether SSL is on in site_config.json."""
         try:
             config = json.loads((self.site.path / "site_config.json").read_text())
         except Exception:
@@ -122,6 +130,7 @@ class SiteDomains:
         return bool(certificate_domains(site))
 
     def _site_config(self) -> "SiteConfig":
+        """The site config from the bench inventory."""
         return next(
             site.config for site in self.site.bench.sites() if site.config.name == self.site.config.name
         )
@@ -132,6 +141,7 @@ class SiteDomains:
         domain: str,
         is_primary: bool,
     ) -> dict[str, str | bool | dict | None]:
+        """The description of a domain's route and TLS state."""
         route = config.route_for(domain)
         tls = route.public_tls
         if tls and config.configured_route_for(domain) is None:

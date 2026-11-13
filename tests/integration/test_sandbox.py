@@ -12,10 +12,10 @@ import pytest
 from pilot.config import BenchConfig
 from pilot.config.common_site_config import update_common_site_config
 from pilot.core.bench import Bench
+from pilot.core.server import Server
 from pilot.managers.processes.sandbox import PilotSandboxPaths
 from pilot.managers.processes.systemd import SystemdProcessManager
 from pilot.managers.systemd_user import systemctl_env
-from pilot.utils import cli_root
 
 SITE = "site1.localhost"
 ADMIN_DOMAIN = "bench.localhost"
@@ -176,7 +176,7 @@ def run_sandboxed(sandboxed: Path):
     ],
 )
 def test_the_sandbox_blocks(run_sandboxed, sandboxed: Path, line: str) -> None:
-    line = line.replace("../", f"{sandboxed.parent}/").replace("{bench}", str(sandboxed)).replace("{pilot}", str(cli_root()))
+    line = line.replace("../", f"{sandboxed.parent}/").replace("{bench}", str(sandboxed)).replace("{pilot}", str(Server().root))
     assert not run_sandboxed(line), f"sandbox allowed: {line}"
 
 

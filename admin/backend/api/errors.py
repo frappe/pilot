@@ -40,6 +40,7 @@ class ApiProblem(Exception):
 
 
 def install_api_error_handlers(app) -> None:
+    """Register the API error handlers on the app."""
     app.register_error_handler(ApiProblem, _handle_api_problem)
     app.register_error_handler(TaskNotFoundError, _handle_task_not_found)
     app.register_error_handler(TaskNotRunningError, _handle_task_not_active)
@@ -52,32 +53,39 @@ def install_api_error_handlers(app) -> None:
 
 
 def _handle_api_problem(error: ApiProblem):
+    """Answer an API problem with its error response."""
     return error_response(error.code, error.message, error.status, error.details)
 
 
 def _handle_task_not_found(error: TaskNotFoundError):
+    """Answer 404 for a missing task."""
     return error_response("task_not_found", str(error), 404)
 
 
 def _handle_task_not_active(error: TaskNotRunningError):
+    """Answer 409 for a task that is not active."""
     return error_response("task_not_active", str(error), 409)
 
 
 def _handle_task_conflict(error: TaskConflictError):
+    """Answer 409 for a task conflict."""
     return error_response("task_conflict", str(error), 409)
 
 
 def _handle_migration_conflict(error: MigrationConflictError):
+    """Answer 409 for a migration conflict."""
     return error_response("migration_conflict", str(error), 409)
 
 
 def _handle_method_not_allowed(error: HTTPException):
+    """Answer 405 as JSON for API paths."""
     if not is_api_path(request.path):
         return error
     return error_response("method_not_allowed", "Method not allowed.", 405)
 
 
 def _handle_config_unavailable(_error: ConfigError):
+    """Answer 503 as JSON for API paths when the config cannot be read."""
     if not is_api_path(request.path):
         return InternalServerError()
     return error_response(
@@ -88,6 +96,7 @@ def _handle_config_unavailable(_error: ConfigError):
 
 
 def _handle_http_error(error: HTTPException):
+    """Answer an HTTP error as JSON for API paths."""
     if not is_api_path(request.path):
         return error
     status = error.code or 500
@@ -96,6 +105,7 @@ def _handle_http_error(error: HTTPException):
 
 
 def _handle_unexpected_error(error: Exception):
+    """Log an unexpected error and answer 500."""
     current_app.logger.error(
         "Unhandled API error",
         exc_info=(type(error), error, error.__traceback__),

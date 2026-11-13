@@ -21,6 +21,7 @@ def build_timeline(
     start_ms: int,
     end_ms: int,
 ) -> dict:
+    """The top categories bucketed over time."""
     categories = [name for name, _ in _rank(points, top, by)]
     bucket_ms = bucket_seconds * 1000
     max_bucket = _max_bucket(end_ms, bucket_ms)
@@ -53,6 +54,7 @@ def build_total_timeline(
     start_ms: int,
     end_ms: int,
 ) -> dict:
+    """The total count bucketed over time."""
     bucket_ms = bucket_seconds * 1000
     max_bucket = _max_bucket(end_ms, bucket_ms)
     buckets: dict[int, int] = {}
@@ -67,20 +69,24 @@ def build_total_timeline(
 
 
 def _fill_bucket_range(buckets: dict, start_ms: int, end_ms: int, bucket_ms: int, default) -> None:
+    """Fill the empty buckets in the range."""
     first_bucket = start_ms // bucket_ms * bucket_ms
     for bucket in range(first_bucket, end_ms // bucket_ms * bucket_ms, bucket_ms):
         buckets.setdefault(bucket, default())
 
 
 def _max_bucket(end_ms: int, bucket_ms: int) -> int:
+    """The last complete bucket."""
     return end_ms // bucket_ms * bucket_ms - bucket_ms
 
 
 def _average_seconds(durations: list[int | float]) -> float:
+    """The average duration in seconds."""
     return round(sum(durations) / len(durations) / 1_000_000, 3)
 
 
 def _rank(points: list[TimelinePoint], top: int, by: str) -> list[tuple[str, int | float]]:
+    """The top categories by count or duration."""
     if by == "count":
         counts = Counter(point.category for point in points)
         return [(name, count) for name, count in counts.most_common(top)]

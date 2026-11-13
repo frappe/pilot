@@ -19,10 +19,14 @@ MAX_SCRIPT_BYTES = 64 * 1024
 TIMEOUT_SECONDS = 300
 HEARTBEAT_SECONDS = 5
 
-# Reads the script before importing frappe, so a large script never fills the stdin pipe.
-# A read-only run sets Frappe's own read-only flag, so Frappe skips its side writes and starts
-# read-only transactions, makes the database session read-only, and blocks `frappe.db.commit()`.
-_BOOTSTRAP = """\
+
+class SiteScript:
+    """Python run with Frappe connected to a site, in its own process. Works while Desk is down."""
+
+    # Reads the script before importing frappe, so a large script never fills the stdin pipe.
+    # A read-only run sets Frappe's own read-only flag, so Frappe skips its side writes and starts
+    # read-only transactions, makes the database session read-only, and blocks `frappe.db.commit()`.
+    bootstrap = """\
 import sys
 code = sys.stdin.read()
 import frappe
@@ -52,10 +56,6 @@ finally:
     frappe.destroy()
 """
 
-
-class SiteScript:
-    """Python run with Frappe connected to a site, in its own process. Works while Desk is down."""
-
     def __init__(self, site: "Site", code: str, commit: bool = False) -> None:
         if not code.strip():
             raise ValueError("Script is empty.")
@@ -81,9 +81,10 @@ class SiteScript:
             raise ScriptBusyError("Another script is running on this bench.") from error
 
     def _start(self) -> subprocess.Popen:
+        """Start the script process in commit or rollback mode."""
         mode = "commit" if self.commit else "rollback"
         process = subprocess.Popen(
-            [*self.site.bench.python_argv, "-c", _BOOTSTRAP, self.site.config.name, mode],
+            [*self.site.bench.python_argv, "-c", self.bootstrap, self.site.config.name, mode],
             cwd=self.site.bench.sites_path,
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdin=subprocess.PIPE,
@@ -100,6 +101,7 @@ class SiteScript:
         return process
 
     def _read(self, process: subprocess.Popen, should_stop: Callable[[], bool]) -> Iterator[bytes | None]:
+        """Yield the script output; yield None to keep the stream alive."""
         assert process.stdout is not None
         deadline = time.monotonic() + TIMEOUT_SECONDS
         last_yield = time.monotonic()

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.managers import packages as package_managers
-from pilot.managers import platform
 from pilot.managers.packages import (
     AptPackageManager,
     BrewPackageManager,
@@ -16,59 +15,59 @@ from pilot.managers.packages import (
     PacmanPackageManager,
     get_package_manager,
 )
-from pilot.managers.platform import Distro
+from pilot.managers.platform import Distro, HostPlatform
 
 
 def _write_os_release(tmp_path: Path, monkeypatch, content: str) -> None:
     os_release = tmp_path / "os-release"
     os_release.write_text(content)
-    monkeypatch.setattr(platform, "_OS_RELEASE", os_release)
+    monkeypatch.setattr(HostPlatform, "os_release_path", os_release)
 
 
 def _force_linux(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "detect", lambda: platform.Platform.LINUX)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
 
 
 @pytest.mark.parametrize("distro_id", ["debian", "ubuntu", "fedora", "arch"])
-def test_detect_distro_by_id(tmp_path: Path, monkeypatch, distro_id: str) -> None:
+def test_distro_by_id(tmp_path: Path, monkeypatch, distro_id: str) -> None:
     _force_linux(monkeypatch)
     _write_os_release(tmp_path, monkeypatch, f"ID={distro_id}\n")
-    assert platform.detect_distro() == Distro(distro_id)
+    assert HostPlatform().distro == Distro(distro_id)
 
 
-def test_detect_distro_strips_quotes(tmp_path: Path, monkeypatch) -> None:
+def test_distro_strips_quotes(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
     _write_os_release(tmp_path, monkeypatch, 'ID="fedora"\nPRETTY_NAME="Fedora Linux 42"\n')
-    assert platform.detect_distro() == Distro.FEDORA
+    assert HostPlatform().distro == Distro.FEDORA
 
 
-def test_detect_distro_id_like_fallback(tmp_path: Path, monkeypatch) -> None:
+def test_distro_id_like_fallback(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
     _write_os_release(tmp_path, monkeypatch, 'ID=linuxmint\nID_LIKE="ubuntu debian"\n')
-    assert platform.detect_distro() == Distro.UBUNTU
+    assert HostPlatform().distro == Distro.UBUNTU
 
 
-def test_detect_distro_id_like_arch_derivative(tmp_path: Path, monkeypatch) -> None:
+def test_distro_id_like_arch_derivative(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
     _write_os_release(tmp_path, monkeypatch, "ID=endeavouros\nID_LIKE=arch\n")
-    assert platform.detect_distro() == Distro.ARCH
+    assert HostPlatform().distro == Distro.ARCH
 
 
-def test_detect_distro_unknown(tmp_path: Path, monkeypatch) -> None:
+def test_distro_unknown(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
     _write_os_release(tmp_path, monkeypatch, "ID=slackware\n")
-    assert platform.detect_distro() == Distro.UNKNOWN
+    assert HostPlatform().distro == Distro.UNKNOWN
 
 
-def test_detect_distro_missing_file(tmp_path: Path, monkeypatch) -> None:
+def test_distro_missing_file(tmp_path: Path, monkeypatch) -> None:
     _force_linux(monkeypatch)
-    monkeypatch.setattr(platform, "_OS_RELEASE", tmp_path / "missing")
-    assert platform.detect_distro() == Distro.UNKNOWN
+    monkeypatch.setattr(HostPlatform, "os_release_path", tmp_path / "missing")
+    assert HostPlatform().distro == Distro.UNKNOWN
 
 
-def test_detect_distro_not_linux(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "detect", lambda: platform.Platform.MACOS)
-    assert platform.detect_distro() == Distro.UNKNOWN
+def test_distro_not_linux(monkeypatch) -> None:
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: True))
+    assert HostPlatform().distro == Distro.UNKNOWN
 
 
 @pytest.mark.parametrize(
@@ -82,13 +81,13 @@ def test_detect_distro_not_linux(monkeypatch) -> None:
     ],
 )
 def test_get_package_manager_dispatch(monkeypatch, distro, manager_class) -> None:
-    monkeypatch.setattr(package_managers, "is_macos", lambda: False)
-    monkeypatch.setattr(package_managers, "detect_distro", lambda: distro)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
+    monkeypatch.setattr(HostPlatform, "distro", property(lambda self: distro))
     assert isinstance(get_package_manager(), manager_class)
 
 
 def test_get_package_manager_macos(monkeypatch) -> None:
-    monkeypatch.setattr(package_managers, "is_macos", lambda: True)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: True))
     assert isinstance(get_package_manager(), BrewPackageManager)
 
 
@@ -107,7 +106,7 @@ def test_resolve_deduplicates() -> None:
 
 
 def _run_as_root(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_root", lambda: True)
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: True))
 
 
 @pytest.mark.parametrize(
@@ -141,8 +140,8 @@ def test_is_installed_argv(monkeypatch, manager, expected) -> None:
 
 
 def test_install_uses_sudo_when_not_root(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_root", lambda: False)
-    monkeypatch.setattr(package_managers, "has_passwordless_sudo", lambda: True)
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: False))
+    monkeypatch.setattr(HostPlatform, "has_passwordless_sudo", property(lambda self: True))
     with patch.object(package_managers.subprocess, "run") as run:
         DnfPackageManager().install("git")
     assert run.call_args[0][0] == ["sudo", "dnf", "install", "-y", "git"]
@@ -151,15 +150,15 @@ def test_install_uses_sudo_when_not_root(monkeypatch) -> None:
 def test_install_raises_without_passwordless_sudo(monkeypatch) -> None:
     from pilot.exceptions import BenchError
 
-    monkeypatch.setattr(package_managers, "is_root", lambda: False)
-    monkeypatch.setattr(package_managers, "has_passwordless_sudo", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: False))
+    monkeypatch.setattr(HostPlatform, "has_passwordless_sudo", property(lambda self: False))
     with pytest.raises(BenchError, match="Required: git"):
         DnfPackageManager().install("git")
 
 
 def test_install_skips_permission_check_on_macos(monkeypatch) -> None:
-    monkeypatch.setattr(package_managers, "is_root", lambda: False)
-    monkeypatch.setattr(package_managers, "has_passwordless_sudo", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: False))
+    monkeypatch.setattr(HostPlatform, "has_passwordless_sudo", property(lambda self: False))
     with patch.object(package_managers.subprocess, "run") as run:
         BrewPackageManager().install("git")
     assert run.call_args[0][0] == ["brew", "install", "git"]
@@ -175,7 +174,7 @@ def test_install_node_uses_brew_on_macos(monkeypatch) -> None:
 
     manager = module.PythonEnvManager(bench=None)
     commands: list[list[str]] = []
-    monkeypatch.setattr(module, "is_macos", lambda: True)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: True))
     monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: commands.append(argv))
     manager._install_node()
     assert commands == [["brew", "install", "node"]]
@@ -186,7 +185,7 @@ def test_install_node_raises_on_other_linux(monkeypatch) -> None:
     from pilot.managers import environment as module
 
     manager = module.PythonEnvManager(bench=None)
-    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
     with pytest.raises(BenchError, match=r"install\.sh"):
         manager._install_node()
 
@@ -199,7 +198,7 @@ def test_node_version_is_checked_before_yarn_runs(monkeypatch, version: str, is_
     from pilot.managers import environment as module
 
     monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: SimpleNamespace(stdout=version.encode()))
-    monkeypatch.setattr(module, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(HostPlatform, "get_executable_path", lambda self, name: f"/usr/bin/{name}")
 
     if is_accepted:
         module.PythonEnvManager.require_node_version()

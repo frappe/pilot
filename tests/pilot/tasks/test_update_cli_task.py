@@ -34,7 +34,7 @@ def test_run_upgrades_then_restarts_every_bench_admin_in_a_new_process(tmp_path:
     task = UpdateCliTask(bench=MagicMock(path=first), bench_root=first)
 
     with (
-        patch("pilot.utils.benches_dir", return_value=tmp_path),
+        patch("pilot.core.server.Server.benches_dir", tmp_path),
         patch("pilot.updater.perform_upgrade") as upgrade,
         patch("pilot.updater.subprocess.run") as run,
     ):
@@ -53,7 +53,7 @@ def test_one_failed_admin_restart_does_not_skip_the_others(tmp_path: Path) -> No
     failure = subprocess.CalledProcessError(1, ["python"])
 
     with (
-        patch("pilot.utils.benches_dir", return_value=tmp_path),
+        patch("pilot.core.server.Server.benches_dir", tmp_path),
         patch("pilot.updater.subprocess.run", side_effect=[failure, None]) as run,
         pytest.raises(BenchError, match="Could not restart the admin of: a"),
     ):

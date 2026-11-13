@@ -76,3 +76,15 @@ def test_the_console_runs_the_bench_python_with_its_safe_argv(tmp_path: Path) ->
         _ = completions.ConsoleCompletions(site).doctypes
 
     assert run_command.call_args.args[0][:2] == [str(bench.python), "-P"]
+
+
+def test_setting_the_admin_password_runs_the_bench_python_with_its_safe_argv(tmp_path: Path) -> None:
+    from pilot.core.site import commands
+
+    bench = make_bench(tmp_path)
+    _write_venv(bench, "version_info = 3.14.2\n")
+    with patch.object(commands, "run_command") as run_command:
+        commands.SiteCommands(bench.site("site1")).set_admin_password("secret")
+
+    assert run_command.call_args.args[0][:2] == [str(bench.python), "-P"]
+    assert run_command.call_args.kwargs["cwd"] == bench.sites_path

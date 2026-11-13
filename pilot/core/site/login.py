@@ -8,8 +8,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pilot.config import RoutePolicy, SiteConfig
-from pilot.core.site.config import read_site_config
-from pilot.utils import normalize_host
+from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
@@ -22,7 +21,8 @@ class SiteLogin:
     def admin_url(
         self, proxy_tls: bool = False, user: str = "Administrator", full_name: str = ""
     ) -> str | None:
-        site_config = read_site_config(self.site.path)
+        """A login URL with a new session, or None when no session was made."""
+        site_config = self.site.config_file.read()
         sid = self.create_session(user, full_name)
         if not sid:
             return None
@@ -62,6 +62,7 @@ class SiteLogin:
         return sid if re.fullmatch(r"[A-Za-z0-9._-]+", sid) else None
 
     def redirect_url(self, site_config: dict, proxy_tls: bool = False) -> str:
+        """The site's desk URL."""
         return site_url(self.site.config.name, site_config, self.site.bench.config, proxy_tls) + "/desk"
 
 
@@ -90,6 +91,7 @@ def site_url(site_name: str, site_config: dict, bench_config, proxy_tls: bool = 
 
 
 def primary_host(site: str, site_config: dict) -> str:
+    """The primary host of the site."""
     candidates = {normalize_host(site)}
     for entry in site_config.get("domains") or []:
         domain = entry.get("domain") if isinstance(entry, dict) else entry
@@ -105,6 +107,7 @@ def primary_host(site: str, site_config: dict) -> str:
 
 
 def origin(scheme: str, host: str, port: int) -> str:
+    """The origin URL, without the port when it is the default."""
     default_port = 443 if scheme == "https" else 80
     suffix = "" if port == default_port else f":{port}"
     return f"{scheme}://{host}{suffix}"

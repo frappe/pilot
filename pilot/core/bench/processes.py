@@ -192,6 +192,7 @@ class BenchProcesses:
         return ProcessState("no site uses the app")
 
     def _declared_definitions(self, app_name: str | None = None) -> list["ProcessDefinition"]:
+        """Every declared process definition, for one app or all."""
         return list(chain.from_iterable(self.get_declared(app_name).values()))
 
     @staticmethod

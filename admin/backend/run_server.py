@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 def main() -> None:
+    """Run the Admin with the Werkzeug server."""
     parser = argparse.ArgumentParser(
         description="Run the admin app with its own Werkzeug server (dev reload or wizard "
         "bootstrap) instead of behind gunicorn."
@@ -72,11 +73,13 @@ def main() -> None:
 
 
 def _start_vite_watch() -> None:
+    """Run the Vite build watcher in the background."""
     frontend_dir = Path(__file__).parent.parent / "frontend"
     if not frontend_dir.exists():
         return
 
     def _run() -> None:
+        """Run the Vite build watcher."""
         subprocess.run(
             ["node_modules/.bin/vite", "build", "--watch", "--mode", "development"],
             cwd=str(frontend_dir),

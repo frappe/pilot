@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 
@@ -108,7 +108,7 @@ def test_computed_memory_limits_cannot_be_changed(name, method) -> None:
 
 
 def test_service_memory_limits_are_not_in_configuration_snapshot() -> None:
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         snapshot = DatabaseConfigurations(_config(), _manager()).snapshot()
     assert snapshot["readable"] is True
     assert not {"MemoryHigh", "MemoryMax"} & {item["name"] for item in snapshot["variables"]}
@@ -158,7 +158,7 @@ def test_snapshot_exposes_generic_and_guarded_action_variables_as_editable() -> 
             "performance_schema": "OFF",
         }
     )
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         result = DatabaseConfigurations(_config(), manager).snapshot()
 
     rows = {row["name"]: row for row in result["variables"]}
@@ -232,9 +232,9 @@ def test_buffer_pool_editor_and_submission_use_the_effective_hard_limit() -> Non
     manager.variable_limits.side_effect = service.variable_limits
     configurations = DatabaseConfigurations(config, manager)
     with (
-        patch(f"{MODULE}.is_linux", return_value=True),
-        patch("pilot.core.database.quick_actions.is_linux", return_value=True),
-        patch("pilot.managers.database.mariadb.is_macos", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
         patch.object(service, "_total_memory_mb", return_value=8192),
         patch.object(service, "_unit_memory_mb", return_value=1024),
     ):
@@ -247,7 +247,7 @@ def test_buffer_pool_editor_and_submission_use_the_effective_hard_limit() -> Non
 def test_buffer_pool_editor_requires_the_mariadb_118_live_ceiling() -> None:
     manager = _manager({"innodb_buffer_pool_size": str(128 * 1024 * 1024)})
 
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         result = DatabaseConfigurations(_config(), manager).snapshot()
 
     row = next(variable for variable in result["variables"] if variable["name"] == "innodb_buffer_pool_size")
@@ -258,7 +258,7 @@ def test_buffer_pool_editor_requires_the_mariadb_118_live_ceiling() -> None:
 
 def test_edits_do_not_depend_on_bench_management() -> None:
     manager = _manager({"connect_timeout": "10", "max_connections": "50"})
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         result = DatabaseConfigurations(_config(allow_management=False), manager).snapshot()
 
     rows = {row["name"]: row for row in result["variables"]}
@@ -340,7 +340,7 @@ def test_prepare_change_normalizes_live_value_and_detects_noop() -> None:
     manager = _manager({"connect_timeout": "10"})
     configurations = DatabaseConfigurations(_config(), manager)
 
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         change = configurations.prepare_change("connect_timeout", 10)
 
     assert change == {
@@ -370,8 +370,8 @@ def test_prepare_change_routes_guarded_variables_through_quick_action_policy(
     configurations = DatabaseConfigurations(_config(), manager)
 
     with (
-        patch(f"{MODULE}.is_linux", return_value=True),
-        patch("pilot.core.database.quick_actions.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
     ):
         change = configurations.prepare_change(name, value)
 
@@ -399,7 +399,7 @@ def test_set_revalidates_policy_and_forwards_normalized_value() -> None:
     manager.set_configuration_variable.return_value = True
     configurations = DatabaseConfigurations(_config(), manager)
 
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         assert configurations.set("innodb_print_all_deadlocks", False) is True
 
     manager.set_configuration_variable.assert_called_once_with(

@@ -9,7 +9,6 @@ from typing import Literal
 from pilot._vendor.packaging.specifiers import InvalidSpecifier, SpecifierSet
 from pilot._vendor.packaging.version import InvalidVersion, Version
 from pilot.exceptions import AppNotFoundError, DependencyResolutionError
-from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -38,6 +37,7 @@ class Resolver:
     _registry: dict[str, list["Resolver"]] = field(default_factory=dict, init=False, repr=False)
 
     def to_dict(self) -> dict:
+        """The resolver as a dict."""
         return {
             "name": self.app,
             "repo": self.repo,
@@ -67,6 +67,7 @@ class Resolver:
         path: list[str],
         result: list["Resolver"],
     ):
+        """Add the app's dependencies, then the app; raise on a cycle."""
         if app in path:
             cycle = " -> ".join([*path[path.index(app) :], app])
             raise DependencyResolutionError(f"Circular dependency detected: {cycle}")
@@ -125,32 +126,29 @@ class Marketplace:
 
     @staticmethod
     def _load_registry() -> list[dict]:
+        """The registry apps."""
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        return RegistryCache(cli_root()).load()
+        return RegistryCache(Server().root).load()
 
     def get_current_frappe_version(self) -> str:
-        cmd = [
-            *self.bench.python_argv,
-            "-c",
-            "import frappe; print(frappe.__version__)",
-        ]
-        result = run_command(cmd)
-        return result.stdout.strip().decode()
+        """From pip's dist-info; importing frappe in a subprocess cost ~160 ms per request."""
+        return self.bench.app("frappe").installed_version
 
     @staticmethod
     def registry() -> list[dict]:
         """The app index for callers without a Marketplace/bench (e.g. tasks), reread when
         the registry clone changes."""
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        return Marketplace._registry_at(_modified_ns(RegistryCache(cli_root()).index_path))
+        return Marketplace._registry_at(_modified_ns(RegistryCache(Server().root).index_path))
 
     @staticmethod
     @lru_cache(maxsize=1)
     def _registry_at(modified_ns: int) -> list[dict]:
+        """The registry apps, cached by file time."""
         return Marketplace._load_registry()
 
     @staticmethod
@@ -162,25 +160,28 @@ class Marketplace:
     def releases(app_name: str) -> tuple[dict, ...]:
         """One app's releases, reread when its registry file changes."""
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        registry = RegistryCache(cli_root())
+        registry = RegistryCache(Server().root)
         return Marketplace._releases_at(app_name, _modified_ns(registry.path / "apps" / f"{app_name}.json"))
 
     @staticmethod
     @lru_cache(maxsize=512)
     def _releases_at(app_name: str, modified_ns: int) -> tuple[dict, ...]:
+        """The releases of an app, cached by file time."""
         from pilot.core.registry_cache import RegistryCache
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        return Marketplace._newest_first(RegistryCache(cli_root()).releases(app_name))
+        return Marketplace._newest_first(RegistryCache(Server().root).releases(app_name))
 
     @staticmethod
     def _newest_first(releases: list[dict]) -> tuple[dict, ...]:
+        """The releases, newest first."""
         return tuple(sorted(releases, key=Marketplace._version_key, reverse=True))
 
     @staticmethod
     def _version_key(release: dict) -> Version:
+        """The version of a release, or 0."""
         try:
             return Version(release.get("version") or "")
         except InvalidVersion:
@@ -205,6 +206,7 @@ class Marketplace:
             return None
 
     def _make_resolver(self, app: dict, release: dict, is_installable: bool) -> "Resolver":
+        """A resolver for an app release."""
         return Resolver(
             app=app["name"],
             repo=app["repo"],
@@ -227,6 +229,7 @@ class Marketplace:
         )
 
     def read_all_apps(self) -> list[Resolver]:
+        """A resolver for every app compatible with the bench."""
         resolvers = []
         dependency_lookup: dict[str, list[Resolver]] = {}
         current_frappe = Version(self.frappe_version)

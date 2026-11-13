@@ -20,12 +20,15 @@ class DeleteBackupTask(Task):
 
     @cached_property
     def site_record(self) -> Site:
+        """The site."""
         return self.bench.site(self.site)
 
     def run(self) -> None:
+        """Delete the backups."""
         self.delete()
 
     def delete_from_remote(self, filename: str) -> bool:
+        """Delete one backup from S3; return whether it was found."""
         timestamp = parse_backup_timestamp(filename)
         if not timestamp:
             print(f"Not found (skipping): {filename}")
@@ -44,6 +47,7 @@ class DeleteBackupTask(Task):
 
     @step("delete", lambda self: f"Delete {len(self.filenames)} backup(s) for {self.site}")
     def delete(self) -> None:
+        """Delete the local and offsite backup files, and record it."""
         backups = self.site_record.backups
         deleted, offsite = [], False
         for filename in self.filenames:
@@ -60,6 +64,7 @@ class DeleteBackupTask(Task):
         self.record(deleted, offsite)
 
     def record(self, deleted: list[str], offsite: bool) -> None:
+        """Record the delete in the audit log."""
         self.bench.audit_action(
             "backup",
             {

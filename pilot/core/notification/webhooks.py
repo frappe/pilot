@@ -17,7 +17,6 @@ if typing.TYPE_CHECKING:
 
 PING_EVENT = "ping"
 WEBHOOK_TIMEOUT_SECONDS = 10
-_RESPONSE_EXCERPT_BYTES = 2000
 
 
 @dataclass(frozen=True)
@@ -27,12 +26,12 @@ class WebhookDelivery:
 
     @property
     def is_success(self) -> bool:
+        """Whether the webhook answered with a 2xx status."""
         return 200 <= self.status < 300
 
 
 def get_webhook_body(bench: "Bench", payload: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """The fixed JSON every endpoint receives. `event`, `message` and `context` keep the older body's fields."""
-    from pilot.utils import admin_url
 
     route = payload.get("action_route")
     return {
@@ -45,7 +44,7 @@ def get_webhook_body(bench: "Bench", payload: dict[str, typing.Any]) -> dict[str
         "severity": payload.get("severity", "Warning"),
         "category": payload.get("category"),
         "site": payload.get("site"),
-        "url": f"{admin_url(bench.config)}{route}" if route else None,
+        "url": f"{bench.config.admin_url}{route}" if route else None,
         "context": payload.get("context") or {},
     }
 
@@ -84,4 +83,5 @@ def ping_webhook(bench: "Bench", endpoint: "WebhookEndpoint") -> WebhookDelivery
 
 
 def _excerpt(response) -> str:
-    return response.read(_RESPONSE_EXCERPT_BYTES).decode(errors="replace")
+    """The start of the response body."""
+    return response.read(2000).decode(errors="replace")

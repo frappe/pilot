@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from admin.backend.providers.site_access_log import SiteAccessLogProvider
+from admin.backend.providers.site.access_log import SiteAccessLogProvider
 
 _TIME_FORMAT = "%d/%b/%Y:%H:%M:%S %z"
 

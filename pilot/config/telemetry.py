@@ -17,6 +17,7 @@ class TelemetryConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "TelemetryConfig":
+        """The telemetry config from its TOML table."""
         return cls(
             endpoint=data.get("endpoint", ""),
             token=data.get("token", ""),
@@ -26,8 +27,10 @@ class TelemetryConfig:
 
     @property
     def is_shipping_metrics(self) -> bool:
+        """Whether metrics are shipped."""
         return self.metrics_enabled and bool(self.endpoint and self.token)
 
     @property
     def is_shipping_logs(self) -> bool:
+        """Whether logs are shipped."""
         return self.logs_enabled and bool(self.endpoint and self.token)

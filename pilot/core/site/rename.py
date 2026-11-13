@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CronError
 from pilot.internal.atomic_file import exchange_paths, exclusive_file_lock, replace_private_text_locked
-from pilot.utils import make_private_directory, normalize_host
+from pilot.internal.hostnames import normalize_host
+from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy, SiteConfig
@@ -37,14 +38,17 @@ class SiteRename:
 
     @property
     def new_path(self) -> Path:
+        """The directory under the new name."""
         return self.bench.sites_path / self.new_name
 
     @property
     def progress_path(self) -> Path:
+        """The file that records rename progress."""
         return self.bench.config_path / "site-renames" / f"{self.old_name}.json"
 
     def run(self, on_progress: Callable[[str], None]) -> None:
-        make_private_directory(self.progress_path.parent, parents=True)
+        """Rename the site, or resume a rename that stopped."""
+        PrivateDirectory(self.progress_path.parent).create(parents=True)
         with exclusive_file_lock(self.progress_path.parent / "operations"):
             self._prepare()
             on_progress(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
@@ -56,6 +60,7 @@ class SiteRename:
                 raise
 
     def _prepare(self) -> None:
+        """Check a pending rename matches, or validate and record a new one."""
         if self.progress_path.exists():
             progress = _load_site_config(self.progress_path)
             expected = [self.new_name, self.keep_old_hostname, self.make_primary]
@@ -86,6 +91,7 @@ class SiteRename:
 
     @property
     def is_directory_moved(self) -> bool:
+        """Whether the directory already moved to the new name."""
         return (
             self.site.path.is_symlink()
             and self.site.path.readlink() == Path(self.new_name)
@@ -94,6 +100,7 @@ class SiteRename:
         )
 
     def _move_or_resume(self) -> None:
+        """Move the directory unless it already moved."""
         if self.is_directory_moved:
             return
         if not self.site.path.is_dir() or self.site.path.is_symlink():
@@ -103,6 +110,7 @@ class SiteRename:
         self._move_site_directory()
 
     def _finish(self, on_progress: Callable[[str], None]) -> None:
+        """Update aliases, config, routes and services for the new name."""
         self.bench.site_aliases.retarget(self.old_name, self.new_name)
         self._pin_certificate_name()
         self._carry_old_hostname()
@@ -133,7 +141,8 @@ class SiteRename:
         self.progress_path.unlink()
 
     def validate(self) -> None:
-        from pilot.utils import host_owner
+        """Raise when the new name is invalid or taken."""
+        from pilot.core.bench.directory import BenchDirectory
 
         if self.new_name == self.old_name:
             raise BenchError("New name is the same as the current name.")
@@ -155,7 +164,7 @@ class SiteRename:
                 f"'{self.new_name}' is already a domain of this bench's site '{claimed_by}'. "
                 f"All benches share one nginx, so hostnames must be unique."
             )
-        owner = host_owner(self.bench.path, self.new_name)
+        owner = BenchDirectory.siblings_of(self.bench.path).get_host_owner(self.new_name)
         if owner:
             raise BenchError(
                 f"'{self.new_name}' is already used by bench '{owner}' (as a site or its admin domain). "
@@ -168,6 +177,7 @@ class SiteRename:
             )
 
     def _register_route(self, hostname: str) -> None:
+        """Register the route for the new hostname."""
         from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         self._new_route = DomainRouteProvider(self.bench).register(hostname, hostname)
@@ -218,6 +228,7 @@ class SiteRename:
         ]
 
     def _site_config_from(self, config: dict) -> "SiteConfig":
+        """The site config under the new name."""
         from pilot.config import RoutePolicy, SiteConfig
 
         return SiteConfig(
@@ -253,6 +264,7 @@ class SiteRename:
                 config["ssl"] = self._new_route.public_tls
 
     def _update_primary_hostname(self) -> bool:
+        """Point host_name at the new name when needed; return whether it changed."""
         with self._updating_site_config() as config:
             primary = (config.get("host_name") or "").split("://", 1)[-1]
             if self.make_primary or (primary and normalize_host(primary) == normalize_host(self.old_name)):
@@ -274,6 +286,7 @@ class SiteRename:
         return bool(certificate_domains(self._site_config_from(self._read_site_config())))
 
     def _refresh_pilot_auth_token(self) -> None:
+        """Give the site a new Pilot token."""
         from admin.backend.internal.session import Session
 
         original = json.loads(self._original_site_config or "{}").get("pilot_auth_token")
@@ -293,6 +306,7 @@ class SiteRename:
                 config["email_sender_name"] = email_sender_name(self.new_name)
 
     def _revoke_old_pilot_auth_token(self) -> None:
+        """Revoke the old Pilot token."""
         if not self._old_pilot_auth_token:
             return
         from admin.backend.internal.session import Session
@@ -300,6 +314,7 @@ class SiteRename:
         Session(self.bench).revoke_token(self._old_pilot_auth_token)
 
     def _read_site_config(self) -> dict:
+        """The site config under the new name."""
         return _load_site_config(self.new_path / "site_config.json")
 
     @contextlib.contextmanager
@@ -334,6 +349,7 @@ class SiteRename:
         )
 
     def _update_default_site(self, current: str, target: str) -> None:
+        """Point the default site at the new name."""
         from pilot.config.common_site_config import update_common_site_config
 
         if not (self.bench.sites_path / "common_site_config.json").exists():
@@ -343,6 +359,7 @@ class SiteRename:
                 config["default_site"] = target
 
     def _rename_in_bench_toml(self, current: str, target: str) -> None:
+        """Rename the site in bench.toml."""
         from pilot.config import BenchConfig
 
         with BenchConfig.open(self.bench.path, mode="raw") as raw:
@@ -351,16 +368,19 @@ class SiteRename:
                     site["name"] = target
 
     def _retarget_hostname_aliases(self, current: str, target: str) -> None:
+        """Point site hostname aliases at the new name."""
         self.bench.hostname_aliases.retarget("site", current, target)
 
     def _add_to_hosts(self) -> None:
+        """Add the new name to /etc/hosts in development."""
         if self.bench.config.production.process_manager != "none":
             return
-        from pilot.managers.platform import add_hosts_entry
+        from pilot.managers.platform import HostsFile
 
-        add_hosts_entry(self.new_name)
+        HostsFile().add(self.new_name)
 
     def _reload_nginx(self) -> None:
+        """Reload nginx for the new name."""
         from pilot.managers.nginx import NginxManager
 
         NginxManager(self.bench).reload_for_site_change()
@@ -372,6 +392,7 @@ class SiteRename:
         manual_cmd: str,
         on_progress: Callable[[str], None],
     ) -> None:
+        """Run a step; on failure tell the user how to run it by hand."""
         on_progress(f"\nRunning {label} for the new domain...")
         try:
             fn()
@@ -381,6 +402,7 @@ class SiteRename:
 
 
 def _domain_name(entry) -> str:
+    """The domain of a domain entry."""
     return entry.get("domain", "") if isinstance(entry, dict) else str(entry)
 
 

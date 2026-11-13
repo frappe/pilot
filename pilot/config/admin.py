@@ -5,10 +5,6 @@ from urllib.parse import urlsplit
 from pilot.config.route import RoutePolicy
 from pilot.exceptions import ConfigError
 
-_HOSTNAME_PATTERN = re.compile(
-    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
-)
-
 
 def default_allow_bench_management() -> bool:
     """Managing sibling benches is a development convenience. A release install keeps
@@ -20,6 +16,10 @@ def default_allow_bench_management() -> bool:
 
 @dataclass
 class AdminConfig:
+    hostname_pattern = re.compile(
+        r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+    )
+
     port: int = 7000  # New series not conflicting with sites
     timeout: int = 180  # seconds
     enabled: bool = False
@@ -50,6 +50,7 @@ class AdminConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "AdminConfig":
+        """The Admin config from its TOML table."""
         return cls(
             port=data.get("port", 7000),
             timeout=data.get("timeout", 180),
@@ -73,6 +74,7 @@ class AdminConfig:
         self.password = password if is_hashed(password) else hash_password(password)
 
     def verify_password(self, password: str) -> bool:
+        """Whether the password matches the saved hash."""
         from pilot.internal.password_hash import verify_password
 
         return verify_password(password, self.password)
@@ -84,9 +86,11 @@ class AdminConfig:
 
     @property
     def route_policy(self) -> RoutePolicy:
+        """The Admin route, or a direct route."""
         return self.route or RoutePolicy.direct(self.tls)
 
     def validate(self, production_enabled: bool, bench_name: str) -> None:
+        """Raise when the Admin config is invalid."""
         if not self.domain:
             if production_enabled:
                 raise ConfigError(
@@ -95,5 +99,5 @@ class AdminConfig:
                     f"'pilot setup production --admin-domain <domain>'."
                 )
             return
-        if not _HOSTNAME_PATTERN.match(self.domain):
+        if not self.hostname_pattern.match(self.domain):
             raise ConfigError(f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}').")

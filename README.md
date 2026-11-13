@@ -158,6 +158,7 @@ See [Admin UI](docs/admin-ui.md) and [Admin API](docs/admin-api.md).
 - [Production](docs/production.md)
 - [Sandbox](docs/sandbox.md)
 - [Domain Provider](docs/domain-provider.md)
+- [Bench and site cloning](docs/cloning.md)
 
 ## Development
 

@@ -17,6 +17,7 @@ class LiteModeConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "LiteModeConfig":
+        """The lite mode config from its TOML table."""
         d = cls()
         return cls(
             enabled=bool(data.get("enabled", d.enabled)),
@@ -33,6 +34,7 @@ class LiteModeConfig:
         return self.request_drain_seconds + self.job_drain_seconds + 30
 
     def validate(self) -> None:
+        """Raise when a restart count is invalid."""
         for name in ("restart_after_requests", "restart_after_jobs"):
             value = getattr(self, name)
             if not isinstance(value, int) or value < 0:

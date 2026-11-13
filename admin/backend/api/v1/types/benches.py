@@ -25,3 +25,18 @@ class CreatedBench(BenchResource):
 
 class BenchReadiness(TypedDict):
     ready: bool
+
+
+class CloneApp(TypedDict):
+    name: str
+    title: str
+
+
+class CloneApps(TypedDict):
+    apps: list[CloneApp]
+
+
+class CloneAppBranches(TypedDict):
+    name: str
+    default_branch: str
+    branches: list[str]

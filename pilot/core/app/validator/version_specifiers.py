@@ -19,6 +19,7 @@ class VersionSpecifiersCheck:
     """
 
     def run(self, app: "App") -> None:
+        """Raise when a version specifier is invalid."""
         data = read_pyproject(app)
         if data is None:
             return  # an app without pyproject.toml has no specifiers to check
@@ -35,6 +36,7 @@ class VersionSpecifiersCheck:
                     self._check_dependencies(app, deps, f"optional-dependencies.{group}")
 
     def _check_requires_python(self, app: "App", project: dict) -> None:
+        """Raise when requires-python is invalid."""
         value = project.get("requires-python")
         if not isinstance(value, str) or not value.strip():
             return
@@ -47,6 +49,7 @@ class VersionSpecifiersCheck:
             ) from exc
 
     def _check_dependencies(self, app: "App", deps: object, where: str) -> None:
+        """Raise when a dependency line is invalid."""
         if not isinstance(deps, list):
             return
         for entry in deps:

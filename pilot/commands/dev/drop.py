@@ -16,6 +16,7 @@ class DevDropCommand(Command):
     skip_confirm: bool = False
 
     def run(self) -> None:
+        """Delete the workspace bench after the user confirms."""
         from pilot.core.workspace import Workspace
 
         workspace = Workspace.current()

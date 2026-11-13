@@ -41,7 +41,10 @@ def fake_servers(
 
     with (
         patch("pilot.managers.redis.subprocess.Popen", side_effect=popen),
-        patch("pilot.managers.redis.is_port_listening", side_effect=lambda port: port in listening),
+        patch(
+            "pilot.internal.host_resources.LocalPort.is_listening",
+            property(lambda self: self.number in listening),
+        ),
         patch("pilot.managers.redis.redis_server_binary", return_value=binary),
     ):
         yield started

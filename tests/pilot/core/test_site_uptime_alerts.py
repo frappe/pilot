@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS
 from pilot.core.bench import Bench
+from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.notification.webhooks import WebhookDelivery
 from pilot.core.site.uptime_monitoring import UptimeMonitor
 
@@ -55,7 +55,7 @@ def _ping(site: str, up: bool) -> dict:
 def _age_alerts(monitor: UptimeMonitor) -> None:
     state = json.loads(monitor.alerts_path.read_text())
     for entry in state.values():
-        entry["since"] -= ALERT_SUSTAINED_SECONDS + 1
+        entry["since"] -= SustainedAlerts.window_seconds + 1
     monitor.alerts_path.write_text(json.dumps(state))
 
 
@@ -255,7 +255,7 @@ def _app_server(monitor: UptimeMonitor, status: int) -> Iterator[ThreadingHTTPSe
     server = ThreadingHTTPServer(("127.0.0.1", 0), _AppServer)
     server.status, server.requests = status, []
     monitor.bench.config.http_port = server.server_port
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield server
@@ -349,3 +349,17 @@ def test_a_site_that_recovers_before_any_alert_sends_nothing(tmp_path: Path) -> 
         monitor.send_alert_if_required([_ping("a.test", up=True)])
 
     assert payloads == []
+
+
+def test_a_site_still_being_created_is_not_pinged(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    sites = [type("S", (), {"config": type("C", (), {"name": name})()})() for name in ("ready.local", "new.local")]
+
+    with (
+        patch.object(Bench, "sites", return_value=sites),
+        patch(
+            "pilot.core.site.uptime_monitoring.TaskReader.get_provisioning_site_names",
+            return_value={"new.local"},
+        ),
+    ):
+        assert monitor.get_sites() == ["ready.local"]

@@ -32,9 +32,11 @@ class SwitchBranchTask(Task):
 
     @staticmethod
     def migration_locks(sites: list[str]) -> list[str]:
+        """The locks a branch switch holds."""
         return ["bench:update", *(f"site:{site.lower()}" for site in sites)]
 
     def run(self) -> None:
+        """Switch the app branch, install it and build its assets."""
         from pilot.managers.environment import PythonEnvManager
 
         self.require_migration_locks()
@@ -74,6 +76,7 @@ class SwitchBranchTask(Task):
 
     @step("checkout", lambda self: f"Switch to branch '{self.branch}'")
     def checkout(self, app) -> None:
+        """Check out the branch; exit on failure."""
         try:
             app.switch_branch(self.branch)
         except BenchError as exc:
@@ -82,14 +85,17 @@ class SwitchBranchTask(Task):
 
     @step("validate", lambda self: f"Validate {self.name} on '{self.branch}'")
     def validate(self, app) -> None:
+        """Validate the app."""
         app.validate()
 
     @step("install", lambda self: f"Reinstall {self.name}")
     def install(self, env, app) -> None:
+        """Install the app into the environment."""
         env.install_app(app)
 
     @step("assets", "Build assets")
     def build_assets(self, env, app) -> None:
+        """Build the app's assets."""
         env.build_assets_for_app(app)
 
     @step("restore", lambda self: f"Return {self.name} to its previous branch")

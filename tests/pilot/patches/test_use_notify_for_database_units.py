@@ -36,7 +36,7 @@ def _bench(root: Path, name: str, db_type: str = "mariadb", manager: str = "") -
 def actions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """What the patch asks systemd to do, in order. The database units are files in tmp_path."""
     actions: list[str] = []
-    monkeypatch.setattr("pilot.managers.database.base.is_macos", lambda: False)
+    monkeypatch.setattr("pilot.managers.platform.HostPlatform.is_macos", False)
     monkeypatch.setattr(
         "pilot.managers.database.base.run_command",
         lambda command, **kwargs: actions.append("database-reload"),

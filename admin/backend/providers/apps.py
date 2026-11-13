@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pilot.internal.git import GitRepo
-from pilot.utils import installed_app_version
+from pilot.internal.host_resources import InstalledPackages
 
 
 @dataclass
@@ -28,15 +28,19 @@ class AppProvider:
         self._bench_root = bench_root
 
     def get_all(self) -> list[AppInfo]:
+        """Every cloned app."""
+        return [self.get_app(name) for name in self.cloned_app_names]
+
+    @property
+    def cloned_app_names(self) -> list[str]:
+        """Names only, from the directory listing: `get_app` runs several git commands per app."""
         apps_path = self._bench_root / "apps"
         if not apps_path.is_dir():
             return []
-
-        return [
-            self.get_app(d.name) for d in sorted(apps_path.iterdir()) if d.is_dir() and (d / ".git").exists()
-        ]
+        return [d.name for d in sorted(apps_path.iterdir()) if d.is_dir() and (d / ".git").exists()]
 
     def get_app(self, name: str) -> AppInfo:
+        """One app with its git state."""
         app_path = self._bench_root / "apps" / name
         repo = GitRepo(app_path)
         title, description = self.get_pyproject_meta(app_path, name)
@@ -51,7 +55,7 @@ class AppProvider:
             current_commit="",
             commit_message="",
             has_local_changes=False,
-            installed_version=installed_app_version(self._bench_root / "env", name),
+            installed_version=InstalledPackages(self._bench_root / "env").get_version(name),
             has_update=False,
         )
         if not repo.is_cloned:

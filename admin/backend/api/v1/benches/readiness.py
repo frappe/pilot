@@ -3,8 +3,9 @@ from __future__ import annotations
 import socket
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.benches.support import ADMIN_DOMAIN_RE, guard_bench_management
 from admin.backend.providers.bench import BenchProvider
@@ -15,10 +16,9 @@ bench_readiness_bp.before_request(guard_bench_management)
 
 @bench_readiness_bp.post("/bench-readiness-checks")
 def create_readiness_check():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    """Check whether a domain or port is ready for a new bench."""
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
     if "domain" in data and not isinstance(data["domain"], str):
         return error_response("invalid_domain", "domain must be a string.", 422)
     if "scheme" in data and not isinstance(data["scheme"], str):
@@ -37,6 +37,7 @@ def create_readiness_check():
 
 
 def _domain_readiness_response(bench_root: Path, data: dict, domain: str):
+    """The readiness of a domain."""
     if "port" in data:
         return error_response(
             "invalid_readiness_check",
@@ -52,6 +53,7 @@ def _domain_readiness_response(bench_root: Path, data: dict, domain: str):
 
 
 def _port_readiness_response(port):
+    """The readiness of a port."""
     if isinstance(port, bool) or not isinstance(port, int):
         return error_response("invalid_port", "port must be an integer.", 422)
     if not 1 <= port <= 65535:

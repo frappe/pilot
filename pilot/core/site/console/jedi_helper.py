@@ -61,6 +61,7 @@ def complete(code, line, column, controllers, name=None):
 # `name=` labels with their details. Jedi cannot see keyword arguments behind **kwargs, as in frappe.get_all,
 # so names a `:param name:` docstring line gives come first, unless the call already passes them.
 def get_params(signatures, source, cursor, typed):
+    """The parameters of the call at the cursor, with the ones already typed left out."""
     params, documented = {}, []
     for signature in signatures:
         names = {param.name for param in signature.params}
@@ -79,6 +80,7 @@ def get_params(signatures, source, cursor, typed):
 
 # Text between two 1-based line, 0-based column positions.
 def get_text(source, start, end):
+    """The source text between two positions."""
     chunk = source[start[0] - 1 : end[0]]
     chunk[-1] = chunk[-1][: end[1]]
     chunk[0] = chunk[0][start[1] :]

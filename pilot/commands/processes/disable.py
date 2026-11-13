@@ -17,6 +17,7 @@ class DisableProcesses(Command):
     ]
 
     def run(self) -> None:
+        """Disable the processes."""
         disabled = self.bench.processes.disable(self.names)
         self.report(f"Disabled {', '.join(disabled)}.")
         if not self.bench.config.production.enabled:

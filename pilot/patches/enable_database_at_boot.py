@@ -10,7 +10,7 @@ def run(benches_root: Path) -> None:
     from pilot.config import BenchConfig
     from pilot.internal.patch_state import is_applied, mark_applied
     from pilot.managers.database import MariaDBManager, PostgresManager
-    from pilot.managers.platform import is_macos
+    from pilot.managers.platform import HostPlatform
 
     for bench_dir in sorted(benches_root.glob("*")):
         if not bench_dir.is_dir() or not (bench_dir / "bench.toml").exists():
@@ -19,7 +19,7 @@ def run(benches_root: Path) -> None:
             continue
         config = BenchConfig.read(bench_dir)
         manager = PostgresManager(config.postgres) if config.db_type == "postgres" else MariaDBManager(config.mariadb)
-        if not is_macos() and not manager.config.existing and manager.unit_path.exists():
+        if not HostPlatform().is_macos and not manager.config.existing and manager.unit_path.exists():
             manager.enable_and_start()
         mark_applied(bench_dir, PATCH_NAME)
 
@@ -28,6 +28,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

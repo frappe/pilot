@@ -7,6 +7,7 @@ import Scrollbar from '@/components/common/Scrollbar.vue'
 import { useSearchIndex } from '@/components/search/index'
 import type { SearchItem } from '@/components/search/index'
 import { filterIndex, highlightMatch } from '@/components/search/utils'
+import { useSites } from '@/composables/sites/useSites'
 
 const open = defineModel('open', { default: false })
 
@@ -16,6 +17,7 @@ const activeIndex = ref(-1)
 const inputRef = useTemplateRef('inputRef')
 const resultsRef = useTemplateRef('resultsRef')
 const searchIndex = useSearchIndex()
+const { load: loadSites } = useSites()
 
 const filtered = computed(() => filterIndex(searchIndex.value, query.value))
 const flatItems = computed(() => Object.values(filtered.value).flatMap((group) => group.items))
@@ -26,6 +28,7 @@ watch(filtered, () => {
 
 watch(open, (isOpen) => {
   if (!isOpen) return
+  loadSites()
   query.value = ''
   activeIndex.value = -1
   nextTick(() => inputRef.value?.focus())

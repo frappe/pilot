@@ -122,9 +122,9 @@ def test_site_app_tasks_clear_the_site_cache_instead_of_reloading() -> None:
 
 
 def test_reload_workers_callback_is_registered() -> None:
-    from pilot.internal.tasks.callbacks import validate_callback
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
-    assert validate_callback({"operation": "reload-workers", "args": {"web_only": False}}) == {
+    assert CallbackOperations.validate({"operation": "reload-workers", "args": {"web_only": False}}) == {
         "operation": "reload-workers",
         "args": {"web_only": False},
     }
@@ -132,7 +132,7 @@ def test_reload_workers_callback_is_registered() -> None:
 
 def test_reload_workers_callback_reloads_the_bench(tmp_path: Path, monkeypatch) -> None:
     from pilot.core.bench import Bench
-    from pilot.internal.tasks.callbacks import run_callback
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
     make_bench(tmp_path).config.write(tmp_path)
     scopes: list[tuple[bool, bool]] = []
@@ -140,7 +140,9 @@ def test_reload_workers_callback_reloads_the_bench(tmp_path: Path, monkeypatch) 
         Bench, "reload_workers", lambda self, web_only=False, raises=False: scopes.append((web_only, raises))
     )
 
-    run_callback({"operation": "reload-workers", "args": {"web_only": False}}, {"bench_root": str(tmp_path)})
+    CallbackOperations({"bench_root": str(tmp_path)}).run(
+        {"operation": "reload-workers", "args": {"web_only": False}}
+    )
 
     assert scopes == [(False, True)]
 

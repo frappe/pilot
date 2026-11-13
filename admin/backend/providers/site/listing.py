@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
+from pilot.core.site.config.database_state import SiteDatabaseState
+from pilot.internal.site_paths import resolve_site_path
+from pilot.managers.task import TaskReader
+
+
+@dataclass
+class SiteInfo:
+    name: str
+    exists: bool
+    db_name: str
+    db_host: str
+    db_type: str
+    active_apps: list[str]
+    site_config: dict
+    broken: bool = False
+    provisioning: bool = False
+    setup_complete: bool = False
+
+
+class SiteProvider:
+    def __init__(self, bench_root: Path) -> None:
+        self._bench_root = bench_root
+
+    def get_all(self) -> list[SiteInfo]:
+        """Every site."""
+        sites_path = self._bench_root / "sites"
+        if sites_path.is_symlink() or not sites_path.is_dir():
+            return []
+
+        provisioning = self.provisioning_site_names
+        return [
+            self.get_site(d.name, provisioning)
+            for d in sorted(sites_path.iterdir())
+            if not d.is_symlink()
+            and d.is_dir()
+            and not (d / "site_config.json").is_symlink()
+            and (d / "site_config.json").is_file()
+        ]
+
+    def get_one(self, site_name: str) -> SiteInfo:
+        """One site."""
+        return self.get_site(site_name, self.provisioning_site_names)
+
+    @property
+    def provisioning_site_names(self) -> set[str]:
+        """Sites with an active provisioning task: a failed DB probe there means "not ready yet"."""
+        try:
+            return TaskReader(self._bench_root).get_provisioning_site_names()
+        except Exception:
+            return set()
+
+    def get_site(self, site_name: str, provisioning: set[str]) -> SiteInfo:
+        """One site, marking it when it is still being created."""
+        site_path = resolve_site_path(self._bench_root, site_name)
+        if site_path is None:
+            raise ValueError("Site path must stay within the bench.")
+
+        site_config_path = site_path / "site_config.json"
+        exists = not site_config_path.is_symlink() and site_config_path.is_file()
+        site_config: dict = {}
+
+        if exists:
+            try:
+                site_config = json.loads(site_config_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                site_config = {}
+
+        is_provisioning = site_name in provisioning
+        active: list = []
+        broken = False
+        setup_complete = False
+
+        if exists:
+            active, broken = self._read_active_apps(site_config, site_name, is_provisioning)
+            if not is_provisioning and not broken:
+                setup_complete = bool(SiteDatabaseState(self._bench_root, site_name).is_setup_complete)
+
+        return SiteInfo(
+            name=site_name,
+            exists=exists,
+            db_name=site_config.get("db_name", ""),
+            db_host=site_config.get("db_host") or "localhost",
+            db_type=site_config.get("db_type") or "mariadb",
+            active_apps=active,
+            site_config=site_config,
+            broken=broken,
+            provisioning=is_provisioning,
+            setup_complete=setup_complete,
+        )
+
+    def _read_active_apps(
+        self, site_config: dict, site_name: str, is_provisioning: bool
+    ) -> tuple[list, bool]:
+        """Apps in use on the site, and whether it looks broken. A provisioning site is
+        never probed - its database is not up yet."""
+        apps = site_config.get("installed_apps")
+        if is_provisioning:
+            return apps if isinstance(apps, list) else [], False
+        state = SiteDatabaseState(self._bench_root, site_name)
+        if not isinstance(apps, list):
+            apps = state.installed_apps
+            if apps is None:
+                return [], True
+        return state.exclude_disabled(apps), False

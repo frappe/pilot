@@ -41,8 +41,11 @@ def step(key: str, label: str | Callable[[Any], str] = ""):
     """Wrap a task method in a UI step."""
 
     def decorator(func):
+        """Wrap the method in a step."""
+
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
+            """Run the method inside its step."""
             resolved_label = label(self) if callable(label) else label
             with self.step(key, resolved_label):
                 return func(self, *args, **kwargs)
@@ -101,6 +104,7 @@ class Task:
         resource_handoff_from: str | None = None,
         **args,
     ) -> str:
+        """Queue the task and return its ID."""
         callbacks = cls._queue_callbacks(bench, args, callbacks)
         task_id = bench.tasks.run_task(
             cls,
@@ -136,6 +140,7 @@ class Task:
         resource_handoff_from: str | None = None,
         **args,
     ) -> TaskSubmission:
+        """Queue the task and return the submission."""
         callbacks = cls._queue_callbacks(bench, args, callbacks)
         return bench.tasks.submit_task(
             cls,
@@ -153,6 +158,7 @@ class Task:
         args: dict,
         explicit: "TaskCallbacks | None",
     ) -> "TaskCallbacks | None":
+        """The callbacks of the task with these arguments."""
         from pilot.tasks.callbacks import task_callbacks_for
 
         constructor_args = cls._constructor_args(args)
@@ -166,6 +172,7 @@ class Task:
 
     @classmethod
     def _constructor_args(cls, args: dict) -> dict:
+        """The arguments the task constructor takes."""
         valid = {
             field.name for field in fields(cls) if field.init and field.name not in {"bench", "bench_root"}
         }
@@ -176,6 +183,7 @@ class Task:
         self._failed_steps: set[str] = set()
 
     def step(self, key: str, label: str = "") -> AbstractContextManager[None]:
+        """Mark a step as started and its end on exit."""
         self._current_step = key
         print(f"STEP {key},{time.time():.3f} {label}", flush=True)
         return _TaskStep(self, key)
@@ -189,23 +197,28 @@ class Task:
             self.mark_step_failed(self._current_step)
 
     def mark_step_failed(self, key: str) -> None:
+        """Mark a step as failed once."""
         if key in self._failed_steps:
             return
         self._failed_steps.add(key)
         print(f"STEP-FAILED {key},{time.time():.3f}", flush=True)
 
     def clear_step(self, key: str) -> None:
+        """Forget the current step if it is this one."""
         if self._current_step == key:
             self._current_step = None
 
     def done(self) -> None:
+        """Mark the task as done."""
         with self.step("done"):
             pass
 
     def report(self, message: str) -> None:
+        """Print a progress message."""
         print(message, flush=True)
 
     def require_production_privileges(self) -> None:
+        """Raise when production needs root access that is not available."""
         from pilot.exceptions import BenchError
         from pilot.managers.nginx import NginxManager
 
@@ -214,11 +227,13 @@ class Task:
 
     @classmethod
     def main(cls) -> None:
+        """Run the task from the command line."""
         from pilot.internal.tasks.authoring import run_task_main
 
         run_task_main(cls)
 
     def run(self) -> None:
+        """Run the task."""
         raise NotImplementedError
 
 
@@ -237,6 +252,7 @@ class TaskRunner:
         resource_handoff_from: str | None = None,
         **args,
     ) -> str:
+        """Queue a task and return its ID."""
         return self.run(
             task_type.command,
             self._task_args(task_type, args),
@@ -255,6 +271,7 @@ class TaskRunner:
         resource_handoff_from: str | None = None,
         **args,
     ) -> TaskSubmission:
+        """Queue a task and return the submission."""
         return self.submit(
             task_type.command,
             self._task_args(task_type, args),
@@ -273,6 +290,7 @@ class TaskRunner:
         resource_key: str | list[str] | None = None,
         resource_handoff_from: str | None = None,
     ) -> str:
+        """Queue a command and return its ID."""
         return self.__engine.run(
             command,
             args,
@@ -291,6 +309,7 @@ class TaskRunner:
         resource_key: str | list[str] | None = None,
         resource_handoff_from: str | None = None,
     ) -> TaskSubmission:
+        """Queue a command and return the submission."""
         result = self.__engine.submit(
             command,
             args,
@@ -301,10 +320,16 @@ class TaskRunner:
         )
         return TaskSubmission(result.task_id, result.created)
 
+    def find_idempotent_task(self, command: str, args: dict, key: str | None) -> str | None:
+        """The task queued earlier with this idempotency key, if any."""
+        return self.__engine.find_idempotent_task(command, args, key)
+
     def kill(self, task_id: str) -> None:
+        """Kill a task."""
         self.__engine.kill(task_id)
 
     def _task_args(self, task_type: type[Task], args: dict) -> dict:
+        """The arguments the task type takes."""
         valid = {
             field.name
             for field in fields(task_type)

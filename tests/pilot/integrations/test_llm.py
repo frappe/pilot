@@ -366,11 +366,11 @@ def test_non_streamed_answers_are_cached_too(fake_litellm, empty_response_cache)
 
 
 def test_cache_does_not_grow_without_bound(fake_litellm, empty_response_cache) -> None:
-    for index in range(base._CACHE_LIMIT + 5):
+    for index in range(base.LLMIntegration.cache_limit + 5):
         integration = _streaming_integration(fake_litellm, [f"answer {index}"])
         list(integration.prompt(f"q{index}", bench_root=_BENCH))
 
-    assert len(empty_response_cache) == base._CACHE_LIMIT
+    assert len(empty_response_cache) == base.LLMIntegration.cache_limit
 
 
 def test_refresh_replaces_the_cached_answer(fake_litellm, empty_response_cache) -> None:

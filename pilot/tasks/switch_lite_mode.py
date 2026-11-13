@@ -12,10 +12,12 @@ class SwitchLiteModeTask(Task):
     command: ClassVar[str] = "switch-lite-mode"
 
     def run(self) -> None:
+        """Switch lite mode."""
         self.rebuild_process_set()
 
     @step("processes", "Rebuild the process set")
     def rebuild_process_set(self) -> None:
+        """Reinstall the processes for the new mode."""
         self.bench.rebuild_process_set(on_progress=self.report)
 
 

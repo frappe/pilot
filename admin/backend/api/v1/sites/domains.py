@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from flask import current_app, jsonify, request
+from flask import jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
@@ -27,7 +28,8 @@ from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 @sites_bp.post("/<name>/actions/enable-tls")
 @require_scope(site_name)
 def enable_tls(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue turning on TLS for the site."""
+    bench_root = ApiRequest.get_bench_root()
     config_path = site_config_path(bench_root, name)
     if config_path is None:
         return site_not_found()
@@ -45,7 +47,7 @@ def enable_tls(name: str):
             Bench(bench_root),
             site=name,
             email=email,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
@@ -54,6 +56,7 @@ def enable_tls(name: str):
 
 
 def _tls_email_request(bench_root: Path):
+    """The Let's Encrypt email, or an error response."""
     from pilot.config import BenchConfig
 
     data = request.get_json(silent=True)
@@ -88,6 +91,7 @@ def _tls_email_request(bench_root: Path):
 
 
 def _validate_tls_not_enabled(config_path: Path):
+    """The error response when TLS is already on, or None."""
     try:
         current = json.loads(config_path.read_text())
     except Exception:
@@ -100,17 +104,20 @@ def _validate_tls_not_enabled(config_path: Path):
 
 
 def _site_domains(bench_root: Path, name: str):
+    """The site's domains."""
     return Bench(bench_root).site(name).domains
 
 
 def _apply_domains(bench_root: Path, name: str) -> str:
+    """Queue applying the domains; return the task ID."""
     return _site_domains(bench_root, name).apply_task()
 
 
 @sites_bp.route("/<name>/domains", methods=["GET"])
 @require_scope(site_name)
 def list_domains(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """List the site's domains."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -134,7 +141,7 @@ def list_domains(name: str):
 @require_scope(site_name)
 def domain_dns_records(name: str, domain: str):
     """Read-only guidance for attaching a domain: CNAME/A record options."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     if err := validate_site_name(domain):
@@ -151,7 +158,8 @@ def domain_dns_records(name: str, domain: str):
 @sites_bp.post("/<name>/domains")
 @require_scope(site_name)
 def add_domain(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Add a domain."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     fields, response = _add_domain_request()
@@ -169,6 +177,7 @@ def add_domain(name: str):
 
 
 def _add_domain_request():
+    """The domain fields, or an error response."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return None, malformed_body()
@@ -189,7 +198,8 @@ def _add_domain_request():
 @sites_bp.get("/<name>/domains/<domain>")
 @require_scope(site_name)
 def get_domain(name: str, domain: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Show one domain."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     if err := validate_site_name(domain):
@@ -208,7 +218,8 @@ def get_domain(name: str, domain: str):
 @sites_bp.patch("/<name>/domains/<domain>")
 @require_scope(site_name)
 def update_domain(name: str, domain: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Update a domain."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     if err := validate_site_name(domain):
@@ -230,7 +241,8 @@ def update_domain(name: str, domain: str):
 @sites_bp.delete("/<name>/domains/<domain>")
 @require_scope(site_name)
 def remove_domain(name: str, domain: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Remove a domain."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     if err := validate_site_name(domain):
@@ -246,6 +258,7 @@ def remove_domain(name: str, domain: str):
 
 
 def _domain_failure(error: BenchError, message: str):
+    """The error response for a domain failure."""
     if isinstance(error, ConfigError):
         raise error
     if isinstance(error, DomainConflictError):

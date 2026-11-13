@@ -5,14 +5,16 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 
 def systemctl(*args: str) -> list[str]:
+    """The systemctl --user command."""
     return ["systemctl", "--user", *args]
 
 
 def systemctl_env() -> dict:
+    """The environment systemctl --user needs."""
     env = dict(os.environ)
     runtime_dir = env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     # Without the bus address systemd-run starts an uncapped scope and reports success.
@@ -81,6 +83,7 @@ def memory_capped(argv: list[str], memory_max_mb: int, swap_max_mb: int) -> list
 
 
 def user_unit_dir() -> Path:
+    """The user systemd unit directory."""
     return Path.home() / ".config" / "systemd" / "user"
 
 
@@ -90,13 +93,16 @@ class SystemdUserMixin:
     shared monitor/uptime timers)."""
 
     def _systemctl(self, *args: str) -> list[str]:
+        """The systemctl --user command."""
         return systemctl(*args)
 
     def _systemctl_env(self) -> dict:
+        """The environment systemctl --user needs."""
         return systemctl_env()
 
     @property
     def user_unit_dir(self) -> Path:
+        """The user systemd unit directory."""
         return user_unit_dir()
 
 

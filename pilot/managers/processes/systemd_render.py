@@ -46,6 +46,7 @@ _SANDBOX_DIRECTIVES = [
 
 
 def _exec(argv: list[str]) -> str:
+    """The ExecStart value of a command."""
     # Exec lines need an absolute path, so `env` does the PATH lookup for a bare name.
     if "/" not in argv[0]:
         argv = ["/usr/bin/env", *argv]
@@ -54,12 +55,13 @@ def _exec(argv: list[str]) -> str:
 
 def _quote(argument: str) -> str:
     """systemd reads C escapes inside quotes and expands % specifiers and $ variables everywhere."""
-    if not _SAFE_ARGUMENT.fullmatch(argument):
+    if not re.fullmatch(r"[\w@%+=:,./-]+", argument, flags=re.ASCII):
         argument = '"' + argument.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return argument.replace("%", "%%").replace("$", "$$")
 
 
 def _render_env(env: dict) -> str:
+    """The Environment lines."""
     lines = []
     for key, value in env.items():
         value = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
@@ -125,6 +127,7 @@ class SystemdRenderer(ServiceRenderer):
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
+        """The service unit of a process."""
         working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
         env = _render_env(pd.env)
         stop = f"TimeoutStopSec={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
@@ -158,6 +161,7 @@ class SystemdRenderer(ServiceRenderer):
         return [*self.sandbox_properties, *self.get_path_properties(pd.read_paths, pd.write_paths)]
 
     def _dependencies(self, pd: ProcessDefinition) -> str:
+        """The After and Requires lines of a process."""
         # systemd stops in reverse start order; redis must outlive a lite runner draining into it.
         lines = ""
         if not pd.name.startswith("redis"):
@@ -169,6 +173,7 @@ class SystemdRenderer(ServiceRenderer):
         return lines
 
     def render_admin_socket(self, port: int) -> str:
+        """The Admin socket unit."""
         # No PartOf: admin stays reachable while the workload is stopped.
         return (
             f"[Unit]\n"
@@ -180,6 +185,7 @@ class SystemdRenderer(ServiceRenderer):
         )
 
     def render_admin_service(self, pd: ProcessDefinition, socket_name: str) -> str:
+        """The Admin service unit."""
         env = _render_env(pd.env)
         return (
             f"[Unit]\n"
@@ -226,9 +232,11 @@ class SystemdRenderer(ServiceRenderer):
         )
 
     def get_socket_name(self, pd: ProcessDefinition) -> str | None:
+        """The socket unit name of a process, if it listens."""
         return f"{self.bench_name}-{pd.name}.socket" if pd.listen_address else None
 
     def render_socket(self, pd: ProcessDefinition) -> str:
+        """The socket unit of a process."""
         # A target stop stops the socket. A target restart would restart it too, so `restart` avoids one.
         return (
             f"[Unit]\n"
@@ -239,6 +247,7 @@ class SystemdRenderer(ServiceRenderer):
         )
 
     def render_target(self, unit_names: list[str]) -> str:
+        """The bench target unit."""
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} bench\n"

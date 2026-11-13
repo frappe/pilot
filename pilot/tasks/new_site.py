@@ -17,6 +17,7 @@ class NewSiteTask(Task):
     apps: list[str] = field(default_factory=list)
 
     def run(self) -> None:
+        """Get missing apps and create the site."""
         self.require_production_privileges()
         self.fetch_missing_apps()
         self.reload_for_site_apps()
@@ -32,14 +33,17 @@ class NewSiteTask(Task):
     @on_failure
     @on_cancel
     def remove_failed_site(self) -> dict:
+        """The callback args that remove the failed site."""
         return {"site": self.name}
 
     @on_success
     def release_site_creation(self) -> dict:
+        """The callback args that release the site creation."""
         return {"site": self.name}
 
     @step("create", lambda self: f"Create site {self.name}")
     def create(self) -> None:
+        """Create the site."""
         Site.provision(
             self.bench,
             self.name,

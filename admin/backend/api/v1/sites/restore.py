@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import malformed_body, site_name, site_not_found, task_failure
@@ -14,10 +15,10 @@ from admin.backend.api.v1.types.site_backups import RemoteBackup, RemoteBackupLi
 from admin.backend.middleware import is_bench_scoped, require_scope
 from pilot.core.bench import Bench
 from pilot.core.bench.uploads import upload_file_name
-from pilot.core.site.restore import RESTORE_PARTS
+from pilot.core.site.backups.restore import RESTORE_PARTS
+from pilot.internal.private_files import PrivateDirectory
 from pilot.internal.site_paths import site_exists
 from pilot.tasks.restore_site import RestoreSiteTask
-from pilot.utils import make_private_directory
 
 _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 
@@ -27,7 +28,7 @@ _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 def restore_site(name: str):
     """Restore from a site on this bench (a backup run or a fresh backup), a remote site, Frappe
     Cloud, or files from a chunked upload."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     data = request.get_json(silent=True)
@@ -50,7 +51,7 @@ def restore_site(name: str):
 @require_scope(site_name)
 def restore_site_from_upload(name: str):
     """Restore from backup files sent as multipart fields database, public, private and config."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     parts = _parts(request.form.getlist("parts"))
@@ -61,7 +62,7 @@ def restore_site_from_upload(name: str):
 
     # The task's cleanup-site-restore callback removes this directory if the restore fails.
     upload_dir = Bench(bench_root).uploads_path / secrets.token_hex(8)
-    make_private_directory(upload_dir, parents=True)
+    PrivateDirectory(upload_dir).create(parents=True)
     # The site config carries the encryption key a restored database needs.
     fields = [*parts, "config"] if "database" in parts else parts
     try:
@@ -99,6 +100,7 @@ def _restore_from_chunked_upload(bench_root: Path, name: str, parts: list[str], 
 
 
 def _restore_from_bench_site(bench_root: Path, name: str, parts: list[str], data: dict):
+    """Queue a restore from a site on this host."""
     source = data.get("source_site") or name
     timestamp = data.get("backup_timestamp") or ""
     # A site token may read its own backups only. Checked first, so it cannot probe for sites.
@@ -118,7 +120,7 @@ def list_remote_backups(name: str):
     from admin.backend.providers.backups import BackupProvider
     from pilot.exceptions import RemoteSiteError
 
-    if not site_exists(Path(current_app.config["BENCH_ROOT"]), name):
+    if not site_exists(ApiRequest.get_bench_root(), name):
         return site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -138,6 +140,7 @@ def list_remote_backups(name: str):
 
 
 def _restore_from_remote(bench_root: Path, name: str, parts: list[str], data: dict):
+    """Queue a restore from a remote site."""
     timestamp = data.get("backup_timestamp")
     if not isinstance(timestamp, str) or not _TIMESTAMP_RE.fullmatch(timestamp):
         return _invalid("Get the backups of the remote site first.")
@@ -201,7 +204,7 @@ def _queue(bench_root: Path, name: str, parts: list[str], sites: set[str], idemp
             Bench(bench_root),
             site=name,
             parts=parts,
-            idempotency_key=request.headers.get("Idempotency-Key") if idempotent else None,
+            idempotency_key=ApiRequest.get_idempotency_key() if idempotent else None,
             resource_key=[f"site:{site.lower()}" for site in sorted(sites)],
             skip_failing_patches=_skips_failing_patches(),
             **source,
@@ -220,6 +223,7 @@ def _skips_failing_patches() -> bool:
 
 
 def _parts(value) -> list[str] | None:
+    """The valid restore parts, or None."""
     if not isinstance(value, list) or not value:
         return None
     if any(not isinstance(part, str) or part not in RESTORE_PARTS for part in value):
@@ -228,4 +232,5 @@ def _parts(value) -> list[str] | None:
 
 
 def _invalid(message: str):
+    """A 422 response with the message."""
     return error_response("invalid_restore", message, 422)
