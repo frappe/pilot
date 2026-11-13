@@ -1,6 +1,3 @@
-"""Outside the sandbox Pilot runs the bench Python in sites/, which a workload can write. Python puts the
-working directory first on sys.path, so without -P a planted sites/frappe/ would replace Frappe."""
-
 from __future__ import annotations
 
 import subprocess

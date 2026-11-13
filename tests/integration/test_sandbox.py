@@ -1,5 +1,3 @@
-"""A sandboxed systemd production bench: its units run, and the sandbox blocks what it should."""
-
 from __future__ import annotations
 
 import json
