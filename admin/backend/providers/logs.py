@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.managers.processes.sandbox import WORKLOAD_LOGS
 from pilot.managers.task.reader import HEARTBEAT_SECONDS
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
@@ -45,8 +46,13 @@ class LogProvider:
         if not logs_dir.exists():
             return []
 
+        # The workload owns this folder, so a link or a pipe there is not read.
+        candidates = (logs_dir / WORKLOAD_LOGS).glob("*.log")
+        workload_paths = [path for path in candidates if path.is_file() and not path.is_symlink()]
+        paths = {path.name: path for path in [*workload_paths, *logs_dir.glob("*.log")]}
+
         infos = []
-        for path in sorted(logs_dir.glob("*.log")):
+        for path in sorted(paths.values(), key=lambda path: path.name):
             stat = path.stat()
             infos.append(
                 LogFileInfo(
@@ -105,14 +111,22 @@ class LogProvider:
             return 0
 
     def _validated_path(self, filename: str) -> Path:
-        """Resolves filename inside logs/, rejecting separators/traversal so
-        callers can't escape the log dir."""
+        """Resolves filename in logs/, then in the workload's logs/workload/, rejecting
+        separators/traversal so callers can't escape either folder."""
         if "/" in filename or "\\" in filename:
             raise ValueError(f"Invalid filename: {filename!r}")
 
-        logs_dir = (self._bench_root / "logs").resolve()
-        resolved = (self._bench_root / "logs" / filename).resolve()
-        if resolved.parent != logs_dir:
-            raise ValueError(f"Path traversal detected in filename: {filename!r}")
+        logs_dir = self._bench_root / "logs"
+        pilot_path = self._resolve_inside(logs_dir, filename)
+        if pilot_path.exists():
+            return pilot_path
 
+        workload_path = self._resolve_inside(logs_dir / WORKLOAD_LOGS, filename)
+        return workload_path if workload_path.is_file() else pilot_path
+
+    @staticmethod
+    def _resolve_inside(folder: Path, filename: str) -> Path:
+        resolved = (folder / filename).resolve()
+        if resolved.parent != folder.resolve():
+            raise ValueError(f"Path traversal detected in filename: {filename!r}")
         return resolved
