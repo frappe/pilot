@@ -146,13 +146,13 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         """Why the bench venv's Python cannot run beside the sandbox, or "". Outside the sandbox Pilot runs
         that Python with -P, so a workload's sites/frappe/ cannot replace Frappe, and -P needs 3.11."""
         version = self.bench.python_version
-        if version and version < (3, 11):
-            found = ".".join(map(str, version))
-            return (
-                f"the bench venv uses Python {found}, and the sandbox needs 3.11 or later "
-                "(python -P keeps sites/ off sys.path outside the sandbox)."
-            )
-        return ""
+        if version >= (3, 11):
+            return ""
+        found = f"uses Python {'.'.join(map(str, version))}" if version else "has no known Python version"
+        return (
+            f"the bench venv {found}, and the sandbox needs 3.11 or later "
+            "(python -P keeps sites/ off sys.path outside the sandbox)."
+        )
 
     def get_sandbox_paths(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Paths every workload unit gets back from the masked home.

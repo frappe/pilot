@@ -6,6 +6,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.exceptions import BenchError
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
@@ -37,6 +39,8 @@ CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
 # admin's tasks/, stays outside the sandbox. Folders, because Linux detaches a file mount once Pilot
 # replaces the file by rename.
 WORKLOAD_DIRECTORIES = ("sites", "config", "logs", "pids", "chromium")
+# The folder in logs/ that a workload sees as its logs/. Pilot's and systemd's own files stay outside it.
+WORKLOAD_LOGS = "workload"
 # The bench folders that hold code. The admin and the CLI run it outside the sandbox, so a workload
 # only reads it.
 CODE_DIRECTORIES = ("apps", "env")
@@ -80,6 +84,7 @@ class PilotSandboxPaths:
         A workload cannot create a folder in the read-only bench root, and cannot plant a protected one first."""
         for name in (*CODE_DIRECTORIES, *WORKLOAD_DIRECTORIES):
             (bench.path / name).mkdir(parents=True, exist_ok=True)
+        PilotSandboxPaths.create_workload_logs(bench)
         bench_root = Path(os.path.realpath(bench.path))
         for path in map(Path, declared_paths):
             if path.is_relative_to(bench_root):
@@ -91,6 +96,14 @@ class PilotSandboxPaths:
             aliases.write_text("{}\n")
         if not (bench.config_path / "realtime-folders.txt").exists():
             bench.processes.save_realtime_folders()
+
+    @staticmethod
+    def create_workload_logs(bench: Bench) -> None:
+        """A link here would mount its target as the workload's logs/, so it is refused."""
+        path = bench.logs_path / WORKLOAD_LOGS
+        if path.is_symlink():
+            raise BenchError(f"{path} must be a folder, not a link. Remove it, then run the command again.")
+        path.mkdir(exist_ok=True)
 
     @staticmethod
     def get_node_prefix() -> Path:

@@ -7,7 +7,12 @@ from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.managers.processes.sandbox import CODE_DIRECTORIES, CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
+from pilot.managers.processes.sandbox import (
+    CODE_DIRECTORIES,
+    CONTROL_ENTRIES,
+    WORKLOAD_DIRECTORIES,
+    WORKLOAD_LOGS,
+)
 
 _SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
 
@@ -84,7 +89,10 @@ class SystemdRenderer(ServiceRenderer):
         control = [str(bench_path / name) for name in CODE_DIRECTORIES]
         control += [str(bench_path / "config" / name) for name in CONTROL_ENTRIES]
         control.append(str(bench_path / "sites" / "common_site_config.json"))
-        folders = " ".join(_quote(str(bench_path / name)) for name in WORKLOAD_DIRECTORIES)
+        workload = [bench_path / name for name in WORKLOAD_DIRECTORIES]
+        folders = " ".join(_quote(str(folder)) for folder in workload)
+        # The workload's logs/ is logs/workload, so it cannot replace a log file that systemd or Pilot writes.
+        sources = " ".join(_quote(SystemdRenderer.get_bind_source(folder)) for folder in workload)
         return [
             *_SANDBOX_DIRECTIVES,
             # ProtectHome only masks /home and /root; this masks a home elsewhere, such as /srv/frappe.
@@ -92,11 +100,16 @@ class SystemdRenderer(ServiceRenderer):
             # The tmpfs hides the neighbouring benches and this bench's admin files; the binds bring back
             # the folders a workload uses.
             f"TemporaryFileSystem={_quote(f'{benches_dir}:ro')}",
-            f"BindPaths={folders}",
+            f"BindPaths={sources}",
             f"ReadWritePaths={folders}",
             # DNS on hosts that run systemd-resolved.
             *SystemdRenderer.get_path_properties([*control, "/run/systemd/resolve", *read_paths], write_paths),
         ]
+
+    @staticmethod
+    def get_bind_source(folder: Path) -> str:
+        """The BindPaths= entry for a workload folder: logs/ is mounted from logs/workload."""
+        return f"{folder / WORKLOAD_LOGS}:{folder}" if folder.name == "logs" else str(folder)
 
     @staticmethod
     def get_path_properties(read_paths: Iterable[str], write_paths: Iterable[str]) -> list[str]:

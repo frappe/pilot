@@ -10,7 +10,12 @@ from pilot.config.production import ProductionConfig
 from pilot.exceptions import BenchError
 from pilot.managers import systemd_user
 from pilot.managers.processes.definitions import ProcessDefinition
-from pilot.managers.processes.sandbox import CODE_DIRECTORIES, CONTROL_ENTRIES, WORKLOAD_DIRECTORIES
+from pilot.managers.processes.sandbox import (
+    CODE_DIRECTORIES,
+    CONTROL_ENTRIES,
+    WORKLOAD_DIRECTORIES,
+    PilotSandboxPaths,
+)
 from pilot.managers.processes.systemd_render import SystemdRenderer
 from tests.pilot.managers.test_managers_extra import make_bench
 
@@ -39,6 +44,7 @@ def test_unsandboxed_unit_has_no_directives() -> None:
 BENCH = Path("/srv/pilot/benches/b")
 BENCHES = Path("/srv/pilot/benches")
 FOLDERS = " ".join(f"{BENCH}/{name}" for name in WORKLOAD_DIRECTORIES)
+SOURCES = FOLDERS.replace(f"{BENCH}/logs", f"{BENCH}/logs/workload:{BENCH}/logs")
 
 SANDBOX_DIRECTIVES = {
     "NoNewPrivileges=yes",
@@ -65,7 +71,7 @@ SANDBOX_DIRECTIVES = {
     "TemporaryFileSystem=/dev/shm",
     "InaccessiblePaths=-/var/log/journal",
     "TemporaryFileSystem=/srv/pilot/benches:ro",
-    f"BindPaths={FOLDERS}",
+    f"BindPaths={SOURCES}",
     f"ReadWritePaths={FOLDERS}",
     f"TemporaryFileSystem={Path.home()}:ro",
     "BindReadOnlyPaths="
@@ -189,6 +195,8 @@ def _sandboxed_manager(
     monkeypatch.setattr(systemd, "AdminEnvManager", MagicMock())
     monkeypatch.setattr(systemd, "get_sandbox_error", lambda _properties: probe_error)
     monkeypatch.setattr(manager, "_prod_process_definitions", lambda: [web])
+    bench.env_path.mkdir(parents=True, exist_ok=True)
+    (bench.env_path / "pyvenv.cfg").write_text("version_info = 3.14.2\n")
     return manager
 
 
@@ -199,7 +207,8 @@ def test_write_config_sandboxes_workload_units(tmp_path: Path, monkeypatch: pyte
     unit = (manager.systemd_conf_dir / "test-bench-web.service").read_text()
     assert f"TemporaryFileSystem={tmp_path / 'benches'}:ro\n" in unit
     bench = tmp_path / "benches" / "test-bench"
-    assert f"BindPaths={' '.join(str(bench / name) for name in WORKLOAD_DIRECTORIES)}\n" in unit
+    assert f"BindPaths={bench}/sites {bench}/config {bench}/logs/workload:{bench}/logs " in unit
+    assert (bench / "logs" / "workload").is_dir()
 
 
 def test_a_failed_probe_keeps_the_current_units(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -224,6 +233,21 @@ def test_a_venv_python_without_safe_path_cannot_run_the_sandbox(
 
     if sandbox:
         with pytest.raises(BenchError, match=r"Python 3\.10"):
+            manager.get_checked_sandbox_properties()
+    else:
+        assert manager.get_checked_sandbox_properties() == []
+
+
+@pytest.mark.parametrize("sandbox", [True, None])
+def test_a_venv_with_an_unknown_python_cannot_run_the_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sandbox: bool | None
+) -> None:
+    """Pilot adds -P only for a known 3.11 or later, so an unknown version would leave sites/ on sys.path."""
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="", sandbox=sandbox)
+    (manager.bench.env_path / "pyvenv.cfg").unlink()
+
+    if sandbox:
+        with pytest.raises(BenchError, match="no known Python version"):
             manager.get_checked_sandbox_properties()
     else:
         assert manager.get_checked_sandbox_properties() == []
@@ -278,6 +302,24 @@ def test_sandbox_paths_gather_tier_one_linked_apps_and_active_app_declarations(
 
     assert read == ("/tier-one", str((tmp_path / "linked").resolve()), "/r")
     assert write == ("/w",)
+
+
+def test_the_workload_gets_its_own_logs_folder() -> None:
+    """systemd and Pilot write their log files in the real logs/ outside the sandbox and follow symlinks there."""
+    properties = SystemdRenderer.get_sandbox_properties(BENCH, BENCHES)
+    bound = next(line for line in properties if line.startswith("BindPaths=")).split("=", 1)[1].split()
+
+    assert f"{BENCH}/logs/workload:{BENCH}/logs" in bound
+    assert f"{BENCH}/logs" not in bound
+    assert f"{BENCH}/logs" in next(line for line in properties if line.startswith("ReadWritePaths=")).split()
+
+
+def test_create_entries_makes_the_workload_logs_folder(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path / "benches" / "test-bench")
+
+    PilotSandboxPaths.create_entries(bench)
+
+    assert (bench.logs_path / "workload").is_dir()
 
 
 def test_control_files_are_read_only_or_hidden_from_workloads() -> None:
@@ -377,3 +419,13 @@ def test_a_bench_set_to_true_that_cannot_sandbox_still_fails(
 
     with pytest.raises(BenchError, match="user namespaces are blocked"):
         manager.write_config()
+
+
+def test_a_linked_workload_logs_folder_is_refused(tmp_path: Path) -> None:
+    """A workload that ran before this folder existed could plant a link, and the bind would mount its target."""
+    bench = make_bench(tmp_path / "benches" / "test-bench")
+    bench.logs_path.mkdir(parents=True, exist_ok=True)
+    (bench.logs_path / "workload").symlink_to(tmp_path)
+
+    with pytest.raises(BenchError, match="not a link"):
+        PilotSandboxPaths.create_entries(bench)
