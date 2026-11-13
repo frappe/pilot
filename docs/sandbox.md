@@ -23,6 +23,10 @@ The sandbox limits the damage when a running workload is compromised. It does no
 
 The systemd directives behind each row are in [Production](production.md#sandbox).
 
+On a sandboxed bench, Frappe's own log files, such as `frappe.log`, `database.log` and `scheduler.log`, are in `logs/workload/` on disk. The unit output (`web.log`, `admin.log`) and the audit log stay in `logs/`. If `logs/workload` is a link, Pilot refuses to write the units and says so. A bench without the sandbox is unchanged.
+
+The Admin log viewer lists the files in `logs/` and in `logs/workload/`. When both have a file with the same name, it shows the one in `logs/`. It opens each file once, without following a link, and reads only regular files. It does not list a symlink or a named pipe, and it cannot read or download one.
+
 nginx runs outside the sandbox as the bench user and serves `sites/` from disk, so a link that a workload makes there could reach a file the workload cannot read. For that reason nginx follows no symlinks below a sandboxed bench. A bench without the sandbox keeps its links, because its workload can already read those files. See [Nginx And TLS](production.md#nginx-and-tls).
 
 ## Which processes run in it
@@ -54,7 +58,7 @@ sandbox = true # or false
 
 Before Pilot writes the units, it starts a trial unit with the same directives. If the host cannot start it, a bench with no setting runs without the sandbox and Pilot logs the reason. A bench with `sandbox = true` fails with the systemd error and keeps its current units.
 
-The sandbox also needs Python 3.11 or later in the bench venv. Outside the sandbox Pilot runs that Python with `-P`, in `sites/`, so a package that a workload plants in `sites/` cannot replace Frappe. Python 3.10 has no `-P`, so a bench on it is treated like a host that fails the trial.
+The sandbox also needs Python 3.11 or later in the bench venv. Pilot must be able to read the version from the venv. Outside the sandbox Pilot runs that Python with `-P`, in `sites/`, so a package that a workload plants in `sites/` cannot replace Frappe. Python 3.10 has no `-P`. A bench on it, or with a venv of unknown version, is treated like a host that fails the trial.
 
 The trial needs unprivileged user namespaces. Ubuntu 24.04 blocks them through AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`), so there the trial fails with exit code 226.
 
@@ -81,6 +85,8 @@ A process can read a path in `read_paths`. It can read and write a path in `writ
 The sandbox does not separate one bench from another. All benches run as one user, so code in one bench can read the files and environment of another bench's processes through `/proc/<pid>`, signal them, and reach their redis and other ports on `127.0.0.1`. Put workloads that must not reach each other under separate host users. Outbound network access also stays open.
 
 The sandbox does not protect you from an app that you install. An app chooses its own `read_paths` and `write_paths`, and the ones under `[tool.pilot.sandbox]` apply to every workload unit of the bench. Pilot checks that a path is below an allowed root, but it cannot know what the path is for. So an app can ask for the data of another program that the host user can read, such as `~/.local/share/containers`. App code also runs without the sandbox during `get-app`, `install-app`, `migrate` and asset builds. Install only apps that you trust.
+
+A link that was planted in the real `logs/` before the bench got the sandbox stays until someone removes it. Old Frappe log files in the real `logs/` of a bench that turned the sandbox on later hide the newer ones of the same name in `logs/workload/`, in the log viewer, until someone removes or rotates them.
 
 File permissions still apply in the sandbox, so a process never gets more than the host user has.
 
