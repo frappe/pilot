@@ -61,22 +61,32 @@ class SandboxPaths:
             raise error(f"{label} '{path}' must start with ~/ to name a folder in the home directory.")
         if not path.startswith(("/", "~/")):
             return _get_bench_path(path, label, error, bench_path)
-        expanded = Path.home() / path[2:] if path.startswith("~/") else Path(path)
-        if not expanded.is_absolute() or ".." in expanded.parts:
-            raise error(f"{label} '{path}' must be absolute or start with ~/, without '..'.")
-        # The link target counts too, so a link inside an allowed root cannot lead out of it.
-        resolved = Path(os.path.realpath(expanded))
-        if not (is_allowed_path(expanded) and is_allowed_path(resolved)):
-            raise error(
-                f"{label} '{path}' must be a directory below one of: "
-                f"{', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}, {', '.join(ALLOWED_SYSTEM_ROOTS)}."
-            )
-        if is_protected_path(expanded, bench_path) or is_protected_path(resolved, bench_path):
-            raise error(
-                f"{label} '{path}' must not be in or above the benches directory or the Pilot install, "
-                f"or in the home directory outside {', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}."
-            )
-        return str(resolved)
+        return _get_host_path(path, label, error, bench_path)
+
+
+def _get_host_path(path: str, label: str, error: Callable[[str], Exception], bench_path: Path) -> str:
+    """A `~/...` or `/...` folder. Its real path must be below an allowed root and out of the hidden places."""
+    expanded = _expand_host_path(path, label, error)
+    # The link target counts too, so a link inside an allowed root cannot lead out of it.
+    resolved = Path(os.path.realpath(expanded))
+    if not (is_allowed_path(expanded) and is_allowed_path(resolved)):
+        raise error(
+            f"{label} '{path}' must be a directory below one of: "
+            f"{', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}, {', '.join(ALLOWED_SYSTEM_ROOTS)}."
+        )
+    if is_protected_path(expanded, bench_path) or is_protected_path(resolved, bench_path):
+        raise error(
+            f"{label} '{path}' must not be in or above the benches directory or the Pilot install, "
+            f"or in the home directory outside {', '.join(f'~/{root}' for root in ALLOWED_HOME_ROOTS)}."
+        )
+    return str(resolved)
+
+
+def _expand_host_path(path: str, label: str, error: Callable[[str], Exception]) -> Path:
+    expanded = Path.home() / path[2:] if path.startswith("~/") else Path(path)
+    if not expanded.is_absolute() or ".." in expanded.parts:
+        raise error(f"{label} '{path}' must be absolute or start with ~/, without '..'.")
+    return expanded
 
 
 def _get_bench_path(path: str, label: str, error: Callable[[str], Exception], bench_path: Path) -> str:
