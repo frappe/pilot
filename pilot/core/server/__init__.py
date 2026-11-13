@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.bench.directory import BenchDirectory
     from pilot.core.server.auto_update import AutoUpdate
+    from pilot.core.server.legacy_bench import LegacyBenchImporter
 
 
 class Server:
@@ -60,6 +61,12 @@ class Server:
         if isinstance(path_or_name, str) and not path.is_absolute() and path.parent == Path("."):
             path = self.benches_dir / path
         return Bench(path)
+
+    def get_legacy_bench_importer(self, path: str | Path, name: str = "") -> "LegacyBenchImporter":
+        """An importer for a bench made by the `bench` CLI, named `name` or after its folder."""
+        from pilot.core.server.legacy_bench import LegacyBench, LegacyBenchImporter
+
+        return LegacyBenchImporter(LegacyBench(path), self.benches_dir, name)
 
     @property
     def ssh_keys(self) -> AuthorizedKeysStore:
