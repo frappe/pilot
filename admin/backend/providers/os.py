@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from pilot.config import BenchConfig
+from pilot.core.bench import Bench
 from pilot.exceptions import CommandError
 from pilot.managers.platform import which
 from pilot.managers.redis import RedisManager
@@ -44,12 +45,12 @@ class OSProvider:
 
     @property
     def frappe_version(self) -> str:
-        python_bin = self._bench_root / "env" / "bin" / "python"
-        if not python_bin.exists():
+        bench = Bench(self._config, self._bench_root)
+        if not bench.python.exists():
             return ""
 
         try:
-            result = run_command([str(python_bin), "-c", "import frappe; print(frappe.__version__)"])
+            result = run_command([*bench.python_argv, "-c", "import frappe; print(frappe.__version__)"])
         except CommandError:
             return ""
 
