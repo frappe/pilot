@@ -218,6 +218,7 @@ class MariaDBManager(UserOwnedDBManager):
             f"innodb-buffer-pool-size = {sizing.innodb_buffer_pool_mb}M\n"
             f"innodb-buffer-pool-size-max = {limits.innodb_buffer_pool_max_mb}M\n"
             f"innodb-buffer-pool-size-auto-min = {limits.innodb_buffer_pool_min_mb}M\n"
+            "large-pages = ON\n"
             f"innodb-log-file-size = {sizing.innodb_log_file_mb}M\n"
             "innodb-flush-log-at-trx-commit = 1\n"
             "innodb-print-all-deadlocks = ON\n"
