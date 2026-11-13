@@ -59,8 +59,8 @@ class PilotSandboxPaths:
     def read(self) -> list[str]:
         """Read-only paths, limited to those the sandbox masks."""
         candidates = [
-            self.get_interpreter_home(),
-            self.get_node_prefix(),
+            self.interpreter_home,
+            self.node_prefix,
             Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm"),
             Path(self.mariadb_socket_path).parent,
         ]
@@ -72,7 +72,8 @@ class PilotSandboxPaths:
 
         return MariaDBManager(self.bench.config.mariadb).socket_path
 
-    def get_interpreter_home(self) -> Path:
+    @property
+    def interpreter_home(self) -> Path:
         """Directory of the Python the bench venv links to, such as a uv-managed one."""
         return Path(os.path.realpath(self.bench.python)).parent.parent
 
@@ -105,8 +106,8 @@ class PilotSandboxPaths:
             raise BenchError(f"{path} must be a folder, not a link. Remove it, then run the command again.")
         path.mkdir(exist_ok=True)
 
-    @staticmethod
-    def get_node_prefix() -> Path:
+    @property
+    def node_prefix(self) -> Path:
         node = shutil.which("node")
         return Path(os.path.realpath(node)).parent.parent if node else Path("/nonexistent")
 
