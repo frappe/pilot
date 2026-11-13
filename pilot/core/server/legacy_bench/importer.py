@@ -289,10 +289,10 @@ class LegacyBenchImporter:
 
 def forget_site(site: "Site") -> None:
     """Undo what Pilot registered for an adopted site, leaving its database alone."""
-    from pilot.managers.platform import remove_hosts_entry
+    from pilot.managers.platform import HostsFile
 
     site.backups.clear_schedule()
-    remove_hosts_entry(site.config.name)
+    HostsFile().remove(site.config.name)
 
 
 def rename_upstream_remote(path: Path) -> None:
@@ -322,12 +322,15 @@ def get_app_config(legacy_app: LegacyApp) -> "AppConfig":
 
 
 def validate_legacy_apps(legacy: LegacyBench, on_progress: Callable[[str], None]) -> None:
-    """Run the source checks on each app in place. Marketplace apps are trusted, as on install."""
+    """Run the source checks on each app in place. Marketplace apps are trusted, as on install.
+    `LegacyBench` has the paths these checks read from a `Bench`."""
+    from typing import cast
+
     from pilot.core.app import App
     from pilot.core.app.validator import Validator, source_checks
 
     for legacy_app in legacy.apps:
-        app = App(get_app_config(legacy_app), legacy)
+        app = App(get_app_config(legacy_app), cast("Bench", legacy))
         if legacy_app.name == FRAMEWORK_APP or app.is_marketplace:
             continue
         on_progress(f"Validating {legacy_app.name}...")
