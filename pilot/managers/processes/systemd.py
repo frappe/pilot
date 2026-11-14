@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import getpass
+import logging
 import os
 import subprocess
 from pathlib import Path
 
+from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import fsync_directory_files
 from pilot.internal.command import run_command
 from pilot.managers.environment import AdminEnvManager
@@ -17,8 +19,9 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.processes.sandbox import PilotSandboxPaths
 from pilot.managers.processes.systemd_render import SystemdRenderer
-from pilot.managers.systemd_user import SystemdUserMixin
+from pilot.managers.systemd_user import SystemdUserMixin, get_sandbox_error
 
 # systemd's DefaultTimeoutStopSec: how long a unit without TimeoutStopSec may take to stop.
 
@@ -58,11 +61,12 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         GunicornManager(self.bench).generate_admin_config()
         self.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build first, so a broken app declaration leaves the current units in place.
+        # Build and probe first, so a broken app declaration or sandbox leaves the current units in place.
         defs = self._prod_process_definitions()
+        sandbox_properties = self.get_checked_sandbox_properties(defs)
 
         self._remove_units()
-        renderer = SystemdRenderer(self.bench.config.name, self.database_service)
+        renderer = SystemdRenderer(self.bench.config.name, self.database_service, sandbox_properties)
         workload_units = self._write_units(defs, renderer)
         (self.systemd_conf_dir / self._target_name()).write_text(renderer.render_target(workload_units))
         if self.bench.config.central.enabled:
@@ -120,6 +124,60 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
                 str(self.bench.logs_path / "central-bootstrap.log"),
             )
         )
+
+    def get_checked_sandbox_properties(self, defs: list | None = None) -> list[str]:
+        """Sandbox directives for the workload units, once a trial unit shows this host can start them."""
+        production = self.bench.config.production
+        if not production.is_sandboxed:
+            return []
+        # The bench's siblings are its neighbours, wherever the benches directory is.
+        read_paths, write_paths = self.get_sandbox_paths()
+        # Folders an app declares in the bench: for every unit, or for one process.
+        declared = [*write_paths, *(path for pd in defs or [] for path in pd.write_paths)]
+        PilotSandboxPaths.create_entries(self.bench, declared)
+        properties = SystemdRenderer.get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
+        if error := self.get_python_error() or get_sandbox_error(properties):
+            if production.sandbox is None:
+                logging.warning(
+                    "Bench '%s' runs without the sandbox: it cannot run sandboxed units here (%s)\n"
+                    "Set sandbox = false under [production] to silence this.",
+                    self.bench.config.name,
+                    error,
+                )
+                return []
+            raise BenchError(
+                f"Bench '{self.bench.config.name}' cannot run sandboxed units here: {error}\n"
+                "Set sandbox = false under [production] to run the bench without it."
+            )
+        return properties
+
+    def get_python_error(self) -> str:
+        """Why the bench venv's Python cannot run beside the sandbox, or "". Outside the sandbox Pilot runs
+        that Python with -P, so a workload's sites/frappe/ cannot replace Frappe, and -P needs 3.11."""
+        version = self.bench.python_version
+        if version >= (3, 11):
+            return ""
+        found = f"uses Python {'.'.join(map(str, version))}" if version else "has no known Python version"
+        return (
+            f"the bench venv {found}, and the sandbox needs 3.11 or later "
+            "(python -P keeps sites/ off sys.path outside the sandbox)."
+        )
+
+    def get_sandbox_paths(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Paths every workload unit gets back from the masked home.
+
+        Tier 1 is what Pilot needs and linked apps; tier 2 is what the active apps declare."""
+        read = PilotSandboxPaths(self.bench).read
+        write: list[str] = []
+        active = self.bench.processes.active_apps
+        for app in self.bench.apps():
+            if app.is_linked:
+                read.append(str(app.path.resolve()))
+            if app.module_name in active:
+                declared = app.processes.get_sandbox_paths()
+                read += declared.read
+                write += declared.write
+        return tuple(read), tuple(write)
 
     def _workload_socket_text(self) -> dict[str, str]:
         """The workload socket units as they stand on disk, by name."""

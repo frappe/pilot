@@ -34,7 +34,7 @@ class SiteCommands:
             "    frappe.destroy()\n"
         )
         run_command(
-            [str(self.site.bench.python), "-c", program],
+            [*self.site.bench.python_argv, "-c", program],
             cwd=self.site.bench.sites_path,
             stdin_text=json.dumps({"site": self.site.config.name, "password": password}),
             redactions=[password],

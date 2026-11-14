@@ -228,7 +228,7 @@ class PythonAssetBuilder:
         sys.stdout.flush()
         build = f"from frappe.studio.build import build_standard_apps; build_standard_apps([{app.config.name!r}])"
         self.run_compiler(
-            [str(self.bench.python), "-c", build],
+            [*self.bench.python_argv, "-c", build],
             cwd=self.bench.sites_path,
             env=self.manager._build_env(),
             stream_output=True,

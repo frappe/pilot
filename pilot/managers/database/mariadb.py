@@ -63,6 +63,9 @@ class MariaDBManager(UserOwnedDBManager):
     _SYSTEM_PACKAGE = "mariadb-server"
     _BREW_FORMULA_BASE = "mariadb"
     _DEFAULT_VERSION = "11.8"
+    # The value in MariaDB's own unit. mariadbd extends it while it recovers from a crash.
+    _START_TIMEOUT = "15min"
+    config: MariaDBConfig
 
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
@@ -1049,7 +1052,7 @@ class MariaDBManager(UserOwnedDBManager):
             "After=pilot-mariadb-sizing.service\n"
             "Description=MariaDB (pilot, user-owned)\n\n"
             "[Service]\n"
-            "Type=simple\n"
+            f"{self.notify_service_lines}"
             # --defaults-file must be the first argument; it makes mariadbd
             # skip every system default file instead of layering over them.
             f"ExecStart={mariadbd} --defaults-file={self.my_cnf_path}\n"

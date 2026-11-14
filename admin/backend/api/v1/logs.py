@@ -100,16 +100,15 @@ def download_log(filename: str):
     """Download a log file."""
     bench_root = ApiRequest.get_bench_root()
     try:
-        provider = LogProvider(bench_root)
-        log_path = provider.get_file_path(filename)
+        with LogProvider(bench_root).open_file(filename) as handle:
+            data = handle.read()
     except ValueError:
         return error_response("invalid_log", "Invalid log filename.", 422)
-
-    if not log_path.exists():
+    except FileNotFoundError:
         return error_response("log_not_found", "Log file was not found.", 404)
 
     return Response(
-        log_path.read_bytes(),
+        data,
         mimetype="text/plain",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

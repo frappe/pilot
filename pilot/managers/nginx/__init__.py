@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import pwd
 import re
 import sys
@@ -202,6 +203,44 @@ class NginxConfigRenderer:
             cloudflare_networks=CLOUDFLARE_NETWORKS if self.bench.config.proxy.cloudflare else (),
         )
 
+    def get_asset_locations(self) -> list[tuple[str, Path, Path]]:
+        """The URL prefix, the real folder and the prefix nginx does not check, for each app's public
+        folder and for each link directly in it. A link that leaves its app gets no entry, so nginx
+        does not serve it."""
+        bench_root = Path(os.path.realpath(self.bench.path))
+        locations = []
+        for app in self.bench.apps():
+            app_root = Path(os.path.realpath(app.path))
+            public = app_root / app.module_name / "public"
+            if not public.is_dir():
+                continue
+            unchecked = bench_root if app_root.is_relative_to(bench_root) else app_root
+            url = f"/assets/{app.module_name}/"
+            locations.append((url, public, unchecked))
+            for link in sorted(entry for entry in public.iterdir() if entry.is_symlink()):
+                target = Path(os.path.realpath(link))
+                if target.is_dir() and target.is_relative_to(app_root):
+                    locations.append((f"{url}{link.name}/", target, unchecked))
+        return locations
+
+    @property
+    def is_refusing_symlinks(self) -> bool:
+        """Only a sandboxed workload gains from a link in sites/: one without the sandbox already reads
+        everything the bench user can. So a bench without it keeps links, such as a storage folder."""
+        return self.bench.config.production.is_sandboxed
+
+    def render_asset_locations(self) -> str:
+        rule = "        disable_symlinks on from={unchecked};\n" if self.is_refusing_symlinks else ""
+        return "".join(
+            f"    location ^~ {url} {{\n"
+            f"        alias {folder}/;\n"
+            f"{rule.format(unchecked=unchecked)}"
+            f"        expires 1y;\n"
+            f'        add_header Cache-Control "public, immutable";\n'
+            f"    }}\n\n"
+            for url, folder, unchecked in self.get_asset_locations()
+        )
+
     def get_proxy_servers(self) -> list[str]:
         """Edge-proxy IPs in front of this bench, if any; looked up once."""
         if self._proxy_servers_cache is None:
@@ -330,6 +369,9 @@ class NginxConfigRenderer:
                 f"http://realtime-{config.name}" if socket else f"http://127.0.0.1:{self.bench.realtime_port}"
             ),
             "sites_root": f"{self.bench.path}/sites",
+            "bench_root": str(self.bench.path),
+            "refuse_symlinks": self.is_refusing_symlinks,
+            "asset_locations": self.render_asset_locations(),
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,
@@ -467,6 +509,14 @@ class NginxManager:
         print("Updating nginx configuration...")
         sys.stdout.flush()
         self.apply_config()
+
+    def reload_for_asset_change(self) -> None:
+        """Write the config again when an app's assets are not in it, such as after an install or an update,
+        or when the sandbox was turned on or off since nginx last got it."""
+        current = self.include_path.read_text() if self.include_path.is_file() else ""
+        is_stale = self._renderer.render_asset_locations() not in current
+        if is_stale or ("disable_symlinks" in current) != self._renderer.is_refusing_symlinks:
+            self.reload_for_site_change()
 
     def _write_error_pages(self, nginx_dir: Path) -> None:
         """Write the error pages."""

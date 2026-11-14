@@ -69,7 +69,7 @@ class PythonCompleter:
         if can_read_memory() and available_memory_mb() < MIN_AVAILABLE_MB:
             raise LowMemoryError(f"Python suggestions need {MIN_AVAILABLE_MB} MB of free memory.")
         self._process = subprocess.Popen(
-            [str(self.bench.python), "-c", HELPER],
+            [*self.bench.python_argv, "-c", HELPER],
             cwd=self.bench.sites_path,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

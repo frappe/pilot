@@ -145,7 +145,7 @@ def test_partial_parser_still_lists_every_command() -> None:
         usage = registry.build_parser(only=only).format_usage()
 
         assert "list-apps" in usage
-        assert "wait-for-database" in usage
+        assert "set-admin-domain" in usage
 
 
 def test_parser_for_a_group_builds_that_group() -> None:

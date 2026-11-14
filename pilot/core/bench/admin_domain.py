@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import exclusive_file_lock, overwrite_private_text_locked
 from pilot.internal.hostnames import matches_wildcard, normalize_host
 
 if TYPE_CHECKING:
@@ -191,7 +191,7 @@ class AdminDomainChange:
             if not changes:
                 return
             config.update(changes)
-            replace_private_text_locked(config_path, json.dumps(config, indent=indent))
+            overwrite_private_text_locked(config_path, json.dumps(config, indent=indent))
 
     def _retarget_hostname_aliases(self) -> None:
         """Move Central hostname aliases from the old admin domain to the new one."""

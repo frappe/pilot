@@ -35,7 +35,7 @@ pilot setup letsencrypt
 
 A configured cloud site alias shows a waiting page while its target site is absent. The page refreshes every five seconds. `/api/method/ping` returns 503 until the target exists, so readiness checks do not treat the waiting page as a working site. Unknown hostnames still return 404.
 
-Production web processes wait up to 60 seconds for the managed database before they start. systemd keeps the web socket open during this wait. Existing external databases keep their current startup behavior.
+Pilot's MariaDB and PostgreSQL units are `Type=notify`: systemd counts them as started once the server accepts connections, and the web unit starts after that. systemd keeps the web socket open meanwhile, so early requests queue. systemd waits 15 minutes for MariaDB, which extends that time while it recovers from a crash, and sets no time limit for PostgreSQL. A patch rewrites the database units and the bench units from before this change. The patch restarts nothing, so a database unit takes effect at the next restart of the database. Existing external databases have no unit and keep their current startup behavior.
 
 If nginx cannot reach a backend, browser GET requests receive a reconnecting page that refreshes every five seconds. API requests and form submissions retain their gateway error status.
 
@@ -91,6 +91,8 @@ Programs declared only in extension fragments are not members of Pilot's generat
 
 ## Nginx And TLS
 
+On a sandboxed bench, nginx follows no symlinks below the bench (`disable_symlinks`), because a workload can write in `sites/` and nginx reads files as the bench user. A bench with `sandbox = false` keeps its links, such as a storage folder linked into `sites/<site>/public/files`: its workload can already read everything the bench user can. Pilot rewrites the nginx config when `pilot restart` applies a change to `sandbox`. Pilot serves each app's assets from the real `public` folder of the app. A link directly in that folder, such as `node_modules`, is served only when it points to a folder in the same app. Pilot adds a new app or link when it applies the app's processes, on `pilot restart`, or on `pilot setup production`. The rule is on the locations that read `sites/` and the app assets only. The ACME webroot and the Admin embed are outside the bench, so a workload cannot plant a link there, and they still work when their path has a link in it.
+
 Nginx config is rendered from bench and site state. Regenerate it with `pilot setup nginx` or `pilot setup config`.
 
 All benches on a host share one nginx. A config change holds the host lock `benches/.nginx.lock` from its first write until `nginx -t` passes and nginx reloads, or until Pilot puts back the files that nginx rejected. Another bench's config change waits for the lock, so its `nginx -t` never sees untested files.
@@ -122,6 +124,45 @@ A vhost that receives TLS through PROXY protocol v2 uses its local `$scheme` ins
 The Admin backend runs behind nginx in production. The public Admin port and the internal Gunicorn port come from `[admin]`.
 
 When using Central or another upstream proxy, keep the local Admin service private and set TLS according to where HTTPS terminates.
+
+## Sandbox
+
+[Sandbox](sandbox.md) explains what the sandbox is, which processes run in it and what it does not do. This section lists the systemd directives.
+
+The sandbox runs the bench's workload units (web, socketio, workers, redis and app processes) with `systemd.exec` sandbox directives. It needs `process_manager = "systemd"`, and a systemd bench uses it unless `sandbox = false` is set under `[production]`. A new bench has no setting, so it is sandboxed. A bench that existed before the default changed got `sandbox = false` from the `set_sandbox_off_for_existing_benches` patch; set it to `true` to opt in. A Supervisor bench is never sandboxed. The admin and central bootstrap units stay unsandboxed because the admin runs the nginx and certbot sudo commands.
+
+| Directives | Effect |
+|---|---|
+| `NoNewPrivileges` | sudo and setuid programs fail. |
+| `PrivateUsers` | Needed by the mount directives in a user unit. |
+| `ProtectSystem=strict`, `ReadWritePaths=<bench>/<folder>`, `PrivateTmp` | Writes only inside the bench's workload folders. Each unit has its own `/tmp`. |
+| `ProtectHome=tmpfs`, `TemporaryFileSystem=<home>:ro` | The home directory is empty, so SSH keys, other dotfiles and the user bus in `/run/user` are not there to read. `ProtectHome` masks only `/home` and `/root`, so the second directive masks a home elsewhere, such as `/srv/frappe`. |
+| `TemporaryFileSystem=/run:ro`, `TemporaryFileSystem=/dev/shm`, `InaccessiblePaths=-/var/log/journal` | Host sockets in `/run` are hidden, such as `docker.sock`, `libvirt-sock` and the system D-Bus, which the user's groups could otherwise open. `/run/systemd/resolve` and a database socket folder under `/run` are bound back. Shared memory in `/dev/shm` is private to the unit, and the system journal cannot be read. SysV IPC and `/dev/mqueue` stay shared with the user's processes, because `PrivateIPC` fails to start some user units. |
+| `BindReadOnlyPaths=<bench>/config/<entry>` | A workload cannot change the files that the admin trusts and runs outside the sandbox: `services`, `nginx`, `modsecurity`, `letsencrypt`, `frappe_cloud`, `site-renames`, `site-creations`, `site-aliases.json`, `realtime-folders.txt`, the gunicorn configs, `Procfile` and the redis configs. Pilot creates the folders before the units start, so a workload cannot plant one first. The rest of `config/` stays writable, because Frappe creates its lock files there (`config/<name>.lock`) and production realtime creates its socket there (`config/socketio.sock`). Pilot writes the protected files in place, because Linux detaches a file mount once the file under it is renamed over. Workload units never read `bench.toml`: Frappe takes its database settings from `common_site_config.json` and `site_config.json`. |
+| `BindReadOnlyPaths=<bench>/apps <bench>/env` | A workload cannot change the code that the Admin, its tasks and the CLI run outside the sandbox, such as for the console, backups and `migrate`. Otherwise a `.pth` file in `env/` or a git hook in `apps/` would run there. An app cannot claim either folder in `write_paths`. |
+| `BindReadOnlyPaths=<bench>/sites/common_site_config.json` | A workload cannot change, move or delete the bench-wide settings that every site and the unsandboxed `pilot frappe` commands read. Pilot writes the file in place at mode 0600, so its edits reach running units at once and a reader sees the old JSON or the new JSON, never half of it. |
+| `BindReadOnlyPaths` | Brings back, from the masked home, only what the bench uses: the Python the venv links to (such as a uv-managed one), the Node in use, nvm (`$NVM_DIR` or `~/.nvm`), the database socket directory, linked apps, and the `read_paths` of apps. The rest of the Pilot install, including the database data files, stays hidden. |
+| `TemporaryFileSystem=<benches dir>:ro`, `BindPaths=<bench>/<folder>`, and `BindPaths=<bench>/logs/workload:<bench>/logs` for `logs` | The neighbouring benches and `common_config.toml` are hidden. Of the bench itself, only `apps`, `env`, `sites`, `config`, `logs`, `pids`, `chromium` and the bench folders that apps declare are mounted, and Pilot creates them before the units start. `logs` is mounted from `logs/workload`, so a workload cannot touch the log files that Pilot and systemd write. Frappe's own log files are in `logs/workload/` on disk. If `logs/workload` is a link, Pilot refuses to write the units, because the link would mount its target as `logs`. So `bench.toml` with the admin password hash and JWT secret, `.credentials`, the admin's `tasks/` and its state files are not there, even after Pilot rewrites them. |
+| `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`, `SystemCallErrorNumber=EPERM` | Blocks ptrace, mount, module loading and other privileged syscalls. |
+| `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname` | Kernel settings, logs, cgroups, the clock and the hostname are read-only. |
+| `PrivateDevices` | Only pseudo devices such as `/dev/null` are visible. |
+| `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality` | No new namespaces, realtime scheduling or setuid files. |
+| `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` | Only local and IP sockets. |
+
+Apps can keep more home paths. Declare `read_paths` and `write_paths` under `[tool.pilot.sandbox]` in `pyproject.toml` for every workload unit, or on a `[tool.pilot.processes.<name>]` table for that unit only. See [App Processes](app-processes.md#sandbox-paths).
+
+Before Pilot replaces the units, it checks the Python version of the bench venv and starts a trial unit with the same directives. The sandbox needs Python 3.11 or later in the venv, and Pilot must be able to read the version. A venv with an unknown version counts as older than 3.11. When the check or the trial fails, a bench with no `sandbox` setting runs without the sandbox and logs why. A bench with `sandbox = true` fails setup with the error and keeps its current units. Set `sandbox = false` to deploy without the sandbox.
+
+The trial needs unprivileged user namespaces. Ubuntu 24.04 restricts them through AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`), so there the trial fails with exit code 226.
+
+With the sandbox on:
+
+- sudo fails in workload processes and app hooks.
+- A process can write only inside its bench's workload folders.
+- Web and workers no longer share files in `/tmp`.
+- A bench cannot read the other benches in its benches directory.
+
+All benches still run as one user. Code running in one bench can still read the files and environment of another bench's process through `/proc/<pid>`, signal its processes, reach its redis on `127.0.0.1` and reach its loopback ports. Put workloads that must not reach each other under separate host users.
 
 ## Firewall And WAF
 

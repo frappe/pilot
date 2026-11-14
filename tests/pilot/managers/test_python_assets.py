@@ -196,6 +196,7 @@ def test_studio_apps_are_built_with_frappe_s_own_builder(tmp_path: Path) -> None
     manager = MagicMock()
     manager.bench.apps_path = tmp_path / "apps"
     manager.bench.python = tmp_path / "env" / "bin" / "python"
+    manager.bench.python_argv = [str(manager.bench.python), "-P"]
     builder = PythonAssetBuilder(manager)
     app = make_app(tmp_path / "apps" / "helpdesk", "helpdesk")
 
@@ -210,6 +211,7 @@ def test_studio_apps_are_built_with_frappe_s_own_builder(tmp_path: Path) -> None
 
     assert compile_studio_apps.call_args.args[0] == [
         str(manager.bench.python),
+        "-P",
         "-c",
         "from frappe.studio.build import build_standard_apps; build_standard_apps(['helpdesk'])",
     ]

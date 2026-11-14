@@ -56,7 +56,7 @@ class BuildArtifacts:
         digest.update(
             run_command(
                 [
-                    str(self.bench.python),
+                    *self.bench.python_argv,
                     "-c",
                     "import importlib.metadata as m; import json; "
                     "print(json.dumps(sorted((info['Name'], info['Version']) "

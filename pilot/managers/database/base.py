@@ -3,12 +3,16 @@ from __future__ import annotations
 import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pilot.exceptions import DatabaseError
 from pilot.internal.command import run_command
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import SystemdUserMixin
+
+if TYPE_CHECKING:
+    from pilot.config import MariaDBConfig, PostgresConfig
 
 
 class UserOwnedDBManager(SystemdUserMixin):
@@ -19,6 +23,8 @@ class UserOwnedDBManager(SystemdUserMixin):
     _SYSTEM_PACKAGE: str = ""
     _BREW_FORMULA_BASE: str = ""
     _DEFAULT_VERSION: str = ""
+    _START_TIMEOUT: str = ""
+    config: MariaDBConfig | PostgresConfig
 
     def is_installed(self) -> bool:
         """Whether the database server is installed."""
@@ -55,6 +61,11 @@ class UserOwnedDBManager(SystemdUserMixin):
         """The user systemd unit file."""
         return self.user_unit_dir / self._UNIT_NAME
 
+    @property
+    def notify_service_lines(self) -> str:
+        """The server sends READY=1 once it accepts connections, so units ordered After= it start with it ready."""
+        return f"Type=notify\nTimeoutStartSec={self._START_TIMEOUT}\n"
+
     def is_provisioned(self) -> bool:
         """A user unit means this per-user server has already been set up."""
         return self.unit_path.exists()
@@ -82,6 +93,16 @@ class UserOwnedDBManager(SystemdUserMixin):
     def stop(self) -> None:
         """Stop the server."""
         self._control("stop")
+
+    def use_notify_type(self) -> None:
+        """Make an existing unit report ready. Only the file changes: the running server is not restarted."""
+        if HostPlatform().is_macos or self.config.existing or not self.unit_path.exists():
+            return
+        current = self.unit_path.read_text()
+        unit = current.replace("Type=simple\n", self.notify_service_lines)
+        if unit != current:
+            self.unit_path.write_text(unit)
+            run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def enable_and_start(self) -> None:
         """Start the user unit and enable it at boot. Safe to repeat."""

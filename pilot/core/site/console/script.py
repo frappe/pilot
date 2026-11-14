@@ -84,7 +84,7 @@ finally:
         """Start the script process in commit or rollback mode."""
         mode = "commit" if self.commit else "rollback"
         process = subprocess.Popen(
-            [str(self.site.bench.python), "-c", self.bootstrap, self.site.config.name, mode],
+            [*self.site.bench.python_argv, "-c", self.bootstrap, self.site.config.name, mode],
             cwd=self.site.bench.sites_path,
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdin=subprocess.PIPE,

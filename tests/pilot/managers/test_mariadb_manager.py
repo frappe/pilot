@@ -815,6 +815,7 @@ def test_linux_unit_starts_with_option_file_and_memory_limits(tmp_path) -> None:
     assert f"MemoryHigh={sizing.memory_high_mb}M" in content
     assert f"MemoryMax={sizing.memory_max_mb}M" in content
     assert "MemorySwapMax=0\n" in content
+    assert "Type=notify\nTimeoutStartSec=15min\n" in content and "Type=simple" not in content
 
 
 def _tune(manager, tmp_path, current_max_mb):

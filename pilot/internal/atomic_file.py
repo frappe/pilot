@@ -91,6 +91,26 @@ def replace_private_text_locked(path: Path, content: str) -> None:
                 temporary_path.unlink(missing_ok=True)
 
 
+def overwrite_private_text_locked(path: Path, content: str) -> None:
+    """Rewrite ``path`` in place at 0600 while its ``exclusive_file_lock`` is held.
+
+    The inode stays, so a single-file bind on it holds. A reader without the lock sees the old JSON, or
+    the new JSON with or without trailing spaces."""
+    encoded = content.encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, PrivateFile.mode)
+    try:
+        os.fchmod(descriptor, PrivateFile.mode)
+        padded = encoded.ljust(os.fstat(descriptor).st_size, b" ")
+        written = 0
+        while written < len(padded):
+            written += os.pwrite(descriptor, padded[written:], written)
+        os.ftruncate(descriptor, len(encoded))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _existing_file_metadata(path: Path) -> os.stat_result | None:
     """The file's lstat result, or None when missing; raise for a symbolic link."""
     try:
