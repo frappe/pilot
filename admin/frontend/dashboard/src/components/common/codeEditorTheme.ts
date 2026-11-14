@@ -42,7 +42,7 @@ export const codeEditorTheme = EditorView.theme({
   '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(66, 133, 244, 0.25)' },
   '.cm-placeholder': { color: 'var(--ink-gray-4, #9aa0a6)', fontStyle: 'normal' },
   '.cm-tooltip': {
-    backgroundColor: 'var(--surface-elevation-2, white)',
+    backgroundColor: 'var(--surface-elevation-1, white)',
     border: '1px solid var(--outline-gray-2, #e8eaed)',
     borderRadius: '8px',
     color: 'var(--ink-gray-8, #1e293b)',

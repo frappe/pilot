@@ -86,12 +86,14 @@ export const completionDetail = (detail: string | undefined) =>
   detail && !rawTypes.has(detail) ? detail : undefined
 
 export const docstringNode = (docstring: string) => {
-  const [first, ...rest] = docstring.trim().split('\n')
-  const hasSignature = first.includes('(') && (rest[0] ?? '').trim() === ''
-  const body = (hasSignature ? rest : [first, ...rest]).join('\n').trim()
+  const lines = docstring.trim().split('\n')
+  const gap = lines.findIndex((line) => line.trim() === '')
+  const head = gap === -1 ? [] : lines.slice(0, gap)
+  const hasSignature = head.length > 0 && head.every((line) => line.includes('('))
+  const body = (hasSignature ? lines.slice(gap) : lines).join('\n').trim()
   const root = element('div', 'cm-docs')
 
-  if (hasSignature) root.append(element('div', 'cm-docsSignature', first))
+  if (hasSignature) root.append(element('div', 'cm-docsSignature', head.join('\n')))
 
   if (body) {
     const text = element('div', 'cm-docsBody')
