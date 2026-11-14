@@ -11,7 +11,7 @@ SELECT resource_id, '' AS alert_key, down AS value,
 FROM (
     SELECT resource_id, argMaxIf(value, ts, labels['state'] = 'down') AS down, argMaxIf(value, ts, labels['state'] = 'up') AS up
     FROM datum.samples_recent
-    WHERE metric = 'pilot_sites' AND ts > now() - INTERVAL 5 MINUTE
+    WHERE metric = 'pilot_sites' AND ts > now() - INTERVAL 5 MINUTE AND ts <= now() + INTERVAL 1 MINUTE
     GROUP BY resource_id
 )
 WHERE down >= 3 AND down >= 0.2 * (up + down)

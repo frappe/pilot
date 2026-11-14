@@ -1,6 +1,6 @@
 # Site backups failing on many servers
 
-The newest backup of at least one site failed on 5 or more servers in the region, and on 10% of the servers that take backups (Medium). On half of the servers it pages (High). One server alone is the problem of its owner, and Pilot already tells them.
+On 5 or more servers in the region, and on 10% of the servers that take backups, the newest backup of half or more of the sites failed (Medium). On half of the servers it pages (High). One server or one site alone is the problem of its owner, and Pilot already tells them.
 
 1. On one affected server, read the newest `"event": "backup"` entry with `"status": "failed"` in `<bench>/logs/audit_<year>_<week>.jsonl`. The Pilot Admin UI also shows the backups of each site.
 2. When the upload to S3 fails on many servers, check the object storage of the region and its Beacon alerts.
