@@ -17,7 +17,7 @@ from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
-from pilot.core.server.monitoring_datum import TelemetryShipper
+from pilot.core.server.monitoring_datum import SEND_INTERVAL, TelemetryShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
@@ -32,7 +32,7 @@ CPU_SAMPLE_INTERVAL = 1.0
 METRICS_INTERVAL = 10.0
 UPTIME_INTERVAL = 60.0
 ROLLUP_INTERVAL = 60.0
-TELEMETRY_INTERVAL = 60.0
+TELEMETRY_INTERVAL = SEND_INTERVAL.total_seconds()
 
 ALERT_EVENT = "resource_limit_breached"
 
@@ -442,7 +442,7 @@ def collect_metrics() -> None:
 
 
 def send_telemetry() -> None:
-    """Send Datum what Beacon reads from this server, once a minute. The uptime thread sends `pilot_sites`."""
+    """Send Datum what Beacon reads from this server, each 5 minutes. The uptime thread sends `pilot_sites`."""
     from pilot.core.bench.runtime import BenchRuntime
 
     monitors = _production_monitors()

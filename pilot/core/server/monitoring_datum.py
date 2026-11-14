@@ -68,10 +68,10 @@ class TelemetryShipper:
         self.batches.append(batch)
 
     def add_central_requests(self, now: datetime) -> None:
-        """Add the calls to Central in the last minute, by method and result."""
+        """Add the calls to Central since the previous send, by method and result."""
         if not self.is_enabled:
             return
-        since = (now - timedelta(minutes=1)).isoformat()
+        since = (now - SEND_INTERVAL).isoformat()
         counts: Counter[tuple[str, str]] = Counter()
         for record in get_central_request_log().read_newest_first():
             if record.get("time", "") <= since:
@@ -79,7 +79,7 @@ class TelemetryShipper:
             counts[(record["method"], record["result"])] += 1
         batch = Batch("pilot", "central")
         for (method, result), count in counts.items():
-            batch.gauge("requests_last_minute", count, method=method, result=result)
+            batch.gauge("requests_last_5_minutes", count, method=method, result=result)
         self.batches.append(batch)
 
     def add_sites(self, results: list[dict]) -> None:
@@ -177,6 +177,8 @@ def repository_name(url: str) -> str:
     return Path(urlsplit(url).path).as_posix().strip("/").removesuffix(".git")
 
 
+# The values change slowly: backups once a day. pilot_sites goes each minute from the uptime thread.
+SEND_INTERVAL = timedelta(minutes=5)
 SITE_STATES = ("up", "down", "maintenance")
 BACKUP_STATUSES = ("success", "failed")
 MAX_UPDATE_EVENTS = 1000

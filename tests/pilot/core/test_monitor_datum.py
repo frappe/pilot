@@ -80,12 +80,12 @@ def test_disk_space_uses_the_contract_names() -> None:
     }
 
 
-def test_central_calls_of_the_last_minute_are_counted(log_dir: Path) -> None:
+def test_central_calls_of_the_last_5_minutes_are_counted(log_dir: Path) -> None:
     now = datetime.now(UTC)
     log = JsonlLog(log_dir, "central-requests")
     for seconds, method, result in [
-        (90, "report_pilot_event", "failed"),
-        (30, "report_pilot_event", "failed"),
+        (400, "report_pilot_event", "failed"),
+        (200, "report_pilot_event", "failed"),
         (20, "report_pilot_event", "ok"),
         (10, "datum_token", "ok"),
         (5, "report_pilot_event", "failed"),
@@ -98,9 +98,9 @@ def test_central_calls_of_the_last_minute_are_counted(log_dir: Path) -> None:
     shipper.add_central_requests(now)
 
     assert _samples(shipper) == {
-        ("pilot_central_requests_last_minute", "method=report_pilot_event,result=failed"): 2,
-        ("pilot_central_requests_last_minute", "method=report_pilot_event,result=ok"): 1,
-        ("pilot_central_requests_last_minute", "method=datum_token,result=ok"): 1,
+        ("pilot_central_requests_last_5_minutes", "method=report_pilot_event,result=failed"): 2,
+        ("pilot_central_requests_last_5_minutes", "method=report_pilot_event,result=ok"): 1,
+        ("pilot_central_requests_last_5_minutes", "method=datum_token,result=ok"): 1,
     }
 
 
