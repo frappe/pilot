@@ -28,7 +28,9 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const taskId = typeof route.params.taskId === 'string' ? route.params.taskId : ''
+const taskId = computed(() =>
+  typeof route.params.taskId === 'string' ? route.params.taskId : '',
+)
 
 const { setBreadcrumbs } = useBreadcrumbs()
 const { task, rawLines, loading, error, load } = useTaskDetail(taskId)
@@ -44,6 +46,7 @@ watch(
 
 const actionError = ref('')
 const showDebug = ref(false)
+const retrying = ref(false)
 const aiConnected = ref(false)
 
 const loadAiStatus = async () => {
@@ -85,10 +88,23 @@ const handleDone = (success: boolean) => {
   if (redirect) router.push(redirect)
 }
 
+const retrySite = async () => {
+  actionError.value = ''
+  retrying.value = true
+  try {
+    const next = await tasksApi.retry(taskId.value)
+    await router.push({ name: 'TaskDetail', params: { taskId: next.task_id } })
+  } catch (caught) {
+    actionError.value = errorMessage(caught, 'Could not retry site creation')
+  } finally {
+    retrying.value = false
+  }
+}
+
 const cancelTask = async () => {
   actionError.value = ''
   try {
-    const response = await tasksApi.cancel(taskId)
+    const response = await tasksApi.cancel(taskId.value)
     if (!response.ok) {
       const result = await response.json()
       actionError.value = apiErrorMessage(result, 'Failed to cancel task')
@@ -100,10 +116,8 @@ const cancelTask = async () => {
   }
 }
 
-onMounted(() => {
-  load()
-  loadAiStatus()
-})
+onMounted(loadAiStatus)
+watch(taskId, load, { immediate: true })
 </script>
 
 <template>
@@ -131,6 +145,16 @@ onMounted(() => {
           @click="showDebug = true"
         >
           Debug with AI
+        </Button>
+
+        <Button
+          v-if="task.command === 'new-site' && task.status === 'failed'"
+          variant="solid"
+          icon-left="lucide-refresh-cw"
+          :loading="retrying"
+          @click="retrySite"
+        >
+          Try Again
         </Button>
 
         <Button v-if="isTaskCancellable(task)" theme="red" icon-left="lucide-x" @click="cancelTask">

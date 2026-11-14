@@ -144,9 +144,11 @@ def create_site():
     ):
         return invalid_fields()
 
-    name = fields["name"]
-    admin_password = secrets.token_urlsafe(16)
     apps = [app.strip() for app in apps_value if app.strip()]
+    return start_site_creation(bench_root, fields["name"], apps)
+
+
+def start_site_creation(bench_root: Path, name: str, apps: list[str]):
     err = validate_site_name(name) or new_site_name_error(bench_root, name)
     if err:
         return site_name_failure(err)
@@ -155,7 +157,7 @@ def create_site():
         task_id = NewSiteTask.queue(
             Bench(bench_root),
             name=name,
-            admin_password=admin_password,
+            admin_password=secrets.token_urlsafe(16),
             apps=apps,
             idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key=[f"site:{name.lower()}", host_resource_key(name)],
