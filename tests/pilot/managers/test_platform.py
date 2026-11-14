@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from pilot.managers import platform
+from pilot.managers.platform import HostPlatform, Privileges
 
 
 def test_which_searches_sbin_when_path_is_minimal(tmp_path: Path, monkeypatch) -> None:
@@ -17,32 +17,32 @@ def test_which_searches_sbin_when_path_is_minimal(tmp_path: Path, monkeypatch) -
 
     # Minimal PATH without the sbin dir - shutil.which alone would miss it.
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
-    monkeypatch.setattr(platform, "_EXTRA_BIN_DIRS", (str(sbin),))
+    monkeypatch.setattr(HostPlatform, "extra_bin_dirs", (str(sbin),))
 
-    assert platform.which("mariadbd") == str(daemon)
+    assert HostPlatform().get_executable_path("mariadbd") == str(daemon)
 
 
 def test_which_returns_none_for_missing(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "_EXTRA_BIN_DIRS", ())
-    assert platform.which("definitely-not-a-real-binary-xyz") is None
+    monkeypatch.setattr(HostPlatform, "extra_bin_dirs", ())
+    assert HostPlatform().get_executable_path("definitely-not-a-real-binary-xyz") is None
 
 
 def test_noninteractive_privileges_are_isolated_to_the_current_thread(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_root", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: False))
     entered = threading.Event()
     release = threading.Event()
     command_from_thread: list[str] = []
 
     def build_noninteractive_command() -> None:
-        with platform.noninteractive_privileges():
+        with Privileges.without_prompts():
             entered.set()
             assert release.wait(timeout=1)
-            command_from_thread.extend(platform._privileged(["true"]))
+            command_from_thread.extend(Privileges.get_command(["true"]))
 
     thread = threading.Thread(target=build_noninteractive_command)
     thread.start()
     assert entered.wait(timeout=1)
-    assert platform._privileged(["true"]) == ["sudo", "true"]
+    assert Privileges.get_command(["true"]) == ["sudo", "true"]
     release.set()
     thread.join(timeout=1)
 
@@ -50,10 +50,10 @@ def test_noninteractive_privileges_are_isolated_to_the_current_thread(monkeypatc
 
 
 def test_task_environment_forces_noninteractive_privileges(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_root", lambda: False)
-    monkeypatch.setenv(platform.NONINTERACTIVE_PRIVILEGES_ENV, "1")
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: False))
+    monkeypatch.setenv(Privileges.environment_key, "1")
 
-    assert platform._privileged(["true"]) == ["sudo", "-n", "true"]
+    assert Privileges.get_command(["true"]) == ["sudo", "-n", "true"]
 
 
 def _fake_mariadb_config(tmp_path: Path) -> Path:
@@ -67,11 +67,12 @@ def _fake_mariadb_config(tmp_path: Path) -> Path:
 
 
 def test_add_mysqlclient_flags_sets_flags_from_mariadb_config(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_macos", lambda: True)
-    monkeypatch.setattr(platform, "mariadb_config_bin", lambda: str(_fake_mariadb_config(tmp_path)))
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: True))
+    config_bin = str(_fake_mariadb_config(tmp_path))
+    monkeypatch.setattr(HostPlatform, "mariadb_config_bin", property(lambda self: config_bin))
 
     env: dict[str, str] = {}
-    platform.add_mysqlclient_flags(env)
+    HostPlatform().add_mysqlclient_flags(env)
 
     assert env == {
         "MYSQLCLIENT_CFLAGS": "-I/opt/mariadb/include",
@@ -80,19 +81,20 @@ def test_add_mysqlclient_flags_sets_flags_from_mariadb_config(tmp_path: Path, mo
 
 
 def test_add_mysqlclient_flags_keeps_caller_values(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_macos", lambda: True)
-    monkeypatch.setattr(platform, "mariadb_config_bin", lambda: str(_fake_mariadb_config(tmp_path)))
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: True))
+    config_bin = str(_fake_mariadb_config(tmp_path))
+    monkeypatch.setattr(HostPlatform, "mariadb_config_bin", property(lambda self: config_bin))
 
     env = {"MYSQLCLIENT_CFLAGS": "-I/custom"}
-    platform.add_mysqlclient_flags(env)
+    HostPlatform().add_mysqlclient_flags(env)
 
     assert env["MYSQLCLIENT_CFLAGS"] == "-I/custom"
 
 
 def test_add_mysqlclient_flags_is_a_noop_off_macos(monkeypatch) -> None:
-    monkeypatch.setattr(platform, "is_macos", lambda: False)
+    monkeypatch.setattr(HostPlatform, "is_macos", property(lambda self: False))
 
     env: dict[str, str] = {}
-    platform.add_mysqlclient_flags(env)
+    HostPlatform().add_mysqlclient_flags(env)
 
     assert env == {}

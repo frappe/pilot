@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError, CommandError
-from pilot.utils import run_command
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -14,27 +14,28 @@ if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.internal.git import GitRepo
 
-_FETCH_TIMEOUT_SECONDS = 30
-# Changes `frappe migrate` syncs into the database, as Frappe Cloud decides a migrate deploy.
-_MIGRATE_PATHS = tuple(
-    re.compile(pattern)
-    for pattern in (
-        r"\w+/patches\.txt",
-        r"\w+/hooks\.py",
-        r"\w+/fixtures/",
-        r"\w+/\w+/custom/",
-        r"frappe/geo/languages\.json",
-        r"\w+/\w+/\w+/(.+)/\1\.json",
-    )
-)
-
 
 class AppRepository:
+    fetch_timeout_seconds = 30
+    # Changes `frappe migrate` syncs into the database, as Frappe Cloud decides a migrate deploy.
+    migrate_paths = tuple(
+        re.compile(pattern)
+        for pattern in (
+            r"\w+/patches\.txt",
+            r"\w+/hooks\.py",
+            r"\w+/fixtures/",
+            r"\w+/\w+/custom/",
+            r"frappe/geo/languages\.json",
+            r"\w+/\w+/\w+/(.+)/\1\.json",
+        )
+    )
+
     def __init__(self, app: "App") -> None:
         self.app = app
 
     @property
     def repo(self) -> "GitRepo":
+        """The git repository of the app."""
         from pilot.internal.git import GitRepo
 
         return GitRepo(self.app.path, self.git_config)
@@ -81,7 +82,7 @@ class AppRepository:
         files = self.repo.get_changed_files(self.installed_hash, pin.ref)
         if files is None:
             return True
-        return any(pattern.match(path) for pattern in _MIGRATE_PATHS for path in files)
+        return any(pattern.match(path) for pattern in self.migrate_paths for path in files)
 
     def fetch_missing_commit(self, commit: str) -> None:
         """Fetch `commit` unless it is local. A shallow clone takes it without history,
@@ -91,7 +92,7 @@ class AppRepository:
             return
         self._sync_remote_url()
         depth = ["--depth=1"] if repo.is_shallow else []
-        repo.fetch(*depth, commit, timeout=_FETCH_TIMEOUT_SECONDS)
+        repo.fetch(*depth, commit, timeout=self.fetch_timeout_seconds)
 
     @property
     def marketplace_entry(self) -> dict | None:
@@ -168,6 +169,7 @@ class AppRepository:
         return git_env(self.git_config)
 
     def get_default_branch(self) -> str:
+        """The default branch of the remote."""
         import subprocess
 
         remote, environment = self.remote_url, self.git_env
@@ -195,11 +197,13 @@ class AppRepository:
 
     @staticmethod
     def is_commit_hash(ref: str) -> bool:
+        """Whether the ref looks like a commit hash."""
         import re
 
         return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
 
     def clone_rev(self, commit: str) -> None:
+        """Clone the repository at one commit."""
         # Git fetches a commit on its own only by its full SHA; a short one is found in the full history.
         if len(commit) == 40 and self.depth_flags and not self.app.path.exists():
             try:
@@ -232,6 +236,7 @@ class AppRepository:
         run_command(["git", "-C", path, "checkout", "--quiet", "FETCH_HEAD"])
 
     def clone(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Clone the repository on its branch or commit."""
         branch = self.app.config.branch or self.get_default_branch()
         if self.is_commit_hash(branch):
             on_progress(
@@ -256,6 +261,7 @@ class AppRepository:
 
     @property
     def is_shallow(self) -> bool:
+        """Whether the clone is shallow."""
         return self.repo.is_shallow
 
     @property
@@ -268,6 +274,7 @@ class AppRepository:
 
     @staticmethod
     def pack_threads() -> int:
+        """The number of threads git may use to pack."""
         import os
 
         cpus = os.cpu_count() or 1
@@ -319,6 +326,7 @@ class AppRepository:
         )
 
     def switch_branch(self, branch: str) -> None:
+        """Switch the clone to another branch."""
         if not self.app.is_cloned:
             raise BenchError(f"'{self.app.config.name}' is not cloned at {self.app.path}")
 
@@ -326,7 +334,7 @@ class AppRepository:
         self._sync_remote_url()
         # A named refspec creates origin/<branch> even in a single-branch clone.
         refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
-        if not repo.fetch(*self.depth_flags, refspec, timeout=_FETCH_TIMEOUT_SECONDS * 10):
+        if not repo.fetch(*self.depth_flags, refspec, timeout=self.fetch_timeout_seconds * 10):
             raise BenchError(f"Could not fetch branch '{branch}' of '{self.app.config.name}'.")
         repo.abort_merge_rebase()
         stashed = repo.stash_all()
@@ -337,6 +345,7 @@ class AppRepository:
         self.app.config.branch = branch
 
     def checkout_pinned_target(self, pin: RevisionPin) -> None:
+        """Check out the pinned tag or commit."""
         if pin.kind == "tag":
             self._sync_remote_url()
             self.repo.prune_stale_temp_packs()

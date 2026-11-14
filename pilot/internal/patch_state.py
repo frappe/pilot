@@ -9,10 +9,12 @@ FILENAME = ".patches.json"
 
 
 def is_applied(bench_dir: Path, patch_name: str) -> bool:
+    """Whether the bench already applied this patch."""
     return patch_name in _read(bench_dir)
 
 
 def mark_applied(bench_dir: Path, patch_name: str) -> None:
+    """Record that the bench applied this patch."""
     applied = _read(bench_dir)
     if patch_name in applied:
         return
@@ -21,6 +23,7 @@ def mark_applied(bench_dir: Path, patch_name: str) -> None:
 
 
 def _read(bench_dir: Path) -> set[str]:
+    """The names of the patches the bench applied."""
     path = bench_dir / FILENAME
     if not path.exists():
         return set()

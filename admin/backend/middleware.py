@@ -14,9 +14,7 @@ from pilot.core.bench import Bench
 
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
-_WINDOWS_EXTENSION = "rate_limit_windows"
 _WINDOWS_LOCK = threading.Lock()
-_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class AuthPolicy(StrEnum):
@@ -25,15 +23,18 @@ class AuthPolicy(StrEnum):
 
 
 def allow_unauthenticated(view):
+    """Mark a view as open to unauthenticated requests."""
     setattr(view, _AUTH_POLICY, AuthPolicy.OPEN)
     return view
 
 
 def get_auth_policy(view) -> AuthPolicy:
+    """The view's auth policy."""
     return getattr(view, _AUTH_POLICY, AuthPolicy.AUTHENTICATED)
 
 
 def is_request_authenticated(bench) -> bool:
+    """Whether the request has a valid token."""
     authorization = request.headers.get("Authorization", "")
     token = authorization[7:] if authorization.startswith("Bearer ") else None
     token = token or request.cookies.get("sid")
@@ -48,6 +49,7 @@ def is_request_authenticated(bench) -> bool:
 
 
 def set_session_cookie(response, token: str, secure: bool) -> None:
+    """Set the session cookie."""
     response.set_cookie(
         "sid",
         token,
@@ -72,19 +74,23 @@ def is_bench_scoped() -> bool:
 
 
 def current_site_scope() -> str | None:
+    """The site the token is scoped to, if any."""
     claims = getattr(g, "jwt_claims", None)
     return claims.get("site") if claims else None
 
 
 def require_scope(site):
+    """Scope a view to a site, given by name or by a resolver."""
     if callable(site):
         resolve = site
     else:
 
         def resolve(kwargs):
+            """The fixed site."""
             return site
 
     def decorator(view):
+        """Attach the site resolver to the view."""
         setattr(view, _SITE_SCOPE_RESOLVER, resolve)
         return view
 
@@ -92,6 +98,7 @@ def require_scope(site):
 
 
 def get_authorization_error(claims: dict | None, view, view_args: dict, bench, token: str = "") -> str | None:
+    """Why the claims cannot use the view, or None."""
     from admin.backend.internal.session import Session
 
     resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
@@ -104,14 +111,18 @@ def get_authorization_error(claims: dict | None, view, view_args: dict, bench, t
 
 
 def install_auth_guard(app: Flask, bench_root) -> None:
+    """Check auth before each request."""
+
     @app.before_request
     def check_auth():
+        """Reset the request claims and check auth."""
         g.jwt_claims = None
         g.jwt_token = None
         return _check_auth_request(app, bench_root)
 
 
 def _check_auth_request(app: Flask, bench_root):
+    """The error response for an unauthorized API request, or None."""
     if not is_api_path(request.path):
         return None
 
@@ -145,6 +156,7 @@ def _check_auth_request(app: Flask, bench_root):
 
 
 def _resolve_site_route(bench):
+    """The site a site route names, if any."""
     if request.blueprint != "sites" or not request.view_args:
         return None
     name = request.view_args.get("name")
@@ -164,6 +176,7 @@ def _resolve_site_route(bench):
 
 
 def _auth_config(bench_root):
+    """The bench, or an error response."""
     try:
         return Bench(bench_root), None
     except Exception:
@@ -176,6 +189,7 @@ def _auth_config(bench_root):
 
 
 def _admin_session_response(bench):
+    """The error response when the Admin is off or not set up, or None."""
     if not bench.config.admin.enabled:
         return error_response("admin_disabled", "Admin is disabled.", 503, {"enabled": False})
     if not is_request_authenticated(bench):
@@ -190,7 +204,7 @@ def _admin_session_response(bench):
 def is_cross_site_cookie_request() -> bool:
     """A change sent by another site's page with this browser's session cookie, such as a form posted
     from a Frappe site on a sibling subdomain. `SameSite=Lax` still sends the cookie there."""
-    if request.method in _SAFE_METHODS or g.jwt_token != request.cookies.get("sid"):
+    if request.method in frozenset({"GET", "HEAD", "OPTIONS"}) or g.jwt_token != request.cookies.get("sid"):
         return False
     return request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site")
 
@@ -226,8 +240,11 @@ def rate_limit(attempts: int, seconds: int, user_ip: bool = True):
     """Allow at most `attempts` calls per `seconds` for this view, else respond 429."""
 
     def decorator(view):
+        """Wrap the view in a rate limit."""
+
         @functools.wraps(view)
         def wrapper(*args, **kwargs):
+            """Answer 429 above the limit, else call the view."""
             window = _get_window(wrapper, attempts, seconds)
             if not window.allow(client_ip() if user_ip else "*"):
                 return error_response(
@@ -246,5 +263,5 @@ def _get_window(view, attempts: int, seconds: int) -> SlidingWindow:
     """One SlidingWindow per (Flask app, decorated view), created on first use."""
     app = current_app._get_current_object()  # type: ignore[attr-defined]  # unwrap Flask's LocalProxy
     with _WINDOWS_LOCK:
-        windows = app.extensions.setdefault(_WINDOWS_EXTENSION, {})
+        windows = app.extensions.setdefault("rate_limit_windows", {})
         return windows.setdefault(view, SlidingWindow(attempts, seconds))

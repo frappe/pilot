@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from pilot.utils import normalize_host
+from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -26,9 +26,11 @@ class SiteAliases:
 
     @property
     def registry_path(self) -> "Path":
+        """The site aliases file."""
         return self.bench.config_path / "site-aliases.json"
 
     def record(self, name: str) -> None:
+        """Record the old name of a renamed site."""
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.registry_path):
             renamed = self._read()
@@ -67,6 +69,7 @@ class SiteAliases:
                     temporary.unlink(missing_ok=True)
 
     def _remove(self, name: str, *, preserve_hostnames: bool = False) -> bool:
+        """Remove an alias unless its rename is pending; return whether it was removed."""
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.registry_path):
             if self._is_pending(name):
@@ -100,6 +103,7 @@ class SiteAliases:
         return None
 
     def _is_pending(self, name: str) -> bool:
+        """Whether a rename of the name is pending; True when that cannot be read."""
         try:
             return self.pending_owner(name) is not None
         except (OSError, ValueError, KeyError, TypeError):
@@ -107,6 +111,7 @@ class SiteAliases:
             return True
 
     def _read(self) -> dict[str, float]:
+        """The saved aliases with their record times."""
         try:
             return json.loads(self.registry_path.read_text())
         except FileNotFoundError:

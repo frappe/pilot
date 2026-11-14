@@ -9,13 +9,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
-from pilot.managers.platform import is_macos
+from pilot.managers.platform import HostPlatform
 
-_BOOT_ID_PATH = Path("/proc/sys/kernel/random/boot_id")
-_PROC_ROOT = Path("/proc")
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
-_CAPTURE_POLL_SECONDS = 0.01
-_CAPTURE_TIMEOUT_SECONDS = 1.0
 
 
 class ProcessOwnership(StrEnum):
@@ -37,6 +33,7 @@ class ProcessIdentity:
     launch_id: str
 
     def to_dict(self) -> dict[str, int | str]:
+        """The identity as a JSON-ready dict."""
         return {
             "pid": self.pid,
             "pgid": self.pgid,
@@ -50,6 +47,7 @@ class ProcessIdentity:
 
     @classmethod
     def from_dict(cls, data: dict) -> ProcessIdentity:
+        """Rebuild an identity from to_dict() output."""
         return cls(
             pid=int(data["pid"]),
             pgid=int(data["pgid"]),
@@ -70,6 +68,7 @@ class TaskProcessRecord:
     is_callback: bool = False
 
     def to_dict(self) -> dict:
+        """The record as a JSON-ready dict for process.json."""
         record: dict[str, object] = {
             "task_id": self.task_id,
             "argv": self.argv,
@@ -81,6 +80,7 @@ class TaskProcessRecord:
 
     @classmethod
     def from_dict(cls, data: dict) -> "TaskProcessRecord":
+        """Rebuild a record from to_dict() output."""
         return cls(
             task_id=str(data["task_id"]),
             argv=[str(value) for value in data["argv"]],
@@ -101,29 +101,39 @@ class _ProcessSnapshot:
 
 class _ProcessBackend(Protocol):
     def read_process(self, pid: int) -> _ProcessSnapshot:
+        """The state, group, session, owner and start token of one process."""
         pass
 
     def read_boot_id(self) -> str:
+        """A value that changes on every boot, so a stored identity from before a reboot is stale."""
         pass
 
     def has_launch_id(self, pid: int, launch_id: str) -> bool:
+        """Whether the process environment carries this launch id."""
         pass
 
     def argv_hash(self, argv: list[str]) -> str:
+        """A hash of the command line, in the form this backend can read back from a live process."""
         pass
 
     def iter_pids(self) -> list[int]:
+        """Every process id on the host."""
         pass
 
     def command_line(self, pid: int) -> str:
+        """The process command line as one space-separated string."""
         pass
 
 
 class _ProcSysBackend:
     """Reads process identity from /proc, as found on Linux."""
 
+    boot_id_path = Path("/proc/sys/kernel/random/boot_id")
+    proc_root = Path("/proc")
+
     def read_process(self, pid: int) -> _ProcessSnapshot:
-        process_dir = _PROC_ROOT / str(pid)
+        """The process snapshot, read from /proc/<pid>/stat and status."""
+        process_dir = self.proc_root / str(pid)
         stat_text = (process_dir / "stat").read_text(encoding="utf-8")
         fields = stat_text[stat_text.rfind(")") + 2 :].split()
         if len(fields) < 20:
@@ -138,26 +148,31 @@ class _ProcSysBackend:
         )
 
     def read_boot_id(self) -> str:
-        return _BOOT_ID_PATH.read_text(encoding="utf-8").strip()
+        """The kernel boot id from /proc."""
+        return self.boot_id_path.read_text(encoding="utf-8").strip()
 
     def has_launch_id(self, pid: int, launch_id: str) -> bool:
+        """Whether /proc/<pid>/environ holds this launch id."""
         expected = f"{_LAUNCH_ID_ENV}={launch_id}".encode()
-        environment = (_PROC_ROOT / str(pid) / "environ").read_bytes().split(b"\0")
+        environment = (self.proc_root / str(pid) / "environ").read_bytes().split(b"\0")
         return expected in environment
 
     def argv_hash(self, argv: list[str]) -> str:
+        """SHA-256 of the NUL-separated command line, as /proc/<pid>/cmdline stores it."""
         command_line = b"\0".join(os.fsencode(argument) for argument in argv) + b"\0"
         return hashlib.sha256(command_line).hexdigest()
 
     def iter_pids(self) -> list[int]:
+        """Every numeric entry in /proc."""
         try:
-            entries = _PROC_ROOT.iterdir()
+            entries = self.proc_root.iterdir()
         except OSError as error:
             raise OSError from error
         return [int(entry.name) for entry in entries if entry.name.isdigit()]
 
     def command_line(self, pid: int) -> str:
-        raw = (_PROC_ROOT / str(pid) / "cmdline").read_bytes()
+        """/proc/<pid>/cmdline with NUL separators turned into spaces."""
+        raw = (self.proc_root / str(pid) / "cmdline").read_bytes()
         return os.fsdecode(raw.replace(b"\0", b" "))
 
 
@@ -171,6 +186,7 @@ class _DarwinPsBackend:
     """
 
     def read_process(self, pid: int) -> _ProcessSnapshot:
+        """The process snapshot, read with ps."""
         listing = self._run(["ps", "-p", str(pid), "-o", "pid=,ppid=,pgid=,stat=,uid=,start="])
         parts = listing.split()
         if len(parts) < 6:
@@ -188,9 +204,11 @@ class _DarwinPsBackend:
         )
 
     def read_boot_id(self) -> str:
+        """The kernel boot time from sysctl, which serves as the boot id on macOS."""
         return self._run(["sysctl", "-n", "kern.boottime"])
 
     def has_launch_id(self, pid: int, launch_id: str) -> bool:
+        """Whether `ps -E` shows this launch id in the process environment."""
         try:
             environment = self._run(["ps", "-E", "-ww", "-p", str(pid), "-o", "command="])
         except (subprocess.CalledProcessError, OSError):
@@ -198,9 +216,11 @@ class _DarwinPsBackend:
         return f"{_LAUNCH_ID_ENV}={launch_id}" in environment
 
     def argv_hash(self, argv: list[str]) -> str:
+        """SHA-256 of the command line without the executable, as ps shows it."""
         return self._hash(self._drop_executable(" ".join(argv)))
 
     def iter_pids(self) -> list[int]:
+        """Every process id that ps lists."""
         try:
             listing = self._run(["ps", "-A", "-o", "pid="])
         except (subprocess.CalledProcessError, OSError) as error:
@@ -208,6 +228,7 @@ class _DarwinPsBackend:
         return [int(token) for token in listing.split()]
 
     def command_line(self, pid: int) -> str:
+        """The full command line that ps shows."""
         return self._run(["ps", "-ww", "-p", str(pid), "-o", "command="])
 
     @staticmethod
@@ -224,14 +245,17 @@ class _DarwinPsBackend:
 
     @staticmethod
     def _hash(rendered: str) -> str:
+        """SHA-256 hex digest of a string."""
         return hashlib.sha256(rendered.encode()).hexdigest()
 
     @staticmethod
     def _token_id(token: str) -> int:
+        """A stable integer derived from a text token, such as a ps start time."""
         return int.from_bytes(hashlib.sha256(token.encode()).digest()[:8], "big")
 
     @staticmethod
     def _run(argv: list[str]) -> str:
+        """Stdout of a ps or sysctl command run in the C locale."""
         result = subprocess.run(
             argv,
             capture_output=True,
@@ -244,7 +268,8 @@ class _DarwinPsBackend:
 
 
 def _default_backend() -> _ProcessBackend:
-    return _DarwinPsBackend() if is_macos() else _ProcSysBackend()
+    """The process backend for this platform: ps on macOS, /proc elsewhere."""
+    return _DarwinPsBackend() if HostPlatform().is_macos else _ProcSysBackend()
 
 
 class ProcessInspector:
@@ -257,14 +282,15 @@ class ProcessInspector:
         expected_argv: list[str],
         launch_id: str,
     ) -> ProcessIdentity:
-        deadline = time.monotonic() + _CAPTURE_TIMEOUT_SECONDS
+        """The identity of a just-started task wrapper, retried until it has set up its process group."""
+        deadline = time.monotonic() + 1.0
         while True:
             try:
                 return self._capture_once(pid, expected_argv, launch_id)
             except RuntimeError:
                 if time.monotonic() >= deadline:
                     raise
-                time.sleep(_CAPTURE_POLL_SECONDS)
+                time.sleep(0.01)
 
     def _capture_once(
         self,
@@ -272,6 +298,7 @@ class ProcessInspector:
         expected_argv: list[str],
         launch_id: str,
     ) -> ProcessIdentity:
+        """Read the identity once; raise RuntimeError while the wrapper is not yet a group leader."""
         snapshot = self._read_process(pid)
         if snapshot.state == "Z":
             raise ProcessLookupError(pid)
@@ -297,6 +324,7 @@ class ProcessInspector:
         identity: ProcessIdentity,
         expected_argv: list[str],
     ) -> ProcessOwnership:
+        """Whether the recorded process is still ours, gone, stale or unknown."""
         try:
             if identity.argv_hash != self._argv_hash(expected_argv):
                 return ProcessOwnership.STALE
@@ -328,6 +356,7 @@ class ProcessInspector:
             return ProcessOwnership.UNKNOWN
 
     def owned_pids(self, identity: ProcessIdentity) -> set[int]:
+        """Every live process in the identity's group that carries its launch id."""
         if identity.boot_id != self._read_boot_id():
             return set()
         owned = set()
@@ -354,6 +383,7 @@ class ProcessInspector:
         return None
 
     def _command_matches(self, pid: int, markers: list[str]) -> bool:
+        """Whether the process command line holds every marker; False when it cannot be read."""
         try:
             command = self._backend.command_line(pid)
         except (FileNotFoundError, ProcessLookupError, PermissionError, OSError, ValueError):
@@ -361,6 +391,7 @@ class ProcessInspector:
         return all(marker in command for marker in markers)
 
     def has_pid(self, identity: ProcessIdentity, pid: int) -> bool:
+        """Whether the pid is a live process of this identity's owner and group."""
         try:
             snapshot = self._read_process(pid)
             return (
@@ -372,6 +403,7 @@ class ProcessInspector:
             return False
 
     def is_leader_dead(self, identity: ProcessIdentity) -> bool:
+        """Whether the group leader has exited or become a zombie."""
         try:
             snapshot = self._read_process(identity.pid)
         except (FileNotFoundError, ProcessLookupError):
@@ -381,6 +413,7 @@ class ProcessInspector:
         return snapshot.state == "Z" or snapshot.start_ticks != identity.start_ticks
 
     def _inspect_group(self, identity: ProcessIdentity) -> ProcessOwnership:
+        """The ownership of the process group as a whole."""
         try:
             pids = self._iter_pids()
         except OSError:
@@ -398,6 +431,7 @@ class ProcessInspector:
         pids: list[int],
         identity: ProcessIdentity,
     ) -> list[ProcessOwnership]:
+        """The ownership of each live member of the group."""
         states = []
         for pid in pids:
             state = self._inspect_group_entry(pid, identity)
@@ -406,6 +440,7 @@ class ProcessInspector:
         return states
 
     def _inspect_group_entry(self, pid: int, identity: ProcessIdentity) -> ProcessOwnership | None:
+        """The ownership of one process in the group, or None when it does not count."""
         snapshot, failed_unknown = self._process_snapshot(pid)
         if snapshot is None:
             return ProcessOwnership.UNKNOWN if failed_unknown else None
@@ -422,6 +457,7 @@ class ProcessInspector:
         return ProcessOwnership.STALE
 
     def _process_snapshot(self, pid: int) -> tuple[_ProcessSnapshot | None, bool]:
+        """The process snapshot, and whether a failed read means the state is unknown."""
         try:
             return self._read_process(pid), False
         except (FileNotFoundError, ProcessLookupError):
@@ -435,6 +471,7 @@ class ProcessInspector:
         snapshot: _ProcessSnapshot,
         identity: ProcessIdentity,
     ) -> tuple[bool, bool]:
+        """Whether the process carries the launch id, and whether the answer is unknown."""
         if snapshot.uid != identity.uid:
             return False, False
         try:
@@ -443,16 +480,21 @@ class ProcessInspector:
             return False, True
 
     def _read_process(self, pid: int) -> _ProcessSnapshot:
+        """The backend's snapshot of one process."""
         return self._backend.read_process(pid)
 
     def _read_boot_id(self) -> str:
+        """The backend's boot id."""
         return self._backend.read_boot_id()
 
     def _has_launch_id(self, pid: int, launch_id: str) -> bool:
+        """Whether the backend sees this launch id in the process."""
         return self._backend.has_launch_id(pid, launch_id)
 
     def _argv_hash(self, argv: list[str]) -> str:
+        """The backend's hash of a command line."""
         return self._backend.argv_hash(argv)
 
     def _iter_pids(self) -> list[int]:
+        """Every process id the backend lists."""
         return self._backend.iter_pids()

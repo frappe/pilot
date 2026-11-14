@@ -36,6 +36,7 @@ class SiteDomain:
         return cls(name=str(entry))
 
     def to_entry(self) -> "str | dict":
+        """The domain as a site_config.json entry."""
         if self.route:
             return {"domain": self.name, "route": self.route.to_dict()}
         return self.name if self.tls is None else {"domain": self.name, "tls": self.tls}
@@ -71,6 +72,7 @@ class SiteConfig:
 
     @property
     def primary(self) -> str:
+        """The primary domain, or the site name."""
         return self.primary_domain or self.name
 
     @property
@@ -118,8 +120,10 @@ class SiteConfig:
 
     @property
     def tls_domains(self) -> list[str]:
+        """The domains whose TLS this host terminates."""
         return [domain for domain in self.all_domains if self.terminates_tls(domain)]
 
     @property
     def plain_domains(self) -> list[str]:
+        """The domains whose TLS this host does not terminate."""
         return [domain for domain in self.all_domains if not self.terminates_tls(domain)]

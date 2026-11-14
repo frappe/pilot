@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal, TypedDict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from pilot.core.bench import Bench
 from pilot.core.server import Server
 from pilot.exceptions import CronError
 from pilot.internal.git import GitRepo
-from pilot.utils import cli_root
 
 
 class AppUpdate(TypedDict):
@@ -53,6 +52,7 @@ updates_bp = Blueprint("updates", __name__)
 
 @updates_bp.get("/app-updates")
 def get_app_updates():
+    """Show the known app updates."""
     try:
         return jsonify({"apps": _app_updates(fetch=False)})
     except Exception:
@@ -61,6 +61,7 @@ def get_app_updates():
 
 @updates_bp.post("/app-update-checks")
 def check_app_updates():
+    """Fetch and show the app updates."""
     try:
         return jsonify({"apps": _app_updates(fetch=True)})
     except Exception:
@@ -68,7 +69,8 @@ def check_app_updates():
 
 
 def _app_updates(*, fetch: bool) -> list[dict]:
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """The update state of each app."""
+    bench_root = ApiRequest.get_bench_root()
     bench = Bench(bench_root)
 
     apps_info = []
@@ -84,6 +86,7 @@ def _app_updates(*, fetch: bool) -> list[dict]:
 
 
 def _app_info(name: str, branch: str, repo: GitRepo) -> dict:
+    """The update state of one app."""
     remote_ref = f"origin/{branch}"
     return {
         "name": name,
@@ -98,6 +101,7 @@ def _app_info(name: str, branch: str, repo: GitRepo) -> dict:
 
 @updates_bp.get("/cli-updates")
 def get_cli_update():
+    """Show the known Pilot update."""
     try:
         return jsonify(_cli_update(fetch=False))
     except Exception:
@@ -106,6 +110,7 @@ def get_cli_update():
 
 @updates_bp.post("/cli-update-checks")
 def check_cli_update():
+    """Fetch and show the Pilot update."""
     try:
         return jsonify(_cli_update(fetch=True))
     except Exception:
@@ -136,6 +141,7 @@ def set_cli_auto_update():
 
 
 def _cli_update(*, fetch: bool) -> dict:
+    """The Pilot update state."""
     import pilot
 
     result = _cli_update_dev(fetch=fetch) if pilot.is_dev_build else _cli_update_release(fetch=fetch)
@@ -144,7 +150,8 @@ def _cli_update(*, fetch: bool) -> dict:
 
 
 def _cli_update_dev(*, fetch: bool) -> dict:
-    repo = GitRepo(cli_root())
+    """The update state of a dev checkout."""
+    repo = GitRepo(Server().root)
     branch = repo.branch
     if fetch:
         repo.fetch(branch, timeout=60)
@@ -163,11 +170,12 @@ def _cli_update_dev(*, fetch: bool) -> dict:
 
 
 def _cli_update_release(*, fetch: bool) -> dict:
+    """The update state of a release install."""
     import pilot
     from pilot.managers.processes.base import ManagedProcessManager
     from pilot.managers.processes.local import ProcessManager
 
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    bench = ApiRequest.get_bench()
     result = {
         "current_version": pilot.__version__,
         "is_dev": False,

@@ -4,8 +4,9 @@ import threading
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.sites.shared import malformed_body
 from pilot.core.bench import Bench
@@ -51,6 +52,7 @@ def get_python_docstring():
 
 @console_bp.errorhandler(LowMemoryError)
 def _low_memory_error(error: LowMemoryError):
+    """Answer 503 when memory is low."""
     return error_response("low_memory", str(error), 503)
 
 
@@ -67,7 +69,8 @@ def _parse_cursor_request(data):
 
 
 def _get_completer() -> PythonCompleter:
-    root = Path(current_app.config["BENCH_ROOT"])
+    """The Python completer of the bench, created on first use."""
+    root = ApiRequest.get_bench_root()
     with _completers_lock:
         if root not in _completers:
             _completers[root] = PythonCompleter(Bench(root))

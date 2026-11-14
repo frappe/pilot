@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from pilot.managers.environment import AdminEnvManager
+from pilot.managers.platform import HostPlatform
 
 
 def _make_manager(root: Path, deps: str = '["cowsay"]') -> AdminEnvManager:
@@ -112,7 +113,7 @@ def test_find_uv_looks_where_the_installer_puts_it(monkeypatch, tmp_path: Path) 
     installed.parent.mkdir(parents=True)
     installed.write_text("")
     monkeypatch.setattr(environment.Path, "home", staticmethod(lambda: tmp_path))
-    monkeypatch.setattr(environment, "which", lambda name: None)
+    monkeypatch.setattr(HostPlatform, "get_executable_path", lambda self, name: None)
 
     assert environment.find_uv() == str(installed)
 
@@ -124,7 +125,7 @@ def test_ensure_uv_does_not_reinstall_what_is_already_there(monkeypatch, tmp_pat
     installed.parent.mkdir(parents=True)
     installed.write_text("")
     monkeypatch.setattr(environment.Path, "home", staticmethod(lambda: tmp_path))
-    monkeypatch.setattr(environment, "which", lambda name: None)
+    monkeypatch.setattr(HostPlatform, "get_executable_path", lambda self, name: None)
     monkeypatch.setattr(
         environment, "run_command", lambda *a, **k: pytest.fail("uv is present, nothing to install")
     )

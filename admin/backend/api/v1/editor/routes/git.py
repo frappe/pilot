@@ -9,36 +9,42 @@ from admin.backend.api.v1.editor import editor_bp, json_body, with_workspace
 @editor_bp.get("/git/status")
 @with_workspace
 def git_status(ws):
+    """Show the git status."""
     return jsonify(ws.git.status())
 
 
 @editor_bp.get("/git/blame")
 @with_workspace
 def git_blame(ws):
+    """Show the blame of a file."""
     return jsonify({"lines": ws.git.blame(ws.relative(request.args.get("path", "")))})
 
 
 @editor_bp.get("/git/diff")
 @with_workspace
 def git_diff(ws):
+    """Show the changed lines of a file."""
     return jsonify(ws.git.diff_gutters(ws.relative(request.args.get("path", ""))))
 
 
 @editor_bp.get("/git/show")
 @with_workspace
 def git_show(ws):
+    """Show a file at HEAD."""
     return jsonify({"content": ws.git.show_head(ws.relative(request.args.get("path", "")))})
 
 
 @editor_bp.get("/git/branches")
 @with_workspace
 def git_branches(ws):
+    """List the branches."""
     return jsonify(ws.git.branches())
 
 
 @editor_bp.post("/git/checkout")
 @with_workspace
 def git_checkout(ws):
+    """Check out a branch."""
     body = json_body()
     if not ws.git.is_branch_name(body.get("branch")):
         return error_response("bad_request", "Branch name is invalid.", 400)
@@ -48,6 +54,7 @@ def git_checkout(ws):
 @editor_bp.post("/git/commit")
 @with_workspace
 def git_commit(ws):
+    """Commit the staged changes."""
     body = json_body()
     if not (body.get("message") or "").strip():
         return error_response("bad_request", "Commit message is required.", 400)
@@ -64,6 +71,7 @@ def git_commit(ws):
 @editor_bp.get("/git/log")
 @with_workspace
 def git_log(ws):
+    """Show a page of the commit log."""
     skip = request.args.get("skip", type=int) or 0
     limit = request.args.get("limit", type=int) or 50
     if limit <= 0 or limit > 200:
@@ -74,6 +82,7 @@ def git_log(ws):
 @editor_bp.get("/git/commit-info")
 @with_workspace
 def git_commit_info(ws):
+    """Show one commit."""
     sha = request.args.get("sha", "")
     if not ws.git.is_sha(sha):
         return error_response("bad_request", "Invalid commit sha.", 400)
@@ -86,6 +95,7 @@ def git_commit_info(ws):
 @editor_bp.get("/git/commit-diff")
 @with_workspace
 def git_commit_diff(ws):
+    """Show the diff of one commit."""
     sha = request.args.get("sha", "")
     if not ws.git.is_sha(sha):
         return error_response("bad_request", "Invalid commit sha.", 400)
@@ -96,34 +106,40 @@ def git_commit_diff(ws):
 @editor_bp.post("/git/stage")
 @with_workspace
 def git_stage(ws):
+    """Stage a path."""
     return _git_path_op(ws, ws.git.stage)
 
 
 @editor_bp.post("/git/unstage")
 @with_workspace
 def git_unstage(ws):
+    """Unstage a path."""
     return _git_path_op(ws, ws.git.unstage)
 
 
 @editor_bp.post("/git/discard")
 @with_workspace
 def git_discard(ws):
+    """Discard the changes of a path."""
     return _git_path_op(ws, lambda rel: ws.git.discard(ws, rel))
 
 
 @editor_bp.post("/git/push")
 @with_workspace
 def git_push(ws):
+    """Push the branch."""
     return _git_result(*ws.git.push(bool(json_body().get("force"))))
 
 
 @editor_bp.post("/git/pull")
 @with_workspace
 def git_pull(ws):
+    """Pull the branch."""
     return _git_result(*ws.git.pull())
 
 
 def _git_path_op(ws, op):
+    """Run a git operation on the body's path."""
     path = json_body().get("path") or ""
     if isinstance(path, str) and not path.strip():
         return error_response("bad_request", "Path is required.", 400)
@@ -131,6 +147,7 @@ def _git_path_op(ws, op):
 
 
 def _git_result(ok: bool, message: str):
+    """A git result: 200 on success, 409 on failure."""
     response = jsonify({"ok": ok, "message": message})
     response.status_code = 200 if ok else 409
     return response

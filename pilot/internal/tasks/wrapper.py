@@ -10,19 +10,19 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pilot.internal.tasks.callbacks import run_bounded_callback, trigger_for_task_status
+from pilot.internal.private_files import PrivateFile
+from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
 from pilot.internal.tasks.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
-from pilot.utils import open_private
 
 _HOSTNAME = socket.gethostname()
 
 # facility=1 (user-level messages), severity=6 (informational) -> PRI 14.
-_PRI = 14
 _cancel_requested = False
 
 
 def _wait_until_ready() -> bool:
+    """Wait for the parent to record this process; False when it gave up."""
     raw_fd = os.environ.pop("BENCH_TASK_READY_FD", None)
     if raw_fd is None:
         return True
@@ -34,18 +34,20 @@ def _wait_until_ready() -> bool:
 
 
 def _request_cancel(_signum, _frame) -> None:
+    """Note a cancel request from SIGTERM."""
     global _cancel_requested
     _cancel_requested = True
 
 
 def _syslog_prefix_parts(tag: str, pid: int) -> tuple[bytes, bytes]:
     """Return static syslog prefix fragments around the timestamp field."""
-    head = f"<{_PRI}>1 ".encode()
+    head = f"<{14}>1 ".encode()
     tail = f" {_HOSTNAME} {tag} {pid} - - ".encode()
     return head, tail
 
 
 def _redact(data: bytes, redactions: list[bytes]) -> bytes:
+    """The bytes with every secret replaced."""
     for secret in redactions:
         data = data.replace(secret, b"[redacted]")
     return data
@@ -66,12 +68,13 @@ def run_with_syslog_output(
     secret_bytes = sorted({value.encode() for value in redactions or [] if value}, key=len, reverse=True)
 
     def write_prefix(log_file) -> None:
+        """Write the syslog-style prefix for one output line."""
         ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
         log_file.write(head)
         log_file.write(ts)
         log_file.write(tail)
 
-    with open_private(log_path, "wb") as log_file:
+    with PrivateFile(log_path).open("wb") as log_file:
         buf = bytearray()
         while chunk := os.read(fd, 65536):
             start = 0
@@ -104,12 +107,13 @@ def callback_handler(
     meta: dict,
     redactions: list[str] | None = None,
 ) -> None:
+    """Run one callback, logging a failure to the task output instead of raising."""
     head, tail = _syslog_prefix_parts(meta["command"], os.getpid())
     ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
     prefix = (head + ts + tail).decode()
-    with open_private(output_log, "a") as log_file:
+    with PrivateFile(output_log).open("a") as log_file:
         try:
-            run_bounded_callback(callback, meta)
+            BoundedCallback(callback, meta).run()
             log_file.write(f"{prefix}Callback successfully triggered\n")
         except Exception as error:
             message = str(error)
@@ -119,6 +123,7 @@ def callback_handler(
 
 
 def _secret_values(value, key: str = "") -> list[str]:
+    """Every secret value in nested task arguments."""
     from pilot.internal.tasks.args import is_sensitive_key
 
     if is_sensitive_key(key) and isinstance(value, (str, int, float)):
@@ -153,6 +158,7 @@ def _load_redactions(task_dir: Path, bench_root: Path) -> list[str]:
 
 
 def _json_secret_values(path: Path) -> list[str]:
+    """Every secret value in a JSON file; empty when unreadable."""
     try:
         return _secret_values(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
@@ -160,6 +166,7 @@ def _json_secret_values(path: Path) -> list[str]:
 
 
 def main() -> None:
+    """The task wrapper entry point."""
     global _cancel_requested
     _cancel_requested = False
     previous = signal.getsignal(signal.SIGTERM)
@@ -171,6 +178,7 @@ def main() -> None:
 
 
 def _run_task() -> None:
+    """Run the task command, record its output and final status, then run its callback."""
     if not _wait_until_ready():
         return
     task_dir = Path(sys.argv[1])
@@ -215,7 +223,7 @@ def _run_task() -> None:
 
         (task_failed if status == TaskStatus.FAILED else task_succeeded)(bench_root, meta)
 
-    trigger = trigger_for_task_status(status)
+    trigger = CallbackOperations.get_trigger(status)
     selected = callbacks.get(trigger)
     if selected:
         callback_handler(selected, task_dir / "output.log", meta=meta, redactions=redactions)
@@ -229,6 +237,7 @@ def _run_task() -> None:
 
 
 def _finalize_task(store: TaskStore, task_id: str, exit_code: int) -> TaskStatus:
+    """Store the final status for the exit code, or KILLED after a cancel request."""
     updates: dict[str, object]
     if _cancel_requested:
         target = TaskStatus.KILLED

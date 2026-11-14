@@ -167,11 +167,10 @@ def test_restore_creation_cleanup_preserves_a_preexisting_site(tmp_path):
     site = bench.sites_path / "site1.localhost"
     site.mkdir()
     (site / "site_config.json").write_text("{}")
-    from pilot.internal.tasks.callbacks import run_callback
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
-    run_callback(
-        {"operation": "remove-failed-site", "args": task.remove_failed_site()},
-        {"bench_root": str(tmp_path), "task_id": "queued-task"},
+    CallbackOperations({"bench_root": str(tmp_path), "task_id": "queued-task"}).run(
+        {"operation": "remove-failed-site", "args": task.remove_failed_site()}
     )
     assert (site / "site_config.json").read_text() == "{}"
 
@@ -182,11 +181,10 @@ def test_failure_cleanup_never_targets_a_site_that_already_exists(tmp_path: Path
     site_path.mkdir(parents=True)
     (site_path / "site_config.json").write_text("{}")
 
-    from pilot.internal.tasks.callbacks import run_callback
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
-    run_callback(
-        {"operation": "remove-failed-site", "args": task.remove_failed_site()},
-        {"bench_root": str(tmp_path), "task_id": "queued-task"},
+    CallbackOperations({"bench_root": str(tmp_path), "task_id": "queued-task"}).run(
+        {"operation": "remove-failed-site", "args": task.remove_failed_site()}
     )
     assert (site_path / "site_config.json").read_text() == "{}"
 
@@ -194,7 +192,7 @@ def test_failure_cleanup_never_targets_a_site_that_already_exists(tmp_path: Path
 @pytest.mark.parametrize("creator", ["", "other-task"])
 def test_cancelled_queued_creation_preserves_a_site_created_by_someone_else(tmp_path, monkeypatch, creator):
     from pilot.core.site.creation import SiteCreationOwner
-    from pilot.internal.tasks import callbacks
+    from pilot.internal.tasks.callbacks import CallbackOperations
 
     task = make_task(tmp_path, [])
     queued_cleanup = task.remove_failed_site()
@@ -205,12 +203,13 @@ def test_cancelled_queued_creation_preserves_a_site_created_by_someone_else(tmp_
     with SiteCreationOwner(tmp_path, task.name).locked() as owner:
         owner.claim(creator)
     monkeypatch.setattr(
-        callbacks, "_drop_failed_site", lambda *args: pytest.fail("another site's database was dropped")
+        CallbackOperations,
+        "drop_failed_site",
+        lambda *args: pytest.fail("another site's database was dropped"),
     )
 
-    callbacks.run_callback(
-        {"operation": "remove-failed-site", "args": queued_cleanup},
-        {"bench_root": str(tmp_path), "task_id": "cancelled-queued-task"},
+    CallbackOperations({"bench_root": str(tmp_path), "task_id": "cancelled-queued-task"}).run(
+        {"operation": "remove-failed-site", "args": queued_cleanup}
     )
 
     assert config.read_text() == '{"db_name": "other_database"}'

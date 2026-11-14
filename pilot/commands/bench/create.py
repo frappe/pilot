@@ -38,11 +38,12 @@ class NewCommand(Command):
     def __post_init__(self) -> None:
         if self.target_directory is not None:
             return
-        from pilot.utils import cli_root
+        from pilot.core.server import Server
 
-        self.target_directory = cli_root() / "benches" / self.bench_name
+        self.target_directory = Server().root / "benches" / self.bench_name
 
     def run(self) -> None:
+        """Create a bench."""
         from pilot.core.bench import Bench
 
         Bench.create_at(

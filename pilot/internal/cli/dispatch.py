@@ -9,14 +9,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-_OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h", "--version"])
-# Pilot flags given before a Frappe command; Frappe commands may take their own --yes after it.
-_PILOT_ONLY_FLAGS = frozenset(["--verbose", "--yes", "-y"])
 
 
 @dataclass(frozen=True)
@@ -28,13 +23,16 @@ class CliContext:
 
     @property
     def is_all_benches(self) -> bool:
+        """Whether the command targets every bench."""
         return self.bench_name == "all"
 
     def for_bench(self, name: str) -> "CliContext":
+        """A copy of the context for one named bench."""
         return replace(self, bench_name=name)
 
 
 def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path:
+    """The bench directory from --bench, the current directory, or the only bench."""
     benches_dir = context.installation_root / "benches"
 
     if context.bench_name:
@@ -53,6 +51,7 @@ def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path
 
 
 def _explicit_bench_root(benches_dir: Path, bench_name: str) -> Path:
+    """The named bench's directory; raise with the available names when it is missing."""
     bench_dir = benches_dir / bench_name
     if not (bench_dir / "bench.toml").exists():
         raise BenchError(f"Bench '{bench_name}' not found.\n{available_hint(benches_dir)}")
@@ -60,6 +59,7 @@ def _explicit_bench_root(benches_dir: Path, bench_name: str) -> Path:
 
 
 def _cwd_bench_root() -> Path | None:
+    """The nearest bench directory above the current directory, if any."""
     current = Path.cwd()
     for directory in [current, *current.parents]:
         if (directory / "bench.toml").exists():
@@ -77,6 +77,7 @@ def _cwd_workspace_bench_root() -> Path | None:
 
 
 def _implicit_bench_root(benches_dir: Path) -> Path:
+    """The only bench on the host; raise when there are none or several."""
     if benches_dir.is_dir():
         candidates = [d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
         if len(candidates) == 1:
@@ -89,6 +90,7 @@ def _implicit_bench_root(benches_dir: Path) -> Path:
 
 
 def load_bench(context: CliContext, require_explicit: bool = False) -> "Bench":
+    """The bench the CLI context points at."""
     from pilot.core.bench import Bench
 
     bench_root = find_bench_root(context, require_explicit=require_explicit)
@@ -96,6 +98,7 @@ def load_bench(context: CliContext, require_explicit: bool = False) -> "Bench":
 
 
 def strip_bench_flag(args: list[str]) -> tuple[str | None, list[str]]:
+    """The --bench value and the remaining arguments without it."""
     bench_name = None
     remaining = []
     skip_next = False
@@ -115,6 +118,7 @@ def strip_bench_flag(args: list[str]) -> tuple[str | None, list[str]]:
 
 
 def is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None = None) -> bool:
+    """Whether the arguments are a Frappe bench command rather than a Pilot command."""
     if own_commands is None:
         from pilot.internal.cli.registry import command_names
 
@@ -135,7 +139,8 @@ def is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None =
 
 
 def is_own_group_option(arg: str) -> bool:
-    if arg in _OWN_GROUP_OPTIONS:
+    """Whether the argument is an option Pilot handles itself, with or without a value."""
+    if arg in frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h", "--version"]):
         return True
     if "=" not in arg:
         return False
@@ -144,6 +149,7 @@ def is_own_group_option(arg: str) -> bool:
 
 
 def main() -> None:
+    """The pilot command entry point."""
     sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
     args_list = sys.argv[1:]
     bench_name, remaining = strip_bench_flag(args_list)
@@ -162,6 +168,7 @@ def main() -> None:
 
 @contextmanager
 def error_boundary(context: CliContext) -> Iterator[None]:
+    """Turn errors and Ctrl-C into short messages and exit codes."""
     try:
         yield
     except KeyboardInterrupt:
@@ -178,8 +185,11 @@ def error_boundary(context: CliContext) -> Iterator[None]:
 
 
 def build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> CliContext:
+    """The CLI context for this invocation."""
+    from pilot.core.server import Server
+
     return CliContext(
-        installation_root=cli_root(),
+        installation_root=Server().root,
         bench_name=bench_name,
         verbose=verbose,
         assume_yes=assume_yes,
@@ -187,16 +197,18 @@ def build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> Cl
 
 
 def forwarded_frappe_args(remaining: list[str]) -> list[str] | None:
+    """The arguments to pass to Frappe's bench, or None when Pilot handles the command."""
     if remaining in (["frappe", "--help"], ["frappe", "-h"]):
         return None
     if remaining and remaining[0] == "frappe":
         return remaining[1:]
     if is_frappe_passthrough(remaining):
-        return list(dropwhile(lambda arg: arg in _PILOT_ONLY_FLAGS, remaining))
+        return list(dropwhile(lambda arg: arg in frozenset(["--verbose", "--yes", "-y"]), remaining))
     return None
 
 
 def run_frappe(context: CliContext, args: list[str]) -> None:
+    """Run a Frappe bench command in the selected bench."""
     from pilot.commands.runtime.frappe import FrappeCommand
 
     with error_boundary(context):
@@ -219,6 +231,7 @@ def requested_command(remaining: list[str]) -> str | None:
 
 
 def run_native(context: CliContext, remaining: list[str]) -> None:
+    """Parse and run a Pilot command, then report the time it took."""
     import time
 
     from pilot.internal.cli import registry
@@ -235,12 +248,14 @@ def run_native(context: CliContext, remaining: list[str]) -> None:
 
 
 def report_elapsed(elapsed: float) -> None:
+    """Print the elapsed time for commands that took two seconds or more."""
     if elapsed >= 2:
         minutes, seconds = divmod(int(elapsed), 60)
         print(f"\nDone in {minutes}m {seconds}s" if minutes else f"\nDone in {seconds}s")
 
 
 def available_hint(benches_dir: Path, sort: bool = False) -> str:
+    """A hint that lists the benches on the host."""
     if not benches_dir.is_dir():
         return "  No benches found. Run: pilot new <name>"
     names = [d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]

@@ -32,6 +32,7 @@ def _revalidate(response):
 
 
 def create_app(bench_root: Path) -> Flask:
+    """The Admin Flask app for the bench."""
     app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
     app.config["BENCH_ROOT"] = bench_root
     app.config["TEMPLATES_AUTO_RELOAD"] = False
@@ -56,6 +57,7 @@ def create_app(bench_root: Path) -> Flask:
 
 
 def register_blueprints(app: Flask) -> None:
+    """Register the API blueprints."""
     from admin.backend.api.v1.apps import apps_bp, marketplace_bp
     from admin.backend.api.v1.auth import auth_bp
     from admin.backend.api.v1.benches import bench_readiness_bp, benches_bp
@@ -107,6 +109,7 @@ def register_editor_frontend(app: Flask) -> None:
     @app.route("/editor/<app_name>")
     @allow_unauthenticated
     def serve_editor(app_name):
+        """Serve the code editor when it is on."""
         from admin.backend.api.v1.editor import is_code_editor_enabled
 
         if not is_code_editor_enabled(Path(app.config["BENCH_ROOT"])):
@@ -119,6 +122,7 @@ def register_editor_frontend(app: Flask) -> None:
     @app.route("/editor-assets/<path:path>")
     @allow_unauthenticated
     def serve_editor_assets(path):
+        """Serve a code editor asset."""
         try:
             return _immutable(send_from_directory(editor_dist, path))
         except NotFound:
@@ -137,6 +141,7 @@ def register_in_app_embed_frontend(app: Flask) -> None:
     @app.route("/embed/cloud-settings/<path:path>")
     @allow_unauthenticated
     def serve_cloud_settings_in_app_embed(path):
+        """Serve the Cloud Settings in-app embed."""
         if not in_app_embed_dist.exists():
             return (
                 "Cloud Settings in-app embed not built. "
@@ -161,6 +166,7 @@ def register_frontend(app: Flask) -> None:
     @app.route("/<path:path>")
     @allow_unauthenticated
     def serve_frontend(path):
+        """Serve the dashboard frontend."""
         if path == "api" or path.startswith("api/"):
             return error_response("not_found", "API route not found.", 404)
         dashboard_dir = STATIC_DIR / "dashboard"
@@ -185,6 +191,7 @@ def configure_idle_watchdog(
     app: Flask,
     bench_root: Path | None = None,
 ):
+    """Stop the Admin after it is idle for the configured time."""
     raw = os.environ.get("BENCH_ADMIN_IDLE_TIMEOUT")
     if not raw:
         return None

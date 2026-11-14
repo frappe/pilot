@@ -25,6 +25,7 @@ class UninstallAppCommand(Command):
         self.site: "Site" = self.bench.site(self.site_name)
 
     def run(self) -> None:
+        """Uninstall the apps from the site."""
         self.site.uninstall_apps(
             self.app_names, force=self.force, on_progress=self.report, remove_from_bench=not self.keep_on_bench
         )

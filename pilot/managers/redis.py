@@ -10,29 +10,31 @@ from typing import TYPE_CHECKING
 
 from pilot.config import RedisConfig
 from pilot.exceptions import BenchError, ConfigError
+from pilot.internal.host_resources import LocalPort
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_macos, which
-from pilot.utils import is_port_listening
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_BLOCK_START = "# BEGIN PILOT MANAGED BLOCK. Pilot rewrites this block; add your settings outside it."
-_BLOCK_END = "# END PILOT MANAGED BLOCK"
-_PILOT_DIRECTIVE = re.compile(r"^(port|bind|save)\b")
 
 
 def redis_server_binary() -> str | None:
     """Return redis-server or valkey-server when installed."""
-    return which("redis-server") or which("valkey-server")
+    return HostPlatform().get_executable_path("redis-server") or HostPlatform().get_executable_path("valkey-server")
 
 
 class RedisManager:
+    block_start = "# BEGIN PILOT MANAGED BLOCK. Pilot rewrites this block; add your settings outside it."
+    block_end = "# END PILOT MANAGED BLOCK"
+    pilot_directive = re.compile(r"^(port|bind|save)\b")
+
     def __init__(self, config: RedisConfig, bench: "Bench") -> None:
         self.config = config
         self.bench = bench
 
     def is_installed(self) -> bool:
+        """Whether redis-server is installed."""
         return redis_server_binary() is not None
 
     @staticmethod
@@ -55,13 +57,15 @@ class RedisManager:
         return match.group(1) if match else ""
 
     def install(self) -> None:
+        """Install Redis if it is missing."""
         if self.is_installed():
             return
         package_manager = get_package_manager()
-        package = self._brew_package() if is_macos() else "redis-server"
+        package = self._brew_package() if HostPlatform().is_macos else "redis-server"
         package_manager.install(package)
 
     def _brew_package(self) -> str:
+        """The Homebrew formula to use."""
         if self.config.version:
             return f"redis@{self.config.version}"
         return "redis"
@@ -72,6 +76,7 @@ class RedisManager:
         return {"redis_cache.conf": self.config.cache_port, "redis_queue.conf": self.config.queue_port}
 
     def generate_configs(self) -> None:
+        """Write the Redis configs."""
         for filename, port in self.servers.items():
             self._write_config(filename, port)
 
@@ -83,7 +88,7 @@ class RedisManager:
         processes: list[subprocess.Popen] = []
         try:
             for name, port in self.servers.items():
-                if is_port_listening(port):
+                if LocalPort(port).is_listening:
                     continue
                 if binary is None:
                     raise BenchError("redis-server is not installed. Install Redis or Valkey, then try again.")
@@ -103,10 +108,11 @@ class RedisManager:
                 process.wait(timeout=10)
 
     def _write_config(self, filename: str, port: int) -> None:
+        """Write one Redis config."""
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
         path = self.bench.config_path / filename
         before, after = self._split_custom_config(path)
-        block = f'{_BLOCK_START}\nport {port}\nbind 127.0.0.1\nsave ""\n{_BLOCK_END}\n'
+        block = f'{self.block_start}\nport {port}\nbind 127.0.0.1\nsave ""\n{self.block_end}\n'
         path.write_text(before + block + after)
 
     @staticmethod
@@ -115,18 +121,19 @@ class RedisManager:
         if not path.exists():
             return "", ""
         text = path.read_text()
-        before, start, rest = text.partition(_BLOCK_START)
+        before, start, rest = text.partition(RedisManager.block_start)
         if not start:
-            return "", "".join(line for line in text.splitlines(keepends=True) if not _PILOT_DIRECTIVE.match(line))
-        _, end, after = rest.partition(_BLOCK_END)
+            return "", "".join(line for line in text.splitlines(keepends=True) if not RedisManager.pilot_directive.match(line))
+        _, end, after = rest.partition(RedisManager.block_end)
         if not end:
-            raise ConfigError(f"{path} has no '{_BLOCK_END}' line. Restore it or delete the file.")
+            raise ConfigError(f"{path} has no '{RedisManager.block_end}' line. Restore it or delete the file.")
         return before, after.removeprefix("\n")
 
 
 def wait_until_serving(port: int, timeout: float = 10.0) -> None:
+    """Wait until the port listens; raise on timeout."""
     deadline = time.monotonic() + timeout
-    while not is_port_listening(port):
+    while not LocalPort(port).is_listening:
         if time.monotonic() > deadline:
             raise BenchError(f"Redis did not start on port {port} within {timeout:.0f}s.")
         time.sleep(0.1)

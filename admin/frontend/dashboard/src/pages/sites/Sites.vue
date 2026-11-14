@@ -13,6 +13,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { sitesApi } from '@/api/sites'
+import CloneDialog from '@/components/common/CloneDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
@@ -175,6 +176,14 @@ const backupNow = async (site: SiteResource) => {
 
 const siteMenuOptions = (site: SiteResource) => {
   return [
+    {
+      label: 'Clone site',
+      icon: 'lucide-copy',
+      onClick: () => {
+        cloneSource.value = site.name
+        showClone.value = true
+      },
+    },
     { label: 'Visit site', icon: 'lucide-external-link', onClick: () => openSite(site) },
     { label: 'Login as admin', icon: 'lucide-log-in', onClick: () => openAsAdmin(site) },
     { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
@@ -192,6 +201,8 @@ const siteMenuOptions = (site: SiteResource) => {
 }
 
 const showCreate = ref(false)
+const showClone = ref(false)
+const cloneSource = ref('')
 
 watch(
   () => route.query.new,
@@ -393,6 +404,12 @@ onMounted(() => {
   <NewSiteDialog
     v-model="showCreate"
     :sites="sites"
+    @started="(taskId) => openTaskDetailPage(router, taskId)"
+  />
+  <CloneDialog
+    v-model="showClone"
+    kind="site"
+    :source="cloneSource"
     @started="(taskId) => openTaskDetailPage(router, taskId)"
   />
 </template>

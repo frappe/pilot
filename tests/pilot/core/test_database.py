@@ -389,9 +389,10 @@ def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
     responses = {
         "INNODB_LOCK_WAITS": (
             ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
-             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB"],
+             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB",
+             "blocking_trx_id", "trx_mysql_thread_id", "trx_query"],
             [[42, "RECORD", "X", "`db`.`tabDoc`", "PRIMARY", "LOCK WAIT",
-              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", 3, 1, "db"]],
+              1767225600, "UPDATE tabDoc SET x=1", 3, 1, "db", 41, 7, "SELECT 1 FOR UPDATE"]],
         )
     }
     with patch.object(MariaDB, "execute", _canned_execute(responses)):
@@ -405,10 +406,11 @@ def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
     assert row.table == "`db`.`tabDoc`"
     assert row.index == "PRIMARY"
     assert row.state == "LOCK WAIT"
-    assert row.started == "2026-01-01 00:00:00"
+    assert row.started == "2026-01-01T00:00:00+00:00"
     assert row.query == "UPDATE tabDoc SET x=1"
     assert row.rows_locked == 3
     assert row.rows_modified == 1
+    assert (row.blocking_id, row.blocking_thread_id, row.blocking_query) == ("41", 7, "SELECT 1 FOR UPDATE")
 
 
 def test_mariadb_get_lock_wait_rows_filters_by_database() -> None:
@@ -418,8 +420,8 @@ def test_mariadb_get_lock_wait_rows_filters_by_database() -> None:
             ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
              "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB"],
             [
-                [42, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_one"],
-                [43, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_two"],
+                [42, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_one", None, None, None],
+                [43, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_two", None, None, None],
             ],
         )
     }
@@ -1041,3 +1043,17 @@ def test_bench_db_returns_same_instance_on_second_access(tmp_path: Path) -> None
 
     bench = Bench(_bench_config("mariadb"), tmp_path)
     assert bench.db is bench.db
+
+
+@pytest.mark.parametrize(
+    ("host", "socket", "disabled"),
+    [("127.0.0.1", None, True), ("", "/run/m.sock", True), ("db.example.com", None, False)],
+)
+def test_mariadb_skips_tls_only_on_loopback(host: str, socket: str | None, disabled: bool) -> None:
+    from pilot.core.database.engines.mariadb import MariaDB
+
+    engine = MariaDB(host=host, port=3306, user="u", password="p", database="", socket=socket)
+    with patch("pymysql.connect") as connect:
+        engine._connect()
+
+    assert connect.call_args.kwargs["ssl_disabled"] is disabled

@@ -15,8 +15,6 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError
 
-_KEY_TYPE_PREFIXES = ("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-")
-
 
 class SSHKeyError(BenchError):
     """A key was malformed, duplicated, missing, or the last one remaining."""
@@ -46,10 +44,12 @@ class SSHKey:
 
 
 def _is_key_type(token: str) -> bool:
-    return token.startswith(_KEY_TYPE_PREFIXES)
+    """Whether the token is an SSH key type."""
+    return token.startswith(("ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-sha2-"))
 
 
 def _fingerprint(blob: str) -> str:
+    """The MD5 fingerprint of a key."""
     digest = hashlib.md5(base64.b64decode(blob)).digest()
     return "MD5:" + ":".join(f"{b:02x}" for b in digest)
 
@@ -92,9 +92,11 @@ class AuthorizedKeysStore:
     # Other methods below spell the builtin as builtins.list[...] - this method's
     # own name would otherwise shadow it in their annotations.
     def list(self) -> builtins.list[SSHKey]:
+        """The authorized keys."""
         return [self._to_key(parsed) for parsed in self._parse_lines(self._read())]
 
     def add(self, public_key: str) -> SSHKey:
+        """Add a public key and return it; raise when it is invalid or present."""
         key_type, blob, comment = _validate(public_key)
         fingerprint = _fingerprint(blob)
         with self._locked():
@@ -106,6 +108,7 @@ class AuthorizedKeysStore:
         return SSHKey(key_type=key_type, fingerprint=fingerprint, comment=comment)
 
     def remove(self, fingerprint: str) -> None:
+        """Remove the key with this fingerprint; raise when there is none."""
         with self._locked():
             lines = self._read()
             keys = self._parse_lines(lines)
@@ -117,23 +120,28 @@ class AuthorizedKeysStore:
             self._write(kept)
 
     def _to_key(self, parsed: tuple[str, str, str]) -> SSHKey:
+        """The key from its parsed parts."""
         key_type, blob, comment = parsed
         return SSHKey(key_type=key_type, fingerprint=_fingerprint(blob), comment=comment)
 
     def _parse_lines(self, lines: builtins.list[str]) -> builtins.list[tuple[str, str, str]]:
+        """The parsed keys in the lines."""
         return [parsed for line in lines if (parsed := _parse_line(line))]
 
     def _line_fingerprint(self, line: str) -> str | None:
+        """The fingerprint of a key line, if it is one."""
         parsed = _parse_line(line)
         return _fingerprint(parsed[1]) if parsed else None
 
     def _read(self) -> builtins.list[str]:
+        """The lines of the keys file."""
         try:
             return self.path.read_text().splitlines()
         except FileNotFoundError:
             return []
 
     def _write(self, lines: builtins.list[str]) -> None:
+        """Write the keys file atomically with private permissions."""
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         content = "\n".join(lines) + "\n" if lines else ""
         fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".authorized_keys-")
@@ -149,6 +157,7 @@ class AuthorizedKeysStore:
 
     @contextlib.contextmanager
     def _locked(self):
+        """Hold an exclusive lock on the keys directory."""
         # Lock the .ssh directory, not the file: an atomic write replaces the
         # file's inode, so a lock on it wouldn't serialize the next writer.
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

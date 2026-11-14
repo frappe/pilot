@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pilot.core.site.restore import BackupRun, BackupStream
+from pilot.core.site.backups.restore import BackupRun, BackupStream
 from pilot.exceptions import BenchError, RemoteSiteError
+from pilot.internal.private_files import PrivateDirectory
 from pilot.tasks import Arg, Task, on_cancel, on_failure, step
-from pilot.utils import make_private_directory
 
 
 @dataclass(kw_only=True)
@@ -36,9 +36,10 @@ class RestoreSiteTask(Task):
     frappe_cloud_token: Annotated[str, Arg(cli=False)] = ""
 
     def run(self) -> None:
+        """Fetch the backup and restore it into the site."""
         if self.upload_dir and Path(self.upload_dir).resolve().parent != self.bench.uploads_path.resolve():
             raise BenchError(f"Uploaded backups must be in {self.bench.uploads_path}.")
-        make_private_directory(self.bench.restores_path, parents=True)
+        PrivateDirectory(self.bench.restores_path).create(parents=True)
         prefix = f"{self.running_task_id}-"
         with tempfile.TemporaryDirectory(dir=self.bench.restores_path, prefix=prefix) as workdir:
             self.restore(self.fetch(Path(workdir)))
@@ -54,6 +55,7 @@ class RestoreSiteTask(Task):
 
     @step("fetch", lambda self: self.fetch_label)
     def fetch(self, workdir: Path) -> BackupRun:
+        """Get the backup files from their source."""
         if self.remote_site:
             return self.fetch_remote(workdir)
         if self.frappe_cloud_secret_urls:
@@ -115,12 +117,14 @@ class RestoreSiteTask(Task):
 
     @step("restore", lambda self: f"Restore {', '.join(self.parts)} into {self.site}")
     def restore(self, run: BackupRun) -> None:
+        """Restore the backup into the site."""
         self.bench.site(self.site).restore_backup(
             run, self.parts, self.report, skip_failing_patches=self.skip_failing_patches
         )
 
     @property
     def needs_files(self) -> bool:
+        """Whether the restore includes files."""
         return bool({"public", "private"} & set(self.parts))
 
     @property
@@ -141,6 +145,7 @@ class RestoreSiteTask(Task):
 
     @property
     def source_label(self) -> str:
+        """The label of the backup source."""
         if self.remote_site:
             return self.remote_site
         if self.upload_dir:

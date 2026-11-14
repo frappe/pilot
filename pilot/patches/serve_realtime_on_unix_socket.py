@@ -8,10 +8,10 @@ PATCH_NAME = Path(__file__).stem
 def run(benches_root: Path) -> None:
     """Move production realtime from its TCP port to a Unix socket that only nginx reaches."""
     from pilot.core.bench import Bench
+    from pilot.internal.command import run_command
     from pilot.internal.patch_state import is_applied, mark_applied
     from pilot.managers.nginx import NginxManager
     from pilot.managers.processes.systemd import SystemdProcessManager
-    from pilot.utils import run_command
 
     for bench_dir in sorted(benches_root.glob("*")):
         if not bench_dir.is_dir() or not (bench_dir / "bench.toml").exists():
@@ -35,6 +35,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

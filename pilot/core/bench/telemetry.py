@@ -23,6 +23,7 @@ class DatumCredential(RotatingCredential):
         self.on_progress = on_progress
 
     def rotate(self) -> str:
+        """Issue a new telemetry token and return it."""
         apply_credential(self.bench, on_progress=self.on_progress)
         return self.bench.config.telemetry.token
 

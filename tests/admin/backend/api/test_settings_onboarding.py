@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response, restart_trigger_values
+from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response
 from pilot.config import BenchConfig
-from pilot.core.bench.settings import is_restart_needed
+from pilot.core.bench.settings import BenchSettings
+from pilot.core.bench.settings.payload import SettingsPayload
 
 
 def _config(**bench) -> BenchConfig:
@@ -50,7 +51,7 @@ def test_new_bench_does_not_write_onboarding_key() -> None:
 
 def test_changing_onboarding_does_not_restart_the_bench() -> None:
     config = _config()
-    before = restart_trigger_values(config)
+    before = SettingsPayload(config).restart_triggers
     config.onboarding = "minimized"
 
-    assert not is_restart_needed(before, restart_trigger_values(config))
+    assert not BenchSettings.is_restart_needed(before, SettingsPayload(config).restart_triggers)

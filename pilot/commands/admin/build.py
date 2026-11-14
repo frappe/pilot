@@ -14,6 +14,7 @@ class BuildAdminCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
+        """Build the Admin frontend."""
         from admin.backend.frontend import build_admin_frontend
 
         build_admin_frontend(on_progress=self.report, force=True)

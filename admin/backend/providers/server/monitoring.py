@@ -1,0 +1,150 @@
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+from admin.backend.providers.windowed_log import WindowedLogProvider
+
+MAX_POINTS = 400
+DISK_SERIES = "Root Disk"
+
+
+class SystemMonitoringProvider(WindowedLogProvider):
+    """Time-series for a window from the monitor logs: system metrics in a
+    shared JSON-Lines log, application metrics in a per-bench one."""
+
+    def __init__(self, bench_root: Path, window: str) -> None:
+        super().__init__(window)
+        self._bench_root = bench_root
+
+    def get_history(self) -> dict:
+        """The system and process metrics history."""
+        from pilot.config import BenchConfig
+        from pilot.config.monitor import bench_log_path, system_log_path
+
+        config = BenchConfig.read(self._bench_root)
+        app_log = bench_log_path(config.name)
+        return {
+            "window": self.window,
+            "window_seconds": self.window_seconds,
+            # Absolute epoch ms so the browser windows correctly regardless of its timezone.
+            "now": self.now_ms(),
+            "system": self.get_system_metrics(system_log_path()),
+            "application": self.get_application_metrics(app_log, config.name),
+        }
+
+    def get_system_metrics(self, path: Path) -> dict:
+        """The system metrics in the window."""
+        rows = self.get_records_in_window(path)
+        return {
+            "earliest": self.get_earliest(path),
+            "points": [self.build_system_point(when, metrics) for when, metrics in rows],
+            "storage": self.get_latest_storage(rows),
+            "memory_total_bytes": self.get_latest_memory_total(rows),
+        }
+
+    @staticmethod
+    def get_latest_memory_total(rows: list) -> float | None:
+        """The newest total memory, if any."""
+        for _, metrics in reversed(rows):
+            total = (metrics.get("memory") or {}).get("total_bytes")
+            if total is not None:
+                return total
+        return None
+
+    def build_system_point(self, when: datetime, metrics: dict) -> dict:
+        """One system chart point."""
+        storage = metrics.get("storage") or {}
+        disk = storage.get("disk")
+        load = metrics["load_avg"]
+        cpu = metrics.get("cpu_breakdown") or {}
+        memory = metrics.get("memory") or {}
+        network = metrics.get("network") or {}
+        disk_io = metrics.get("disk_io") or {}
+        return {
+            "time": self.to_epoch_ms(when),
+            "Busy User": cpu.get("user"),
+            "Busy System": cpu.get("system"),
+            "Busy IOWait": cpu.get("iowait"),
+            "Busy IRQ": cpu.get("irq"),
+            "Busy Other": cpu.get("other"),
+            "Used": memory.get("used_bytes"),
+            "Cached + Buffers": memory.get("cached_bytes"),
+            "Free": memory.get("free_bytes"),
+            "Swap Used": memory.get("swap_used_bytes"),
+            "Load1": load[0],
+            "Load5": load[1],
+            "Load15": load[2],
+            DISK_SERIES: disk["percent"] if disk else None,
+            "Received": network.get("rx_bytes_per_sec"),
+            "Sent": network.get("tx_bytes_per_sec"),
+            "Read": disk_io.get("read_bytes_per_sec"),
+            "Write": disk_io.get("write_bytes_per_sec"),
+        }
+
+    @staticmethod
+    def get_latest_storage(rows: list) -> dict | None:
+        """The newest disk usage, if any."""
+        for _, metrics in reversed(rows):
+            disk = (metrics.get("storage") or {}).get("disk")
+            if disk:
+                return {
+                    "disk": {
+                        "used_bytes": disk.get("used_bytes"),
+                        "total_bytes": disk.get("total_bytes"),
+                        "percent": disk.get("percent"),
+                    }
+                }
+        return None
+
+    def get_application_metrics(self, path: Path, bench_name: str) -> dict:
+        """The process metrics in the window."""
+        rows = self.get_records_in_window(path)
+        return {
+            "earliest": self.get_earliest(path),
+            "services": self.get_service_names(rows, bench_name),
+            "cpu": [
+                self.build_service_row(when, metrics, bench_name, "cpu_percent") for when, metrics in rows
+            ],
+            "memory": [
+                self.build_service_row(when, metrics, bench_name, "memory_rss_bytes")
+                for when, metrics in rows
+            ],
+        }
+
+    def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:
+        """The records in the window, with their times."""
+        rows = [
+            (when, record)
+            for record in self.records_in_window(path)
+            if (when := self.get_time(record["time"])) is not None
+        ]
+        rows.reverse()
+
+        if len(rows) <= MAX_POINTS:
+            return rows
+        step = len(rows) // MAX_POINTS + 1
+        return rows[::step]
+
+    def get_service_names(self, rows: list, bench_name: str) -> list[str]:
+        """The service names in the records."""
+        names: list[str] = []
+        for _, metrics in rows:
+            for process in metrics.get("processes", []):
+                short = self.get_short_name(process["service"], bench_name)
+                if short not in names:
+                    names.append(short)
+        return sorted(names)
+
+    def build_service_row(self, when: datetime, metrics: dict, bench_name: str, key: str) -> dict:
+        """One service chart row."""
+        row = {"time": self.to_epoch_ms(when)}
+        for process in metrics.get("processes", []):
+            if not process.get("missing"):
+                row[self.get_short_name(process["service"], bench_name)] = process.get(key, 0)
+        return row
+
+    @staticmethod
+    def get_short_name(service: str, bench_name: str) -> str:
+        """The service name without the bench prefix and unit suffix."""
+        return service.removeprefix(f"{bench_name}-").removesuffix(".service")

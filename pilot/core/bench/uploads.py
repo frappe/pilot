@@ -11,7 +11,7 @@ from typing import IO, TYPE_CHECKING
 
 from pilot.exceptions import BenchError, UploadOffsetError
 from pilot.internal.atomic_file import atomic_write_private_text, exclusive_file_lock
-from pilot.utils import make_private_directory, open_private
+from pilot.internal.private_files import PrivateDirectory, PrivateFile
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -19,8 +19,6 @@ if TYPE_CHECKING:
 CHUNK_SIZE = 256 * 1024 * 1024
 STALE_SECONDS = 3 * 60 * 60
 MANIFEST_NAME = "upload.json"
-_COPY_BUFFER_SIZE = 1024 * 1024
-_UPLOAD_ID = re.compile(r"^[0-9a-f]{16}$")
 # Saved under names Frappe's backup files carry, so the restore can tell the parts apart.
 _FILE_NAMES = {
     "database": ("upload-database.sql", "upload-database.sql.gz"),
@@ -31,6 +29,7 @@ _FILE_NAMES = {
 
 
 def upload_file_name(part: str, filename: str) -> str:
+    """The stored file name for an upload part, compressed or not."""
     plain, compressed = _FILE_NAMES[part]
     return compressed if filename.endswith((".gz", ".tgz")) else plain
 
@@ -40,7 +39,7 @@ class BackupUpload:
     progress; a restore removes it and then owns the directory and its cleanup."""
 
     def __init__(self, bench: Bench, upload_id: str) -> None:
-        if not _UPLOAD_ID.fullmatch(upload_id):
+        if not re.fullmatch(r"^[0-9a-f]{16}$", upload_id):
             raise BenchError("The upload does not exist.")
         self.bench = bench
         self.upload_id = upload_id
@@ -49,12 +48,12 @@ class BackupUpload:
     def start(cls, bench: Bench, site: str, files: dict[str, dict]) -> BackupUpload:
         """`files` maps each part to its `filename` and `size` in bytes."""
         cls.remove_stale(bench)
-        make_private_directory(bench.uploads_path, parents=True)
+        PrivateDirectory(bench.uploads_path).create(parents=True)
         if shutil.disk_usage(bench.uploads_path).free < sum(file["size"] for file in files.values()):
             raise BenchError("The server does not have enough free disk space for these files.")
 
         upload = cls(bench, secrets.token_hex(8))
-        make_private_directory(upload.path)
+        PrivateDirectory(upload.path).create()
         names = {part: upload_file_name(part, file["filename"]) for part, file in files.items()}
         manifest = {"site": site, "files": {part: {"name": names[part], "size": file["size"]} for part, file in files.items()}}
         atomic_write_private_text(upload.manifest_path, json.dumps(manifest))
@@ -72,20 +71,24 @@ class BackupUpload:
 
     @property
     def path(self) -> Path:
+        """The upload directory."""
         return self.bench.uploads_path / self.upload_id
 
     @property
     def manifest_path(self) -> Path:
+        """The upload manifest file."""
         return self.path / MANIFEST_NAME
 
     @property
     def manifest(self) -> dict:
+        """The upload manifest; raise when the upload does not exist."""
         if not self.manifest_path.exists():
             raise BenchError("The upload does not exist.")
         return json.loads(self.manifest_path.read_text())
 
     @property
     def site(self) -> str:
+        """The site the upload is for."""
         return self.manifest["site"]
 
     @property
@@ -98,6 +101,7 @@ class BackupUpload:
 
     @property
     def is_complete(self) -> bool:
+        """Whether every file was received in full."""
         return all(file["received"] == file["size"] for file in self.files.values())
 
     def write_chunk(self, part: str, offset: int, stream: IO[bytes], length: int) -> int:
@@ -117,7 +121,7 @@ class BackupUpload:
             if offset > received:
                 raise UploadOffsetError(received)
             if not path.exists():
-                with open_private(path, "wb"):
+                with PrivateFile(path).open("wb"):
                     pass
             with path.open("r+b") as target:
                 target.seek(offset)
@@ -150,9 +154,10 @@ class BackupUpload:
 
 
 def _copy(source: IO[bytes], target: IO[bytes], length: int) -> int:
+    """Copy up to length bytes and return the count copied."""
     copied = 0
     while copied < length:
-        block = source.read(min(_COPY_BUFFER_SIZE, length - copied))
+        block = source.read(min(1024 * 1024, length - copied))
         if not block:
             break
         target.write(block)
@@ -161,8 +166,10 @@ def _copy(source: IO[bytes], target: IO[bytes], length: int) -> int:
 
 
 def _size(path: Path) -> int:
+    """The file size, or 0 when it does not exist."""
     return path.stat().st_size if path.exists() else 0
 
 
 def _last_modified(directory: Path) -> float:
+    """The newest modification time in the directory."""
     return max((path.stat().st_mtime for path in directory.iterdir()), default=directory.stat().st_mtime)

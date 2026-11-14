@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import smtplib
+from typing import ClassVar
 
 from pilot.config import BenchConfig, FirewallRule, S3Config, WafCondition, WafRule, WorkerGroup
 from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
@@ -9,22 +10,7 @@ from pilot.config.llm import LLMConfig
 from pilot.config.mail import MailConfig
 from pilot.config.webhook import WebhookEndpoint
 from pilot.config.worker import parse_timeout
-from pilot.core.alerts import check_mail_credentials
-
-_GROUP_TYPES: dict[str, type] = {
-    "bench": dict,
-    "lite_mode": dict,
-    "letsencrypt": dict,
-    "workers": list,
-    "firewall": dict,
-    "proxy": dict,
-    "waf": dict,
-    "llm": dict,
-    "s3": dict,
-    "resource_limits": dict,
-    "webhook_endpoints": list,
-    "mail": dict,
-}
+from pilot.core.notification.mail import AlertMail
 
 
 def _coerce_int(value):
@@ -36,12 +22,28 @@ def _coerce_int(value):
 
 
 class ConfigPatcher:
+    group_types: ClassVar[dict[str, type]] = {
+        "bench": dict,
+        "lite_mode": dict,
+        "letsencrypt": dict,
+        "workers": list,
+        "firewall": dict,
+        "proxy": dict,
+        "waf": dict,
+        "llm": dict,
+        "s3": dict,
+        "resource_limits": dict,
+        "webhook_endpoints": list,
+        "mail": dict,
+    }
+
     def __init__(self, config: BenchConfig, data: dict, mail: MailConfig | None = None) -> None:
         self.config = config
         self.data = data
         self.mail = mail or MailConfig()
 
     def apply(self) -> str | None:
+        """Apply the patch; return an error message or None."""
         if error := self.get_group_type_error():
             return error
         if error := self._apply_bench():
@@ -68,13 +70,15 @@ class ConfigPatcher:
         return None
 
     def get_group_type_error(self) -> str | None:
-        for name, expected in _GROUP_TYPES.items():
+        """The error when a settings group has the wrong type, or None."""
+        for name, expected in self.group_types.items():
             value = self.data.get(name)
             if value is not None and not isinstance(value, expected):
                 return f"{name} must be {'a list' if expected is list else 'an object'}."
         return None
 
     def _apply_bench(self) -> str | None:
+        """Apply the bench fields."""
         bench = self.data.get("bench") or {}
         if "http_port" in bench:
             self.config.http_port = int(bench["http_port"])
@@ -91,16 +95,19 @@ class ConfigPatcher:
         return None
 
     def _apply_lite_mode(self) -> None:
+        """Apply the lite mode fields."""
         lite_mode = self.data.get("lite_mode") or {}
         if "enabled" in lite_mode:
             self.config.lite_mode.enabled = bool(lite_mode["enabled"])
 
     def _apply_letsencrypt(self) -> None:
+        """Apply the Let's Encrypt fields."""
         letsencrypt = self.data.get("letsencrypt") or {}
         if "email" in letsencrypt:
             self.config.letsencrypt.email = str(letsencrypt["email"]).strip()
 
     def _apply_workers(self) -> None:
+        """Apply the worker groups."""
         workers = self.data.get("workers")
         if not workers:
             return
@@ -123,6 +130,7 @@ class ConfigPatcher:
             self.config.workers.groups = groups
 
     def _apply_resource_limits(self) -> str | None:
+        """Apply the resource limits."""
         resource_limits = self.data.get("resource_limits")
         if not resource_limits:
             return None
@@ -160,6 +168,7 @@ class ConfigPatcher:
         return self._check_mail()
 
     def _patch_mail_fields(self, mail_data: dict) -> str | None:
+        """Apply the mail fields, keeping the password when not given."""
         had_password = bool(self.mail.password)
         previous_server = self.mail.server
         for name in ("server", "email", "login"):
@@ -188,7 +197,7 @@ class ConfigPatcher:
         if not self.mail.server:
             return None
         try:
-            check_mail_credentials(self.mail)
+            AlertMail(self.mail).check_credentials()
         except smtplib.SMTPAuthenticationError:
             return "The mail server rejected that login name and password."
         except (OSError, smtplib.SMTPException) as error:
@@ -196,6 +205,7 @@ class ConfigPatcher:
         return None
 
     def _apply_webhook_endpoints(self) -> None:
+        """Apply the webhook endpoints."""
         if "webhook_endpoints" in self.data:
             self.config.webhook_endpoints = self.get_webhook_endpoints(
                 self.data["webhook_endpoints"] or [], self.config.webhook_endpoints
@@ -218,6 +228,7 @@ class ConfigPatcher:
         return endpoints
 
     def _apply_firewall(self) -> None:
+        """Apply the firewall fields."""
         firewall = self.data.get("firewall")
         if firewall is None:
             return
@@ -230,12 +241,14 @@ class ConfigPatcher:
             firewall_config.rules = self._parse_firewall_rules(firewall["rules"] or [])
 
     def _apply_proxy(self) -> None:
+        """Apply the proxy fields."""
         proxy = self.data.get("proxy")
         if proxy is not None and "cloudflare" in proxy:
             self.config.proxy.cloudflare = bool(proxy["cloudflare"])
 
     @staticmethod
     def _parse_firewall_rules(entries: list[dict]) -> list[FirewallRule]:
+        """The firewall rules from the payload."""
         rules = []
         for entry in entries:
             ip = str(entry.get("ip", "")).strip()
@@ -251,6 +264,7 @@ class ConfigPatcher:
         return rules
 
     def _apply_waf(self) -> None:
+        """Apply the WAF fields."""
         waf = self.data.get("waf")
         if waf is None:
             return
@@ -260,6 +274,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _apply_waf_scalars(waf: dict, waf_config) -> None:
+        """Apply the WAF scalar fields."""
         if "enabled" in waf:
             waf_config.enabled = bool(waf["enabled"])
         if "mode" in waf:
@@ -274,6 +289,7 @@ class ConfigPatcher:
             waf_config.inspect_responses = bool(waf["inspect_responses"])
 
     def _apply_waf_lists(self, waf: dict, waf_config) -> None:
+        """Apply the WAF exclusions and custom rules."""
         if "exclusions" in waf:
             waf_config.exclusions = [
                 str(line).strip() for line in (waf["exclusions"] or []) if str(line).strip()
@@ -287,6 +303,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _parse_waf_rule(data: dict) -> WafRule:
+        """A WAF rule from the payload."""
         conditions = [
             WafCondition(
                 field=str(condition.get("field", "")).strip(),
@@ -306,6 +323,7 @@ class ConfigPatcher:
         )
 
     def _apply_s3(self) -> str | None:
+        """Apply the S3 fields, or disconnect S3."""
         s3 = self.data.get("s3") or {}
         if not s3:
             return None
@@ -323,6 +341,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _update_s3_config(s3: dict, s3_config: S3Config) -> None:
+        """Copy the given S3 fields into the config."""
         if "access_key" in s3:
             s3_config.access_key = str(s3["access_key"]).strip()
         secret_key = str(s3.get("secret_key", "")).strip()
@@ -341,6 +360,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _s3_has_any_value(s3_config: S3Config) -> bool:
+        """Whether any S3 field is set."""
         return bool(
             s3_config.access_key
             or s3_config.secret_key
@@ -352,6 +372,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _s3_is_complete(s3_config: S3Config) -> bool:
+        """Whether every S3 field is set."""
         return bool(
             s3_config.access_key
             and s3_config.secret_key
@@ -362,6 +383,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _validate_s3_region(s3_config: S3Config) -> str | None:
+        """The error with the S3 region, or None."""
         if s3_config.provider == "frappe":
             return ConfigPatcher._set_frappe_endpoint(s3_config)
 
@@ -396,6 +418,7 @@ class ConfigPatcher:
         return None
 
     def _apply_llm(self) -> str | None:
+        """Apply the LLM fields, or disconnect the LLM."""
         llm = self.data.get("llm") or {}
         if not llm:
             return None
@@ -419,6 +442,7 @@ class ConfigPatcher:
 
     @staticmethod
     def _validate_llm_provider(llm_config: LLMConfig) -> str | None:
+        """The error with the LLM provider, or None."""
         from pilot.integrations.llm.registry import known_providers, requires_api_base
 
         if not llm_config.provider:

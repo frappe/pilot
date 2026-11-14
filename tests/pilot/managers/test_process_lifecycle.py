@@ -164,6 +164,7 @@ def test_supervisor_shutdown_waits_for_the_daemon_to_exit(bench) -> None:
     manager = SupervisorProcessManager(bench)
     alive = iter([True, True, True, False])
     with (
+        patch.object(supervisor_module.CronManager, "remove_schedule"),
         patch.object(manager, "is_alive", side_effect=lambda: next(alive)),
         patch.object(supervisor_module, "run_command") as run,
         patch.object(supervisor_module.time, "sleep") as sleep,
@@ -176,7 +177,7 @@ def test_supervisor_shutdown_waits_for_the_daemon_to_exit(bench) -> None:
 
 def test_supervisor_shutdown_fails_when_the_daemon_outlives_the_timeout(bench) -> None:
     manager = SupervisorProcessManager(bench)
-    clock = iter([0, supervisor_module._SHUTDOWN_TIMEOUT + 1])
+    clock = iter([0, SupervisorProcessManager.shutdown_timeout + 1])
     with (
         patch.object(manager, "is_alive", return_value=True),
         patch.object(supervisor_module, "run_command"),
@@ -247,7 +248,7 @@ def test_systemd_start_links_units_an_upgrade_added(bench) -> None:
 
 
 def test_settings_restart_reopens_the_web_socket_on_its_new_port(bench) -> None:
-    from pilot.core.bench.settings import _restart_systemd
+    from pilot.core.bench.settings import BenchSettings
 
     manager = SystemdProcessManager(bench)
     calls = []
@@ -261,7 +262,7 @@ def test_settings_restart_reopens_the_web_socket_on_its_new_port(bench) -> None:
             side_effect=lambda argv, **kwargs: calls.append(argv[2]),
         ),
     ):
-        assert _restart_systemd(manager)
+        assert BenchSettings.restart_systemd(manager)
 
     assert calls == ["link", "daemon-reload", "reopen", "restart"]
 

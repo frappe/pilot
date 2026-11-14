@@ -15,15 +15,16 @@ class TaskStatus(StrEnum):
 
     @property
     def is_active(self) -> bool:
-        return self in _ACTIVE_TASK_STATUSES
+        """Whether a task with this status is queued or running."""
+        return self in frozenset({TaskStatus.QUEUED, TaskStatus.RUNNING})
 
     @property
     def is_terminal(self) -> bool:
+        """Whether a task with this status has finished."""
         return self in TERMINAL_TASK_STATUSES
 
 
 TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
-_ACTIVE_TASK_STATUSES = frozenset({TaskStatus.QUEUED, TaskStatus.RUNNING})
 
 
 @dataclass(frozen=True)

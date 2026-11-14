@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import MISSING, fields
 from typing import Annotated, Any, Literal, NamedTuple, get_args, get_origin, get_type_hints
 
@@ -53,6 +54,7 @@ def arg_fields(
 
 
 def add_argument(parser: argparse.ArgumentParser, arg_field: ArgField) -> None:
+    """Add the argparse argument for one field."""
     base_hint = strip_optional(arg_field.hint)
     kwargs = argument_kwargs(arg_field, base_hint)
 
@@ -80,6 +82,7 @@ def add_argument(parser: argparse.ArgumentParser, arg_field: ArgField) -> None:
 
 
 def argument_kwargs(arg_field: ArgField, base_hint: Any) -> dict[str, Any]:
+    """The argparse keyword arguments for one field."""
     kwargs: dict[str, Any] = {"help": arg_field.metadata.help} if arg_field.metadata.help else {}
     if arg_field.metadata.metavar:
         kwargs["metavar"] = arg_field.metadata.metavar
@@ -89,12 +92,15 @@ def argument_kwargs(arg_field: ArgField, base_hint: Any) -> dict[str, Any]:
         kwargs["choices"] = get_args(base_hint)
     elif get_origin(base_hint) is list:
         update_list_kwargs(kwargs, arg_field, base_hint)
+    elif get_origin(base_hint) is dict:
+        kwargs["type"] = json.loads
     elif base_hint is not str:
         kwargs["type"] = base_hint
     return kwargs
 
 
 def update_list_kwargs(kwargs: dict[str, Any], arg_field: ArgField, base_hint: Any) -> None:
+    """Set nargs and the item type for a list field."""
     (item_type,) = get_args(base_hint)
     kwargs["nargs"] = "*" if arg_field.has_default else "+"
     if item_type is not str:
@@ -102,6 +108,7 @@ def update_list_kwargs(kwargs: dict[str, Any], arg_field: ArgField, base_hint: A
 
 
 def option_flags(arg_field: ArgField) -> list[str]:
+    """The long flag and the optional short flag for a field."""
     flags = [f"--{to_kebab_case(arg_field.name)}"]
     if arg_field.metadata.short:
         flags.append(f"-{arg_field.metadata.short}")
@@ -109,6 +116,7 @@ def option_flags(arg_field: ArgField) -> list[str]:
 
 
 def value_from_namespace(args: argparse.Namespace, arg_field: ArgField) -> Any:
+    """The field's parsed value, or NOT_PROVIDED when it was not given."""
     value = getattr(args, arg_field.name, argparse.SUPPRESS)
     if value is argparse.SUPPRESS:
         return NOT_PROVIDED
@@ -116,6 +124,7 @@ def value_from_namespace(args: argparse.Namespace, arg_field: ArgField) -> Any:
 
 
 def strip_optional(hint: Any) -> Any:
+    """The type inside an Optional hint."""
     union_args = get_args(hint)
     if type(None) in union_args:
         return next(candidate for candidate in union_args if candidate is not type(None))
@@ -123,4 +132,5 @@ def strip_optional(hint: Any) -> Any:
 
 
 def to_kebab_case(name: str) -> str:
+    """The name with underscores turned into hyphens."""
     return name.replace("_", "-")

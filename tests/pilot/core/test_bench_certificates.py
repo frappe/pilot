@@ -68,10 +68,10 @@ def test_a_success_clears_the_last_failure(tmp_path: Path) -> None:
 def _alert(certificates, files):
     with (
         patch("pilot.core.notification.events.record_alert"),
-        patch("pilot.core.alerts.notify") as notify,
+        patch("pilot.core.notification.notifier.Notifier.send") as notify,
     ):
         certificates.alert_broken(files)
-    return [call.args[1] for call in notify.call_args_list]
+    return [call.args[0] for call in notify.call_args_list]
 
 
 def test_a_broken_certificate_alerts_once_until_it_is_valid_again(tmp_path: Path) -> None:
@@ -101,13 +101,13 @@ def test_a_failed_issue_is_recorded_and_alerted(tmp_path: Path) -> None:
     with (
         patch.object(LetsEncryptManager, "obtain", side_effect=CommandError("too many certificates")),
         patch("pilot.core.notification.events.record_alert"),
-        patch("pilot.core.alerts.notify") as notify,
+        patch("pilot.core.notification.notifier.Notifier.send") as notify,
     ):
         LetsEncryptManager(bench).obtain_all()
 
     record = bench.certificates.get(SITE)
     assert record.state == "failed" and "too many certificates" in record.error
-    assert notify.call_args.args[1]["event"] == "certificate_failed"
+    assert notify.call_args.args[0]["event"] == "certificate_failed"
 
 
 def test_a_domain_shows_the_tls_state_of_its_certificate(tmp_path: Path) -> None:

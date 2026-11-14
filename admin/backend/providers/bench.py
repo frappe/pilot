@@ -17,6 +17,7 @@ class BenchProvider:
 
     @property
     def site_count(self) -> int:
+        """The number of sites."""
         sites_dir = self._bench_dir / "sites"
         if not sites_dir.is_dir():
             return 0
@@ -24,6 +25,7 @@ class BenchProvider:
 
     @property
     def is_production(self) -> bool:
+        """Whether the bench runs in production."""
         try:
             return BenchConfig.read(self._bench_dir, validate=False).production.enabled
         except Exception:
@@ -81,6 +83,7 @@ class BenchProvider:
 
     @staticmethod
     def is_port_open(port: int) -> bool:
+        """Whether something listens on the local port."""
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                 return True

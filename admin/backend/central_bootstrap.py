@@ -23,6 +23,7 @@ class CentralBootstrapWatcher:
         self.interval = interval
 
     def install(self, app: Flask) -> None:
+        """Watch for the Central bootstrap in a background thread."""
         threading.Thread(
             target=self._watch,
             name="central-bootstrap-watcher",
@@ -64,6 +65,7 @@ class CentralBootstrapWatcher:
             time.sleep(self.interval)
 
     def _watch(self) -> None:
+        """Wait until the bootstrap is applied."""
         self.run_until_applied()
         logging.info("Central bootstrap applied; this host is configured.")
 

@@ -7,17 +7,16 @@ from pathlib import Path
 
 from pilot.config import PostgresConfig
 from pilot.exceptions import DatabaseError
+from pilot.internal.command import run_command
 from pilot.managers.database.base import UserOwnedDBManager
-from pilot.managers.platform import is_macos, which
-from pilot.utils import cli_root, run_command
-
-_CLIENT_TIMEOUT = 5
-_DEBIAN_POSTGRES_ROOT = Path("/usr/lib/postgresql")
-_GENERATED_CONFIG_FILES = ("postgresql.conf", "pg_hba.conf", "pg_ident.conf")
+from pilot.managers.platform import HostPlatform
 
 
 class PostgresManager(UserOwnedDBManager):
     """Manages the shared per-user PostgreSQL server."""
+
+    client_timeout = 5
+    debian_postgres_root = Path("/usr/lib/postgresql")
 
     _UNIT_NAME = "pilot-postgres.service"
     _DISPLAY_NAME = "PostgreSQL"
@@ -31,28 +30,39 @@ class PostgresManager(UserOwnedDBManager):
     @property
     def state_dir(self) -> Path:
         """One rootless PostgreSQL server per host, shared by all its benches."""
-        return cli_root() / "databases" / "postgres"
+        from pilot.core.server import Server
+
+        return Server().root / "databases" / "postgres"
 
     @property
     def config_dir(self) -> Path:
+        """The config directory."""
         return self.state_dir / "config"
 
     @property
     def data_dir(self) -> Path:
+        """The data directory."""
         return self.state_dir / "data"
 
     @property
     def socket_dir(self) -> Path:
+        """The socket directory."""
         # Postgres' compiled-in default (often /var/run/postgresql) is owned by
         # the 'postgres' OS user/group, not the bench user - pin a directory
         # we actually own so both the server and psql can use it.
         return self.state_dir / "run"
 
     def is_installed(self) -> bool:
-        return bool(which("psql") or which("postgres") or which("initdb"))
+        """Whether PostgreSQL is installed."""
+        return bool(
+            HostPlatform().get_executable_path("psql")
+            or HostPlatform().get_executable_path("postgres")
+            or HostPlatform().get_executable_path("initdb")
+        )
 
     def is_provisioned(self) -> bool:
-        if is_macos():
+        """Whether the server is set up and secured."""
+        if HostPlatform().is_macos:
             return self.is_running() and not self.is_unsecured()
         return super().is_provisioned() and (self.config_dir / "postgresql.conf").exists()
 
@@ -68,14 +78,14 @@ class PostgresManager(UserOwnedDBManager):
             "-tAc",
             f"SELECT rolpassword IS NULL FROM pg_authid WHERE rolname = {role}",
         ]
-        if not is_macos():
+        if not HostPlatform().is_macos:
             cmd[1:1] = ["-h", str(self.socket_dir)]
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=_CLIENT_TIMEOUT,
+                timeout=self.client_timeout,
             )
         except subprocess.TimeoutExpired:
             return False
@@ -88,7 +98,7 @@ class PostgresManager(UserOwnedDBManager):
     def provision(self) -> None:
         """Install, start and secure the shared PostgreSQL server."""
         self.install()
-        if is_macos():
+        if HostPlatform().is_macos:
             if not self.is_running():
                 self.start()
         else:
@@ -97,6 +107,7 @@ class PostgresManager(UserOwnedDBManager):
         self.secure()
 
     def _provision_user_owned(self) -> None:
+        """Create, start and secure the user-owned server."""
         if not self.is_provisioned():
             self._ensure_port_available()
             self.data_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +124,7 @@ class PostgresManager(UserOwnedDBManager):
         the -D data directory regardless of --config-file, so point them at
         their new location explicitly from within postgresql.conf."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        for name in _GENERATED_CONFIG_FILES:
+        for name in ("postgresql.conf", "pg_hba.conf", "pg_ident.conf"):
             (self.data_dir / name).replace(self.config_dir / name)
         postgresql_conf = self.config_dir / "postgresql.conf"
         postgresql_conf.write_text(
@@ -136,6 +147,7 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def _install_unit(self) -> None:
+        """Write the user systemd unit."""
         postgres = self._server_binary("postgres")
         content = (
             "[Unit]\n"
@@ -196,17 +208,18 @@ class PostgresManager(UserOwnedDBManager):
                 env={
                     **os.environ,
                     "PGPASSWORD": pw,
-                    "PGCONNECT_TIMEOUT": str(_CLIENT_TIMEOUT),
+                    "PGCONNECT_TIMEOUT": str(self.client_timeout),
                 },
                 capture_output=True,
                 text=True,
-                timeout=_CLIENT_TIMEOUT,
+                timeout=self.client_timeout,
             )
         except subprocess.TimeoutExpired:
             return False
         return result.returncode == 0
 
     def _ensure_role_sql(self) -> str:
+        """SQL that creates or updates the admin role."""
         role = self._quote_ident(self.config.admin_user)
         name = self._sql_quote(self.config.admin_user)
         pw = self._sql_quote(self.config.root_password)
@@ -220,6 +233,7 @@ class PostgresManager(UserOwnedDBManager):
         )
 
     def _run_sql_as_superuser(self, sql: str) -> None:
+        """Run SQL as the database superuser."""
         # Peer/trust auth lets the bench OS user bootstrap without sudo.
         # Linux needs our socket_dir; Homebrew already uses a user-owned socket.
         cmd = [
@@ -231,12 +245,13 @@ class PostgresManager(UserOwnedDBManager):
             "-d",
             "postgres",
         ]
-        if not is_macos():
+        if not HostPlatform().is_macos:
             cmd[1:1] = ["-h", str(self.socket_dir)]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def is_reachable(self) -> bool:
-        ready = which("pg_isready")
+        """Whether the server accepts connections."""
+        ready = HostPlatform().get_executable_path("pg_isready")
         if ready:
             result = subprocess.run(
                 [ready, "-h", self.config.host, "-p", str(self.config.port)], capture_output=True
@@ -245,29 +260,40 @@ class PostgresManager(UserOwnedDBManager):
         return self.is_running()
 
     def _server_binary(self, name: str) -> str:
-        found = which(name)
+        """The path of a server binary; raise when it is missing."""
+        found = HostPlatform().get_executable_path(name)
         if found:
             return found
-        candidates = sorted(_DEBIAN_POSTGRES_ROOT.glob(f"*/bin/{name}"), key=self._debian_version_key)
+        candidates = sorted(self.debian_postgres_root.glob(f"*/bin/{name}"), key=self._debian_version_key)
         if candidates:
             return str(candidates[-1])
         return name
 
     @staticmethod
     def _debian_version_key(binary: Path) -> tuple[int, ...]:
+        """The version of a Debian PostgreSQL binary, for sorting."""
         version = binary.parent.parent.name
         return tuple(int(part) for part in version.split(".") if part.isdigit())
 
+    def client_binary(self, name: str) -> str:
+        """The path of a client binary, or its name."""
+        return self._client_binary(name) or name
+
     def _psql(self) -> str | None:
-        found = which("psql")
+        """The psql path, if found."""
+        return self._client_binary("psql")
+
+    def _client_binary(self, name: str) -> str | None:
+        """The path of a client binary, if found."""
+        found = HostPlatform().get_executable_path(name)
         if found:
             return found
-        if is_macos():
+        if HostPlatform().is_macos:
             result = subprocess.run(
                 ["brew", "--prefix", self._brew_package()], capture_output=True, text=True
             )
             if result.returncode == 0:
-                candidate = Path(result.stdout.strip()) / "bin" / "psql"
+                candidate = Path(result.stdout.strip()) / "bin" / name
                 if candidate.exists():
                     return str(candidate)
         return None

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response, no_content_response
 from admin.backend.api.v1.benches.create import create_bench_locked
 from admin.backend.api.v1.benches.readiness import bench_readiness_bp
@@ -24,7 +25,7 @@ from pilot.internal.atomic_file import exclusive_file_lock
 
 benches_bp = Blueprint("benches", __name__)
 
-__all__ = ["bench_readiness_bp", "benches_bp"]
+__all__ = ["bench_readiness_bp", "benches_bp", "cloning"]
 
 
 benches_bp.before_request(guard_bench_management)
@@ -32,7 +33,8 @@ benches_bp.before_request(guard_bench_management)
 
 @benches_bp.get("")
 def list_benches():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """List the benches."""
+    bench_root = ApiRequest.get_bench_root()
     benches_dir = bench_root.parent
     benches = []
     for bench_dir in sorted(benches_dir.iterdir()):
@@ -47,9 +49,10 @@ def list_benches():
 
 @benches_bp.get("/<name>")
 def get_bench(name: str):
+    """Show one bench."""
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         bench_dir = target_bench_dir(bench_root, name)
     except ValueError:
@@ -64,21 +67,25 @@ def get_bench(name: str):
 
 @benches_bp.post("/<name>/actions/start")
 def start_bench(name: str):
+    """Start a bench."""
     return _run_action(name, "start")
 
 
 @benches_bp.post("/<name>/actions/stop")
 def stop_bench(name: str):
+    """Stop a bench."""
     return _run_action(name, "stop")
 
 
 @benches_bp.post("/<name>/actions/restart")
 def restart_bench(name: str):
+    """Restart a bench."""
     return _run_action(name, "restart")
 
 
 def _run_action(name: str, action: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Run a lifecycle action on a bench."""
+    bench_root = ApiRequest.get_bench_root()
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
 
@@ -101,6 +108,7 @@ def _run_action(name: str, action: str):
 
 
 def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str):
+    """Run a lifecycle action while holding the bench lock."""
     if not toml_path.exists():
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
     try:
@@ -130,7 +138,8 @@ def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str
 
 @benches_bp.delete("/<name>")
 def delete_bench(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Delete a bench."""
+    bench_root = ApiRequest.get_bench_root()
     if not BENCH_NAME_RE.fullmatch(name):
         return error_response("invalid_bench_name", "Invalid bench name.", 422)
 
@@ -155,6 +164,7 @@ def delete_bench(name: str):
 
 
 def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
+    """Delete a bench while holding its lock."""
     if not toml_path.exists():
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
     sites = BenchProvider(target_dir).site_count
@@ -175,10 +185,14 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
         )
     if target_config.production.enabled:
         from pilot.managers.nginx import NginxManager
-        from pilot.managers.platform import has_passwordless_sudo, is_root
+        from pilot.managers.platform import HostPlatform
 
         bench = Bench(target_config, target_dir)
-        if not (is_root() or has_passwordless_sudo() or NginxManager(bench).has_passwordless_sudo):
+        if not (
+            HostPlatform().is_root
+            or HostPlatform().has_passwordless_sudo
+            or NginxManager(bench).has_passwordless_sudo
+        ):
             return error_response(
                 "privileged_operation_unavailable",
                 "Dropping a production bench requires non-interactive system privileges.",
@@ -186,9 +200,9 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
             )
 
     try:
-        from pilot.managers.platform import noninteractive_privileges
+        from pilot.managers.platform import Privileges
 
-        with noninteractive_privileges():
+        with Privileges.without_prompts():
             Bench(target_config, target_dir).drop()
     except Exception:
         return error_response("bench_drop_failed", "Could not drop the bench.", 500)
@@ -199,7 +213,7 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
 def get_domain_options():
     """Wildcard domain suffixes new bench admin domains may be built from."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import wildcard_suffix
+    from pilot.internal.hostnames import wildcard_suffix
 
     try:
         patterns = DomainRouteProvider.wildcard_domains()
@@ -210,7 +224,8 @@ def get_domain_options():
 
 @benches_bp.post("")
 def create_bench():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Create a bench."""
+    bench_root = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
     request_data, response = _create_bench_request(data)
@@ -230,6 +245,7 @@ def create_bench():
 
 
 def _create_bench_request(data):
+    """The bench creation fields, or an error response."""
     if not isinstance(data, dict):
         return {}, error_response("malformed_request", "Expected a JSON object.", 400)
     if any(
@@ -279,6 +295,7 @@ def _create_bench_request(data):
 
 
 def _admin_domain_request(data):
+    """The admin domain field, or an error response."""
     admin_domain = (data.get("admin_domain") or "").strip()
     if not admin_domain:
         return "", error_response(
@@ -292,6 +309,7 @@ def _admin_domain_request(data):
 
 
 def _process_manager_request(data):
+    """The process manager field, or an error response."""
     from pilot.config import VALID_PROCESS_MANAGERS
 
     process_manager = (data.get("process_manager") or "").strip().lower()
@@ -304,3 +322,6 @@ def _process_manager_request(data):
         f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}.",
         422,
     )
+
+
+from admin.backend.api.v1 import cloning  # noqa: E402

@@ -11,8 +11,8 @@ from admin.backend.api.v1.benches.support import bench_resource, target_bench_di
 from admin.backend.providers.bench import BenchProvider
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.server import Server
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
-from pilot.utils import cli_root
 
 
 def create_bench_locked(
@@ -23,6 +23,7 @@ def create_bench_locked(
     admin_domain: str,
     admin_tls: bool | None,
 ):
+    """Create a bench while holding the management lock."""
     try:
         new_dir = target_bench_dir(bench_root, name)
     except ValueError:
@@ -69,6 +70,7 @@ def create_bench_locked(
 
 
 def _validate_bench_creation(new_dir: Path, name: str, admin_domain: str, production_parent: bool):
+    """The error response for an invalid bench, or None."""
     response = _validate_admin_domain(new_dir, name, admin_domain)
     if response is not None:
         return response
@@ -78,10 +80,12 @@ def _validate_bench_creation(new_dir: Path, name: str, admin_domain: str, produc
 
 
 def _validate_admin_domain(new_dir: Path, name: str, admin_domain: str):
+    """The error response for an unusable admin domain, or None."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import host_owner, matches_wildcard, normalize_host
+    from pilot.core.bench.directory import BenchDirectory
+    from pilot.internal.hostnames import matches_wildcard, normalize_host
 
-    owner = host_owner(new_dir, admin_domain)
+    owner = BenchDirectory.siblings_of(new_dir).get_host_owner(admin_domain)
     if owner:
         return error_response(
             "admin_domain_conflict",
@@ -106,11 +110,16 @@ def _validate_admin_domain(new_dir: Path, name: str, admin_domain: str):
 
 
 def _validate_production_privileges():
-    from pilot.managers.platform import has_passwordless_sudo, is_root, which
+    """The error response when production needs root access, or None."""
+    from pilot.managers.platform import HostPlatform
     from pilot.managers.sudoers import has_passwordless_sudo_for
 
-    nginx = which("nginx") or "/usr/sbin/nginx"
-    if is_root() or has_passwordless_sudo() or has_passwordless_sudo_for([nginx, "-t"]):
+    nginx = HostPlatform().get_executable_path("nginx") or "/usr/sbin/nginx"
+    if (
+        HostPlatform().is_root
+        or HostPlatform().has_passwordless_sudo
+        or has_passwordless_sudo_for([nginx, "-t"])
+    ):
         return None
     return error_response(
         "privileged_operation_unavailable",
@@ -120,13 +129,14 @@ def _validate_production_privileges():
 
 
 def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
+    """Start the setup wizard of a production bench."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     try:
         from pilot.managers.nginx import NginxManager
-        from pilot.managers.platform import noninteractive_privileges
+        from pilot.managers.platform import Privileges
 
-        with noninteractive_privileges():
+        with Privileges.without_prompts():
             bench = Bench(new_dir)
             DomainRouteProvider(bench).register(admin_domain, admin_domain)
             pm = _process_manager(bench)
@@ -153,6 +163,7 @@ def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
 
 
 def _process_manager(bench: Bench):
+    """The process manager of the bench."""
     from pilot.managers.processes.base import ManagedProcessManager
 
     configured_pm = bench.config.production.process_manager
@@ -165,7 +176,8 @@ def _process_manager(bench: Bench):
 
 
 def _start_standalone_setup_wizard(new_dir: Path, name: str, new_port: int):
-    root = cli_root()
+    """Start the setup wizard of a standalone bench."""
+    root = Server().root
     spawn_env = {
         key: value
         for key, value in os.environ.items()

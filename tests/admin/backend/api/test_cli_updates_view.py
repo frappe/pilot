@@ -43,7 +43,7 @@ def test_cli_updates_reads_without_fetching(tmp_path: Path) -> None:
     repo = _mock_repo(behind=2)
 
     with (
-        patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")),
+        patch("pilot.core.server.Server.root", Path("/cli")),
         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
     ):
         response = client.get("/api/v1/cli-updates")
@@ -61,7 +61,7 @@ def test_cli_update_checks_fetches_first(tmp_path: Path) -> None:
     repo = _mock_repo(behind=0)
 
     with (
-        patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")),
+        patch("pilot.core.server.Server.root", Path("/cli")),
         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
     ):
         response = client.post("/api/v1/cli-update-checks")
@@ -109,7 +109,7 @@ def test_cli_update_checks_release_compares_latest(tmp_path: Path) -> None:
 
 @pytest.fixture
 def auto_update_client(tmp_path, monkeypatch):
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path)
     monkeypatch.setattr("pilot.is_dev_build", False)
     return _client(tmp_path / "current")
 

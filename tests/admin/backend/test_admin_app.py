@@ -310,7 +310,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
             "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
             return_value=[],
         ),
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=True),
         patch("subprocess.Popen") as mock_popen,
     ):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
@@ -357,7 +357,7 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
             new_callable=PropertyMock,
             return_value=True,
         ),
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.sudoers.has_passwordless_sudo_for", return_value=False),
         patch("admin.backend.api.v1.benches.create.Bench.create_at") as create,
         patch(
@@ -379,7 +379,7 @@ def test_validate_production_privileges_allows_scoped_nginx_sudo_grant() -> None
     from admin.backend.api.v1.benches.create import _validate_production_privileges
 
     with (
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.sudoers.has_passwordless_sudo_for", return_value=True),
     ):
         assert _validate_production_privileges() is None
@@ -592,7 +592,7 @@ def _nginx_stub(health_status: int = 200):
             pass
 
     server = HTTPServer(("127.0.0.1", 0), _Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield server.server_address[1]
@@ -795,7 +795,7 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
 
     with (
         patch("admin.backend.api.v1.benches.Bench.drop") as drop,
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=True),
     ):
         resp = client.delete("/api/v1/benches/prod-bench")
 
@@ -810,7 +810,7 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
     with (
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.nginx.has_passwordless_sudo_for", return_value=False),
         patch("admin.backend.api.v1.benches.Bench.drop") as drop,
     ):
@@ -829,7 +829,7 @@ def test_api_benches_drop_allows_scoped_nginx_sudo_grant(tmp_path: Path) -> None
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
     with (
-        patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.nginx.has_passwordless_sudo_for", return_value=True),
         patch("admin.backend.api.v1.benches.Bench.drop") as drop,
     ):

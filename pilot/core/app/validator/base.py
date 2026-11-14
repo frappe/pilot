@@ -14,14 +14,17 @@ if typing.TYPE_CHECKING:
 class ValidationCheck(typing.Protocol):
     """A single check run against a cloned app before it's installed."""
 
-    def run(self, app: "App") -> None: ...
+    def run(self, app: "App") -> None:
+        """Raise when the app fails the check."""
 
 
 def module_path(app: "App") -> Path:
+    """The app's Python module directory."""
     return app.path / app.module_name
 
 
 def python_files(app: "App") -> list[Path]:
+    """The Python files of the app that are not ignored."""
     ignored = IgnoredPaths(app)
     return [path for path in module_path(app).rglob("*.py") if not ignored.is_ignored(path)]
 
@@ -38,6 +41,7 @@ class IgnoredPaths:
         self.patterns = self._patterns(app)
 
     def is_ignored(self, path: Path) -> bool:
+        """Whether validation ignores the path."""
         return self.matches(path.relative_to(self.root).as_posix())
 
     def matches(self, relpath: str) -> bool:
@@ -46,6 +50,7 @@ class IgnoredPaths:
 
     @staticmethod
     def _patterns(app: "App") -> list[str]:
+        """The validation-ignore patterns; raise when they are invalid."""
         patterns = bench_table(app).get("validation-ignore", [])
         if not isinstance(patterns, list) or any(not isinstance(pattern, str) for pattern in patterns):
             raise AppValidationError(
@@ -89,6 +94,7 @@ def read_pyproject(app: "App") -> dict | None:
 
 
 def _find_env_python(env_path: Path | str | None) -> str | None:
+    """The Python in the environment, if any."""
     if not env_path:
         return None
     env_dir = Path(env_path)

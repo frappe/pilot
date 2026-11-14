@@ -7,7 +7,7 @@ from pilot.core.server.monitoring_config import MonitorConfigurator
 def test_monitor_install_is_idempotent(tmp_path: Path) -> None:
     unit_dir = tmp_path / "user_units"
     with (
-        patch("pilot.core.server.monitoring_config.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.systemd_user.user_unit_dir", return_value=unit_dir),
         patch("pilot.managers.systemd_user.run_command"),
         patch("pilot.managers.environment.AdminEnvManager"),
@@ -27,7 +27,7 @@ def test_monitor_install_is_idempotent(tmp_path: Path) -> None:
 def test_monitor_install_rewrites_and_restarts_an_outdated_unit(tmp_path: Path) -> None:
     unit_dir = tmp_path / "user_units"
     with (
-        patch("pilot.core.server.monitoring_config.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.systemd_user.user_unit_dir", return_value=unit_dir),
         patch("pilot.managers.systemd_user.run_command"),
         patch("pilot.core.server.monitoring_config.run_command") as run_command,
@@ -48,7 +48,7 @@ def test_site_storage_install_is_idempotent(tmp_path: Path) -> None:
 
     unit_dir = tmp_path / "user_units"
     with (
-        patch("pilot.core.site.storage.systemd.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         patch("pilot.managers.systemd_user.user_unit_dir", return_value=unit_dir),
         patch("pilot.managers.systemd_user.run_command"),
         patch("pilot.managers.environment.AdminEnvManager"),

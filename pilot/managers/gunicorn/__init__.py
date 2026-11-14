@@ -8,22 +8,25 @@ from pilot.internal.template import Template
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-_CONFIG_TEMPLATE = Template.from_path(Path(__file__).parent / "templates" / "gunicorn.conf.py.template")
-
 
 class GunicornManager:
+    config_template = Template.from_path(Path(__file__).parent / "templates" / "gunicorn.conf.py.template")
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
     @property
     def config_path(self) -> Path:
+        """The gunicorn config file."""
         return self.bench.config_path / "gunicorn.conf.py"
 
     @property
     def admin_config_path(self) -> Path:
+        """The Admin gunicorn config file."""
         return self.bench.config_path / "admin-gunicorn.conf.py"
 
     def generate_config(self) -> None:
+        """Write the gunicorn config."""
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.write_text(self._render_config())
 
@@ -47,12 +50,13 @@ class GunicornManager:
         )
 
     def _render_config(self) -> str:
+        """The gunicorn config text."""
         cfg = self.bench.config.gunicorn
         worker_class = cfg.worker_class
         # gthread is required for threads to actually be used.
         if cfg.threads > 0 and worker_class == "sync":
             worker_class = "gthread"
-        return _CONFIG_TEMPLATE.render(
+        return self.config_template.render(
             bind=self._bind(),
             workers=cfg.workers,
             threads=cfg.threads,
@@ -63,8 +67,10 @@ class GunicornManager:
         )
 
     def _bind(self) -> str:
+        """The address gunicorn binds to."""
         return f"127.0.0.1:{self.bench.config.http_port}"
 
     @property
     def upstream_server(self) -> str:
+        """The address nginx proxies to."""
         return self._bind()

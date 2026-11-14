@@ -32,6 +32,7 @@ class SetupCentralCommand(Command):
     ] = False
 
     def run(self) -> None:
+        """Set up Central management."""
         self.bench.setup_central(
             admin_pattern=self.admin_pattern,
             site_pattern=self.site_pattern,

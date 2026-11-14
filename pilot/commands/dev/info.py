@@ -14,6 +14,7 @@ class DevInfoCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
+        """Print the workspace bench details."""
         from pilot.core.workspace import Workspace
 
         workspace = Workspace.current()

@@ -36,6 +36,7 @@ class MariaDBVariableSpec:
 
     @classmethod
     def from_definition(cls, definition: dict, reasons: dict[str, str]) -> MariaDBVariableSpec:
+        """The variable spec from its JSON definition."""
         edit_action = definition.get("edit")
         reason = definition.get("reason", "" if edit_action else "startup")
         return cls(
@@ -55,10 +56,12 @@ class MariaDBVariableSpec:
 
     @property
     def option_name(self) -> str:
+        """The variable name as a config file option."""
         return self.name.replace("_", "-")
 
     @property
     def editable(self) -> bool:
+        """Whether Pilot can change the variable."""
         return self.edit_action is not None
 
 
@@ -69,6 +72,7 @@ class MariaDBVariableValidator:
         self.spec = spec
 
     def parse_server_value(self, raw_value: object) -> MariaDBValue:
+        """The typed value from the server's raw value."""
         if self.spec.value_type == "integer":
             try:
                 return int(str(raw_value))
@@ -84,6 +88,7 @@ class MariaDBVariableValidator:
         return str(raw_value)
 
     def validate_input(self, value: object) -> MariaDBValue:
+        """The validated value from user input; raise when it is invalid."""
         self._require_generic_edit_action()
         if self.spec.value_type == "integer":
             return self._validate_integer(value)
@@ -94,12 +99,14 @@ class MariaDBVariableValidator:
         raise ValueError(f"MariaDB variable '{self.spec.name}' is not editable in Pilot.")
 
     def option_value(self, value: object) -> str:
+        """The value as a config file option."""
         validated = self.validate_input(value)
         if type(validated) is bool:
             return "ON" if validated else "OFF"
         return str(validated)
 
     def _validate_integer(self, value: object) -> int:
+        """The integer within the allowed range; raise otherwise."""
         spec = self.spec
         if type(value) is not int:
             raise ValueError(f"{spec.label} must be a whole number.")
@@ -110,6 +117,7 @@ class MariaDBVariableValidator:
         return value
 
     def _require_generic_edit_action(self) -> None:
+        """Raise unless the variable is edited through the config file."""
         if self.spec.edit_action is None:
             raise ValueError(f"MariaDB variable '{self.spec.name}' is read-only in Pilot.")
         if self.spec.edit_action != "configuration":
@@ -118,10 +126,12 @@ class MariaDBVariableValidator:
             )
 
     def _unit_suffix(self) -> str:
+        """The unit for messages."""
         return f" {self.spec.unit}" if self.spec.unit else ""
 
 
 def load_mariadb_variable_specs(path: Path = MARIADB_VARIABLES_PATH) -> tuple[MariaDBVariableSpec, ...]:
+    """The variable specs from the JSON file."""
     data = json.loads(path.read_text(encoding="utf-8"))
     return tuple(MariaDBVariableSpec.from_definition(item, data["reasons"]) for item in data["variables"])
 
@@ -136,6 +146,7 @@ GENERIC_EDITABLE_MARIADB_VARIABLE_NAMES = frozenset(
 
 
 def mariadb_variable_spec(name: str) -> MariaDBVariableSpec:
+    """The spec of a supported variable; raise for others."""
     try:
         return MARIADB_VARIABLES_BY_NAME[name]
     except KeyError as exc:

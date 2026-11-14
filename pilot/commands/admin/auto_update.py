@@ -16,6 +16,7 @@ class AutoUpdateCommand(Command):
     state: Annotated[Literal["on", "off", "status"], Arg(help="on, off, or status.")]
 
     def run(self) -> None:
+        """Turn Pilot auto update on or off."""
         from pilot.core.server import Server
 
         auto_update = Server().auto_update

@@ -13,8 +13,6 @@ from pilot.internal.tasks.worker_state import (
 )
 from pilot.managers.task.models import TaskStatus
 
-_ACTIVE_WORKER_STATUSES = frozenset({WorkerStatus.STARTING, WorkerStatus.RUNNING, WorkerStatus.DRAINING})
-
 
 @dataclass(frozen=True)
 class TaskActivity:
@@ -28,6 +26,7 @@ class TaskActivity:
 
     @property
     def public_dict(self) -> dict[str, bool | str]:
+        """The activity for the API."""
         return {
             "active": self.active,
             "uncertain": self.uncertain,
@@ -37,16 +36,19 @@ class TaskActivity:
 
 
 class TaskActivityReader:
+    active_worker_statuses = frozenset({WorkerStatus.STARTING, WorkerStatus.RUNNING, WorkerStatus.DRAINING})
+
     def __init__(self, bench_root: Path) -> None:
         self._files = TaskFiles(Path(bench_root) / "tasks")
         self._worker = WorkerStore(bench_root)
 
     def read(self) -> TaskActivity:
+        """The worker state and task counts."""
         worker_state, state_uncertain = self._read_worker_state()
         worker_intent, intent_uncertain = self._read_worker_intent()
         queued, running, tasks_uncertain = self._read_task_counts()
         uncertain = state_uncertain or intent_uncertain or tasks_uncertain
-        worker_active = worker_state is not None and worker_state.status in _ACTIVE_WORKER_STATUSES
+        worker_active = worker_state is not None and worker_state.status in self.active_worker_statuses
         # Queued work holds the admin open until the worker claims it.
         pending = queued > 0 and worker_intent != WorkerIntent.STOPPED
         return TaskActivity(
@@ -60,12 +62,14 @@ class TaskActivityReader:
         )
 
     def _read_worker_state(self) -> tuple[WorkerState | None, bool]:
+        """The worker state, and whether it could not be read."""
         try:
             return self._worker.read_state(), False
         except (KeyError, OSError, TypeError, ValueError):
             return None, True
 
     def _read_worker_intent(self) -> tuple[WorkerIntent | None, bool]:
+        """The worker intent, and whether it could not be read."""
         try:
             return self._worker.read_intent(), False
         except (KeyError, OSError, TypeError, ValueError):
@@ -73,15 +77,18 @@ class TaskActivityReader:
 
     @staticmethod
     def _worker_status(worker_state: WorkerState | None, uncertain: bool) -> str:
+        """The worker status for the API."""
         if worker_state is not None:
             return worker_state.status.value
         return "unknown" if uncertain else "not-started"
 
     @staticmethod
     def _desired_status(worker_intent: WorkerIntent | None) -> str:
+        """The desired worker status for the API."""
         return worker_intent.value if worker_intent is not None else "unknown"
 
     def _read_task_counts(self) -> tuple[int, int, bool]:
+        """The queued and running counts, and whether one could not be read."""
         queued = 0
         running = 0
         uncertain = False

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import ClassVar
 
 from pilot.config.telemetry import TelemetryConfig
 
@@ -12,13 +13,6 @@ except ImportError:
     # Only the admin venv has it; the stdlib-only CLI does not. The logs are written regardless.
     HAS_DATUM_CLIENT = False
 
-# Raw MariaDB counter -> the label that separates it from its siblings.
-_QUERY_KINDS = {
-    "Com_insert": "insert",
-    "Com_update": "update",
-    "Com_delete": "delete",
-    "Com_select": "select",
-}
 
 
 class MetricShipper:
@@ -33,6 +27,14 @@ class MetricShipper:
     add_* call is a no-op.
     """
 
+    # Raw MariaDB counter -> the label that separates it from its siblings.
+    query_kinds: ClassVar[dict[str, str]] = {
+        "Com_insert": "insert",
+        "Com_update": "update",
+        "Com_delete": "delete",
+        "Com_select": "select",
+    }
+
     def __init__(self, config: TelemetryConfig):
         self.config = config
         ships = HAS_DATUM_CLIENT and config.is_shipping_metrics
@@ -41,9 +43,11 @@ class MetricShipper:
 
     @property
     def is_enabled(self) -> bool:
+        """Whether metrics are shipped."""
         return self.client is not None
 
     def add_system(self, record: dict) -> None:
+        """Add the CPU, memory and storage metrics."""
         if not self.is_enabled:
             return
         when = _read_time(record)
@@ -62,6 +66,7 @@ class MetricShipper:
         self.batches += [cpu, load, self._memory(record, when), *self._storage(record, when)]
 
     def add_application(self, record: dict) -> None:
+        """Add the process metrics."""
         if not self.is_enabled:
             return
         when = _read_time(record)
@@ -81,11 +86,12 @@ class MetricShipper:
         self.batches.append(batch)
 
     def add_database(self, record: dict | None) -> None:
+        """Add the database metrics."""
         if not self.is_enabled or record is None:
             return
         when = _read_time(record)
         batch = Batch("mariadb")
-        for key, kind in _QUERY_KINDS.items():
+        for key, kind in self.query_kinds.items():
             batch.counter("queries", record.get(key, 0), ts=when, kind=kind)
         batch.counter("questions", record.get("Questions", 0), ts=when)
         batch.counter("buffer_pool_reads", record.get("Innodb_buffer_pool_reads", 0), ts=when)
@@ -113,6 +119,7 @@ class MetricShipper:
 
     @staticmethod
     def _memory(record: dict, when: datetime | None) -> Batch:
+        """The memory metrics batch."""
         memory = record.get("memory") or {}
         batch = Batch("system", "memory")
         for target in ("total", "used", "cached", "free"):
@@ -123,6 +130,7 @@ class MetricShipper:
 
     @staticmethod
     def _storage(record: dict, when: datetime | None) -> list[Batch]:
+        """The disk metrics batches."""
         disk = (record.get("storage") or {}).get("disk") or {}
         disk_io = record.get("disk_io") or {}
         batch = Batch("system", "disk")

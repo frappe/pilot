@@ -39,6 +39,7 @@ class GitHubProvider(GitProvider):
     api_base = "https://api.github.com"
 
     def _headers(self) -> dict:
+        """The GitHub API headers."""
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -49,10 +50,12 @@ class GitHubProvider(GitProvider):
         return headers
 
     def validate(self) -> dict:
+        """The login and name of the token's user."""
         data, _ = self._get_json(f"{self.api_base}/user", self._headers())
         return {"login": data.get("login"), "name": data.get("name")}
 
     def list_repos(self) -> list[dict]:
+        """The recently pushed repositories of the user."""
         repos: list[dict] = []
         # A couple of pages of the most recently pushed repos is plenty for a
         # picker; the user can always paste a URL for anything older.
@@ -80,9 +83,11 @@ class GitHubProvider(GitProvider):
         return repos
 
     def auth_config(self, repo_url: str) -> dict[str, str]:
+        """The git config that authenticates to the repository."""
         return basic_auth_config(repo_url, "x-access-token", self.token)
 
     def list_branches(self, full_name: str) -> list[str]:
+        """The branches of a repository."""
         repo_url = f"https://{self.host}/{full_name}"
         try:
             result = subprocess.run(
@@ -107,6 +112,7 @@ class GitHubProvider(GitProvider):
         ]
 
     def has_branch(self, full_name: str, branch: str) -> bool:
+        """Whether the repository has the branch."""
         url = f"{self.api_base}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"
         try:
             self._get_json(url, self._headers())
@@ -115,11 +121,13 @@ class GitHubProvider(GitProvider):
         return True
 
     def get_default_branch(self, full_name: str) -> str:
+        """The default branch of a repository."""
         url = f"{self.api_base}/repos/{full_name}"
         data, _ = self._get_json(url, self._headers())
         return data.get("default_branch", "")
 
     def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
+        """The text of a file in the repository."""
         owner, repo = parse_github_owner_repo(repo_url)
         url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}"
         headers = {"User-Agent": "pilot"}

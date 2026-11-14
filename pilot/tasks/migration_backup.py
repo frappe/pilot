@@ -16,6 +16,7 @@ class MigrationBackupTask(Task):
     site: str
 
     def run(self) -> None:
+        """Back up one site in the migration."""
         operation = self.bench.migrations.get_for_chain_task(
             self.operation_id, self.running_task_id, self.command, {"site": self.site}
         )

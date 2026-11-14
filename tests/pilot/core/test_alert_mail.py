@@ -13,8 +13,10 @@ from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.mail import MailConfig
 from pilot.config.webhook import WebhookEndpoint
-from pilot.core.alerts import check_mail_credentials, notify, send_mail
 from pilot.core.bench import Bench
+from pilot.core.notification import notifier
+from pilot.core.notification.mail import AlertMail
+from pilot.core.notification.notifier import Notifier
 from pilot.exceptions import MalformedSiteConfig
 
 PAYLOAD = {
@@ -95,7 +97,7 @@ def _bench(tmp_path: Path, mail: MailConfig, **limit_overrides) -> Bench:
 
 def test_the_alert_is_mailed_over_starttls() -> None:
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(), ["ops@test", "oncall@test"], PAYLOAD)
+        AlertMail(_mail()).send(["ops@test", "oncall@test"], PAYLOAD)
 
     sent = FakeSMTP.sends[0]
     message = sent.messages[0]
@@ -116,9 +118,9 @@ def test_both_transports_verify_the_server_certificate() -> None:
     """smtplib's own default context skips verification, which would hand the
     password to whoever answers on an intercepted connection."""
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail()).send(RECIPIENTS, PAYLOAD)
     with patch("smtplib.SMTP_SSL", FakeSMTP):
-        send_mail(_mail(use_ssl=True), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail(use_ssl=True)).send(RECIPIENTS, PAYLOAD)
 
     for send in FakeSMTP.sends:
         assert send.context is not None
@@ -128,7 +130,7 @@ def test_both_transports_verify_the_server_certificate() -> None:
 
 def test_the_address_is_the_sender_and_the_default_login_name() -> None:
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail()).send(RECIPIENTS, PAYLOAD)
 
     sent = FakeSMTP.sends[0]
     assert sent.messages[0]["From"] == "alerts@test"
@@ -139,7 +141,7 @@ def test_a_separate_login_name_does_not_change_the_sender() -> None:
     """The framework's Email Account allows a login that is not the address; the
     mail still has to come from the address the operator configured."""
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(login="alerts"), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail(login="alerts")).send(RECIPIENTS, PAYLOAD)
 
     sent = FakeSMTP.sends[0]
     assert sent.logged_in_as == ("alerts", "secret")
@@ -148,7 +150,7 @@ def test_a_separate_login_name_does_not_change_the_sender() -> None:
 
 def test_ssl_connects_on_465() -> None:
     with patch("smtplib.SMTP_SSL", FakeSMTP):
-        send_mail(_mail(use_ssl=True), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail(use_ssl=True)).send(RECIPIENTS, PAYLOAD)
 
     sent = FakeSMTP.sends[0]
     assert (sent.host, sent.port) == ("smtp.test", 465)
@@ -157,7 +159,7 @@ def test_ssl_connects_on_465() -> None:
 
 def test_a_configured_port_wins_over_the_default() -> None:
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(port=2525), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail(port=2525)).send(RECIPIENTS, PAYLOAD)
 
     assert FakeSMTP.sends[0].port == 2525
 
@@ -173,7 +175,7 @@ def test_the_html_body_renders_the_breach_details_as_a_table() -> None:
         },
     }
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(), RECIPIENTS, payload)
+        AlertMail(_mail()).send(RECIPIENTS, payload)
 
     html = FakeSMTP.sends[0].messages[0].get_body(("html",)).get_content()
     assert "<table" in html and "Threshold" in html and "93" in html
@@ -184,7 +186,7 @@ def test_the_html_body_renders_the_breach_details_as_a_table() -> None:
 
 def test_the_logo_is_embedded_inline_not_attached() -> None:
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail()).send(RECIPIENTS, PAYLOAD)
 
     message = FakeSMTP.sends[0].messages[0]
     images = [p for p in message.walk() if p.get_content_type() == "image/png"]
@@ -197,7 +199,7 @@ def test_the_logo_is_embedded_inline_not_attached() -> None:
 def test_an_unknown_event_still_mails_the_summary() -> None:
     payload = {"event": "brand_new", "message": "my-bench: something", "context": {"bench": "my-bench"}}
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(), RECIPIENTS, payload)
+        AlertMail(_mail()).send(RECIPIENTS, payload)
 
     message = FakeSMTP.sends[0].messages[0]
     assert "my-bench: something" in message.get_body(("plain",)).get_content()
@@ -206,7 +208,7 @@ def test_an_unknown_event_still_mails_the_summary() -> None:
 
 def test_a_relay_without_a_password_sends_anonymously() -> None:
     with patch("smtplib.SMTP", FakeSMTP):
-        send_mail(_mail(password=""), RECIPIENTS, PAYLOAD)
+        AlertMail(_mail(password="")).send(RECIPIENTS, PAYLOAD)
 
     sent = FakeSMTP.sends[0]
     assert sent.logged_in_as is None
@@ -220,7 +222,7 @@ def test_a_refused_recipient_is_not_a_delivery(tmp_path: Path) -> None:
     refused = {"oncall@test": (550, b"No such user")}
 
     with patch("smtplib.SMTP", FakeSMTP), patch.object(FakeSMTP, "refuse", refused):
-        delivered = notify(_bench(tmp_path, _mail()), PAYLOAD)
+        delivered = Notifier(_bench(tmp_path, _mail())).send(PAYLOAD)
 
     assert not delivered
 
@@ -233,7 +235,7 @@ def test_broken_settings_disable_mail_instead_of_raising(tmp_path: Path) -> None
         mail = _mail(**overrides)
         assert not mail.is_configured
         with patch("smtplib.SMTP", FakeSMTP):
-            assert notify(_bench(tmp_path, mail), PAYLOAD) is False
+            assert Notifier(_bench(tmp_path, mail)).send(PAYLOAD) is False
     assert FakeSMTP.sends == []
 
 
@@ -244,7 +246,7 @@ def test_mail_counts_as_delivery_when_every_webhook_fails(tmp_path: Path) -> Non
         patch("smtplib.SMTP", FakeSMTP),
         patch("pilot.core.notification.webhooks.send_webhook", side_effect=OSError("unreachable")),
     ):
-        delivered = notify(bench, PAYLOAD)
+        delivered = Notifier(bench).send(PAYLOAD)
 
     assert delivered
     assert len(FakeSMTP.sends) == 1
@@ -252,12 +254,12 @@ def test_mail_counts_as_delivery_when_every_webhook_fails(tmp_path: Path) -> Non
 
 def test_an_unreachable_mail_server_is_not_a_delivery(tmp_path: Path) -> None:
     with patch("smtplib.SMTP", side_effect=OSError("unreachable")):
-        assert not notify(_bench(tmp_path, _mail()), PAYLOAD)
+        assert not Notifier(_bench(tmp_path, _mail())).send(PAYLOAD)
 
 
 def test_no_mail_goes_out_without_recipients(tmp_path: Path) -> None:
     with patch("smtplib.SMTP", FakeSMTP):
-        notify(_bench(tmp_path, _mail(), email_recipients=[]), PAYLOAD)
+        Notifier(_bench(tmp_path, _mail(), email_recipients=[])).send(PAYLOAD)
 
     assert FakeSMTP.sends == []
 
@@ -286,7 +288,7 @@ def test_the_credential_check_opens_and_drops_a_session() -> None:
     """Settings are proved against the server while they are being saved, the
     way the framework's Email Account opens a session on save."""
     with patch("smtplib.SMTP", FakeSMTP):
-        check_mail_credentials(_mail())
+        AlertMail(_mail()).check_credentials()
 
     sent = FakeSMTP.sends[0]
     assert sent.logged_in_as == ("alerts@test", "secret")
@@ -300,7 +302,7 @@ def test_the_credential_check_raises_on_a_bad_password() -> None:
         patch.object(FakeSMTP, "login", side_effect=error),
         pytest.raises(smtplib.SMTPAuthenticationError),
     ):
-        check_mail_credentials(_mail())
+        AlertMail(_mail()).check_credentials()
 
 
 def test_an_unparsable_mailbox_survives_an_unrelated_save(tmp_path: Path) -> None:
@@ -368,13 +370,11 @@ def test_alerts_skip_central_on_a_self_hosted_bench(tmp_path: Path) -> None:
     """Nothing to report to, and asking would read instance metadata per alert."""
     from unittest.mock import patch
 
-    from pilot.core import alerts
-
     bench = _bench(tmp_path, MailConfig())
     bench.config.central.enabled = False
 
-    with patch.object(alerts, "CentralClient") as client:
-        alerts.notify(bench, {"event": "resource_limit_breached", "message": "high", "context": {}})
+    with patch.object(notifier, "CentralClient") as client:
+        Notifier(bench).send({"event": "resource_limit_breached", "message": "high", "context": {}})
 
     client.assert_not_called()
 
@@ -382,13 +382,11 @@ def test_alerts_skip_central_on_a_self_hosted_bench(tmp_path: Path) -> None:
 def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
     from unittest.mock import patch
 
-    from pilot.core import alerts
-
     bench = _bench(tmp_path, MailConfig())
     bench.config.central.enabled = True
 
-    with patch.object(alerts, "CentralClient") as client:
-        assert alerts.notify(bench, {"event": "resource_limit_breached", "message": "high", "context": {}}) is True
+    with patch.object(notifier, "CentralClient") as client:
+        assert Notifier(bench).send({"event": "resource_limit_breached", "message": "high", "context": {}}) is True
 
     client.return_value.notify_central.assert_called_once_with(
         event="resource_limit_breached", message="high", context={}, reference_name=bench.config.name
@@ -408,13 +406,11 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
 )
 def test_events_use_the_names_central_accepts(payload: dict, central_event_type: str | None) -> None:
     """Central refuses a Pilot event whose type is not one of its Server event types."""
-    from pilot.core.alerts import get_central_event_type
 
-    assert get_central_event_type(payload) == central_event_type
+    assert Notifier.get_central_event_type(payload) == central_event_type
 
 
 def test_a_failed_task_reaches_webhooks_but_not_mail_or_central(tmp_path: Path) -> None:
-    from pilot.core import alerts
     from pilot.core.notification.webhooks import WebhookDelivery
 
     bench = _bench(tmp_path, _mail(), webhook_endpoints=[WebhookEndpoint("https://all.test")])
@@ -422,10 +418,10 @@ def test_a_failed_task_reaches_webhooks_but_not_mail_or_central(tmp_path: Path) 
 
     with (
         patch("smtplib.SMTP", FakeSMTP),
-        patch.object(alerts, "CentralClient") as central,
+        patch.object(notifier, "CentralClient") as central,
         patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(200, "")) as webhook,
     ):
-        assert notify(bench, {**PAYLOAD, "event": "task_failed", "category": "Sites"}) is True
+        assert Notifier(bench).send({**PAYLOAD, "event": "task_failed", "category": "Sites"}) is True
 
     webhook.assert_called_once()
     assert FakeSMTP.sends == []
@@ -447,8 +443,8 @@ def test_a_webhook_receives_only_the_events_it_chose(tmp_path: Path) -> None:
         return WebhookDelivery(200, "")
 
     with patch("pilot.core.notification.webhooks.send_webhook", send):
-        notify(bench, PAYLOAD)
-        notify(bench, {**PAYLOAD, "event": "task_failed"})
+        Notifier(bench).send(PAYLOAD)
+        Notifier(bench).send({**PAYLOAD, "event": "task_failed"})
 
     assert reached == [
         ("https://all.test", "site_down"),
@@ -458,7 +454,6 @@ def test_a_webhook_receives_only_the_events_it_chose(tmp_path: Path) -> None:
 
 
 def test_an_info_event_skips_mail_and_central(tmp_path: Path) -> None:
-    from pilot.core import alerts
     from pilot.core.notification.webhooks import WebhookDelivery
 
     bench = _bench(tmp_path, _mail(), webhook_endpoints=[WebhookEndpoint("https://all.test")])
@@ -466,10 +461,10 @@ def test_an_info_event_skips_mail_and_central(tmp_path: Path) -> None:
 
     with (
         patch("smtplib.SMTP", FakeSMTP),
-        patch.object(alerts, "CentralClient") as central,
+        patch.object(notifier, "CentralClient") as central,
         patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(200, "")) as webhook,
     ):
-        assert notify(bench, {**PAYLOAD, "event": "site_created", "severity": "Info"}) is True
+        assert Notifier(bench).send({**PAYLOAD, "event": "site_created", "severity": "Info"}) is True
 
     webhook.assert_called_once()
     assert FakeSMTP.sends == []
@@ -482,7 +477,7 @@ def test_a_rejected_webhook_does_not_count_as_delivered(tmp_path: Path) -> None:
     bench = _bench(tmp_path, MailConfig(), webhook_endpoints=[WebhookEndpoint("https://all.test")])
 
     with patch("pilot.core.notification.webhooks.send_webhook", return_value=WebhookDelivery(500, "boom")):
-        assert notify(bench, PAYLOAD) is False
+        assert Notifier(bench).send(PAYLOAD) is False
 
 
 def test_the_webhook_body_is_fixed_and_links_to_the_dashboard(tmp_path: Path) -> None:
@@ -491,7 +486,7 @@ def test_the_webhook_body_is_fixed_and_links_to_the_dashboard(tmp_path: Path) ->
     bench = _bench(tmp_path, MailConfig())
     payload = {**PAYLOAD, "title": "a.test is down", "site": "a.test", "action_route": "/sites/a.test"}
 
-    with patch("pilot.utils.admin_url", return_value="https://admin.example.com"):
+    with patch("pilot.config.bench.BenchConfig.admin_url", "https://admin.example.com"):
         body = get_webhook_body(bench, payload)
 
     assert body["event"] == "site_down"
@@ -521,13 +516,12 @@ def test_a_ping_goes_to_an_endpoint_whatever_events_it_chose(tmp_path: Path) -> 
 
 def test_a_certificate_alert_is_mailed_but_not_sent_to_central(tmp_path: Path) -> None:
     """Central has no certificate event type and would refuse it."""
-    from pilot.core import alerts
 
     bench = _bench(tmp_path, _mail())
     bench.config.central.enabled = True
 
-    with patch("smtplib.SMTP", FakeSMTP), patch.object(alerts, "CentralClient") as central:
-        assert notify(bench, {**PAYLOAD, "event": "certificate_expiry", "title": "Certificate for a.test is not renewing"})
+    with patch("smtplib.SMTP", FakeSMTP), patch.object(notifier, "CentralClient") as central:
+        assert Notifier(bench).send({**PAYLOAD, "event": "certificate_expiry", "title": "Certificate for a.test is not renewing"})
 
     assert FakeSMTP.sends[0].messages[0]["Subject"] == "[Pilot] Certificate for a.test is not renewing"
     central.assert_not_called()

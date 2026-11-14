@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from pathlib import Path
 from typing import TypedDict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import (
     PageMeta,
     error_response,
@@ -14,7 +14,6 @@ from admin.backend.api.responses import (
     parse_pagination,
 )
 from admin.backend.api.v1.settings.config import ConfigPatcher
-from pilot.core.bench import Bench
 from pilot.core.notification import CATEGORIES, Notification, NotificationStore
 from pilot.core.notification.webhooks import ping_webhook
 
@@ -30,12 +29,10 @@ class NotificationPage(TypedDict):
 
 notifications_bp = Blueprint("notifications", __name__)
 
-_DEFAULT_LIMIT = 20
-_MAX_LIMIT = 100
-
 
 def _store() -> NotificationStore:
-    return NotificationStore(Path(current_app.config["BENCH_ROOT"]) / "logs")
+    """The notification store."""
+    return NotificationStore(ApiRequest.get_bench_root() / "logs")
 
 
 @notifications_bp.get("/notifications")
@@ -44,7 +41,7 @@ def list_notifications():
 
     The count rides along on every page so the sidebar badge and the feed can never
     disagree about what is unread."""
-    limit, offset = parse_pagination(_DEFAULT_LIMIT, _MAX_LIMIT)
+    limit, offset = parse_pagination(20, 100)
     category = request.args.get("category") or None
     if category and category not in CATEGORIES:
         return error_response("invalid_category", f"Unknown category: {category}.", 400)
@@ -54,6 +51,7 @@ def list_notifications():
         store = _store()
 
         def fetch_newest(count: int) -> list:
+            """The newest notifications that match the filters."""
             return [asdict(item) for item in store.list(count, category=category, unread_only=unread_only)]
 
         return paginated_response(fetch_newest, limit, offset, {"unread": store.unread_count})
@@ -63,6 +61,7 @@ def list_notifications():
 
 @notifications_bp.post("/notifications/<name>/read")
 def mark_notification_read(name: str):
+    """Mark one notification as read."""
     try:
         _store().mark_read(name)
     except Exception:
@@ -72,6 +71,7 @@ def mark_notification_read(name: str):
 
 @notifications_bp.post("/notifications/read-all")
 def mark_all_notifications_read():
+    """Mark every notification as read."""
     try:
         _store().mark_all_read()
     except Exception:
@@ -84,10 +84,8 @@ def test_webhook():
     """Send a sample `ping` event to one webhook and return the receiver's answer.
 
     Body: `{"url", "token", "original_url"}` as in the settings form. A blank token uses the one stored for `original_url`."""
-    entry = request.get_json(silent=True)
-    if not isinstance(entry, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
-    bench = Bench(Path(current_app.config["BENCH_ROOT"]))
+    entry = ApiRequest.get_json_body()
+    bench = ApiRequest.get_bench()
     endpoints = ConfigPatcher.get_webhook_endpoints([entry], bench.config.webhook_endpoints)
     if not endpoints:
         return error_response("invalid_fields", "Enter a webhook URL.", 422)

@@ -4,15 +4,16 @@ import logging
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.setup import wizard_marker_path
 from admin.backend.middleware import allow_unauthenticated, is_request_authenticated
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.internal.atomic_file import exclusive_file_lock
-from pilot.managers.platform import native_process_manager
+from pilot.managers.platform import HostPlatform
 from pilot.managers.task import TaskActivityReader
 
 
@@ -50,6 +51,7 @@ core_bp = Blueprint("core", __name__)
 @core_bp.get("/health")
 @allow_unauthenticated
 def health():
+    """Answer that the Admin is up."""
     response = jsonify({"status": "ok"})
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
@@ -58,7 +60,8 @@ def health():
 @core_bp.get("/bootstrap")
 @allow_unauthenticated
 def bootstrap():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """The data the frontend loads first."""
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
     except Exception:
@@ -95,7 +98,7 @@ def bootstrap():
                 "name": config.name,
                 "db_type": config.db_type,
                 "production": config.production.enabled,
-                "native_process_manager": native_process_manager(),
+                "native_process_manager": HostPlatform.native_process_manager,
                 "allow_bench_management": config.admin.allow_bench_management,
                 "central": config.central.enabled,
                 "central_url": config.admin.central_url if config.central.enabled else "",
@@ -115,6 +118,7 @@ def _visible_bootstrap(bench_root: Path, payload: dict) -> dict:
 
 
 def _setup_bootstrap(bench_root: Path) -> dict:
+    """The bootstrap data during setup."""
     name = bench_root.name
     try:
         name = BenchConfig.read(bench_root, validate=False).name or name
@@ -124,6 +128,7 @@ def _setup_bootstrap(bench_root: Path) -> dict:
 
 
 def _is_setup_complete(bench_root: Path, config: BenchConfig) -> bool:
+    """Whether bench setup finished."""
     if not Bench(bench_root).is_initialized:
         return False
     if not config.admin.password:

@@ -27,7 +27,7 @@ from tests.pilot.commands.test_commands import make_bench
 def benches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "benches"
     path.mkdir()
-    monkeypatch.setattr("pilot.core.workspace.benches_dir", lambda: path)
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", path)
     return path
 
 

@@ -37,6 +37,7 @@ class SiteProvisioner:
         self.skip_assets = skip_assets
 
     def provision(self, on_progress: Callable[[str], None], *, schedule_backups: bool = True) -> "Site":
+        """Create the site under its creation lock and return it."""
         with SiteCreationOwner(self.bench.path, self.name).locked() as owner:
             via_wildcard = validate_new_site(self.bench, self.name, self.apps)
             self.bench.site_aliases.release(self.name)
@@ -46,6 +47,7 @@ class SiteProvisioner:
     def _provision(
         self, via_wildcard: bool, on_progress: Callable[[str], None], schedule_backups: bool
     ) -> "Site":
+        """Register the route, create the site, install apps and finish setup."""
         from pilot.core.site import Site
 
         route = None
@@ -88,21 +90,23 @@ class SiteProvisioner:
         self.reload_nginx()
 
     def write_email_sender_name(self, site: "Site") -> None:
-        site.set_config_values({"email_sender_name": email_sender_name(site.config.name)})
+        """Set the email sender name."""
+        site.config_file.set_values({"email_sender_name": email_sender_name(site.config.name)})
 
     def write_route_policy(self, site: "Site") -> None:
         """Persist provider route metadata after site creation."""
         if not site.config.route:
             return
-        from pilot.utils import write_private_text
+        from pilot.internal.private_files import PrivateFile
 
         path = site.path / "site_config.json"
         config = json.loads(path.read_text())
         config["ssl"] = site.config.route.public_tls
         config["route"] = site.config.route.to_dict()
-        write_private_text(path, json.dumps(config, indent=1))
+        PrivateFile(path).write_text(json.dumps(config, indent=1))
 
     def install_apps(self, site: "Site", on_progress: Callable[[str], None]) -> None:
+        """Install each app except the framework app."""
         framework = self.bench.config.framework_app.name
         for app_name in self.apps:
             if app_name == framework:
@@ -111,8 +115,9 @@ class SiteProvisioner:
             site.install_app(self.bench.app(app_name))
 
     def write_pilot_communication_config(self, site: "Site") -> None:
+        """Give the site a token to call Pilot, when the bench allows it."""
         from admin.backend.internal.session import Session
-        from pilot.utils import write_private_text
+        from pilot.internal.private_files import PrivateFile
 
         if not self.bench.config.admin.allow_site_to_pilot_communication:
             # Dev sites stay unmarked so Frappe treats them as self-hosted.
@@ -125,9 +130,10 @@ class SiteProvisioner:
         config["cloud_server_url"] = self.bench.admin_endpoint
         config["cloud_settings_embed_url"] = self.bench.embed_endpoint
         config["pilot_auth_token"] = Session(self.bench).issue_pilot_token(site.config.name)
-        write_private_text(config_path, json.dumps(config, indent=1))
+        PrivateFile(config_path).write_text(json.dumps(config, indent=1))
 
     def build_missing_assets(self) -> None:
+        """Build the assets of apps that have none."""
         from pilot.managers.environment import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
@@ -139,14 +145,16 @@ class SiteProvisioner:
                 manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:
+        """Add the site to /etc/hosts in development."""
         if self.bench.config.production.process_manager != "none":
             return
 
-        from pilot.managers.platform import add_hosts_entry
+        from pilot.managers.platform import HostsFile
 
-        add_hosts_entry(site.config.name)
+        HostsFile().add(site.config.name)
 
     def reload_nginx(self) -> None:
+        """Reload nginx for the new site."""
         from pilot.managers.nginx import NginxManager
 
         NginxManager(self.bench).reload_for_site_change()
@@ -181,13 +189,15 @@ class SiteProvisioner:
 
 
 def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
+    """Raise when the site cannot be created; return whether a wildcard route serves it."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import host_owner, matches_wildcard, normalize_host
+    from pilot.core.bench.directory import BenchDirectory
+    from pilot.internal.hostnames import matches_wildcard, normalize_host
 
     path = bench.sites_path / name
     if not path.is_symlink() and (path / "site_config.json").exists():
         raise BenchError(f"Site '{name}' already exists.")
-    owner = host_owner(bench.path, name)
+    owner = BenchDirectory.siblings_of(bench.path).get_host_owner(name)
     if owner:
         raise BenchError(
             f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "
@@ -225,6 +235,7 @@ def provision_from_backup(
     private_files: str | None = None,
     on_progress: Callable[[str], None] = lambda message: None,
 ) -> "Site":
+    """Create a site and restore it from a backup."""
     if not isinstance(admin_password, str) or not admin_password.strip():
         raise BenchError("Site Administrator password must not be empty.")
     from pilot.core.site import Site
@@ -241,6 +252,7 @@ def provision_from_backup(
 
 
 def should_enable_ssl(bench: "Bench", name: str) -> bool:
+    """Whether the site gets SSL from Let's Encrypt."""
     from pilot.managers.letsencrypt import is_public_domain, letsencrypt_active
 
     return letsencrypt_active(bench) and is_public_domain(name)

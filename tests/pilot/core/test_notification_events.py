@@ -73,7 +73,7 @@ def test_a_task_event_without_a_bench_never_raises(tmp_path, caplog) -> None:
 def test_task_events_reach_webhooks_with_the_task_context(bench_root) -> None:
     sent = []
     with (
-        patch("pilot.core.alerts.notify", lambda bench, payload: sent.append(payload)),
+        patch("pilot.core.notification.notifier.Notifier.send", lambda self, payload: sent.append(payload)),
     ):
         task_failed(bench_root, {"task_id": "t8", "command": "backup-site", "args": {"site": "a.local"}})
 
@@ -88,7 +88,7 @@ def test_task_events_reach_webhooks_with_the_task_context(bench_root) -> None:
 
 def test_a_finished_long_operation_has_its_own_event_and_shows_in_the_feed(bench_root) -> None:
     sent = []
-    with patch("pilot.core.alerts.notify", lambda bench, payload: sent.append(payload)):
+    with patch("pilot.core.notification.notifier.Notifier.send", lambda self, payload: sent.append(payload)):
         task_succeeded(bench_root, {"task_id": "t9", "command": "complete-migration", "args": {}})
         task_succeeded(bench_root, {"task_id": "t10", "command": "clear-cache", "args": {}})
 
@@ -118,7 +118,7 @@ def test_a_finished_long_operation_has_its_own_event_and_shows_in_the_feed(bench
 )
 def test_routine_operations_go_to_webhooks_but_not_the_feed(bench_root, command: str, event: str) -> None:
     sent = []
-    with patch("pilot.core.alerts.notify", lambda bench, payload: sent.append(payload)):
+    with patch("pilot.core.notification.notifier.Notifier.send", lambda self, payload: sent.append(payload)):
         task_succeeded(bench_root, {"task_id": "t11", "command": command, "args": {"site": "a.local"}})
 
     assert [(payload["event"], payload["severity"]) for payload in sent] == [(event, "Info")]
@@ -135,7 +135,7 @@ def test_every_success_event_is_one_a_webhook_can_choose() -> None:
 def test_the_event_context_carries_task_arguments_but_never_secrets(bench_root) -> None:
     sent = []
     args = {"name": "a.local", "admin_password": "s3cret", "apps": ["erpnext"], "repo": "https://tok@git.example"}
-    with patch("pilot.core.alerts.notify", lambda bench, payload: sent.append(payload)):
+    with patch("pilot.core.notification.notifier.Notifier.send", lambda self, payload: sent.append(payload)):
         task_succeeded(bench_root, {"task_id": "t12", "command": "new-site", "args": args})
 
     (payload,) = sent

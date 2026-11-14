@@ -17,6 +17,7 @@ class SymlinkCheck:
     """Rejects symlinks that do not resolve inside the app."""
 
     def run(self, app: "App") -> None:
+        """Raise when the app has symlinks that leave it."""
         links = self.get_invalid_symlinks(app.path, IgnoredPaths(app))
         if not links:
             return

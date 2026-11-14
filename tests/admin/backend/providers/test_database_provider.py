@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock, PropertyMock
 
-from admin.backend.providers.database import DatabaseDiagnosticsProvider
+from admin.backend.providers.database.diagnostics import DatabaseDiagnosticsProvider
 from pilot.core.database import BinlogFile, BinlogStatus, DatabaseProcess, LockWaitRow, LockWaitStatus
 
 
@@ -60,7 +60,7 @@ def test_get_process_list_shapes_processes_as_dicts() -> None:
 def test_sqlite_bench_has_no_database_server(tmp_path) -> None:
     import pytest
 
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
     from pilot.config import BenchConfig
     from pilot.exceptions import DatabaseError
 
@@ -124,6 +124,7 @@ def test_get_lock_wait_rows_shapes_rows_as_dicts() -> None:
             "id": "42", "type": "RECORD", "mode": "X", "table": "tabDoc", "index": "PRIMARY",
             "state": "LOCK WAIT", "started": "2026-01-01T00:00:00", "query": "UPDATE tabDoc SET x=1",
             "rows_locked": 3, "rows_modified": 1,
+            "blocking_id": None, "blocking_thread_id": None, "blocking_query": None,
         }
     ]
 
@@ -178,7 +179,7 @@ def test_get_database_size_uses_a_connection_bound_to_the_site(tmp_path) -> None
     )
     provider = DatabaseDiagnosticsProvider(bench_root=tmp_path, database=Mock())
 
-    with patch("admin.backend.providers.database.make_site_database", return_value=site_db) as make:
+    with patch("admin.backend.providers.database.diagnostics.make_site_database", return_value=site_db) as make:
         assert provider.get_database_size("shop.local") == {
             "data_bytes": 21,
             "index_bytes": 27,
@@ -206,7 +207,7 @@ def test_site_scoped_size_takes_free_space_from_the_server(tmp_path) -> None:
     server.get_free_disk_bytes.return_value = 855949434880
     provider = DatabaseDiagnosticsProvider(bench_root=tmp_path, database=server)
 
-    with patch("admin.backend.providers.database.make_site_database", return_value=site_db):
+    with patch("admin.backend.providers.database.diagnostics.make_site_database", return_value=site_db):
         assert provider.get_database_size("shop.local")["free_bytes"] == 855949434880
 
 
@@ -233,7 +234,7 @@ def test_get_table_sizes_requires_a_site() -> None:
 def test_unsupported_operation_surfaces_generic_message() -> None:
     import pytest
 
-    from admin.backend.providers.database import NOT_SUPPORTED
+    from admin.backend.providers.database.diagnostics import NOT_SUPPORTED
     from pilot.exceptions import DatabaseError
 
     db = Mock()
@@ -255,7 +256,7 @@ def test_a_performance_section_resolves_the_site_to_its_database() -> None:
     db.get_unused_indexes.return_value = _section()
     provider = DatabaseDiagnosticsProvider(bench_root=None, database=db)
 
-    with patch("admin.backend.providers.database.site_database_name", return_value="_abc123") as resolve:
+    with patch("admin.backend.providers.database.diagnostics.site_database_name", return_value="_abc123") as resolve:
         result = provider.get_unused_indexes("shop.local", 50, 100)
 
     resolve.assert_called_once_with(None, "shop.local")

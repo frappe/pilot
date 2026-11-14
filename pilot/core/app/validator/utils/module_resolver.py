@@ -18,9 +18,11 @@ class ModuleResolver:
         return [module for module in modules if not self._is_resolvable(module)]
 
     def _is_resolvable(self, module: str) -> bool:
+        """Whether the module exists under a root."""
         return any(self._is_under(root, module) for root in self.roots)
 
     def _is_under(self, root: Path, module: str) -> bool:
+        """Whether the module exists under this root."""
         directory = root
         parts = module.split(".")
         for index, part in enumerate(parts):
@@ -31,4 +33,5 @@ class ModuleResolver:
         return True
 
     def _is_module_file(self, directory: Path, name: str) -> bool:
+        """Whether the directory has a module file with this name."""
         return any(path.suffix in self._SUFFIXES for path in directory.glob(f"{name}.*"))

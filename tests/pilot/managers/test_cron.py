@@ -77,8 +77,8 @@ def test_remove_schedule_deletes_marker_and_entry() -> None:
 
 def test_cron_module_command_pins_pythonpath_to_the_source_root(tmp_path: Path) -> None:
     """Cron starts in the home directory, where the source tree shadows the `pilot` package."""
+    from pilot.core.server import Server
     from pilot.managers.cron import cron_module_command
-    from pilot.utils import cli_root
 
     admin_python = tmp_path / "bin" / "python"
     admin_python.parent.mkdir()
@@ -88,7 +88,7 @@ def test_cron_module_command_pins_pythonpath_to_the_source_root(tmp_path: Path) 
             "pilot.tasks.backup_site", ["/benches/b1", "site.localhost"], Path("/tmp/b.log")
         )
 
-    assert command.startswith(f"PYTHONPATH={cli_root()} {admin_python} ")
+    assert command.startswith(f"PYTHONPATH={Server().root} {admin_python} ")
     assert " -m pilot.tasks.backup_site /benches/b1 site.localhost " in command
     assert command.endswith(">> /tmp/b.log 2>&1")
 

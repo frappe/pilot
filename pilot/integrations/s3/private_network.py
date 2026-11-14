@@ -18,6 +18,7 @@ class PrivateHTTPSConnection(AWSHTTPSConnection):
     """Dials the private address of `internal-<host>`, or the public address when that fails."""
 
     def _new_conn(self) -> socket.socket:
+        """A connection to the private address when there is one."""
         address = find_private_address(self.host, self.port)
         if address is None:
             return super()._new_conn()

@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 def _read_version() -> str:
+    """The version from the VERSION file."""
     version_file = Path(__file__).resolve().parent.parent / "VERSION"
     return version_file.read_text().strip() if version_file.exists() else "dev"
 

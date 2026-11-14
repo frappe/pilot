@@ -17,10 +17,12 @@ class UninstallAppTask(Task):
     remove_from_bench: bool = True
 
     def run(self) -> None:
+        """Uninstall the app."""
         self.uninstall()
 
     @step("uninstall", lambda self: f"Uninstall {self.app} from {self.site}")
     def uninstall(self) -> None:
+        """Uninstall the app from the site in maintenance mode."""
         site = self.bench.site(self.site)
         with site.under_maintenance():
             site.uninstall_apps(

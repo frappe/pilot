@@ -32,7 +32,7 @@ def calls(monkeypatch) -> list[str]:
     monkeypatch.setattr(SystemdProcessManager, "is_configured", lambda self: True)
     monkeypatch.setattr(SystemdProcessManager, "write_config", lambda self: calls.append(f"units:{self.bench.config.name}"))
     monkeypatch.setattr(SystemdProcessManager, "reload_manager_config", lambda self: None)
-    monkeypatch.setattr("pilot.utils.run_command", lambda argv, env: calls.append(argv[-1]))
+    monkeypatch.setattr("pilot.internal.command.run_command", lambda argv, env: calls.append(argv[-1]))
     monkeypatch.setattr(NginxManager, "reload_for_site_change", lambda self: calls.append("nginx"))
     return calls
 

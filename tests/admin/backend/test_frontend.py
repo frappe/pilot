@@ -33,7 +33,7 @@ def write_build_output(argv, **kwargs) -> None:
 def _ensure(root: Path, *, is_dev: bool) -> object:
     with (
         patch.object(pilot, "is_dev_build", is_dev),
-        patch("pilot.utils.cli_root", return_value=root),
+        patch("pilot.core.server.Server.root", root),
         patch.object(frontend, "build_admin_frontend") as build,
     ):
         frontend.ensure_admin_frontend()
@@ -59,7 +59,7 @@ def test_build_frontend_skips_when_dist_already_exists(tmp_path: Path) -> None:
     (dist_dir / "assets").mkdir(parents=True)
     (dist_dir / "index.html").write_text("old index")
 
-    with patch("pilot.utils.run_command") as run_command:
+    with patch("pilot.internal.command.run_command") as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "dashboard", lambda message: None)
     run_command.assert_not_called()
 
@@ -72,7 +72,7 @@ def test_build_frontend_skips_when_in_app_embed_outputs_exist(tmp_path: Path) ->
     (dist_dir / "cloud-settings.js").write_text("// iife")
     (dist_dir / "esm" / "cloud-settings.js").write_text("export {}")
 
-    with patch("pilot.utils.run_command") as run_command:
+    with patch("pilot.internal.command.run_command") as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "in-app-embed", lambda message: None)
     run_command.assert_not_called()
 
@@ -92,7 +92,7 @@ def test_build_frontend_rebuilds_an_in_app_embed_without_the_sdk_runtime(tmp_pat
         (staged / "cloud-settings.js").write_text("// iife")
         (staged / "esm" / "cloud-settings.js").write_text("export {}")
 
-    with patch("pilot.utils.run_command", side_effect=write_embed) as run_command:
+    with patch("pilot.internal.command.run_command", side_effect=write_embed) as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "in-app-embed", lambda message: None)
     run_command.assert_called()
     assert (dist_dir / "esm" / "cloud-settings.js").is_file()
@@ -103,7 +103,7 @@ def test_build_frontend_builds_when_dist_is_missing(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     frontend_dir.mkdir(parents=True)
 
-    with patch("pilot.utils.run_command", side_effect=write_build_output) as run_command:
+    with patch("pilot.internal.command.run_command", side_effect=write_build_output) as run_command:
         frontend._build_frontend(frontend_dir, dist_dir, "dashboard", lambda message: None)
     command = run_command.call_args.args[0]
     assert command[:5] == ["npm", "run", "build", "--", "--outDir"]
@@ -119,7 +119,7 @@ def test_build_frontend_forces_rebuild_even_when_dist_exists(tmp_path: Path) -> 
     (dist_dir / "index.html").write_text("old index")
     (dist_dir / "assets" / "old.js").write_text("old asset")
 
-    with patch("pilot.utils.run_command", side_effect=write_build_output):
+    with patch("pilot.internal.command.run_command", side_effect=write_build_output):
         frontend._build_frontend(frontend_dir, dist_dir, "dashboard", lambda message: None, force=True)
     assert (dist_dir / "index.html").read_text() == "new index"
     assert (dist_dir / "assets" / "old.js").read_text() == "old asset"
@@ -131,7 +131,7 @@ def test_incomplete_build_keeps_the_served_frontend(tmp_path: Path) -> None:
     (dist_dir / "assets").mkdir(parents=True)
     (dist_dir / "index.html").write_text("old index")
     (dist_dir / "assets" / "old.js").write_text("old asset")
-    with patch("pilot.utils.run_command"), pytest.raises(BenchError, match="complete frontend"):
+    with patch("pilot.internal.command.run_command"), pytest.raises(BenchError, match="complete frontend"):
         frontend._build_frontend(tmp_path, dist_dir, "dashboard", lambda message: None, force=True)
     assert (dist_dir / "index.html").read_text() == "old index"
     assert (dist_dir / "assets" / "old.js").read_text() == "old asset"
@@ -141,7 +141,7 @@ def test_released_install_without_dist_raises(tmp_path: Path) -> None:
     _layout(tmp_path, source=True, dist=False)
     with (
         patch.object(pilot, "is_dev_build", False),
-        patch("pilot.utils.cli_root", return_value=tmp_path),
+        patch("pilot.core.server.Server.root", tmp_path),
         pytest.raises(BenchError, match="missing from this release"),
     ):
         frontend.ensure_admin_frontend()

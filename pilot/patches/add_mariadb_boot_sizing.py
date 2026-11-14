@@ -6,12 +6,13 @@ PATCH_NAME = Path(__file__).stem
 
 
 def run(benches_root: Path) -> None:
+    """Install the MariaDB boot sizing on each bench that owns MariaDB."""
     from pilot.config import BenchConfig
     from pilot.internal.patch_state import is_applied, mark_applied
     from pilot.managers.database.mariadb import MariaDBManager
-    from pilot.managers.platform import is_linux
+    from pilot.managers.platform import HostPlatform
 
-    if not is_linux():
+    if not HostPlatform().is_linux:
         return
     for bench_dir in sorted(benches_root.glob("*")):
         if not (bench_dir / "bench.toml").is_file() or is_applied(bench_dir, PATCH_NAME):
@@ -28,6 +29,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

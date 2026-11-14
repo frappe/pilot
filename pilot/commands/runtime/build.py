@@ -17,4 +17,5 @@ class BuildCommand(Command):
     force: Annotated[bool, Arg(help="Force a full rebuild, skipping pre-built asset download.")] = False
 
     def run(self) -> None:
+        """Build the assets."""
         self.bench.rebuild_assets(force=self.force, apps=self.apps)

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from flask import current_app, jsonify
+from flask import jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.editor import editor_bp, json_body, with_workspace
 
@@ -12,6 +13,7 @@ from admin.backend.api.v1.editor import editor_bp, json_body, with_workspace
 @editor_bp.get("/state")
 @with_workspace
 def get_state(ws):
+    """Show the saved editor state."""
     path = _state_path(ws.root.name)
     if not path.exists():
         return jsonify({})
@@ -21,6 +23,7 @@ def get_state(ws):
 @editor_bp.put("/state")
 @with_workspace
 def put_state(ws):
+    """Save the editor state; refuse more than 1 MB."""
     state = json_body()
     if len(json.dumps(state)) > 1_000_000:
         return error_response("too_large", "State exceeds 1MB.", 413)
@@ -31,4 +34,5 @@ def put_state(ws):
 
 
 def _state_path(app_name: str) -> Path:
-    return Path(current_app.config["BENCH_ROOT"]) / ".editor-state" / f"{app_name}.json"
+    """The editor state file of an app."""
+    return ApiRequest.get_bench_root() / ".editor-state" / f"{app_name}.json"

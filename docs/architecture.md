@@ -22,7 +22,7 @@ pilot/
 
 admin/backend/
   api/v1/        Flask route groups
-  providers/     backend provider integrations
+  providers/     read models for the API: site/, database/, server/
 
 admin/frontend/dashboard/  Vue Admin UI
 admin/frontend/editor/     Vue code editor
@@ -96,7 +96,7 @@ If a command or API route starts doing subprocess, filesystem, nginx, database, 
 
 ## State Layout
 
-Bench data lives under the fixed top-level benches directory returned by `pilot.utils.benches_dir()`.
+Bench data lives under the fixed top-level benches directory returned by `Server().benches_dir`.
 
 Inside a bench:
 

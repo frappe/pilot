@@ -17,43 +17,24 @@ from pilot.config.proxy import CLOUDFLARE_NETWORKS
 from pilot.config.waf import parse_nginx_size
 from pilot.exceptions import CommandError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.command import run_command
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import (
-    _privileged,
-    default_nginx_config_dir,
-    is_linux,
-    service_command,
-    service_enable_command,
-    service_running,
-    which,
-)
+from pilot.managers.platform import HostPlatform, Privileges, SystemService
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.config import HostnameAlias, SiteConfig
     from pilot.core.bench import Bench
 
-_NGINX_CONF = Path("/etc/nginx/nginx.conf")
-_PILOT_INCLUDE = Path("/etc/nginx/conf.d/00-pilot.conf")
-_USER_DIRECTIVE = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
-
-_SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
 
 _TEMPLATES = Path(__file__).parent / "templates"
 ADMIN_CLIENT_MAX_BODY_SIZE = "1024m"
-_BENCH_TEMPLATE = Template.from_path(_TEMPLATES / "bench.conf.template")
-_SERVER_TEMPLATE = Template.from_path(_TEMPLATES / "server.conf.template")
 _ERROR_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "error_page.html.template")
-_STARTUP_PAGE_TEMPLATE = Template.from_path(_TEMPLATES / "startup_page.html.template")
-_RECOVERY_TEMPLATE = Template.from_path(_TEMPLATES / "recovery.conf.template")
-_EMBED_TEMPLATE = Template.from_path(_TEMPLATES / "embed.conf.template")
 
-_CORS_PATHS = ["/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish"]
 
 # Cloud hostnames are anchored to the VM's zone, so customer domains do not match.
 CLOUD_ADMIN_PREFIX = "vm-"
@@ -61,6 +42,7 @@ CLOUD_SITE_PREFIX = "site-"
 
 
 def _admin_static_dir() -> Path:
+    """The Admin static files directory."""
     spec = importlib.util.find_spec("admin.backend")
     if spec is None or spec.submodule_search_locations is None:
         raise ModuleNotFoundError("admin.backend")
@@ -83,15 +65,13 @@ ERROR_PAGES = {
 }
 
 LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
-# Debian loads dynamic modules from modules-enabled, Fedora from /usr/share/nginx/modules.
-_MODULE_DIRS = (Path("/etc/nginx/modules-enabled"), Path("/usr/share/nginx/modules"))
 
 
 def _shared_nginx_dir() -> Path:
     """Host-wide nginx artifacts the bench user owns, globbed in by 00-pilot.conf."""
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    return cli_root() / "system" / "nginx"
+    return Server().root / "system" / "nginx"
 
 
 def vm_hostname_pattern(pattern: str) -> str:
@@ -101,14 +81,17 @@ def vm_hostname_pattern(pattern: str) -> str:
 
 
 def render_error_html(code: int, title: str, message: str) -> str:
+    """An nginx error page."""
     return _ERROR_PAGE_TEMPLATE.render(code=code, title=title, message=message)
 
 
 def live_cert_path(domain: str) -> Path:
+    """The live certificate file of a domain."""
     return LETSENCRYPT_LIVE / domain / "fullchain.pem"
 
 
 def live_key_path(domain: str) -> Path:
+    """The live key file of a domain."""
     return LETSENCRYPT_LIVE / domain / "privkey.pem"
 
 
@@ -117,7 +100,7 @@ def cert_files_exist(domain: str) -> bool:
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
     command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
     try:
-        run_command(_privileged(command))
+        run_command(Privileges.get_command(command))
     except CommandError:
         return False
     return True
@@ -125,6 +108,12 @@ def cert_files_exist(domain: str) -> bool:
 
 class NginxConfigRenderer:
     """Build nginx template context for a bench."""
+
+    bench_template = Template.from_path(_TEMPLATES / "bench.conf.template")
+    server_template = Template.from_path(_TEMPLATES / "server.conf.template")
+    recovery_template = Template.from_path(_TEMPLATES / "recovery.conf.template")
+    embed_template = Template.from_path(_TEMPLATES / "embed.conf.template")
+    cors_paths = ("/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish")
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -137,7 +126,7 @@ class NginxConfigRenderer:
             vhosts.append(self._admin_vhost(admin_ssl))
 
         aliases = self._cloud_aliases(sites, admin_ssl)
-        return _BENCH_TEMPLATE.render(**self._bench_context(vhosts, aliases))
+        return self.bench_template.render(**self._bench_context(vhosts, aliases))
 
     def _cloud_aliases(
         self, sites: list[tuple["SiteConfig", list[str]]], admin_ssl: bool
@@ -163,6 +152,7 @@ class NginxConfigRenderer:
         return aliases
 
     def _admin_alias(self, mapping: "HostnameAlias", admin_ssl: bool) -> SimpleNamespace | None:
+        """The server block for an Admin alias, or None."""
         admin = self.bench.config.admin
         if not admin.domain or admin.domain != mapping.target:
             return None
@@ -180,6 +170,7 @@ class NginxConfigRenderer:
     def _site_alias(
         self, mapping: "HostnameAlias", sites: list[tuple["SiteConfig", list[str]]]
     ) -> SimpleNamespace | None:
+        """The server block for a site alias."""
         entry = next((entry for entry in sites if entry[0].name == mapping.target), None)
         if entry is None:
             return SimpleNamespace(server_name=vm_hostname_pattern(mapping.pattern), pending=True)
@@ -203,7 +194,7 @@ class NginxConfigRenderer:
     def generate_server_config(self, error_dir: Path) -> str:
         """The host-wide catch-all vhost, shared by every bench on the box."""
         nginx = self.bench.config.nginx
-        return _SERVER_TEMPLATE.render(
+        return self.server_template.render(
             http_port=nginx.http_port,
             https_port=nginx.https_port,
             error_dir=error_dir,
@@ -262,6 +253,7 @@ class NginxConfigRenderer:
         public_scheme: str,
         client_ip_source: str,
     ) -> SimpleNamespace:
+        """The server block for a site."""
         canonical = site.primary if (len(site.all_domains) > 1 and site.primary_domain) else ""
         return SimpleNamespace(
             kind="site",
@@ -285,6 +277,7 @@ class NginxConfigRenderer:
         )
 
     def _admin_vhost(self, ssl: bool) -> SimpleNamespace:
+        """The server block for the Admin."""
         admin = self.bench.config.admin
         route = admin.route_policy
         legacy_source = (
@@ -317,6 +310,7 @@ class NginxConfigRenderer:
     def _bench_context(
         self, vhosts: list[SimpleNamespace], aliases: list[SimpleNamespace] | None = None
     ) -> dict[str, Any]:
+        """The template context for the bench config."""
         config = self.bench.config
         nginx = config.nginx
         error_dir = self.bench.config_path / "nginx" / "error_pages"
@@ -339,7 +333,7 @@ class NginxConfigRenderer:
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,
-            "startup_recovery": _RECOVERY_TEMPLATE.render(error_dir=error_dir),
+            "startup_recovery": self.recovery_template.render(error_dir=error_dir),
             "error_codes": list(ERROR_PAGES),
             "proxy_servers": self.get_proxy_servers(),
             "cloudflare_networks": CLOUDFLARE_NETWORKS if config.proxy.cloudflare else (),
@@ -348,9 +342,9 @@ class NginxConfigRenderer:
             "firewall": config.firewall,
             "waf_active": self._is_waf_active(),
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",
-            "cors_paths": _CORS_PATHS,
+            "cors_paths": self.cors_paths,
             "admin_static": _admin_static_dir(),
-            "site_embed": _EMBED_TEMPLATE.render(admin_static=_admin_static_dir()),
+            "site_embed": self.embed_template.render(admin_static=_admin_static_dir()),
             "vhosts": vhosts,
             "aliases": aliases or [],
         }
@@ -358,6 +352,15 @@ class NginxConfigRenderer:
 
 class NginxManager:
     """Installs, configures, and reloads nginx for a bench, via NginxConfigRenderer."""
+
+    nginx_conf = Path("/etc/nginx/nginx.conf")
+    # Debian loads dynamic modules from modules-enabled, Fedora from /usr/share/nginx/modules.
+    module_dirs = (Path("/etc/nginx/modules-enabled"), Path("/usr/share/nginx/modules"))
+
+    pilot_include = Path("/etc/nginx/conf.d/00-pilot.conf")
+    user_directive = re.compile(r"^[ \t]*user[ \t]+[^;\n]+;", re.MULTILINE)
+    shared_error_dir = Path("/usr/share/nginx/bench-error-pages")
+    startup_page_template = Template.from_path(_TEMPLATES / "startup_page.html.template")
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -368,9 +371,11 @@ class NginxManager:
         self._unvalidated_privileged: dict[Path, str | None] = {}
 
     def is_installed(self) -> bool:
-        return which("nginx") is not None
+        """Whether nginx is installed."""
+        return HostPlatform().get_executable_path("nginx") is not None
 
     def install(self) -> None:
+        """Install nginx if it is missing."""
         if not self.is_installed():
             get_package_manager().install("nginx")
 
@@ -379,8 +384,8 @@ class NginxManager:
         if self.has_passwordless_sudo:
             return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
-        systemctl = which("systemctl") or "/bin/systemctl"
-        nginx = which("nginx") or "/usr/sbin/nginx"
+        systemctl = HostPlatform().get_executable_path("systemctl") or "/bin/systemctl"
+        nginx = HostPlatform().get_executable_path("nginx") or "/usr/sbin/nginx"
         install_sudoers_grant(
             self.bench.config_path / "nginx",
             bench_user,
@@ -398,10 +403,11 @@ class NginxManager:
     @property
     def has_passwordless_sudo(self) -> bool:
         """Whether the nginx sudoers grant is active."""
-        nginx = which("nginx") or "/usr/sbin/nginx"
+        nginx = HostPlatform().get_executable_path("nginx") or "/usr/sbin/nginx"
         return has_passwordless_sudo_for([nginx, "-t"])
 
     def generate_config(self, ssl_ready: bool = False) -> None:
+        """Write the bench nginx config and error pages."""
         nginx_dir = self.bench.config_path / "nginx"
         nginx_dir.mkdir(parents=True, exist_ok=True)
         self._write_error_pages(nginx_dir)
@@ -419,14 +425,15 @@ class NginxManager:
     def config_lock(self) -> Iterator[None]:
         """Serialize nginx config changes across benches, from the first write to the reload.
         Every bench shares one nginx, so `nginx -t` must not see another bench's untested files."""
-        from pilot.utils import benches_dir
+        from pilot.core.server import Server
 
-        benches_dir().mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(benches_dir() / "nginx"):
+        Server().benches_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(Server().benches_dir / "nginx"):
             yield
 
     @contextmanager
     def _render_lock(self) -> Iterator[None]:
+        """Hold the config lock while rendering."""
         # The domain provider is a subprocess, so ask it before every bench waits on the lock.
         # Removing a bench's routes renders nothing, so it never depends on the provider.
         self._renderer.get_proxy_servers()
@@ -454,6 +461,7 @@ class NginxManager:
             self.install_config()
 
     def reload_for_site_change(self) -> None:
+        """Regenerate and reload nginx after a site change on a production bench."""
         if not self.bench.config.production.enabled or not self.is_installed():
             return
         print("Updating nginx configuration...")
@@ -461,15 +469,16 @@ class NginxManager:
         self.apply_config()
 
     def _write_error_pages(self, nginx_dir: Path) -> None:
+        """Write the error pages."""
         error_dir = nginx_dir / "error_pages"
         error_dir.mkdir(parents=True, exist_ok=True)
         (error_dir / "starting.html").write_text(
-            _STARTUP_PAGE_TEMPLATE.render(
+            self.startup_page_template.render(
                 title="Waiting for your site", message="Your site is being prepared."
             )
         )
         (error_dir / "reconnecting.html").write_text(
-            _STARTUP_PAGE_TEMPLATE.render(
+            self.startup_page_template.render(
                 title="Reconnecting", message="The server is starting or recovering."
             )
         )
@@ -487,8 +496,8 @@ class NginxManager:
             self._write_config_file(catchall, self._renderer.generate_server_config(error_dir))
             return
 
-        catchall_conf = default_nginx_config_dir() / "00-bench-default.conf"
-        content = self._renderer.generate_server_config(_SHARED_ERROR_DIR)
+        catchall_conf = HostPlatform.nginx_config_dir / "00-bench-default.conf"
+        content = self._renderer.generate_server_config(self.shared_error_dir)
         previous = catchall_conf.read_text() if catchall_conf.exists() else None
         if content != previous:
             self._install_privileged_default_server(catchall_conf, content, previous)
@@ -497,24 +506,25 @@ class NginxManager:
         # nginx rejects a duplicate, so drop it and let ours win.
         default_site = Path("/etc/nginx/sites-enabled/default")
         if default_site.exists() or default_site.is_symlink():
-            run_command(_privileged(["rm", "-f", str(default_site)]))
+            run_command(Privileges.get_command(["rm", "-f", str(default_site)]))
 
     def _install_privileged_default_server(
         self, catchall_conf: Path, content: str, previous: str | None
     ) -> None:
+        """Install the default server that answers unknown hosts."""
         staging = self.bench.config_path / "nginx"
         for code, (title, message) in ERROR_PAGES.items():
             staged = staging / f"_catchall_{code}.html"
             staged.write_text(render_error_html(code, title, message))
             run_command(
-                _privileged(
+                Privileges.get_command(
                     [
                         "install",
                         "-D",
                         "-m",
                         "644",
                         str(staged),
-                        str(_SHARED_ERROR_DIR / f"{code}.html"),
+                        str(self.shared_error_dir / f"{code}.html"),
                     ]
                 )
             )
@@ -537,6 +547,7 @@ class NginxManager:
         self._write_config_file(modsec_dir / "main.conf", self._modsec.render_main(modsec_dir))
 
     def _write_config_file(self, path: Path, content: str) -> None:
+        """Write a config file and remember the old one until nginx accepts it."""
         with exclusive_file_lock(path):
             if path in self._unvalidated:
                 previous = self._unvalidated[path][0]
@@ -547,6 +558,7 @@ class NginxManager:
 
     @contextmanager
     def _restore_on_failure(self) -> Iterator[None]:
+        """Restore the unvalidated files when the block fails."""
         try:
             yield
         except BaseException:
@@ -566,20 +578,22 @@ class NginxManager:
         self._unvalidated.clear()
         for path, previous in self._unvalidated_privileged.items():
             if previous is None:
-                run_command(_privileged(["rm", "-f", str(path)]))
+                run_command(Privileges.get_command(["rm", "-f", str(path)]))
             else:
                 self._stage_and_copy(previous, path)
         self._unvalidated_privileged.clear()
 
     @property
     def config_dir(self) -> Path:
+        """The nginx config directory."""
         # Path("") is truthy (no __bool__ override), so `or` alone never falls
         # back here - compare explicitly against the empty-config sentinel.
         configured = self.bench.config.nginx.config_dir
-        return configured if configured != Path("") else default_nginx_config_dir()
+        return configured if configured != Path("") else HostPlatform.nginx_config_dir
 
     @property
     def include_path(self) -> Path:
+        """The shared include file."""
         return self.bench.config_path / "nginx" / "include.conf"
 
     @property
@@ -587,23 +601,24 @@ class NginxManager:
         """True when the installer's 00-pilot.conf already globs this bench in,
         so publishing a vhost needs no privileges at all."""
         try:
-            directives = _PILOT_INCLUDE.read_text()
+            directives = self.pilot_include.read_text()
         except OSError:
             return False
         patterns = re.findall(r"^\s*include\s+([^;]+);", directives, re.MULTILINE)
         return any(fnmatch(str(self.include_path), pattern.strip()) for pattern in patterns)
 
     def install_config(self) -> None:
+        """Link the bench config into nginx."""
         nginx_dir = self.config_dir
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
 
         # A symlink from before the shared include would load the same vhost
         # twice, so it goes either way.
         if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(_privileged(["unlink", str(symlink_path)]))
+            run_command(Privileges.get_command(["unlink", str(symlink_path)]))
         if not self.has_shared_include:
             self._prune_dangling_symlinks(nginx_dir)
-            run_command(_privileged(["ln", "-s", str(self.include_path), str(symlink_path)]))
+            run_command(Privileges.get_command(["ln", "-s", str(self.include_path), str(symlink_path)]))
         self._set_worker_user()
         if self.bench.config.waf.enabled:
             self._ensure_modsecurity_module()
@@ -618,10 +633,10 @@ class NginxManager:
         grant carried the enable verb keeps its running nginx, and the failure
         is reported rather than ending the deploy.
         """
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return
         try:
-            run_command(service_enable_command("nginx"))
+            run_command(SystemService("nginx").get_command("enable"))
         except CommandError as error:
             logging.warning("Could not enable nginx at boot: %s", error)
 
@@ -636,17 +651,18 @@ class NginxManager:
         module_path = WafManager.module_path()
         if module_path is None:
             return
-        original = _NGINX_CONF.read_text()
-        self._stage_and_copy(f"load_module {module_path};\n" + original, _NGINX_CONF)
+        original = self.nginx_conf.read_text()
+        self._stage_and_copy(f"load_module {module_path};\n" + original, self.nginx_conf)
 
     @staticmethod
     def _module_already_loaded() -> bool:
+        """Whether nginx.conf already loads ModSecurity."""
         try:
-            if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
+            if "ngx_http_modsecurity_module" in NginxManager.nginx_conf.read_text():
                 return True
         except OSError:
             return True
-        for modules_dir in _MODULE_DIRS:
+        for modules_dir in NginxManager.module_dirs:
             if modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir()):
                 return True
         return False
@@ -659,7 +675,7 @@ class NginxManager:
             return
         for entry in nginx_dir.iterdir():
             if entry.is_symlink() and not entry.exists():
-                run_command(_privileged(["unlink", str(entry)]))
+                run_command(Privileges.get_command(["unlink", str(entry)]))
 
     def _reload_or_rollback(self, symlink_path: Path) -> None:
         """Reload, or unpublish this bench when no config is left for it, then re-raise."""
@@ -676,20 +692,20 @@ class NginxManager:
             if self.include_path.exists():
                 self.include_path.rename(self.include_path.with_name("include.conf.broken"))
         elif symlink_path.exists() or symlink_path.is_symlink():
-            run_command(_privileged(["unlink", str(symlink_path)]))
+            run_command(Privileges.get_command(["unlink", str(symlink_path)]))
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""
         owner = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
         directive = f"user {owner};"
-        original = _NGINX_CONF.read_text()
-        if _USER_DIRECTIVE.search(original):
-            updated = _USER_DIRECTIVE.sub(directive, original, count=1)
+        original = self.nginx_conf.read_text()
+        if self.user_directive.search(original):
+            updated = self.user_directive.sub(directive, original, count=1)
         else:
             updated = directive + "\n" + original
         if updated == original:
             return
-        self._stage_and_copy(updated, _NGINX_CONF)
+        self._stage_and_copy(updated, self.nginx_conf)
 
     def uninstall_config(self) -> None:
         """Take this bench's vhost out of nginx and reload. Certs are kept."""
@@ -698,24 +714,27 @@ class NginxManager:
             self.reload()
 
     def reload(self) -> None:
+        """Test and reload nginx; restore the old files when the test fails."""
         try:
-            run_command(_privileged(["nginx", "-t"]), timeout=10)
+            run_command(Privileges.get_command(["nginx", "-t"]), timeout=10)
         except CommandError:
             self._restore_unvalidated()
             raise
         self._unvalidated.clear()
         self._unvalidated_privileged.clear()
-        if not is_linux():
+        if not HostPlatform().is_linux:
             run_command(["nginx", "-s", "reload"])
             return
         # reload needs a running nginx; a fresh install may not be started yet.
-        action = "reload" if service_running("nginx") else "start"
-        run_command(service_command(action, "nginx"))
+        service = SystemService("nginx")
+        run_command(service.get_command("reload" if service.is_running else "start"))
 
     def cert_path(self, site: "SiteConfig") -> Path:
+        """The site's certificate file."""
         return live_cert_path(self.bench.certificate_name(site))
 
     def has_cert(self, site: "SiteConfig") -> bool:
+        """Whether the site has a certificate."""
         return cert_files_exist(self.bench.certificate_name(site))
 
     def serviceable_tls_domains(self, site: "SiteConfig", ssl_ready: bool) -> list[str]:
@@ -735,8 +754,10 @@ class NginxManager:
 
     @property
     def admin_cert_path(self) -> Path:
+        """The Admin certificate file."""
         return live_cert_path(self.bench.config.admin.domain)
 
     @property
     def has_admin_cert(self) -> bool:
+        """Whether the Admin has a certificate."""
         return cert_files_exist(self.bench.config.admin.domain)

@@ -12,12 +12,10 @@ from pathlib import Path
 
 import pilot
 from pilot.exceptions import BenchError
-from pilot.utils import cli_root, extract_tar_archive
+from pilot.internal.archive import TarArchive
 
 RELEASE_REPO = "frappe/pilot"
-_RELEASES_API = f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=1"
 _TARBALL_ASSET = "pilot.tar.gz"
-_OBSOLETE_TOP_LEVEL_ENTRIES = ("bench",)
 
 Progress = Callable[[str], None]
 
@@ -25,7 +23,7 @@ Progress = Callable[[str], None]
 def latest_release() -> dict | None:
     """Newest release as {tag, asset_url, body}, or None. Uses the releases list (prereleases included)."""
     request = urllib.request.Request(
-        _RELEASES_API,
+        f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=1",
         headers={"Accept": "application/vnd.github+json", "User-Agent": "pilot"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -66,7 +64,9 @@ def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
 
 def restart_admin_with_new_code(bench_path: Path) -> None:
     """Restart the admin service from a new process, because this process still holds the old modules."""
-    env = {**os.environ, "PYTHONPATH": str(cli_root())}
+    from pilot.core.server import Server
+
+    env = {**os.environ, "PYTHONPATH": str(Server().root)}
     subprocess.run([sys.executable, "-m", "pilot.updater", str(bench_path)], check=True, env=env)
 
 
@@ -85,11 +85,13 @@ def restart_admin(bench_path: Path) -> None:
 
 
 def _upgrade_dev(on_progress: Progress) -> None:
+    """Upgrade a dev checkout."""
     from admin.backend.frontend import ensure_admin_frontend
+    from pilot.core.server import Server
+    from pilot.internal.command import run_command
     from pilot.managers.environment import AdminEnvManager
-    from pilot.utils import run_command
 
-    root = cli_root()
+    root = Server().root
     on_progress("Pulling latest Pilot (dev install)...")
     run_command(["git", "-C", str(root), "pull"], stream_output=True)
     on_progress("Installing admin Python dependencies...")
@@ -99,6 +101,8 @@ def _upgrade_dev(on_progress: Progress) -> None:
 
 
 def _upgrade_release(on_progress: Progress) -> None:
+    """Upgrade to the latest release."""
+    from pilot.core.server import Server
     from pilot.managers.environment import AdminEnvManager
 
     release = latest_release()
@@ -108,7 +112,7 @@ def _upgrade_release(on_progress: Progress) -> None:
         on_progress(f"Already on the latest version ({pilot.__version__}).")
         return
 
-    root = cli_root()
+    root = Server().root
     staging = root.with_name(root.name + ".update")
     on_progress(f"Updating {pilot.__version__} -> {release['tag']}...")
     _reset_dir(staging)
@@ -118,7 +122,7 @@ def _upgrade_release(on_progress: Progress) -> None:
             on_progress("Downloading release...")
             urllib.request.urlretrieve(release["asset_url"], tarball)
             on_progress("Extracting new version...")
-            extract_tar_archive(tarball, staging)
+            TarArchive(tarball).extract_to(staging)
         on_progress("Swapping in the new version...")
         _swap_in(root, staging, on_progress)
     finally:
@@ -141,7 +145,7 @@ def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
     _reset_dir(backup)
     swapped: list[tuple[str, bool]] = []
     try:
-        for name in _OBSOLETE_TOP_LEVEL_ENTRIES:
+        for name in ("bench",):
             target = root / name
             if target.exists() or target.is_symlink():
                 os.rename(target, backup / name)
@@ -165,11 +169,13 @@ def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
 
 
 def _reset_dir(path: Path) -> None:
+    """Remove the path and create an empty directory."""
     _remove(path)
     path.mkdir(parents=True)
 
 
 def _remove(path: Path) -> None:
+    """Remove a file, link or directory."""
     if path.is_symlink() or path.is_file():
         path.unlink()
     elif path.is_dir():

@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 # `tasks` is left out: the task store creates it.
-_BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin")
 
 
 class BenchInitializer:
@@ -25,6 +24,7 @@ class BenchInitializer:
         self._created_directories: list[str] = []
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Set up the bench, rolling back what it created when a step fails."""
         if self.skip_frontend and self.bench.config.production.enabled:
             raise BenchError("Cannot skip frontend setup on a production bench.")
         marker = self.bench.path / ".initializing"
@@ -39,6 +39,7 @@ class BenchInitializer:
         marker.unlink(missing_ok=True)
 
     def _run_steps(self, on_progress: Callable[[str], None]) -> None:
+        """Run each setup step in order."""
         from pilot.managers.environment import PythonEnvManager
 
         python_env_manager = PythonEnvManager(self.bench)
@@ -81,6 +82,7 @@ class BenchInitializer:
             action()
 
     def _rollback(self, on_progress: Callable[[str], None]) -> None:
+        """Undo the recorded setup steps, newest first."""
         if not self._rollback_actions:
             return
         on_progress("\nRolling back changes...")
@@ -93,15 +95,17 @@ class BenchInitializer:
         on_progress("\nRollback complete. bench.toml is preserved - fix the issue and run init again.")
 
     def _remove_bench_dirs(self) -> None:
+        """Remove the directories this setup created."""
         for name in self._created_directories:
             p = self.bench.path / name
             if p.exists() or p.is_symlink():
                 shutil.rmtree(p, ignore_errors=True)
 
     def _create_bench_structure(self) -> None:
+        """Create the bench directories that do not exist yet."""
         self._created_directories = [
             name
-            for name in _BENCH_DIRS
+            for name in ("apps", "sites", "logs", "config", "pids", "env", "admin")
             if not (self.bench.path / name).exists() and not (self.bench.path / name).is_symlink()
         ]
         self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
@@ -111,10 +115,12 @@ class BenchInitializer:
             config.setdefault("server_script_enabled", True)
 
     def _create_virtualenv(self, python_env_manager) -> None:
+        """Install Python and create the virtual environment."""
         python_env_manager.ensure_python()
         python_env_manager.create_venv()
 
     def _install_framework_apps(self, python_env_manager, on_progress: Callable[[str], None]) -> None:
+        """Clone or link the framework apps and install them into the environment."""
         for app in self.bench.init_apps():
             if app.config.is_linked:
                 on_progress(f"  Linking {app.config.name} from {app.config.path}...")
@@ -138,6 +144,7 @@ class BenchInitializer:
         )
 
     def _ensure_admin_password(self) -> None:
+        """Generate and save an admin password when the Admin is on and has none."""
         import secrets
 
         admin = self.bench.config.admin
@@ -154,31 +161,35 @@ class BenchInitializer:
             return
         import secrets
 
-        from pilot.utils import pick_free_port
+        from pilot.internal.host_resources import LocalPort
 
         db = self.bench.config.mariadb if self.bench.config.db_type == "mariadb" else self.bench.config.postgres
         if db.existing or db.root_password:
             return
-        db.port = pick_free_port(db.port)
+        db.port = LocalPort(db.port).get_first_free()
         db.root_password = secrets.token_hex(nbytes=8)
         self.bench.config.write(self.bench.path)
 
     def _configure_redis(self) -> None:
+        """Write the Redis configs."""
         from pilot.managers.redis import RedisManager
 
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
     def _generate_process_config(self) -> None:
+        """Write the process manager config."""
         from pilot.managers.processes.local import ProcessManager
 
         ProcessManager.for_bench(self.bench).write_config()
 
     def _ensure_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
+        """Build the Admin frontend if it is missing."""
         from admin.backend.frontend import ensure_admin_frontend
 
         ensure_admin_frontend(on_progress)
 
     def _install_system_packages(self) -> None:
+        """Install the system packages the bench needs."""
         from pilot.managers.environment import PythonEnvManager
         from pilot.managers.packages import get_package_manager
         from pilot.managers.redis import RedisManager
@@ -198,6 +209,7 @@ class BenchInitializer:
         PythonEnvManager(self.bench).ensure_python()
 
     def _provision_or_verify(self, manager, label: str) -> None:
+        """Provision a new database server or check the credentials of an existing one."""
         if not manager.config.existing:
             manager.provision()
             return
@@ -211,14 +223,15 @@ class BenchInitializer:
             )
 
     def _install_build_headers(self, pkg) -> None:
+        """Install the build headers that Python packages need on Linux."""
         # frappe imports mysqlclient in its __init__.py for every engine, so the
         # MariaDB client headers are always required; postgres benches additionally
         # need libpq headers for psycopg. install.sh provisions them once for the
         # whole host, so pilot init only ever verifies them.
         from pilot.exceptions import BenchError
-        from pilot.managers.platform import is_linux
+        from pilot.managers.platform import HostPlatform
 
-        if not is_linux():
+        if not HostPlatform().is_linux:
             return
         postgres = self.bench.config.db_type == "postgres"
         packages = ["build-essential", "pkg-config", "git", "python3-dev", "libmariadb-dev"]
@@ -232,11 +245,13 @@ class BenchInitializer:
             )
 
     def _postgres_manager(self):
+        """The PostgreSQL manager for this bench."""
         from pilot.managers.database import PostgresManager
 
         return PostgresManager(self.bench.config.postgres)
 
     def _mariadb_manager(self):
+        """The MariaDB manager for this bench."""
         from pilot.managers.database import MariaDBManager
 
         return MariaDBManager(self.bench.config.mariadb)

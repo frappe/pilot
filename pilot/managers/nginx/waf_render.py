@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from pilot.managers.waf import shared_modsec_dir
 
@@ -10,39 +10,42 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
-_WAF_FIELD_VARS = {
-    "uri_path": "REQUEST_FILENAME",
-    "uri_full": "REQUEST_URI",
-    "query": "QUERY_STRING",
-    "method": "REQUEST_METHOD",
-    "source_ip": "REMOTE_ADDR",
-    "user_agent": "REQUEST_HEADERS:User-Agent",
-    "host": "REQUEST_HEADERS:Host",
-}
-_WAF_OPERATORS = {
-    "is": "@streq",
-    "is_not": "@streq",
-    "contains": "@contains",
-    "not_contains": "@contains",
-    "starts_with": "@beginsWith",
-    "matches": "@rx",
-}
-_WAF_NEGATED_OPERATORS = {"is_not", "not_contains"}
-_WAF_ACTION_DIRECTIVES = {
-    "block": "deny,status:403,log",
-    "log": "pass,log,auditlog",
-    "skip": "pass,ctl:ruleEngine=Off",
-}
 
 
 class ModSecurityRenderer:
+    waf_field_vars: ClassVar[dict[str, str]] = {
+        "uri_path": "REQUEST_FILENAME",
+        "uri_full": "REQUEST_URI",
+        "query": "QUERY_STRING",
+        "method": "REQUEST_METHOD",
+        "source_ip": "REMOTE_ADDR",
+        "user_agent": "REQUEST_HEADERS:User-Agent",
+        "host": "REQUEST_HEADERS:Host",
+    }
+    waf_operators: ClassVar[dict[str, str]] = {
+        "is": "@streq",
+        "is_not": "@streq",
+        "contains": "@contains",
+        "not_contains": "@contains",
+        "starts_with": "@beginsWith",
+        "matches": "@rx",
+    }
+    waf_negated_operators = frozenset({"is_not", "not_contains"})
+    waf_action_directives: ClassVar[dict[str, str]] = {
+        "block": "deny,status:403,log",
+        "log": "pass,log,auditlog",
+        "skip": "pass,ctl:ruleEngine=Off",
+    }
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
     def modsec_dir(self) -> Path:
+        """The ModSecurity config directory."""
         return self.bench.config_path / "modsecurity"
 
     def render_main(self, modsec_dir: Path) -> str:
+        """The main ModSecurity config."""
         return (
             f"Include {modsec_dir}/modsecurity.conf\n"
             f"Include {shared_modsec_dir()}/crs-setup.conf\n"
@@ -53,6 +56,7 @@ class ModSecurityRenderer:
         )
 
     def render_engine(self, waf: "WafConfig") -> str:
+        """The ModSecurity engine config."""
         from pilot.config import parse_nginx_size
 
         audit_log = self.bench.path / "logs" / "modsec_audit.log"
@@ -81,6 +85,7 @@ class ModSecurityRenderer:
 
     @staticmethod
     def render_overrides(waf: "WafConfig") -> str:
+        """The CRS paranoia and threshold overrides."""
         lines = [
             f'SecAction "id:1000,phase:1,pass,nolog,'
             f"setvar:tx.blocking_paranoia_level={waf.paranoia},"
@@ -102,16 +107,18 @@ class ModSecurityRenderer:
 
     @staticmethod
     def render_exclusions(waf: "WafConfig") -> str:
+        """The rule exclusions."""
         return "\n".join(waf.exclusions) + ("\n" if waf.exclusions else "")
 
     @classmethod
     def render_custom_rules(cls, waf: "WafConfig") -> str:
+        """The enabled custom rules."""
         blocks = []
         for index, rule in enumerate(waf.custom_rules):
             if not rule.enabled or not rule.conditions:
                 continue
             base_id = 100000 + index * 100
-            action = _WAF_ACTION_DIRECTIVES[rule.action]
+            action = cls.waf_action_directives[rule.action]
             msg = f"msg:'Custom rule: {rule.name or 'unnamed'}'"
             if rule.match == "any":
                 blocks.append(cls._render_any_rule(rule, base_id, action, msg))
@@ -121,21 +128,23 @@ class ModSecurityRenderer:
 
     @staticmethod
     def _condition_var_op(cond: "WafCondition") -> tuple[str, str]:
+        """The ModSecurity variable and operator of a condition."""
         if cond.field == "header":
             variable = f"REQUEST_HEADERS:{cond.header_name}"
         else:
-            variable = _WAF_FIELD_VARS[cond.field]
-        negate = "!" if cond.operator in _WAF_NEGATED_OPERATORS else ""
+            variable = ModSecurityRenderer.waf_field_vars[cond.field]
+        negate = "!" if cond.operator in ModSecurityRenderer.waf_negated_operators else ""
         if cond.field == "source_ip" and cond.operator in ("is", "is_not"):
             operator = "@ipMatch"
             value = ",".join(entry.strip() for entry in cond.value.split(","))
         else:
-            operator = _WAF_OPERATORS[cond.operator]
+            operator = ModSecurityRenderer.waf_operators[cond.operator]
             value = cond.value
         return variable, f"{negate}{operator} {value}"
 
     @classmethod
     def _render_all_rule(cls, rule: "WafRule", base_id: int, action: str, msg: str) -> str:
+        """A chained rule that matches when every condition holds."""
         conditions = rule.conditions
         lines = []
         for position, cond in enumerate(conditions):
@@ -153,6 +162,7 @@ class ModSecurityRenderer:
 
     @classmethod
     def _render_any_rule(cls, rule: "WafRule", base_id: int, action: str, msg: str) -> str:
+        """Rules that match when any condition holds."""
         lines = []
         for position, cond in enumerate(rule.conditions):
             variable, operator_arg = cls._condition_var_op(cond)

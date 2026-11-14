@@ -10,9 +10,12 @@ from pilot.exceptions import AppValidationError
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
-_EXAMPLE_SPECIFIER = ">=16.0.0,<17.0.0"
 
-_REQUIRED_APPS_AST_SCRIPT = """
+class DependencyDeclarationsCheck:
+    """Ensure hooks and pyproject.toml have sane dependency requirements."""
+
+    example_specifier = ">=16.0.0,<17.0.0"
+    required_apps_ast_script = """
 import ast, json, sys
 
 req = json.load(sys.stdin)
@@ -45,11 +48,8 @@ for node in ast.walk(tree):
 print(json.dumps({"required_apps": required_apps}))
 """
 
-
-class DependencyDeclarationsCheck:
-    """Ensure hooks and pyproject.toml have sane dependency requirements."""
-
     def run(self, app: "App") -> None:
+        """Raise when the app uses apps it does not declare."""
         if app.module_name == "frappe":
             return  # the framework itself has nothing to declare a dependency on
 
@@ -59,7 +59,7 @@ class DependencyDeclarationsCheck:
                 f"'{app.config.name}' must declare the frappe versions it supports in pyproject.toml.\n"
                 "Add:\n"
                 "  [tool.bench.frappe-dependencies]\n"
-                f'  frappe = "{_EXAMPLE_SPECIFIER}"'
+                f'  frappe = "{self.example_specifier}"'
             )
         self._check_version_specifiers(app, declared)
 
@@ -70,7 +70,7 @@ class DependencyDeclarationsCheck:
             raise AppValidationError(
                 f"'{app.config.name}' requires {missing} in hooks.py, but pyproject.toml's "
                 "[tool.bench.frappe-dependencies] doesn't declare them.\n"
-                f'Add one entry per app, e.g. {missing[0]} = "{_EXAMPLE_SPECIFIER}"'
+                f'Add one entry per app, e.g. {missing[0]} = "{self.example_specifier}"'
             )
 
     def get_hooks_required_apps(self, app: "App") -> list[str]:
@@ -80,7 +80,7 @@ class DependencyDeclarationsCheck:
             return []
 
         bench_python = get_bench_python(app)
-        data = run_in_bench(bench_python, _REQUIRED_APPS_AST_SCRIPT, {"path": str(hooks_path)})
+        data = run_in_bench(bench_python, self.required_apps_ast_script, {"path": str(hooks_path)})
         return data.get("required_apps", [])
 
     def get_frappe_dependencies(self, app: "App") -> dict[str, str]:
@@ -97,7 +97,7 @@ class DependencyDeclarationsCheck:
             raise AppValidationError(
                 f"'{app.config.name}' has an invalid [tool.bench.frappe-dependencies] in "
                 f"pyproject.toml: expected a table of versions, got {type(declared).__name__}.\n"
-                f'Use one entry per app, e.g. frappe = "{_EXAMPLE_SPECIFIER}"'
+                f'Use one entry per app, e.g. frappe = "{self.example_specifier}"'
             )
         return {name: str(specifier) for name, specifier in declared.items()}
 
@@ -109,7 +109,7 @@ class DependencyDeclarationsCheck:
                 raise AppValidationError(
                     f"'{app.config.name}' declares '{name}' with no version in pyproject.toml's "
                     "[tool.bench.frappe-dependencies].\n"
-                    f'Pin the versions it supports, e.g. {name} = "{_EXAMPLE_SPECIFIER}"'
+                    f'Pin the versions it supports, e.g. {name} = "{DependencyDeclarationsCheck.example_specifier}"'
                 )
             try:
                 SpecifierSet(specifier)
@@ -117,5 +117,5 @@ class DependencyDeclarationsCheck:
                 raise AppValidationError(
                     f"'{app.config.name}' declares an invalid version for '{name}' in "
                     f"pyproject.toml's [tool.bench.frappe-dependencies]: {specifier!r} ({exc}).\n"
-                    f'Use comma-separated PEP 440 ranges, e.g. {name} = "{_EXAMPLE_SPECIFIER}"'
+                    f'Use comma-separated PEP 440 ranges, e.g. {name} = "{DependencyDeclarationsCheck.example_specifier}"'
                 ) from exc

@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from pilot.exceptions import BenchError
+from pilot.internal.command import run_command
 from pilot.managers.cron import CronManager
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
@@ -20,16 +21,10 @@ from pilot.managers.processes.base import (
 )
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
-from pilot.utils import cli_root, run_command
-
-_BOOT_JOB = "supervisord-boot"
-# Above the longest stop timeout a program gets, the lite runner's job drain.
-_SHUTDOWN_TIMEOUT = 900
-# `group:program   RUNNING   pid 123, uptime 0:01:02`
-_STATUS_LINE = re.compile(r"^(?P<program>\S+)\s+(?P<state>\S+)(?:\s+pid (?P<pid>\d+),)?")
 
 
 def is_redis(pd: ProcessDefinition) -> bool:
+    """Whether the process is a Redis server."""
     return pd.app is None and pd.name.startswith("redis")
 
 
@@ -38,6 +33,7 @@ _COMMENT = re.compile(r"(?<=\s)([;#])")
 
 
 def _command(argv: list[str]) -> str:
+    """The command line for a supervisor program."""
     # shlex quotes each argument holding `;` or `#`, so `'\;'` steps out of the quotes for it.
     # supervisord also expands %(name)s in every value.
     return _COMMENT.sub(r"'\\\1'", shlex.join(argv)).replace("%", "%%")
@@ -62,6 +58,7 @@ class SupervisorRenderer(ServiceRenderer):
 
     @override
     def render(self, pd: ProcessDefinition) -> str:
+        """The supervisor program section of a process."""
         directory = f"directory={pd.working_dir}\n" if pd.working_dir else ""
         pairs = [f"{key}={_env_value(pd.name, key, value)}" for key, value in pd.env.items()]
         env = f"environment={','.join(pairs)}\n" if pairs else ""
@@ -82,6 +79,7 @@ class SupervisorRenderer(ServiceRenderer):
         )
 
     def render_supervisord_conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
+        """The supervisord config."""
         # A group stops all its programs at once, and `update` restarts every program of a group
         # whose list changed. So redis and app programs get their own groups.
         redis = [pd for pd in defs if is_redis(pd)]
@@ -119,9 +117,11 @@ class SupervisorRenderer(ServiceRenderer):
         )
 
     def get_program_name(self, name: str) -> str:
+        """The supervisor program name."""
         return f"{self.bench_name}-{name.replace('_', '-')}"
 
     def _group(self, name: str, items: list[ProcessDefinition], extra: str = "") -> str:
+        """A supervisor group section."""
         if not items:
             return ""
         return f"[group:{name}]\nprograms={','.join(self.get_program_name(pd.name) for pd in items)}\n{extra}\n"
@@ -130,12 +130,21 @@ class SupervisorRenderer(ServiceRenderer):
 class SupervisorProcessManager(ManagedProcessManager):
     """Manages bench processes via a bench-owned supervisord instance (no sudo required)."""
 
+    # Above the longest stop timeout a program gets, the lite runner's job drain.
+    shutdown_timeout = 900
+
+    boot_job = "supervisord-boot"
+    # `group:program   RUNNING   pid 123, uptime 0:01:02`
+    status_line = re.compile(r"^(?P<program>\S+)\s+(?P<state>\S+)(?:\s+pid (?P<pid>\d+),)?")
+
     @property
     def supervisor_dir(self) -> Path:
+        """The supervisor directory."""
         return self.bench.config_path / "services"
 
     @property
     def supervisor_conf_path(self) -> Path:
+        """The supervisord config file."""
         return self.supervisor_dir / "supervisord.conf"
 
     @property
@@ -145,31 +154,40 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @property
     def supervisor_sock(self) -> Path:
+        """The supervisord socket."""
         return self.supervisor_dir / "supervisord.sock"
 
     @property
     def supervisor_pid(self) -> Path:
+        """The supervisord PID file."""
         return self.supervisor_dir / "supervisord.pid"
 
     @property
     def workload_group(self) -> str:
+        """The workload group name."""
         return self.bench.config.name
 
     @property
     def admin_group(self) -> str:
+        """The Admin group name."""
         return f"{self.bench.config.name}-admin"
 
     @property
     def apps_group(self) -> str:
+        """The app processes group name."""
         return f"{self.bench.config.name}-apps"
 
     @property
     def redis_group(self) -> str:
+        """The Redis group name."""
         return f"{self.bench.config.name}-redis"
 
     @override
     def write_config(self) -> None:
-        AdminEnvManager(cli_root()).ensure()
+        """Write the supervisord config and the configs the processes need."""
+        from pilot.core.server import Server
+
+        AdminEnvManager(Server().root).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
         GunicornManager(self.bench).generate_admin_config()
@@ -179,6 +197,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def check_config(self) -> None:
+        """Raise when the config cannot be rendered."""
         self.get_config_text()
 
     def get_config_text(self) -> str:
@@ -190,23 +209,27 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def install_config(self) -> None:
+        """Install the cron job that starts supervisord at boot."""
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         # The bench owns its supervisord, so nothing else starts it after a reboot.
-        CronManager(self.bench.path).set_schedule(_BOOT_JOB, "@reboot", self._boot_command())
+        CronManager(self.bench.path).set_schedule(self.boot_job, "@reboot", self._boot_command())
 
     def _boot_command(self) -> str:
+        """The command that starts supervisord at boot."""
         supervisord = shutil.which("supervisord") or "supervisord"
         log_file = self.bench.logs_path / "supervisord-boot.log"
         return f"{shlex.quote(supervisord)} -c {shlex.quote(str(self.supervisor_conf_path))} >> {shlex.quote(str(log_file))} 2>&1"
 
     @override
     def reload_manager_config(self) -> None:
+        """Make supervisord reread its config."""
         if self.is_alive():
             run_command([*self._supervisorctl(), "reread"])
             run_command([*self._supervisorctl(), "update"])
 
     @override
     def ensure_ready(self) -> None:
+        """Start supervisord, or make it reread its config."""
         if self.is_alive():
             run_command([*self._supervisorctl(), "reread"])
             run_command([*self._supervisorctl(), "update"])
@@ -215,6 +238,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def apply_unit_action(self, action: str, role: UnitGroup) -> None:
+        """Run an action on a group of programs."""
         # stop/admin-restart are no-ops when the daemon is down to avoid supervisorctl errors.
         if (action == "stop" or (action == "restart" and role is UnitGroup.ADMIN)) and not self.is_alive():
             return
@@ -227,6 +251,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def are_units_running(self, role: UnitGroup) -> bool:
+        """Whether a group of programs runs."""
         if not self.is_configured() or not self.is_alive():
             return False
         group = self.admin_group if role is UnitGroup.ADMIN else self.workload_group
@@ -239,6 +264,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def get_process_states(self, definitions: list[ProcessDefinition]) -> dict[str, ProcessState]:
+        """The state of each process."""
         if not self.is_alive():
             return {}
         loaded = self.loaded_programs
@@ -250,7 +276,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         result = subprocess.run([*self._supervisorctl(), "status", *programs], capture_output=True, text=True)
         states = {}
         for line in result.stdout.splitlines():
-            match = _STATUS_LINE.match(line)
+            match = self.status_line.match(line)
             if match and match["program"] in programs:
                 pid = int(match["pid"]) if match["pid"] else None
                 states[programs[match["program"]]] = ProcessState(match["state"], pid)
@@ -258,6 +284,7 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     @override
     def restart_processes(self, definitions: list[ProcessDefinition]) -> None:
+        """Restart the processes."""
         loaded = self.loaded_programs
         run_command([*self._supervisorctl(), "restart", *(self._program(definition, loaded) for definition in definitions)])
 
@@ -276,9 +303,11 @@ class SupervisorProcessManager(ManagedProcessManager):
         return f"{group}:{program}"
 
     def is_configured(self) -> bool:
+        """Whether the supervisord config exists."""
         return self.supervisor_conf_path.exists()
 
     def is_alive(self) -> bool:
+        """Whether supervisord runs."""
         if not self.supervisor_pid.exists():
             return False
         try:
@@ -290,22 +319,24 @@ class SupervisorProcessManager(ManagedProcessManager):
 
     def shutdown(self) -> None:
         """Tear down everything, including the admin group and the daemon."""
-        CronManager(self.bench.path).remove_schedule(_BOOT_JOB)
+        CronManager(self.bench.path).remove_schedule(self.boot_job)
         if not self.is_alive():
             return
 
         run_command([*self._supervisorctl(), "shutdown"])
         # shutdown returns at once, and the programs hold their ports until supervisord exits.
-        deadline = time.monotonic() + _SHUTDOWN_TIMEOUT
+        deadline = time.monotonic() + self.shutdown_timeout
         while self.is_alive():
             if time.monotonic() > deadline:
-                raise BenchError(f"supervisord did not exit within {_SHUTDOWN_TIMEOUT} seconds of shutdown.")
+                raise BenchError(f"supervisord did not exit within {self.shutdown_timeout} seconds of shutdown.")
             time.sleep(0.5)
 
     def _supervisorctl(self) -> list[str]:
+        """The supervisorctl command for this bench."""
         return ["supervisorctl", "-c", str(self.supervisor_conf_path)]
 
     def get_targets(self, role: UnitGroup) -> list[str]:
+        """The supervisorctl targets of a group."""
         if role is UnitGroup.ADMIN:
             return [f"{self.admin_group}:*"]
         # supervisorctl rejects a group it has not loaded: the apps group exists only while an app

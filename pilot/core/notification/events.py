@@ -53,8 +53,6 @@ _UNREPORTED_COMMANDS = frozenset(
 )
 
 
-_SITE_CREATING_COMMANDS = frozenset({"new-site", "new-site-from-backup"})
-
 # The event a successful task raises, its title, and whether the bench's own feed shows it.
 # Only long operations a user waits for go to the feed; the rest go to webhooks only.
 _SUCCESS_EVENTS = {
@@ -113,9 +111,7 @@ def raise_event(bench: "Bench", *, feed: bool = True, **event: typing.Any) -> No
             logging.warning("Notification skipped for %s: %s", event.get("event"), exc)
     payload = {**event, "title": title, "message": event.get("message") or title, "context": context}
     try:
-        from pilot.core.alerts import notify
-
-        notify(bench, payload)
+        bench.notifier.send(payload)
     except Exception as exc:
         logging.warning("Alert sinks skipped for %s: %s", event.get("event"), exc)
 
@@ -156,6 +152,7 @@ def task_succeeded(bench_root: Path, meta: dict) -> None:
 
 
 def _task_event(bench_root: Path, meta: dict, **event: typing.Any) -> None:
+    """Add a notification for a task event; log a failure."""
     from pilot.core.bench import Bench
 
     command = str(meta.get("command") or "")
@@ -184,7 +181,7 @@ def _task_event(bench_root: Path, meta: dict, **event: typing.Any) -> None:
 def record_alert(bench: "Bench", payload: dict) -> bool:
     """Record a sustained alert in the bench's own feed, reporting whether it landed.
 
-    The caller still hands the same payload to `alerts.notify` for the webhook and
+    The caller still hands the same payload to `Notifier.send` for the webhook and
     Central fan-out; this is the copy that stays on the bench. A write that failed
     returns False so the caller leaves the condition unrecorded and tries again on
     the next tick, rather than losing the incident until it clears and recurs."""
@@ -222,7 +219,7 @@ def backups_failing(bench: "Bench", site: str, failures: int) -> None:
 def _task_site(meta: dict) -> str | None:
     """The site a task acts on. Tasks that create a site take it as `name`."""
     args = meta.get("args") or {}
-    if meta.get("command") in _SITE_CREATING_COMMANDS:
+    if meta.get("command") in frozenset({"new-site", "new-site-from-backup"}):
         return args.get("name")
     return args.get("site")
 

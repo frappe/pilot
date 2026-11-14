@@ -29,6 +29,7 @@ class InitCommand(Command):
     ] = False
 
     def run(self) -> None:
+        """Set up the bench."""
         if self.no_dev:
             self.bench.config.install_dev_extra = False
             self.bench.config.write(self.bench.path)

@@ -20,11 +20,13 @@ class FixturesCheck:
 
     @staticmethod
     def _fixture_files(app: "App") -> list[Path]:
+        """The fixture files that are not ignored."""
         ignored = IgnoredPaths(app)
         paths = sorted((module_path(app) / "fixtures").glob("*.json"))
         return [path for path in paths if not ignored.is_ignored(path)]
 
     def run(self, app: "App") -> None:
+        """Raise when a fixture is invalid JSON or cannot be imported."""
         broken = []
         unimportable = []
         for path in self._fixture_files(app):

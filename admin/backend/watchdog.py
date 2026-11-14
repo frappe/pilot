@@ -11,8 +11,6 @@ from flask import Flask
 
 from pilot.managers.task import TaskActivityReader
 
-_WATCHDOG_MAX_POLL_SECONDS = 30.0  # longest single sleep between activity checks
-
 
 @dataclass(frozen=True)
 class AdminProcessOwner:
@@ -21,13 +19,16 @@ class AdminProcessOwner:
 
     @classmethod
     def parent(cls) -> AdminProcessOwner:
+        """The parent process as the owner."""
         return cls(os.getppid(), True)
 
     @classmethod
     def current(cls) -> AdminProcessOwner:
+        """This process as the owner."""
         return cls(os.getpid(), False)
 
     def terminate(self) -> bool:
+        """Stop the owner; return False when it is no longer the same process."""
         if self.parent_owned:
             if os.getppid() != self.pid:
                 return False
@@ -55,6 +56,7 @@ class AdminIdleWatchdog:
         self._last_request = time.monotonic()
 
     def install(self, app: Flask) -> None:
+        """Track requests and start the watch thread."""
         app.before_request(self.request_started)
         app.teardown_request(self.request_finished)
         threading.Thread(
@@ -64,16 +66,19 @@ class AdminIdleWatchdog:
         ).start()
 
     def request_started(self) -> None:
+        """Count a started request."""
         with self._lock:
             self._active_requests += 1
             self._last_request = time.monotonic()
 
     def request_finished(self, _error=None) -> None:
+        """Count a finished request."""
         with self._lock:
             self._active_requests = max(0, self._active_requests - 1)
             self._last_request = time.monotonic()
 
     def check_once(self) -> bool:
+        """Stop the Admin when it is idle; return whether it stopped."""
         if not self._requests_are_idle():
             return False
         if self._tasks_are_active():
@@ -86,20 +91,24 @@ class AdminIdleWatchdog:
             return self._owner.terminate()
 
     def _watch(self) -> None:
-        poll_seconds = min(self._timeout, _WATCHDOG_MAX_POLL_SECONDS)
+        """Check for idleness until the Admin stops."""
+        poll_seconds = min(self._timeout, 30.0)
         while True:
             time.sleep(poll_seconds)
             if self.check_once():
                 return
 
     def _requests_are_idle(self) -> bool:
+        """Whether no request ran for the timeout."""
         with self._lock:
             return self._requests_are_idle_locked()
 
     def _requests_are_idle_locked(self) -> bool:
+        """Whether no request ran for the timeout; the caller holds the lock."""
         return self._active_requests == 0 and time.monotonic() - self._last_request > self._timeout
 
     def _tasks_are_active(self) -> bool:
+        """Whether tasks are active; True when that cannot be read."""
         try:
             return self._activity.read().active
         except Exception:
@@ -112,6 +121,7 @@ def install_idle_watchdog(
     timeout: float,
     owner: AdminProcessOwner,
 ) -> AdminIdleWatchdog:
+    """Install the idle watchdog once and return it."""
     existing = app.extensions.get("bench_admin_idle_watchdog")
     if existing is not None:
         return existing

@@ -13,6 +13,7 @@ class StartTaskWorkerCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
+        """Ask the task worker to start."""
         from pilot.managers.task import TaskWorkerControl
 
         TaskWorkerControl(self.bench.path).request_start()

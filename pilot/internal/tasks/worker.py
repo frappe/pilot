@@ -13,13 +13,12 @@ from pilot.internal.tasks.queue import TaskQueue
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
-_CONTROL_POLL_SECONDS = 0.2
-_ERROR_BACKOFF_SECONDS = 1.0
-_DATABASE_START_TIMEOUT_SECONDS = 120.0
-_DATABASE_POLL_SECONDS = 1.0
-
 
 class TaskWorker:
+    database_poll_seconds = 1.0
+
+    control_poll_seconds = 0.2
+
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = Path(bench_root)
         self._queue = TaskQueue(self._bench_root)
@@ -36,23 +35,29 @@ class TaskWorker:
         )
 
     def start(self) -> None:
+        """Start the worker thread."""
         self._thread.start()
 
     def wake(self) -> None:
+        """Wake the worker to look for queued tasks now."""
         self._wake.set()
 
     def request_drain(self) -> None:
+        """Stop claiming new tasks and let the running one finish."""
         with self._claim_lock:
             self._drain.set()
         self._wake.set()
 
     def join(self, timeout: float | None = None) -> None:
+        """Wait for the worker thread to end."""
         self._thread.join(timeout)
 
     def is_alive(self) -> bool:
+        """Whether the worker thread is running."""
         return self._thread.is_alive()
 
     def _run(self) -> None:
+        """The worker loop: hold the bench worker lock and run queued tasks until drained."""
         lock = self._worker.try_acquire()
         if lock is None:
             return
@@ -74,7 +79,7 @@ class TaskWorker:
         from pilot.core.bench.runtime import BenchRuntime
         from pilot.exceptions import BenchError
 
-        deadline = time.monotonic() + _DATABASE_START_TIMEOUT_SECONDS
+        deadline = time.monotonic() + 120.0
         try:
             bench = Bench(self._bench_root)
             if not bench.is_initialized:
@@ -84,7 +89,7 @@ class TaskWorker:
                 if time.monotonic() >= deadline:
                     logging.warning("The database is not reachable; queued tasks run anyway.")
                     return
-                if self._drain.wait(_DATABASE_POLL_SECONDS):
+                if self._drain.wait(self.database_poll_seconds):
                     return
         except (BenchError, OSError) as error:
             logging.warning("Could not check the database before running tasks: %s", error)
@@ -96,28 +101,30 @@ class TaskWorker:
                 self._work_once(pid)
             except Exception:
                 logging.exception("Task worker cycle failed")
-                self._wake.wait(_ERROR_BACKOFF_SECONDS)
+                self._wake.wait(1.0)
 
     def _work_once(self, pid: int) -> None:
+        """One pass: reconcile processes, then run the next task if nothing blocks."""
         self._wake.clear()
         blocking_task = self._processes.reconcile()
         if blocking_task is not None:
             status = WorkerStatus.DRAINING if self._intent_stopped() else WorkerStatus.RUNNING
             self._write_state(status, pid, blocking_task)
-            self._wake.wait(_CONTROL_POLL_SECONDS)
+            self._wake.wait(self.control_poll_seconds)
             return
         if self._intent_stopped():
             self._write_state(WorkerStatus.STOPPED, pid)
-            self._wake.wait(_CONTROL_POLL_SECONDS)
+            self._wake.wait(self.control_poll_seconds)
             return
         if self._run_next(pid):
             return
         if self._drain.is_set() or self._intent_stopped():
             return
         self._write_state(WorkerStatus.IDLE, pid)
-        self._wake.wait(_CONTROL_POLL_SECONDS)
+        self._wake.wait(self.control_poll_seconds)
 
     def _run_next(self, pid: int) -> bool:
+        """Claim and run the next queued task; False when none is queued."""
         task_id = self._claim_next()
         if task_id is None:
             return False
@@ -139,6 +146,7 @@ class TaskWorker:
         pid: int,
         task_id: str,
     ) -> None:
+        """Wait for the task process to end, recording a drain request while it runs."""
         draining = False
         while True:
             try:
@@ -151,6 +159,7 @@ class TaskWorker:
                     draining = True
 
     def _claim_next(self) -> str | None:
+        """The next queued task id, claimed for running; None when draining or stopped."""
         with self._claim_lock:
             if self._drain.is_set():
                 return None
@@ -160,9 +169,11 @@ class TaskWorker:
                 return self._queue.claim_next()
 
     def _should_drain(self) -> bool:
+        """Whether the worker should stop claiming tasks."""
         return self._drain.is_set() or self._intent_stopped()
 
     def _intent_stopped(self) -> bool:
+        """Whether the stored worker intent is stopped."""
         return self._worker.read_intent() == WorkerIntent.STOPPED
 
     def _write_state(
@@ -171,6 +182,7 @@ class TaskWorker:
         pid: int | None,
         task_id: str | None = None,
     ) -> None:
+        """Write the worker state, skipping a write when nothing changed."""
         state = (status, pid, task_id)
         if state == self._last_state:
             return
@@ -185,6 +197,7 @@ class WorkerRegistry:
         self._signals_installed = False
 
     def start(self, bench_root: Path) -> TaskWorker:
+        """The bench's worker, started if it is not already running."""
         key = Path(bench_root).resolve()
         with self._lock:
             current = self._workers.get(key)
@@ -208,18 +221,21 @@ class WorkerRegistry:
         return self.start(key).is_alive()
 
     def request_drain(self) -> None:
+        """Ask every worker to drain."""
         with self._lock:
             workers = list(self._workers.values())
         for worker in workers:
             worker.request_drain()
 
     def install_signal_handlers(self) -> None:
+        """Drain workers on SIGTERM and SIGINT, then pass the signal on."""
         if self._signals_installed:
             return
         for signum in (signal.SIGTERM, signal.SIGINT):
             previous = signal.getsignal(signum)
 
             def drain(signum, frame, previous=previous):
+                """Drain the workers, then run the earlier handler or the default action."""
                 self.request_drain()
                 if callable(previous):
                     previous(signum, frame)
@@ -235,6 +251,7 @@ class WorkerRegistry:
         self._signals_installed = True
 
     def _terminate_after_drain(self, signum: int) -> None:
+        """Wait for every worker, then send the signal to this process again."""
         with self._lock:
             workers = list(self._workers.values())
         for worker in workers:

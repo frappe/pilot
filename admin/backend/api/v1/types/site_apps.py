@@ -11,6 +11,7 @@ class SiteApp(TypedDict):
     commit: str
     version: str
     repo: str
+    install_unfinished: bool
     has_local_changes: NotRequired[bool]
     is_marketplace: NotRequired[bool]
     missing: NotRequired[bool]

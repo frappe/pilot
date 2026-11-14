@@ -33,7 +33,8 @@ const hardware = computed(() => {
     {
       label: 'Swap',
       icon: 'lucide-layers',
-      value: info.value.swap_total ? formatBytes(info.value.swap_total) : '',
+      // No swap is worth seeing too, so 0 shows as 0 GB instead of hiding the tile.
+      value: info.value.swap_total ? formatBytes(info.value.swap_total) : '0 GB',
     },
     {
       label: 'Disk',

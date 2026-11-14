@@ -9,9 +9,9 @@ from pathlib import Path
 from pilot._vendor.packaging.requirements import InvalidRequirement, Requirement
 from pilot.core.app.validator.base import read_pyproject
 from pilot.exceptions import AppValidationError, CommandError
+from pilot.internal.command import run_command
 from pilot.managers.environment import ensure_uv
-from pilot.managers.platform import add_mysqlclient_flags
-from pilot.utils import run_command
+from pilot.managers.platform import HostPlatform
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
@@ -27,12 +27,13 @@ class DependencyResolutionCheck:
     """
 
     def run(self, app: "App") -> None:
+        """Raise when the app's requirements conflict with the bench environment."""
         python = app.bench.env_path / "bin" / "python"
         if not python.exists():
             return  # no environment to resolve against yet
 
         environment = os.environ.copy()
-        add_mysqlclient_flags(environment)
+        HostPlatform().add_mysqlclient_flags(environment)
         with tempfile.TemporaryDirectory(prefix="pilot-constraints-") as directory:
             constraints = self._write_constraints(app, Path(directory))
             argv = [ensure_uv(), "pip", "install", "--dry-run", "--python", str(python)]
@@ -118,6 +119,7 @@ def _explanation(command_error: str) -> str:
 
 
 def _package_of(constraint_line: str) -> str:
+    """The package name of a constraint line."""
     # rsplit on the exact separator _write_constraints uses: a URL may carry its
     # own '#egg=' fragment, and splitting on that would truncate it.
     return Requirement(constraint_line.rsplit("  # ", 1)[0].strip()).name

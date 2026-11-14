@@ -10,10 +10,11 @@ from pilot.config.monitor import (
     slow_query_log_path,
     system_log_path,
 )
+from pilot.core.server import Server
 from pilot.exceptions import BenchError
-from pilot.managers.platform import is_linux
+from pilot.internal.command import run_command
+from pilot.managers.platform import HostPlatform
 from pilot.managers.systemd_user import SystemdUserMixin, install_user_service, user_service_installed
-from pilot.utils import cli_root, run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -46,7 +47,7 @@ class MonitorConfigurator(SystemdUserMixin):
     def __init__(self, bench: "Bench | None" = None):
         self.bench = bench
         self.unit_name = "pilot-monitor.service"
-        self.monitor_dir = cli_root() / "system" / "monitor"
+        self.monitor_dir = Server().root / "system" / "monitor"
 
     def install(self) -> None:
         """Write, enable and start the service. A no-op when the installed unit is current. A running
@@ -68,35 +69,42 @@ class MonitorConfigurator(SystemdUserMixin):
 
     @property
     def log_path(self) -> Path:
+        """The bench metrics log."""
         return bench_log_path(self._require_bench().config.name)
 
     @property
     def system_log_path(self) -> Path:
+        """The system metrics log."""
         return system_log_path()
 
     @property
     def db_log_path(self) -> Path:
+        """The database metrics log."""
         return db_log_path()
 
     @property
     def slow_query_log_path(self) -> Path:
+        """The slow query log."""
         return slow_query_log_path()
 
     def setup(self) -> None:
-        if not is_linux():
+        """Install the monitor; raise unless the host runs Linux."""
+        if not HostPlatform().is_linux:
             raise BenchError("Monitoring is only supported on linux based machines.")
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _render_unit(self) -> str:
+        """The monitor service unit."""
         from pilot.managers.environment import AdminEnvManager
 
-        root = cli_root()
+        root = Server().root
         return MONITOR_DAEMON_TEMPLATE.format(
             cli_root=root,
             python=AdminEnvManager(root).python,
         )
 
     def _require_bench(self) -> "Bench":
+        """The bench; fail when none was given."""
         assert self.bench is not None, "MonitorConfigurator needs a bench for this operation"
         return self.bench

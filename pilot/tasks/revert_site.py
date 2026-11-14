@@ -16,6 +16,7 @@ class RevertSiteTask(Task):
     site: str
 
     def run(self) -> None:
+        """Revert one site in the migration."""
         operation = self.bench.migrations.get_for_chain_task(
             self.operation_id, self.running_task_id, self.command, {"site": self.site}
         )
@@ -29,6 +30,7 @@ class RevertSiteTask(Task):
     @on_failure
     @on_cancel
     def fail_migration_step(self) -> dict:
+        """The callback args that fail the revert step."""
         return {"operation_id": self.operation_id, "phase": "reverting_sites", "site": self.site}
 
 

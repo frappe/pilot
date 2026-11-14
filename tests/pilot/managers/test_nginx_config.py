@@ -14,6 +14,7 @@ from pilot.managers.nginx import (
     CLOUD_SITE_PREFIX,
     NginxConfigRenderer,
     NginxManager,
+    cert_files_exist,
     vm_hostname_pattern,
 )
 
@@ -721,7 +722,7 @@ def test_production_enables_nginx_at_boot(tmp_path: Path) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
 
     with (
-        patch("pilot.managers.nginx.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.nginx.run_command") as mock_run,
     ):
         manager.enable_at_boot()
@@ -734,7 +735,7 @@ def test_an_older_sudo_grant_does_not_end_the_deploy(tmp_path: Path) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
 
     with (
-        patch("pilot.managers.nginx.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.nginx.run_command", side_effect=CommandError("a password is required")),
     ):
         manager.enable_at_boot()
@@ -788,7 +789,7 @@ def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> Non
 
 def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
-    with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):
+    with patch("pilot.managers.platform.HostPlatform.nginx_config_dir", Path("/etc/nginx/conf.d")):
         assert manager.config_dir == Path("/etc/nginx/conf.d")
 
 
@@ -800,16 +801,12 @@ def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
 
 def test_cert_files_exist_falls_back_to_http_on_failure() -> None:
     """Any failure - cert absent, or sudo denied - renders the vhost HTTP-only."""
-    from pilot.managers.nginx import cert_files_exist
-
     denied = CommandError("Command 'sudo' failed with exit code 1.\nsudo: a password is required")
     with patch("pilot.managers.nginx.run_command", side_effect=denied):
         assert cert_files_exist("site.example.com") is False
 
 
 def test_cert_files_exist_true_when_both_files_present() -> None:
-    from pilot.managers.nginx import cert_files_exist
-
     with patch("pilot.managers.nginx.run_command") as mock_run:
         assert cert_files_exist("site.example.com") is True
     argv = mock_run.call_args.args[0]
@@ -1291,7 +1288,7 @@ def test_nginx_in_sbin_is_found_without_sbin_on_path(tmp_path: Path, monkeypatch
     (sbin / "nginx").write_text("#!/bin/sh\n")
     (sbin / "nginx").chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
-    monkeypatch.setattr("pilot.managers.platform._EXTRA_BIN_DIRS", (str(sbin),))
+    monkeypatch.setattr("pilot.managers.platform.HostPlatform.extra_bin_dirs", (str(sbin),))
 
     assert NginxManager(_make_bench(tmp_path, _BASE_DATA)).is_installed()
 
@@ -1377,7 +1374,7 @@ def _is_locked(lock_file: Path) -> bool:
 def test_a_config_change_holds_the_host_lock_until_nginx_accepts_it(tmp_path: Path, monkeypatch) -> None:
     """Every bench shares one nginx, so no bench may test or reload while another writes."""
     monkeypatch.setattr(NginxManager, "config_lock", _REAL_CONFIG_LOCK)
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: tmp_path / "benches")
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path / "benches")
     manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
     lock_file = tmp_path / "benches" / ".nginx.lock"
     locked_at_reload: list[bool] = []
@@ -1504,7 +1501,7 @@ def _legacy_apply(manager: NginxManager, conf_dir: Path, nginx_test_fails: bool)
     with (
         patch("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", return_value=[]),
         patch.object(NginxManager, "has_shared_include", new_callable=PropertyMock, return_value=False),
-        patch("pilot.managers.nginx.default_nginx_config_dir", return_value=conf_dir),
+        patch("pilot.managers.platform.HostPlatform.nginx_config_dir", conf_dir),
         patch.object(
             manager, "_stage_and_copy", side_effect=lambda content, target: target.write_text(content)
         ),
@@ -1540,7 +1537,7 @@ def test_removing_a_bench_from_nginx_does_not_ask_the_domain_provider(tmp_path: 
     from pilot.exceptions import DomainProviderError
 
     monkeypatch.setattr(NginxManager, "config_lock", _REAL_CONFIG_LOCK)
-    monkeypatch.setattr("pilot.utils.benches_dir", lambda: tmp_path / "benches")
+    monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path / "benches")
     manager = NginxManager(_bench_with_site(tmp_path, _BASE_DATA))
 
     with (

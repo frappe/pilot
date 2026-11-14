@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from flask import current_app, jsonify, request, url_for
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_response, accepted_task_response, error_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
@@ -20,7 +21,7 @@ from admin.backend.api.v1.sites.shared import (
 )
 from admin.backend.middleware import is_bench_scoped, require_scope
 from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.sites import SiteProvider
+from admin.backend.providers.site.listing import SiteProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import (
     BenchError,
@@ -40,15 +41,12 @@ if TYPE_CHECKING:
     from admin.backend.api.v1.types.site_apps import SiteApp
     from pilot.core.app import App
 
-# frappe's CLI prints a traceback, so its reason arrives behind the exception class.
-_EXCEPTION_PREFIX = re.compile(r"^[\w.]+(?:Error|Exception): ")
-_COMMAND_FAILURE = re.compile(r"^Command '.+' (?:failed with exit code -?\d+|timed out)")
-
 
 @sites_bp.get("/<name>/apps")
 @require_scope(site_name)
 def site_apps(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """List the site's apps."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -58,6 +56,7 @@ def site_apps(name: str):
 
     bench = Bench(bench_root)
     provider = AppProvider(bench_root)
+    unfinished = set(bench.site(name).unfinished_installs)
     result: list[SiteApp] = []
     for app_name in site.active_apps:
         entry: SiteApp = {
@@ -68,6 +67,7 @@ def site_apps(name: str):
             "commit": "",
             "version": "",
             "repo": "",
+            "install_unfinished": app_name in unfinished,
         }
         try:
             app = bench.app(app_name)
@@ -101,7 +101,7 @@ def site_apps(name: str):
 def site_marketplace(name: str):
     """The bench app catalog, read-only. Scoped to a site because the bench-wide
     /marketplace/apps needs a bench token, which a managed site does not hold."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -118,7 +118,8 @@ def site_marketplace(name: str):
 @sites_bp.post("/<name>/apps")
 @require_scope(site_name)
 def install_site_app(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue an app install on the site."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     requested, request_error = _requested_install()
@@ -173,8 +174,12 @@ def _frappe_reason(error: Exception, fallback: str) -> str:
     """The last line of a failed frappe command is its reason; the rest is plumbing.
     A command that printed nothing leaves only the wrapper line, which names the bench
     Python - the fallback says the same thing without the path."""
-    reason = _EXCEPTION_PREFIX.sub("", str(error).strip().rsplit("\n", 1)[-1].strip())
-    return fallback if not reason or _COMMAND_FAILURE.match(reason) else reason
+    reason = re.sub(r"^[\w.]+(?:Error|Exception): ", "", str(error).strip().rsplit("\n", 1)[-1].strip())
+    return (
+        fallback
+        if not reason or re.match(r"^Command '.+' (?:failed with exit code -?\d+|timed out)", reason)
+        else reason
+    )
 
 
 def _enable_disabled_app(bench: Bench, site: str, cloned: "App | None") -> str | None:
@@ -221,7 +226,7 @@ def _cloned_app(bench: Bench, app: str, repo: str) -> "App | None":
 @require_scope(site_name)
 def update_site_apps(name: str):  # noqa: C901
     """Update apps installed on this site through Pilot's safeguarded migration flow."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
 
@@ -261,6 +266,7 @@ def update_site_apps(name: str):  # noqa: C901
 
 
 def _requested_update_apps():
+    """The apps to update, or None when the body is invalid."""
     data = request.get_json(silent=True)
     if data is None:
         data = {}
@@ -284,7 +290,7 @@ def _requested_update_apps():
 def site_task(name: str, task_id: str):
     """Poll a task this site started. Scoped because the bench-wide /tasks/<id>
     needs a bench token, and ownership is checked so one site can't read another's."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     reader = TaskReader(bench_root)
     try:
         task = reader.read_task(task_id)
@@ -304,6 +310,7 @@ def site_task(name: str, task_id: str):
 
 
 def _task_operation(bench_root: Path, args: dict):
+    """The migration a task belongs to, if any."""
     operation_id = args.get("operation_id")
     if not isinstance(operation_id, str):
         return None
@@ -314,6 +321,7 @@ def _task_operation(bench_root: Path, args: dict):
 
 
 def _operation_task_data(data: dict, state: str) -> dict:
+    """The task data with the migration state."""
     if state == "completed":
         data.update(status="success", exit_code=0)
     elif state in {"needs_attention", "revert_failed", "reverted"}:
@@ -326,7 +334,8 @@ def _operation_task_data(data: dict, state: str) -> dict:
 @sites_bp.delete("/<name>/apps/<app>")
 @require_scope(site_name)
 def delete_site_app(name: str, app: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Queue an app uninstall from the site."""
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     err = validate_app_name(app)

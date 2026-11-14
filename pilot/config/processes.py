@@ -9,8 +9,10 @@ class ProcessesConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "ProcessesConfig":
+        """The processes config from its TOML table."""
         return cls(disabled=data.get("disabled", []))
 
     def validate(self) -> None:
+        """Raise unless disabled is a list of strings."""
         if not isinstance(self.disabled, list) or not all(isinstance(name, str) for name in self.disabled):
             raise ConfigError("processes.disabled must be a list of process names.")

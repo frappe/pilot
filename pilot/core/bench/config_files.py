@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from pilot.config.common_site_config import read_common_site_config, update_common_site_config
 from pilot.config.mail import CONFIG_KEYS as MAIL_CONFIG_KEYS
 from pilot.config.worker import FRAPPE_QUEUES
-from pilot.core.site.config import config_patch_error, merge_public_config, public_config
+from pilot.core.site.config.public import PublicConfig
 from pilot.exceptions import BenchError, MalformedSiteConfig
 
 if TYPE_CHECKING:
@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 # One process holds one client cache, so lite mode gives it a ceiling.
-_LITE_CLIENT_CACHE_BYTES = 10 * 1024 * 1024
 
 # Keys Pilot writes from bench.toml or other settings; an edit would be overwritten.
 MANAGED_COMMON_SITE_CONFIG_KEYS = frozenset(
@@ -46,6 +45,7 @@ class BenchConfigFiles:
         self.bench = bench
 
     def get_db_root_args(self, db_type: str) -> list[str]:
+        """The bench new-site arguments for the database root user."""
         if db_type == "postgres":
             postgres = self.bench.config.postgres
             return [
@@ -66,13 +66,16 @@ class BenchConfigFiles:
 
     @property
     def postgres_root_password(self) -> str:
+        """The PostgreSQL root password, or the trust placeholder when none is set."""
         return self.bench.config.postgres.root_password or "trust_auth"
 
     def set_maintenance_mode(self, enabled: bool) -> None:
+        """Turn maintenance mode on or off for every site."""
         with update_common_site_config(self.bench.sites_path) as config:
             config["maintenance_mode"] = 1 if enabled else 0
 
     def sync_s3_credentials(self, s3_config: "S3Config") -> None:
+        """Write the backup storage credentials to common_site_config.json."""
         if not (self.bench.sites_path / "common_site_config.json").exists():
             return
 
@@ -89,17 +92,20 @@ class BenchConfigFiles:
         return _editable(read_common_site_config(self.bench.sites_path))
 
     def update_public_common_site_config(self, patch: dict) -> dict:
+        """Apply a patch to the editable common config; refuse keys Pilot manages."""
         if managed := sorted(set(patch) & MANAGED_COMMON_SITE_CONFIG_KEYS):
             raise BenchError(f"Pilot manages {', '.join(managed)}; change it through its own setting.")
         with update_common_site_config(self.bench.sites_path) as config:
-            if error := config_patch_error(config, patch):
+            public = PublicConfig(config)
+            if error := public.get_patch_error(patch):
                 raise BenchError(error)
-            merged = merge_public_config(config, patch)
+            merged = public.merge(patch)
             config.clear()
             config.update(merged)
         return _editable(merged)
 
     def write_common_site_config(self) -> None:
+        """Write the Redis URLs, ports and other managed keys to common_site_config.json."""
         redis = self.bench.config.redis
         redis_cache = f"redis://localhost:{redis.cache_port}"
         with update_common_site_config(self.bench.sites_path) as config:
@@ -117,7 +123,7 @@ class BenchConfigFiles:
                 }
             )
             if self.bench.is_lite_mode:
-                config["client_cache_max_bytes"] = _LITE_CLIENT_CACHE_BYTES
+                config["client_cache_max_bytes"] = 10 * 1024 * 1024
             else:
                 config.pop("client_cache_max_bytes", None)
             self.set_worker_queues(config)
@@ -144,8 +150,9 @@ class BenchConfigFiles:
 
 
 def _editable(config: dict) -> dict:
+    """The config keys a user may see and edit."""
     return {
         key: value
-        for key, value in public_config(config).items()
+        for key, value in PublicConfig(config).visible.items()
         if key not in MANAGED_COMMON_SITE_CONFIG_KEYS
     }

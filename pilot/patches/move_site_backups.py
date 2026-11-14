@@ -21,6 +21,7 @@ def run(benches_root: Path) -> None:
 
 
 def move_backup_runs(source: Path, target: Path) -> None:
+    """Move the backup runs to the new directory."""
     from pilot.core.site.backups import parse_backup_timestamp
 
     for path in sorted(source.iterdir()):
@@ -35,6 +36,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pilot.config.central import HostnameAlias
-from pilot.utils import normalize_host
+from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
 def _matching(aliases: list[HostnameAlias], alias_type: str, target: str) -> list[HostnameAlias]:
+    """The aliases of this type that point at the target."""
     return [
         alias
         for alias in aliases
@@ -77,6 +78,7 @@ class HostnameAliases:
         return patterns
 
     def stop_redirecting(self, patterns: list[str]) -> None:
+        """Stop redirecting the given alias patterns."""
         from pilot.config.common import CommonConfig
 
         if not patterns:
@@ -89,6 +91,7 @@ class HostnameAliases:
         self._keep_redirect_in_memory(patterns, False)
 
     def _keep_redirect_in_memory(self, patterns: list[str], redirect: bool) -> None:
+        """Set the redirect flag on the loaded aliases."""
         for alias in self.bench.config.central.hostname_aliases:
             if alias.pattern in patterns:
                 alias.redirect = redirect

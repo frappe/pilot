@@ -16,6 +16,7 @@ def resolve_site_path(bench_root: Path, name: str) -> Path | None:
 
 
 def site_config_path(bench_root: Path, name: str) -> Path | None:
+    """The site_config.json path for a valid site name inside the bench, or None."""
     if validate_site_name(name):
         return None
     site_path = resolve_site_path(bench_root, name)
@@ -28,4 +29,5 @@ def site_config_path(bench_root: Path, name: str) -> Path | None:
 
 
 def site_exists(bench_root: Path, name: str) -> bool:
+    """Whether the bench has a site with this name."""
     return site_config_path(bench_root, name) is not None

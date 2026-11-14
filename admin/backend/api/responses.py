@@ -34,6 +34,7 @@ def error_response(
     status: int,
     details: dict | None = None,
 ):
+    """A JSON error response."""
     return (
         jsonify(
             {
@@ -49,18 +50,22 @@ def error_response(
 
 
 def created_response(resource: dict, location: str):
+    """A 201 response with the resource and its location."""
     return _resource_response(resource, 201, location)
 
 
 def accepted_response(resource: dict, location: str):
+    """A 202 response with the resource and its location."""
     return _resource_response(resource, 202, location)
 
 
 def no_content_response():
+    """An empty 204 response."""
     return current_app.response_class(status=204)
 
 
 def accepted_task_response(bench_root: Path, task_id: str):
+    """A 202 response with the queued task."""
     task = TaskReader(bench_root).read_task(task_id)
     return accepted_response(
         task.as_dict(),
@@ -69,6 +74,7 @@ def accepted_task_response(bench_root: Path, task_id: str):
 
 
 def _resource_response(resource: dict, status: int, location: str):
+    """A resource response with a status and Location header."""
     response = jsonify(resource)
     response.status_code = status
     response.headers["Location"] = location
@@ -97,10 +103,12 @@ def paginated_response(
 
 
 def _encode_cursor(offset: int) -> str:
+    """The page cursor for an offset."""
     return base64.urlsafe_b64encode(str(offset).encode()).decode()
 
 
 def _decode_cursor(cursor: str | None) -> int:
+    """The offset of a page cursor; raise when it is invalid."""
     if not cursor:
         return 0
     try:

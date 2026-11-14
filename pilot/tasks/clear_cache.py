@@ -12,10 +12,12 @@ class ClearCacheTask(Task):
     site: str
 
     def run(self) -> None:
+        """Clear the site cache."""
         self.clear_cache()
 
     @step("clear_cache", lambda self: f"Clear cache for {self.site}")
     def clear_cache(self) -> None:
+        """Clear the site cache."""
         self.bench.site(self.site).clear_cache()
 
 
