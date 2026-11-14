@@ -16,6 +16,7 @@ FROM (
     FROM (
         SELECT resource_id, sumIf(value, labels['status'] = 'failed') AS failed, sum(value) AS taken
         FROM datum.latest_value(metric = 'pilot_site_backups', window = 900)
+        WHERE resource_id NOT IN {excluded:Array(String)}
         GROUP BY resource_id
         HAVING taken > 0
     )

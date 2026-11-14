@@ -14,7 +14,7 @@ FROM (
            substring(argMax(message, ts), 1, 200) AS last_message
     FROM datum.logs
     WHERE product = 'pilot' AND service = 'update' AND source = 'event' AND attributes['status'] = 'failed'
-      AND ts > now() - INTERVAL 6 HOUR
+      AND ts > now() - INTERVAL 6 HOUR AND resource_id NOT IN {excluded:Array(String)}
     GROUP BY repository, to_version
 )
 WHERE servers >= 3
