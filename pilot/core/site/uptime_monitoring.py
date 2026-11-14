@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
+from pilot.core.server.monitoring_datum import TelemetryShipper
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.task import TaskReader
@@ -68,8 +69,8 @@ class UptimeMonitor:
         """The file with the uptime alert state."""
         return self._configurator.log_path.with_suffix(".alerts")
 
-    def collect(self) -> None:
-        """Ping every site on this bench once and append results to its uptime log."""
+    def collect(self) -> list[dict]:
+        """Ping every site on this bench once, append the results to its uptime log, and return them."""
         results = [self.ping_site(site_name) for site_name in self.get_sites()]
         maintenance_sites = self.get_maintenance_sites()
         for result in results:
@@ -79,6 +80,7 @@ class UptimeMonitor:
             for result in results:
                 log_file.write(json.dumps(result) + "\n")
         self.send_alert_if_required(results)
+        return results
 
     def send_alert_if_required(self, results: list[dict]) -> None:
         """A site that has failed its ping for five unbroken minutes is an
@@ -178,9 +180,15 @@ def _production_uptime_monitors() -> list[UptimeMonitor]:
 
 
 def main() -> None:
-    """Ping the sites of every production bench."""
-    for monitor in _production_uptime_monitors():
-        monitor.collect()
+    """Ping the sites of every production bench, and send the count of sites in each state to Datum."""
+    monitors = _production_uptime_monitors()
+    results = [result for monitor in monitors for result in monitor.collect()]
+    if not monitors:
+        return
+
+    shipper = TelemetryShipper(monitors[0].bench.config.telemetry)
+    shipper.add_sites(results)
+    shipper.send()
 
 
 if __name__ == "__main__":

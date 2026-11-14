@@ -280,9 +280,7 @@ def test_proxy_forwards_the_mailbox_connect_calls(tmp_path: Path, method: str) -
 def test_proxy_returns_the_active_providers_list(tmp_path: Path, providers: list[str]) -> None:
     client = _app_client(tmp_path / "bench")
     method = "central.api.email_oauth.get_active_providers"
-    with patch(
-        "admin.backend.api.v1.sites.central.CentralClient.forward", return_value=providers
-    ) as forward:
+    with patch("admin.backend.api.v1.sites.central.CentralClient.forward", return_value=providers) as forward:
         response = client.post(f"/api/v1/sites/s1.localhost/central/{method}", json={})
 
     assert response.status_code == 200
@@ -478,3 +476,19 @@ def test_proxy_rejects_non_object_body(tmp_path: Path, body) -> None:
     assert response.get_json()["error"]["code"] == "malformed_body"
     assert response.get_json()["error"]["message"] == "Request body must be a JSON object."
     forward.assert_not_called()
+
+
+def test_each_call_is_recorded_for_the_monitor() -> None:
+    """The monitor counts these records and sends the counts to Datum."""
+    from pilot.config.monitor import get_central_request_log
+
+    _stage_credentials("https://central.test", "token")
+    refused = urllib.error.HTTPError("https://central.test", 503, "down", {}, io.BytesIO(b"{}"))
+    with (
+        patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=refused),
+        pytest.raises(CentralClientError),
+    ):
+        CentralClient().notify_central("site_down", "a.example.com is down")
+
+    [record] = get_central_request_log().read_newest_first()
+    assert (record["method"], record["result"]) == ("report_pilot_event", "failed")

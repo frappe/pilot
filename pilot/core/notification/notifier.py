@@ -33,6 +33,8 @@ class Notifier:
         "resource_limit_breached": "resource_limit_breached",
         "site_down": "site_unavailable",
         "backups_failing": "backup_failure",
+        "certificate_expiry": "certificate_expiry",
+        "certificate_failed": "certificate_failed",
     }
 
     def __init__(self, bench: "Bench") -> None:

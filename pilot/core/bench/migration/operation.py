@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import time
@@ -8,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
+from pilot.config.monitor import get_update_log
 from pilot.core.app import RevisionPin
 from pilot.core.bench.migration.recovery import MigrationRecovery
 from pilot.core.bench.migration.state import (
@@ -474,6 +476,35 @@ class MigrationOperation(MigrationRecovery):
         if self.state.is_terminal:
             self.finished_at = utc_now()
         self._save()
+        if self.state.is_terminal or self.state.name == "needs_attention":
+            self._record_update_result()
+
+    def _record_update_result(self) -> None:
+        """Write one record for each app when the update fails or ends. The monitor sends them to Datum,
+        so Beacon sees one app version that fails on many servers."""
+        result = {"time": utc_now(), "status": self.state.name}
+        if self.state.name == "needs_attention":
+            diagnosis = self.diagnosis or {}
+            result.update(
+                status="failed",
+                phase=diagnosis.get("phase", ""),
+                site=self.failed_site or "",
+                message=diagnosis.get("message", ""),
+                output_excerpt=diagnosis.get("output_excerpt", "")[-4000:],
+            )
+        log = get_update_log()
+        with contextlib.suppress(OSError):
+            for app in self.apps:
+                target = app.target_sha or ""
+                log.append(
+                    {
+                        **result,
+                        "app": app.name,
+                        "repository_url": app.repository_url,
+                        "from_version": app.sha[:12],
+                        "to_version": target if app.target_kind == "tag" else target[:12],
+                    }
+                )
 
     def _save(self) -> None:
         """Save the operation."""

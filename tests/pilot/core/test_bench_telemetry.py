@@ -101,7 +101,7 @@ def test_the_credential_skips_without_central_enrolment(tmp_path: Path) -> None:
 
 def test_nothing_ships_while_central_names_no_datum(tmp_path: Path) -> None:
     """A region whose Cargo has not reported its Datum yet. The token is kept, because it
-    is what Central just said, but neither shipper starts without somewhere to send to."""
+    is what Central just said, but nothing is sent without somewhere to send to."""
     bench = _make_bench(tmp_path)
     _enrol_with_central(bench)
 
@@ -110,5 +110,4 @@ def test_nothing_ships_while_central_names_no_datum(tmp_path: Path) -> None:
         apply_credential(bench)
 
     assert bench.config.telemetry.endpoint == ""
-    assert not bench.config.telemetry.is_shipping_logs
-    assert not bench.config.telemetry.is_shipping_metrics
+    assert not bench.config.telemetry.is_enabled

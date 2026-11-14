@@ -65,11 +65,8 @@ class ProductionSetup:
 
             self._build_admin_for_production()
 
-            # Both shippers present the same credential, so it is fetched once here
-            # rather than by whichever of them happens to run first.
             apply_telemetry_credential(self.bench, on_progress=on_progress)
             self._setup_monitoring()
-            self._setup_log_shipping()
             self._persist_production_state()
         except BaseException:
             # A later step failed but the new admin route is already live at the
@@ -176,27 +173,6 @@ class ProductionSetup:
         UptimeMonitorConfigurator(self.bench).setup()
 
         SiteStorageConfigurator().install()
-
-    def _setup_log_shipping(self) -> None:
-        """Install Fluent Bit as a systemd service, if this bench has a Datum credential."""
-        from pilot.managers.fluentbit import LogsConfigurator
-
-        telemetry = self.bench.config.telemetry
-        if not telemetry.is_shipping_logs:
-            return
-
-        configurator = LogsConfigurator(self.bench)
-        try:
-            configurator.setup()
-            configurator.install(telemetry)
-        except BenchError as exc:
-            # Debian and Ubuntu do not package fluent-bit; shipping logs must not block a deploy.
-            print(
-                f"Warning: logs are not shipped: {str(exc).rstrip('.')}. Sites and metrics are unaffected. "
-                "Install fluent-bit (https://docs.fluentbit.io/manual/installation/linux), then run "
-                "'pilot setup telemetry'.",
-                file=sys.stderr,
-            )
 
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never
