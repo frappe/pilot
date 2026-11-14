@@ -166,6 +166,8 @@ class PythonEnvManager:
         # frappe-ui's Vite plugins look for the bench here before walking up from the
         # app, whose real path is outside the bench when the app is linked.
         env["FRAPPE_BENCH_PATH"] = str(self.bench.path)
+        # backwards compatibility: framework's asset building requires this env variable
+        env["FRAPPE_BENCH_ROOT"] = str(self.bench.path)
 
         return env
 
