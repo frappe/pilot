@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Badge, Button, Checkbox, Dialog, KeyboardShortcut } from 'frappe-ui'
-
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { apiErrorMessage } from '@/api/client'
+import { sitesApi } from '@/api/sites'
 import ConsoleHistory from '@/components/console/ConsoleHistory.vue'
 import PythonCodeEditor from '@/components/console/PythonCodeEditor.vue'
 import ResizableEditor from '@/components/console/ResizableEditor.vue'
-
-import { apiErrorMessage } from '@/api/client'
-import { sitesApi } from '@/api/sites'
 import { useConsoleCompletions } from '@/composables/console/useConsoleCompletions'
 import type { AuditEntry } from '@/types/audit'
 import type { ConsoleErrorEvent, ConsoleExitEvent, ConsoleOutputEvent } from '@/types/siteConsole'
-import { getOutputLines, type OutputTone } from '@/utils/consoleOutput'
 import { copyText } from '@/utils/clipboard'
+import { getOutputLines, type OutputTone } from '@/utils/consoleOutput'
 import { errorMessage } from '@/utils/error'
 import { readEventStream } from '@/utils/eventStream'
 
@@ -205,6 +203,7 @@ onBeforeUnmount(stopScript)
           <span v-if="duration && !isRunning" class="tabular-nums text-ink-gray-5 text-sm">
             {{ duration }}
           </span>
+
           <Button
             class="ml-auto"
             variant="ghost"
@@ -214,7 +213,9 @@ onBeforeUnmount(stopScript)
           >
             {{ isCopied ? 'Copied' : 'Copy' }}
           </Button>
+
           <Button
+            class="-ml-2"
             variant="ghost"
             icon-left="lucide-eraser"
             :disabled="!runState || isRunning"
