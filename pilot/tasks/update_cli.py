@@ -4,9 +4,9 @@ import subprocess
 from dataclasses import dataclass
 from typing import ClassVar
 
+from pilot.core.server import Server
 from pilot.exceptions import BenchError
 from pilot.tasks import Task, step
-from pilot.utils import cli_root
 
 
 @dataclass(kw_only=True)
@@ -14,11 +14,13 @@ class UpdateCliTask(Task):
     command: ClassVar[str] = "update-cli"
 
     def run(self) -> None:
+        """Upgrade Pilot and restart the Admins."""
         self.update()
         self.restart_admins()
 
-    @step("update", lambda self: f"Update Pilot at {cli_root()}")
+    @step("update", lambda self: f"Update Pilot at {Server().root}")
     def update(self) -> None:
+        """Upgrade Pilot."""
         from pilot.updater import perform_upgrade
 
         perform_upgrade(on_progress=print)

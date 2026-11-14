@@ -24,15 +24,16 @@ def run(benches_root: Path) -> None:
 
 
 def _is_issuing_certificates(config) -> bool:
-    from pilot.managers.platform import is_linux
+    """Whether the bench issues certificates."""
+    from pilot.managers.platform import HostPlatform
 
-    return is_linux() and config.production.enabled and bool(config.letsencrypt.email)
+    return HostPlatform().is_linux and config.production.enabled and bool(config.letsencrypt.email)
 
 
 if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

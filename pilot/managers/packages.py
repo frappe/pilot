@@ -4,14 +4,7 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 from pilot.exceptions import BenchError
-from pilot.managers.platform import (
-    Distro,
-    _privileged,
-    detect_distro,
-    has_passwordless_sudo,
-    is_macos,
-    is_root,
-)
+from pilot.managers.platform import Distro, HostPlatform, Privileges
 
 
 class SystemPackageManager(ABC):
@@ -20,6 +13,7 @@ class SystemPackageManager(ABC):
     requires_privilege: ClassVar[bool] = True
 
     def _resolve(self, *packages: str) -> list[str]:
+        """The system package names for the packages."""
         resolved: list[str] = []
         for package in packages:
             alias = self.package_aliases.get(package, package)
@@ -28,7 +22,12 @@ class SystemPackageManager(ABC):
         return resolved
 
     def install(self, *packages: str) -> None:
-        if self.requires_privilege and not is_root() and not has_passwordless_sudo():
+        """Install the packages; raise when root access is needed but not available."""
+        if (
+            self.requires_privilege
+            and not HostPlatform().is_root
+            and not HostPlatform().has_passwordless_sudo
+        ):
             names = ", ".join(self._resolve(*packages))
             raise BenchError(
                 f"Required: {names}. No passwordless sudo available. Re-run install.sh as root, "
@@ -52,13 +51,15 @@ class AptPackageManager(SystemPackageManager):
     }
 
     def _install(self, *packages: str) -> None:
+        """Install the packages with apt-get."""
         subprocess.run(
-            _privileged(["apt-get", "install", "-y", *self._resolve(*packages)]),
+            Privileges.get_command(["apt-get", "install", "-y", *self._resolve(*packages)]),
             env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
             check=True,
         )
 
     def is_installed(self, package: str) -> bool:
+        """Whether dpkg knows the package."""
         result = subprocess.run(
             ["dpkg", "-l", package],
             capture_output=True,
@@ -82,12 +83,14 @@ class DnfPackageManager(SystemPackageManager):
     }
 
     def _install(self, *packages: str) -> None:
+        """Install the packages with dnf."""
         subprocess.run(
-            _privileged(["dnf", "install", "-y", *self._resolve(*packages)]),
+            Privileges.get_command(["dnf", "install", "-y", *self._resolve(*packages)]),
             check=True,
         )
 
     def is_installed(self, package: str) -> bool:
+        """Whether rpm knows the package."""
         resolved = self._resolve(package)
         result = subprocess.run(
             ["rpm", "-q", *resolved],
@@ -112,12 +115,14 @@ class PacmanPackageManager(SystemPackageManager):
     }
 
     def _install(self, *packages: str) -> None:
+        """Install the packages with pacman."""
         subprocess.run(
-            _privileged(["pacman", "-S", "--noconfirm", "--needed", *self._resolve(*packages)]),
+            Privileges.get_command(["pacman", "-S", "--noconfirm", "--needed", *self._resolve(*packages)]),
             check=True,
         )
 
     def is_installed(self, package: str) -> bool:
+        """Whether pacman knows the package."""
         resolved = self._resolve(package)
         result = subprocess.run(
             ["pacman", "-Qi", *resolved],
@@ -130,12 +135,14 @@ class BrewPackageManager(SystemPackageManager):
     requires_privilege: ClassVar[bool] = False
 
     def _install(self, *packages: str) -> None:
+        """Install the packages with Homebrew."""
         subprocess.run(
             ["brew", "install", *packages],
             check=True,
         )
 
     def is_installed(self, package: str) -> bool:
+        """Whether Homebrew has the package."""
         result = subprocess.run(
             ["brew", "list", "--versions", package],
             capture_output=True,
@@ -150,8 +157,9 @@ _LINUX_PACKAGE_MANAGERS: dict[Distro, type[SystemPackageManager]] = {
 
 
 def get_package_manager() -> SystemPackageManager:
-    if is_macos():
+    """The package manager for this host."""
+    if HostPlatform().is_macos:
         return BrewPackageManager()
     # Debian, Ubuntu, and unknown distros all fall back to apt.
-    manager = _LINUX_PACKAGE_MANAGERS.get(detect_distro(), AptPackageManager)
+    manager = _LINUX_PACKAGE_MANAGERS.get(HostPlatform().distro, AptPackageManager)
     return manager()

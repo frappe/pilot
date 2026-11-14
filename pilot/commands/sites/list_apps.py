@@ -21,6 +21,7 @@ class ListSiteAppsCommand(Command):
         self.site: "Site" = self.bench.site(self.site_name)
 
     def run(self) -> None:
+        """Print the site's apps."""
         bench_apps = {app.config.name for app in self.bench.apps()}
         for app in self.site.active_apps():
             self.report(app)

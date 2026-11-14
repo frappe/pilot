@@ -7,8 +7,9 @@ from pilot.commands import Arg, Command
 
 
 def _default_ttl() -> int:
-    # Discovery imports every command module, so this stays lazy - pilot.core
-    # must not load just to build --help.
+    """The default site token lifetime in seconds."""
+    # The parser build never runs this - the dataclass runs it when the command
+    # is actually built - so importing the session module here is free.
     from admin.backend.internal.session import Session
 
     return Session.DEFAULT_TTL
@@ -26,6 +27,7 @@ class IssueSiteTokenCommand(Command):
     )
 
     def run(self) -> None:
+        """Print a new token for the site."""
         from admin.backend.internal.session import Session
 
         self.report(Session(self.bench).issue_site_token(self.site, ttl=self.ttl))

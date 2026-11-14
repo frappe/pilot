@@ -14,11 +14,13 @@ class DropSiteTask(Task):
     no_backup: bool = False
 
     def run(self) -> None:
+        """Drop the site."""
         self.require_production_privileges()
         self.drop()
 
     @step("drop", lambda self: f"Drop site {self.site}")
     def drop(self) -> None:
+        """Drop the site."""
         self.bench.site(self.site).drop(on_progress=self.report, no_backup=self.no_backup)
 
 

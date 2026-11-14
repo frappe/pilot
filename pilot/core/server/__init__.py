@@ -14,15 +14,31 @@ from pilot.core.server.ssh_keys import (
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+    from pilot.core.bench.directory import BenchDirectory
     from pilot.core.server.auto_update import AutoUpdate
 
 
 class Server:
+    """The host Pilot runs on: its installation folder, benches and SSH keys."""
+
+    @property
+    def root(self) -> Path:
+        """The folder Pilot is installed in, which holds the pilot package and benches/."""
+        import pilot as package
+
+        return Path(package.__file__).parent.parent
+
     @property
     def benches_dir(self) -> Path:
-        from pilot.utils import benches_dir
+        """The folder that holds every bench on this host."""
+        return self.root / "benches"
 
-        return benches_dir()
+    @property
+    def benches(self) -> "BenchDirectory":
+        """Every bench under the benches folder, with its config."""
+        from pilot.core.bench.directory import BenchDirectory
+
+        return BenchDirectory(self.benches_dir)
 
     @property
     def bench_paths(self) -> list[Path]:
@@ -31,11 +47,13 @@ class Server:
 
     @property
     def auto_update(self) -> "AutoUpdate":
+        """The Pilot auto update."""
         from pilot.core.server.auto_update import AutoUpdate
 
         return AutoUpdate(self)
 
     def bench(self, path_or_name: str | Path) -> "Bench":
+        """The bench at a path, or with a name under the benches directory."""
         from pilot.core.bench import Bench
 
         path = Path(path_or_name).expanduser()
@@ -45,6 +63,7 @@ class Server:
 
     @property
     def ssh_keys(self) -> AuthorizedKeysStore:
+        """The SSH authorized keys."""
         return AuthorizedKeysStore()
 
 

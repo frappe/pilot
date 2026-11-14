@@ -977,9 +977,8 @@ def test_validation_env_installs_with_mysqlclient_build_flags(monkeypatch, tmp_p
 
     monkeypatch.setattr(tmp_env_module, "run_command", fake_run_command)
     monkeypatch.setattr(
-        tmp_env_module,
-        "add_mysqlclient_flags",
-        lambda env: env.setdefault("MYSQLCLIENT_CFLAGS", "-I/opt/mariadb/include"),
+        "pilot.managers.platform.HostPlatform.add_mysqlclient_flags",
+        lambda self, env: env.setdefault("MYSQLCLIENT_CFLAGS", "-I/opt/mariadb/include"),
     )
 
     env = tmp_env_module.TmpEnv()

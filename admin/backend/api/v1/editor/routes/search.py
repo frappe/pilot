@@ -10,6 +10,7 @@ from admin.backend.core.editor import search as search_service
 @editor_bp.get("/search")
 @with_workspace
 def search_files(ws):
+    """Search the files."""
     try:
         matches = search_service.search(
             ws.root, request.args.get("q", ""), query_flag("regex"), query_flag("word"), query_flag("case")
@@ -22,6 +23,7 @@ def search_files(ws):
 @editor_bp.post("/replace")
 @with_workspace
 def replace_files(ws):
+    """Replace matches in the files."""
     body = json_body()
     if not body.get("query"):
         return error_response("bad_request", "Query is required.", 400)

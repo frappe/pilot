@@ -1,6 +1,6 @@
 import json
 
-from pilot.core.site.config import SECRET_MASK
+from pilot.core.site.config.public import PublicConfig
 from tests.admin.backend.test_admin_app import _client
 
 
@@ -32,7 +32,7 @@ def test_get_hides_managed_keys_and_masks_secrets(tmp_path) -> None:
     response = client.get("/api/v1/settings/common-site-config")
 
     assert response.status_code == 200
-    assert response.get_json() == {"encryption_key": SECRET_MASK, "allow_cors": "*"}
+    assert response.get_json() == {"encryption_key": PublicConfig.SECRET_MASK, "allow_cors": "*"}
 
 
 def test_patch_sets_and_removes_keys_and_keeps_the_rest(tmp_path) -> None:
@@ -76,7 +76,7 @@ def test_patch_sets_a_secret_without_showing_it(tmp_path) -> None:
 
     response = client.patch("/api/v1/settings/common-site-config", json={"encryption_key": "k"})
 
-    assert response.get_json() == {"encryption_key": SECRET_MASK}
+    assert response.get_json() == {"encryption_key": PublicConfig.SECRET_MASK}
     assert _read(bench_root) == {"encryption_key": "k"}
 
 

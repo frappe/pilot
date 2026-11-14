@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from admin.backend.providers.site_monitoring import SiteMonitoringProvider
+from admin.backend.providers.site.monitoring import SiteMonitoringProvider
 from pilot.config import BenchConfig
 from pilot.core.database.slow_queries import SlowQueryLog
 

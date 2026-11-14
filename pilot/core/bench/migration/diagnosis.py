@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import re
 
-_EXECUTING = re.compile(r"^\s*Executing (\S+) in ", re.MULTILINE)
-_COLUMN = re.compile(r"for column ['\"`](?P<column>[^'\"`]+)['\"`]", re.IGNORECASE)
-
 # (failure_kind, substring signatures) ordered most-specific first.
 _SIGNATURES: list[tuple[str, tuple[str, ...]]] = [
     ("string_to_number", ("Incorrect integer value", "Incorrect decimal value", "Truncated incorrect")),
@@ -32,16 +29,19 @@ def diagnose(output: str, message: str, database_engine: str = "mariadb") -> dic
 
 
 def _last_patch(output: str) -> str | None:
-    matches = _EXECUTING.findall(output)
+    """The last patch the migrate output started, if any."""
+    matches = re.findall(r"^\s*Executing (\S+) in ", output, flags=re.MULTILINE)
     return matches[-1] if matches else None
 
 
 def _column(output: str) -> str | None:
-    match = _COLUMN.search(output)
+    """The column a migrate error names, if any."""
+    match = re.search(r"for column ['\"`](?P<column>[^'\"`]+)['\"`]", output, flags=re.IGNORECASE)
     return match.group("column") if match else None
 
 
 def _classify(output: str) -> str:
+    """The failure kind whose signature appears in the output, or "unknown"."""
     for kind, signatures in _SIGNATURES:
         if any(signature in output for signature in signatures):
             return kind

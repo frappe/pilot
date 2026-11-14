@@ -32,9 +32,9 @@ def _make_site(bench_root: Path, name: str, **config) -> None:
 
 
 def _mocked_site_domains(bench_root: Path, site: str, domains=(), primary=None):
+    from pilot.internal.hostnames import normalize_host
     from pilot.tasks import TaskRunner
     from pilot.tasks.setup_nginx import SetupNginxTask
-    from pilot.utils import normalize_host
 
     site_domains = Mock()
     domain_names = list(domains)

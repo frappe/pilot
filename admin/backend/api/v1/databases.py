@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 from flask.typing import ResponseReturnValue
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.benches.support import guard_bench_management
 from pilot.core.bench import Bench
@@ -26,16 +28,14 @@ database_bp = Blueprint("database", __name__)
 _DATABASE_RESOURCE_KEY = "database-server"
 
 
-def _bench() -> Bench:
-    return Bench(Path(current_app.config["BENCH_ROOT"]))
-
-
 def _quick_actions() -> DatabaseQuickActions:
-    return DatabaseQuickActions(_bench().config)
+    """The database quick actions."""
+    return DatabaseQuickActions(ApiRequest.get_bench().config)
 
 
 def _configurations() -> DatabaseConfigurations:
-    return DatabaseConfigurations(_bench().config)
+    """The database configurations."""
+    return DatabaseConfigurations(ApiRequest.get_bench().config)
 
 
 def _queue_configuration_change(
@@ -43,6 +43,7 @@ def _queue_configuration_change(
     change: DatabaseConfigurationChange,
     idempotency_key: str | None,
 ) -> str:
+    """Queue the task that applies a configuration change."""
     action = change["action"]
     if action == "configuration":
         return SetMariaDBConfigurationTask.queue(
@@ -87,7 +88,8 @@ def _queue_configuration_change(
 
 @database_bp.get("/sites")
 def list_query_sites() -> ResponseReturnValue:
-    bench_root: Path = current_app.config["BENCH_ROOT"]
+    """List the sites that can be queried."""
+    bench_root: Path = ApiRequest.get_bench_root()
     sites_path = bench_root / "sites"
     if not sites_path.is_dir():
         return jsonify([])
@@ -110,7 +112,8 @@ def list_query_sites() -> ResponseReturnValue:
 
 @database_bp.get("/schema")
 def get_schema() -> ResponseReturnValue:
-    bench_root: Path = current_app.config["BENCH_ROOT"]
+    """Show a site's database schema."""
+    bench_root: Path = ApiRequest.get_bench_root()
     site = request.args.get("site", "")
     if not site:
         return error_response("invalid_site", "Site is required.", 422)
@@ -126,7 +129,8 @@ def get_schema() -> ResponseReturnValue:
 
 @database_bp.post("/queries")
 def execute_query() -> ResponseReturnValue:
-    bench_root: Path = current_app.config["BENCH_ROOT"]
+    """Run a query on a site's database."""
+    bench_root: Path = ApiRequest.get_bench_root()
     data = request.get_json(silent=True)
 
     query_data, response = _query_request(data)
@@ -155,13 +159,15 @@ def execute_query() -> ResponseReturnValue:
 
 
 def _provider():
-    from admin.backend.providers.database import DatabaseDiagnosticsProvider
+    """The database diagnostics provider."""
+    from admin.backend.providers.database.diagnostics import DatabaseDiagnosticsProvider
 
-    return DatabaseDiagnosticsProvider(current_app.config["BENCH_ROOT"])
+    return DatabaseDiagnosticsProvider(ApiRequest.get_bench_root())
 
 
 @database_bp.get("/diagnostics")
 def get_diagnostics():
+    """Show the database diagnostics."""
     try:
         return jsonify(_provider().get_diagnostics())
     except DatabaseError as exc:
@@ -172,6 +178,7 @@ def get_diagnostics():
 
 @database_bp.get("/quick-actions")
 def get_quick_actions():
+    """Show the quick actions."""
     try:
         return jsonify(_quick_actions().capabilities())
     except DatabaseError as exc:
@@ -182,6 +189,7 @@ def get_quick_actions():
 
 @database_bp.get("/configurations")
 def get_database_configurations():
+    """Show the database variables."""
     try:
         return jsonify(_configurations().snapshot())
     except DatabaseError as exc:
@@ -196,6 +204,7 @@ def get_database_configurations():
 
 @database_bp.post("/configurations/<variable>")
 def set_database_configuration(variable: str):
+    """Queue a database variable change."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or set(data) != {"value"}:
         return error_response(
@@ -213,11 +222,11 @@ def set_database_configuration(variable: str):
                 f"MariaDB variable '{variable}' already has the requested value.",
                 409,
             )
-        bench = _bench()
+        bench = ApiRequest.get_bench()
         task_id = _queue_configuration_change(
             bench,
             change,
-            request.headers.get("Idempotency-Key"),
+            ApiRequest.get_idempotency_key(),
         )
         return accepted_task_response(bench.path, task_id)
     except ValueError as exc:
@@ -234,15 +243,11 @@ def set_database_configuration(variable: str):
 
 @database_bp.post("/quick-actions/restart")
 def restart_database():
+    """Queue a database restart."""
     try:
         _quick_actions().require_restart()
-        bench = _bench()
-        task_id = RestartDatabaseTask.queue(
-            bench,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=_DATABASE_RESOURCE_KEY,
-        )
-        return accepted_task_response(bench.path, task_id)
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(RestartDatabaseTask, bench, resource_key=_DATABASE_RESOURCE_KEY)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -253,6 +258,7 @@ def restart_database():
 
 @database_bp.post("/quick-actions/performance-schema")
 def set_performance_schema():
+    """Queue a Performance Schema change."""
     data = request.get_json(silent=True)
     enabled = data.get("enabled") if isinstance(data, dict) else None
     if type(enabled) is not bool:
@@ -268,14 +274,13 @@ def set_performance_schema():
                 f"Performance Schema is already {state}.",
                 409,
             )
-        bench = _bench()
-        task_id = SetPerformanceSchemaTask.queue(
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetPerformanceSchemaTask,
             bench,
             state="enabled" if enabled else "disabled",
-            idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=_DATABASE_RESOURCE_KEY,
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -290,6 +295,7 @@ def set_performance_schema():
 
 @database_bp.post("/quick-actions/innodb-buffer-pool-size")
 def set_innodb_buffer_pool_size():
+    """Queue a buffer pool size change."""
     data = request.get_json(silent=True)
     size_mb = data.get("size_mb") if isinstance(data, dict) else None
     if type(size_mb) is not int:
@@ -304,14 +310,10 @@ def set_innodb_buffer_pool_size():
                 f"InnoDB Buffer Pool size is already {size_mb} MB.",
                 409,
             )
-        bench = _bench()
-        task_id = SetInnoDBBufferPoolSizeTask.queue(
-            bench,
-            size_mb=size_mb,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-            resource_key=_DATABASE_RESOURCE_KEY,
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetInnoDBBufferPoolSizeTask, bench, size_mb=size_mb, resource_key=_DATABASE_RESOURCE_KEY
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -326,6 +328,7 @@ def set_innodb_buffer_pool_size():
 
 @database_bp.post("/quick-actions/max-connections")
 def set_max_connections():
+    """Queue a max_connections change."""
     data = request.get_json(silent=True)
     max_connections = data.get("max_connections") if isinstance(data, dict) else None
     if type(max_connections) is not int:
@@ -344,14 +347,13 @@ def set_max_connections():
                 f"Max DB Connections is already {max_connections}.",
                 409,
             )
-        bench = _bench()
-        task_id = SetMaxDatabaseConnectionsTask.queue(
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetMaxDatabaseConnectionsTask,
             bench,
             max_connections=max_connections,
-            idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=_DATABASE_RESOURCE_KEY,
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -366,6 +368,7 @@ def set_max_connections():
 
 @database_bp.post("/quick-actions/memory-share")
 def set_memory_share():
+    """Queue a memory share change."""
     data = request.get_json(silent=True)
     memory_share = data.get("memory_share") if isinstance(data, dict) else None
     if type(memory_share) not in (int, float):
@@ -374,14 +377,13 @@ def set_memory_share():
     try:
         actions = _quick_actions()
         actions.require_memory_share(memory_share)
-        bench = _bench()
-        task_id = SetMariaDBMemoryShareTask.queue(
+        bench = ApiRequest.get_bench()
+        return ApiRequest.queue_task(
+            SetMariaDBMemoryShareTask,
             bench,
             memory_share=float(memory_share),
-            idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=_DATABASE_RESOURCE_KEY,
         )
-        return accepted_task_response(bench.path, task_id)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -392,6 +394,7 @@ def set_memory_share():
 
 @database_bp.get("/processlist")
 def get_process_list():
+    """List the database connections."""
     forbidden = guard_bench_management()
     if forbidden is not None:
         return forbidden
@@ -405,6 +408,7 @@ def get_process_list():
 
 @database_bp.post("/processlist/kill")
 def kill_process():
+    """Kill a database connection."""
     # A killed connection can belong to any bench sharing this server.
     forbidden = guard_bench_management()
     if forbidden is not None:
@@ -425,6 +429,7 @@ def kill_process():
 
 @database_bp.get("/lockwaits")
 def get_lock_wait_rows():
+    """List the lock waits."""
     try:
         return jsonify(_provider().get_lock_wait_rows(request.args.get("site", "")))
     except DatabaseError as exc:
@@ -433,8 +438,46 @@ def get_lock_wait_rows():
         return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
 
 
+@database_bp.get("/deadlocks")
+def get_deadlocks():
+    """List the deadlocks."""
+    try:
+        since, until = _moment_arg("since"), _moment_arg("until")
+    except ValueError as exc:
+        return error_response("invalid_filter", str(exc), 422)
+    try:
+        return jsonify(_provider().get_deadlocks(request.args.get("site", ""), since, until))
+    except DatabaseError as exc:
+        return error_response("deadlocks_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("deadlocks_unavailable", "Could not read database deadlocks.", 500)
+
+
+def _moment_arg(name: str) -> datetime | None:
+    """An ISO time with an offset, so the browser's timezone never reaches the server unstated."""
+    value = request.args.get(name)
+    if not value:
+        return None
+    moment = datetime.fromisoformat(value)
+    if moment.tzinfo is None:
+        raise ValueError(f"{name} must include a timezone offset.")
+    return moment
+
+
+@database_bp.get("/slow-queries")
+def get_slow_queries():
+    """List the slow queries."""
+    try:
+        return jsonify(_provider().get_slow_queries(request.args.get("site", "")))
+    except DatabaseError as exc:
+        return error_response("slow_queries_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("slow_queries_unavailable", "Could not read the slow query log.", 500)
+
+
 @database_bp.get("/performance-report")
 def get_performance_report() -> ResponseReturnValue:
+    """Show the performance report."""
     provider = _provider()
     sections = {
         "time_consuming_queries": provider.get_time_consuming_queries,
@@ -464,6 +507,7 @@ def get_performance_report() -> ResponseReturnValue:
 
 @database_bp.get("/size")
 def get_database_size():
+    """Show the database size."""
     try:
         return jsonify(_provider().get_database_size(request.args.get("site", "")))
     except DatabaseError as exc:
@@ -474,6 +518,7 @@ def get_database_size():
 
 @database_bp.get("/table-sizes")
 def get_table_sizes():
+    """List the table sizes."""
     try:
         return jsonify(_provider().get_table_sizes(request.args.get("site", "")))
     except DatabaseError as exc:
@@ -484,6 +529,7 @@ def get_table_sizes():
 
 @database_bp.get("/binlogs")
 def get_binlogs():
+    """List the binary logs."""
     try:
         return jsonify(_provider().get_binlog_files())
     except DatabaseError as exc:
@@ -494,6 +540,7 @@ def get_binlogs():
 
 @database_bp.post("/binlogs/purge")
 def purge_binlogs():
+    """Purge the binary logs."""
     # Binlogs are server-wide state shared by every bench on this host.
     forbidden = guard_bench_management()
     if forbidden is not None:
@@ -513,6 +560,7 @@ def purge_binlogs():
 
 
 def _query_request(data):
+    """The query fields, or an error response."""
     if not isinstance(data, dict):
         return {}, error_response("malformed_request", "Expected a JSON object.", 400)
 

@@ -16,6 +16,7 @@ class GetAppTask(Task):
     marketplace_app: str = ""
 
     def run(self) -> None:
+        """Get the app."""
         self.fetch()
 
     @on_success
@@ -26,6 +27,7 @@ class GetAppTask(Task):
 
     @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
     def fetch(self) -> None:
+        """Get the app from the marketplace or a repository."""
         commit = ""
         if self.marketplace_app:
             resolver = Marketplace(self.bench).find_app(self.marketplace_app)

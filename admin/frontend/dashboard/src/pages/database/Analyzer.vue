@@ -21,6 +21,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
 import IndexAnalysisPanel from '@/components/database/IndexAnalysisPanel.vue'
+import DeadlocksPanel from '@/components/database/DeadlocksPanel.vue'
 import QueryAnalysisPanel from '@/components/database/QueryAnalysisPanel.vue'
 import SizeOverview from '@/components/database/SizeOverview.vue'
 import type {
@@ -52,16 +53,16 @@ const processColumns = [
 
 const lockColumns = [
   { label: '#', key: 'number', class: 'w-10' },
-  { label: 'ID', key: 'id', class: 'w-[8%]' },
-  { label: 'Type', key: 'type', class: 'w-[8%]' },
-  { label: 'Mode', key: 'mode', class: 'w-[8%]' },
-  { label: 'Table', key: 'table', class: 'w-[12%]' },
-  { label: 'Index', key: 'index', class: 'w-[8%]' },
-  { label: 'State', key: 'state', class: 'w-[8%]' },
-  { label: 'Started', key: 'started', class: 'w-[12%]' },
+  { label: 'ID', key: 'id', class: 'w-[7%]' },
+  { label: 'Type', key: 'type', class: 'w-[7%]' },
+  { label: 'Mode', key: 'mode', class: 'w-[6%]' },
+  { label: 'Table', key: 'table', class: 'w-[11%]' },
+  { label: 'Index', key: 'index', class: 'w-[7%]' },
+  { label: 'Started', key: 'started', class: 'w-[11%]' },
   { label: 'Query', key: 'query', class: 'w-[15%]' },
-  { label: 'Rows Locked', key: 'rowsLocked', class: 'w-[9%]' },
-  { label: 'Rows Modified', key: 'rowsModified', class: 'w-[10%]' },
+  { label: 'Locked', key: 'rowsLocked', class: 'w-[6%]' },
+  { label: 'Modified', key: 'rowsModified', class: 'w-[6%]' },
+  { label: 'Blocked by', key: 'blocker' },
 ]
 
 const binlogColumns = [
@@ -141,13 +142,29 @@ const lockRows = computed(() =>
     mode: row.mode,
     table: row.table || '—',
     index: row.index || '—',
-    state: row.state || '—',
-    started: row.started || '—',
+    // UTC from the server, shown in the viewer's time zone.
+    started: row.started
+      ? new Date(row.started).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })
+      : '—',
     query: truncateQuery(row.query),
     rowsLocked: row.rows_locked ?? '—',
     rowsModified: row.rows_modified ?? '—',
+    blocker: row.blocking_thread_id ? blockingProcess(row) : null,
+    blockerQuery: truncateQuery(row.blocking_query) || 'Idle in transaction',
   })),
 )
+
+// The blocker is often idle inside an open transaction, so it has no query; killing it ends the wait.
+const blockingProcess = (row: LockWaitRow): DatabaseProcess => ({
+  id: row.blocking_thread_id as number,
+  user: null,
+  host: null,
+  database: null,
+  command: null,
+  state: null,
+  duration_seconds: null,
+  query: row.blocking_query,
+})
 
 const binlogRows = computed(() =>
   binlogs.value.map((file, index) => ({
@@ -163,12 +180,16 @@ const binlogRows = computed(() =>
 const killDetails = computed(() => {
   const process = killTarget.value
   if (!process) return []
+  // A blocker picked from the Locks tab carries only its id and query.
   return [
-    { label: 'User', value: process.user || '—' },
-    { label: 'Database', value: process.database || '—' },
-    { label: 'State', value: process.command || '—' },
-    { label: 'Running for', value: formatSeconds(process.duration_seconds) },
-  ]
+    { label: 'User', value: process.user },
+    { label: 'Database', value: process.database },
+    { label: 'State', value: process.command },
+    {
+      label: 'Running for',
+      value: process.duration_seconds === null ? null : formatSeconds(process.duration_seconds),
+    },
+  ].filter((detail) => detail.value)
 })
 
 const killQuery = computed(() => killTarget.value?.query || '')
@@ -198,6 +219,11 @@ const lockColumnsBadge = computed(() =>
 )
 
 // Binary logs are a MariaDB concept; the engine reports no status when it has none.
+const binlogEnabled = computed(() => {
+  const current = diagnostics.value
+  return current?.supported === true && Boolean(current.binlog?.enabled)
+})
+
 const hasBinlogs = computed(() => {
   const current = diagnostics.value
   return current?.supported === true && Boolean(current.binlog)
@@ -218,6 +244,9 @@ const sections = computed(() => [
   { value: 'size', label: 'Size', iconLeft: 'lucide-hard-drive' },
   { value: 'processes', label: 'Processes', iconLeft: 'lucide-activity' },
   { value: 'locks', label: 'Locks', iconLeft: 'lucide-lock' },
+  ...(configuredEngine.value === 'mariadb'
+    ? [{ value: 'deadlocks', label: 'Deadlocks', iconLeft: 'lucide-swords' }]
+    : []),
   { value: 'queries', label: 'Queries', iconLeft: 'lucide-scan-search' },
   { value: 'indexes', label: 'Indexes', iconLeft: 'lucide-list-tree' },
   ...(hasBinlogs.value
@@ -267,7 +296,7 @@ const kill = async () => {
     if (hasApiError(result)) throw new Error(apiErrorMessage(result, 'Could not kill the process.'))
     showKillDialog.value = false
     toast.success(`Killed process ${target.id}`)
-    await loadProcesses()
+    await (picked.value === 'locks' ? loadLockWaits() : loadProcesses())
   } catch (caught) {
     killError.value = errorMessage(caught, 'Could not kill the process.')
   } finally {
@@ -359,6 +388,8 @@ const fetchLockWaits = async () => {
     }
 
     lockWaits.value = Array.isArray(result) ? result : []
+    // Auto refresh only hunts for a lock wait; once one shows, keep it on screen.
+    if (lockWaits.value.length) autoRefreshLocks.value = false
   } catch (caught) {
     if (site !== selectedSite.value) lockWaitsReloadQueued = true
     else lockWaitsError.value = errorMessage(caught, 'Could not load database lock waits.')
@@ -609,8 +640,24 @@ onMounted(load)
           :columns="lockColumns"
           :rows="lockRows"
           height="flex-1"
-         
-        />
+        >
+          <template #blocker="{ row }">
+            <div v-if="row.blocker" class="flex items-center gap-2 min-w-0">
+              <span class="truncate" :title="row.blocker.query || ''">
+                {{ row.blocker.id }} · {{ row.blockerQuery }}
+              </span>
+              <Button
+                variant="ghost"
+                iconLeft="lucide-x"
+                class="!text-ink-gray-5 hover:!text-ink-red-6 shrink-0"
+                @click="confirmKill(row.blocker)"
+              >
+                Kill
+              </Button>
+            </div>
+            <span v-else>—</span>
+          </template>
+        </Table>
 
         <EmptyState
           v-else
@@ -621,6 +668,15 @@ onMounted(load)
           class="flex-1 justify-center pb-16"
         />
       </DatabasePanel>
+
+      <DeadlocksPanel
+        v-if="configuredEngine === 'mariadb'"
+        :active="picked === 'deadlocks'"
+        :site="selectedSite"
+        :badge="scopeBadge"
+        :show-site="!selectedSite"
+        :site-by-database="siteByDatabase"
+      />
 
       <QueryAnalysisPanel
         :active="picked === 'queries'"
@@ -653,8 +709,8 @@ onMounted(load)
         <EmptyState
           v-else-if="!binlogRows.length"
           icon="lucide-scroll-text"
-          title="No binary logs"
-          description="The server has no binary log files"
+          :title="binlogEnabled ? 'No binary logs' : 'Binary logging is off'"
+          :description="binlogEnabled ? 'The server has no binary log files' : 'The server does not write binary logs (log_bin is off)'"
           :bordered="false"
           class="flex-1 justify-center pb-16"
         />

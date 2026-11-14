@@ -90,6 +90,7 @@ SUPPORTED_REGIONS = {
 
 
 def build_endpoint_url(provider: str, region: str) -> str:
+    """The endpoint URL of a provider; raise for an unsupported one."""
     try:
         return ENDPOINT_TEMPLATES[provider].format(region=region)
     except KeyError as exc:
@@ -153,6 +154,7 @@ class S3:
         return client
 
     def create_bucket_if_not_present(self, bucket_name: str) -> None:
+        """Create the bucket when it does not exist."""
         try:
             self.client.head_bucket(Bucket=bucket_name)
         except EndpointConnectionError as error:
@@ -177,6 +179,7 @@ class S3:
                 ) from error
 
     def create_bucket(self, bucket_name: str) -> None:
+        """Create the bucket."""
         try:
             if self.provider == "aws" and self.region_name != "us-east-1":
                 self.client.create_bucket(
@@ -191,6 +194,7 @@ class S3:
             ) from error
 
     def upload_file(self, bucket_name: str, local_path: Path, remote_key: str) -> None:
+        """Upload a file."""
         try:
             self.client.upload_file(str(local_path), bucket_name, remote_key)
         except ClientError as error:
@@ -227,6 +231,7 @@ class S3:
             raise S3IntegrationError(f"Failed to download stream from '{bucket_name}/{remote_key}': {error}") from error
 
     def download_file(self, bucket_name: str, remote_key: str, local_path: Path) -> None:
+        """Download a file."""
         try:
             self.client.download_file(bucket_name, remote_key, str(local_path))
         except ClientError as error:
@@ -249,6 +254,7 @@ class S3:
             ) from error
 
     def delete_object(self, bucket_name: str, remote_key: str) -> None:
+        """Delete an object."""
         try:
             self.client.delete_object(Bucket=bucket_name, Key=remote_key)
         except ClientError as error:
@@ -257,6 +263,7 @@ class S3:
             ) from error
 
     def list_objects(self, bucket_name: str, prefix: str) -> list[str]:
+        """The object keys under the prefix."""
         return list(self.get_object_sizes(bucket_name, prefix))
 
     def get_object_sizes(self, bucket_name: str, prefix: str) -> dict[str, int]:
@@ -273,6 +280,7 @@ class S3:
             ) from error
 
     def has_object(self, bucket_name: str, remote_key: str) -> bool:
+        """Whether the object exists."""
         try:
             self.client.head_object(Bucket=bucket_name, Key=remote_key)
             return True
@@ -284,6 +292,7 @@ class S3:
             ) from error
 
     def read_json(self, bucket_name: str, remote_key: str) -> Any:
+        """The object parsed as JSON."""
         try:
             response = self.client.get_object(Bucket=bucket_name, Key=remote_key)
             return json.loads(response["Body"].read())
@@ -293,6 +302,7 @@ class S3:
             ) from error
 
     def write_json(self, bucket_name: str, remote_key: str, data: Any) -> None:
+        """Write data as a JSON object."""
         try:
             self.client.put_object(
                 Bucket=bucket_name,

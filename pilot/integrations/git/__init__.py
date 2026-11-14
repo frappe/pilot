@@ -47,6 +47,7 @@ PROVIDERS: dict[str, type[GitProvider]] = {
 
 
 def provider_for_name(name: str, token: str = "") -> GitProvider:
+    """The git provider with this name; raise for an unknown one."""
     cls = PROVIDERS.get((name or "").lower())
     if cls is None:
         raise GitProviderError(f"Unknown git provider: {name!r}.")

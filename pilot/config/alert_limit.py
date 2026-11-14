@@ -18,6 +18,7 @@ class ResourceLimitConfig:
     email_recipients: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
+        """Raise when a limit is not a percentage."""
         for name in RESOURCE_LIMIT_FIELDS:
             limit = getattr(self, name)
             if not isinstance(limit, int) or isinstance(limit, bool):

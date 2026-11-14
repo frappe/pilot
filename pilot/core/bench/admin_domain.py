@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
-from pilot.utils import host_owner, matches_wildcard, normalize_host
+from pilot.internal.hostnames import matches_wildcard, normalize_host
 
 if TYPE_CHECKING:
     from pilot.config import RoutePolicy
@@ -29,7 +30,7 @@ class ProductionAdminDomain:
         domain = self.bench.config.admin.domain
         if not domain:
             return  # config validation raises the required-in-prod error with bench context
-        owner = host_owner(self.bench.path, domain)
+        owner = BenchDirectory.siblings_of(self.bench.path).get_host_owner(domain)
         if owner:
             raise BenchError(f"Admin domain '{domain}' is already used by bench '{owner}'.")
         # Check this bench separately because host_owner only sees siblings.
@@ -88,6 +89,7 @@ class AdminDomainChange:
         self._route = ProductionAdminDomain(bench, self.previous)
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Move the Admin to the new domain, restoring the old settings if any step fails."""
         admin = self.bench.config.admin
         restore = (admin.domain, admin.tls, admin.route)
         self._validate()
@@ -123,6 +125,7 @@ class AdminDomainChange:
             on_progress(f"Warning: could not clear the site cache: {exc}")
 
     def _served_scheme(self) -> str:
+        """The scheme the Admin is served on now: http or https."""
         admin = self.bench.config.admin
         if admin.route:
             return admin.route.public_scheme
@@ -131,6 +134,7 @@ class AdminDomainChange:
         return "https" if admin.tls and NginxManager(self.bench).has_admin_cert else "http"
 
     def _validate(self) -> None:
+        """Raise when the new domain is missing, invalid or taken by another bench."""
         from pilot.internal.validators import validate_hostname
 
         if not self.domain:
@@ -149,6 +153,7 @@ class AdminDomainChange:
             raise BenchError("The domain provider controls TLS for the admin domain.")
 
     def _persist(self) -> None:
+        """Save the admin domain settings to bench.toml."""
         from pilot.config import BenchConfig
 
         admin = self.bench.config.admin
@@ -170,6 +175,7 @@ class AdminDomainChange:
                 self._repoint_pilot_endpoint(config_path, endpoint, indent=1)
 
     def _repoint_pilot_endpoint(self, config_path: Path, endpoint: str, indent: int) -> None:
+        """Point a site's Pilot endpoint at the new Admin URL, leaving loopback endpoints alone."""
         if not config_path.is_file() or config_path.is_symlink():
             return
         with exclusive_file_lock(config_path):
@@ -188,6 +194,7 @@ class AdminDomainChange:
             replace_private_text_locked(config_path, json.dumps(config, indent=indent))
 
     def _retarget_hostname_aliases(self) -> None:
+        """Move Central hostname aliases from the old admin domain to the new one."""
         self.bench.hostname_aliases.retarget("admin", self.previous, self.domain)
 
     def _reissue_certificate(self, on_progress: Callable[[str], None]) -> bool:
@@ -250,6 +257,7 @@ class AdminDomainChange:
         on_progress(f"Rolled the admin back to '{self.previous}'.")
 
     def _republish_nginx(self) -> None:
+        """Apply the nginx config on a production bench."""
         from pilot.managers.nginx import NginxManager
 
         if not self.bench.config.production.enabled:

@@ -63,12 +63,14 @@ class Parser:
         self.pos = 0
 
     def current(self) -> str | None:
+        """The token at the current position, or None at the end."""
         if self.pos >= len(self.tokens):
             return None
 
         return self.tokens[self.pos]
 
     def consume(self) -> str:
+        """Return the current token and move past it; raise at the end."""
         token = self.current()
 
         if token is None:
@@ -79,16 +81,19 @@ class Parser:
 
     @staticmethod
     def statement(token: str) -> str:
+        """The inside of a `{% %}` tag."""
         return token[2:-2].strip()
 
     @staticmethod
     def keyword(statement: str) -> str:
+        """The first word of a statement."""
         if not statement:
             return ""
 
         return statement.split(maxsplit=1)[0]
 
     def parse(self) -> list[Node]:
+        """Parse every token into nodes; raise on a stray closing tag."""
         nodes = self.parse_block(set())
 
         if self.current() is not None:
@@ -97,6 +102,7 @@ class Parser:
         return nodes
 
     def parse_block(self, stop: set[str]) -> list[Node]:
+        """Parse nodes until a statement whose keyword is in stop."""
         nodes: list[Node] = []
 
         while (token := self.current()) is not None:
@@ -123,6 +129,7 @@ class Parser:
         return nodes
 
     def parse_text(self) -> Text:
+        """A text node; raise when it holds an unclosed tag."""
         token = self.consume()
         if any(opener in token for opener in ("{{", "{%", "{#")):
             raise ValueError(f"Unterminated tag: {token[:40]!r}")
@@ -130,6 +137,7 @@ class Parser:
         return Text(token)
 
     def parse_expr(self) -> Expr:
+        """An expression node from a `{{ }}` tag."""
         token = self.consume()
         expression = token[2:-2].strip()
 
@@ -143,6 +151,7 @@ class Parser:
         keyword: str,
         statement: str,
     ) -> Node:
+        """The node for an if or for statement; raise on any other keyword."""
         handlers = {
             "if": self.parse_if,
             "for": self.parse_for,
@@ -156,6 +165,7 @@ class Parser:
         return handler(statement)
 
     def parse_if(self, statement: str) -> If:
+        """An if node with its elif and else branches."""
         condition = statement[2:].strip()
 
         if not condition:
@@ -196,6 +206,7 @@ class Parser:
         self,
         statement: str,
     ) -> tuple[str, list[Node]]:
+        """The condition and body of one elif branch."""
         condition = statement[4:].strip()
 
         if not condition:
@@ -208,6 +219,7 @@ class Parser:
         return condition, body
 
     def parse_else(self) -> list[Node]:
+        """The body of an else branch."""
         statement = self.statement(self.consume())
 
         if statement != "else":
@@ -216,6 +228,7 @@ class Parser:
         return self.parse_block({"endif"})
 
     def parse_for(self, statement: str) -> For:
+        """A for node from `for name in iterable`."""
         match = re.fullmatch(
             r"for\s+(\w+)\s+in\s+(.+)",
             statement,
@@ -237,6 +250,7 @@ class Parser:
         )
 
     def consume_expected(self, expected: str) -> None:
+        """Consume the expected closing tag; raise when it is missing."""
         token = self.current()
 
         if token is None:
@@ -260,6 +274,7 @@ class Template:
         path: str | Path,
         encoding: str = "utf-8",
     ) -> "Template":
+        """A template read from a file."""
         content = Path(path).read_text(encoding=encoding)
         return cls(content)
 
@@ -268,6 +283,7 @@ class Template:
         expression: str,
         context: dict[str, Any],
     ) -> Any:
+        """Evaluate an expression with no builtins except the safe globals."""
         return eval(
             expression,
             {"__builtins__": {}},
@@ -275,6 +291,7 @@ class Template:
         )
 
     def render(self, **context: Any) -> str:
+        """The template rendered with these values."""
         return self.render_nodes(
             self.ast,
             context,
@@ -285,6 +302,7 @@ class Template:
         nodes: list[Node],
         context: dict[str, Any],
     ) -> str:
+        """The nodes rendered and joined."""
         output = [self.render_node(node, context) for node in nodes]
 
         return "".join(output)
@@ -294,6 +312,7 @@ class Template:
         node: Node,
         context: dict[str, Any],
     ) -> str:
+        """One node rendered."""
         if isinstance(node, Text):
             return node.value
 
@@ -317,6 +336,7 @@ class Template:
         node: If,
         context: dict[str, Any],
     ) -> str:
+        """The first branch whose condition holds, rendered."""
         if self.eval_expr(node.condition, context):
             return self.render_nodes(
                 node.body,
@@ -340,6 +360,7 @@ class Template:
         node: For,
         context: dict[str, Any],
     ) -> str:
+        """The loop body rendered once per item."""
         iterable = self.eval_expr(
             node.iterable,
             context,

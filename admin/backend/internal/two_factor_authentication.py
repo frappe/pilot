@@ -121,6 +121,7 @@ class TotpCredentialStore:
         return True
 
     def remove(self, name: str) -> bool:
+        """Remove a stored secret; return whether it existed."""
         with exclusive_file_lock(self._path):
             entries = self._prune(self._load_raw())
             if entries.pop(name, None) is None:
@@ -129,6 +130,7 @@ class TotpCredentialStore:
         return True
 
     def _write(self, entries: dict[str, dict]) -> None:
+        """Write the secrets; the caller holds the lock."""
         replace_private_text_locked(self._path, json.dumps(entries))
 
     def _load_raw(self) -> dict[str, dict]:
@@ -141,6 +143,7 @@ class TotpCredentialStore:
 
     @staticmethod
     def _prune(entries: dict[str, dict]) -> dict[str, dict]:
+        """The entries without expired pending secrets."""
         cutoff = int(time.time()) - PENDING_TTL
         return {
             key: entry
@@ -221,6 +224,7 @@ class TwoFactorAuthentication:
 
     @property
     def unused_recovery_code_count(self) -> int:
+        """The number of unused recovery codes."""
         return len(self.bench.config.admin.recovery_codes)
 
     def generate_recovery_codes(self) -> list[str]:
@@ -251,6 +255,7 @@ class TwoFactorAuthentication:
         return True
 
     def _store_recovery_codes(self, codes: list[str]) -> None:
+        """Save the hashed recovery codes."""
         with BenchConfig.open(self.bench.path, mode="rw") as config:
             config.admin.recovery_codes = list(codes)
         self.bench.config.admin.recovery_codes = list(codes)
@@ -276,6 +281,7 @@ class TwoFactorAuthentication:
         return False
 
     def _provisioning_url(self, name: str, secret: str) -> str:
+        """The authenticator app URL for the secret."""
         import pyotp
 
         return pyotp.TOTP(secret).provisioning_uri(name=name, issuer_name=f"Pilot - {self.bench.config.name}")

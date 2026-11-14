@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import pytest
 
@@ -75,7 +75,7 @@ def test_database_section_capabilities_are_returned_for_every_engine(
 
 def test_managed_mariadb_exposes_all_applicable_actions() -> None:
     manager = _manager(performance_schema=True)
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         result = DatabaseQuickActions(_config(), manager).capabilities()
 
     assert result["managed"] is True
@@ -134,7 +134,7 @@ def test_external_mariadb_restart_is_rejected_before_manager_call() -> None:
 
 def test_actions_do_not_depend_on_bench_management() -> None:
     manager = _manager()
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         result = DatabaseQuickActions(
             _config(allow_management=False),
             manager,
@@ -145,7 +145,7 @@ def test_actions_do_not_depend_on_bench_management() -> None:
 
 def test_unreachable_mariadb_can_be_restarted_but_cannot_be_configured() -> None:
     manager = _manager(healthy=False)
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         result = DatabaseQuickActions(_config(), manager).capabilities()
 
     assert result["actions"]["restart"]["available"] is True
@@ -180,7 +180,7 @@ def test_performance_schema_revalidates_capability_and_passes_boolean() -> None:
     manager.set_performance_schema.return_value = True
     actions = DatabaseQuickActions(_config(), manager)
 
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         assert actions.set_performance_schema(True) is True
 
     manager.set_performance_schema.assert_called_once_with(True, restart_executor=None)
@@ -191,7 +191,7 @@ def test_performance_schema_forwards_restart_executor() -> None:
     restart_executor = Mock()
     actions = DatabaseQuickActions(_config(), manager)
 
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         actions.set_performance_schema(True, restart_executor=restart_executor)
 
     manager.set_performance_schema.assert_called_once_with(
@@ -213,7 +213,7 @@ def test_sizing_actions_revalidate_ranges_and_call_manager() -> None:
     manager.set_max_connections.return_value = True
     actions = DatabaseQuickActions(_config(), manager)
 
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         assert actions.set_innodb_buffer_pool_size(256) is True
         assert actions.set_max_connections(40) is True
 
@@ -240,14 +240,14 @@ def test_sizing_actions_reject_invalid_values(
     actions = DatabaseQuickActions(_config(), manager)
 
     with (
-        patch(f"{MODULE}.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         pytest.raises(ValueError, match=message),
     ):
         getattr(actions, method)(value)
 
 
 def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         capability = DatabaseQuickActions(_config(), _manager()).capabilities()["actions"]["memory_share"]
 
     assert (capability["current"], capability["min"], capability["max"]) == (0.5, 0.2, 0.8)
@@ -261,7 +261,7 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
 @pytest.mark.parametrize("share", [0.1, 0.9, "0.5"])
 def test_a_memory_share_outside_the_range_is_refused(share) -> None:
     with (
-        patch(f"{MODULE}.is_linux", return_value=True),
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
         pytest.raises(ValueError, match=r"between 0\.2 and 0\.8"),
     ):
         DatabaseQuickActions(_config(), _manager()).require_memory_share(share)
@@ -278,7 +278,7 @@ def test_setting_the_memory_share_saves_it_for_every_bench_and_sizes_mariadb(tmp
         common.mariadb.memory_max_mb = 1600
     actions.config.mariadb.memory_high_mb = 1200
     actions.config.mariadb.memory_max_mb = 1600
-    with patch(f"{MODULE}.is_linux", return_value=True):
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         actions.set_memory_share(0.65, tmp_path)
 
     assert CommonConfig.read(tmp_path).mariadb.memory_share == 0.65
@@ -298,7 +298,10 @@ def test_a_memory_share_that_fails_to_apply_is_not_saved(tmp_path) -> None:
     manager = _manager()
     manager.database_action_lock.side_effect = DatabaseError("Another database action is already running.")
     actions = DatabaseQuickActions(_config(), manager)
-    with patch(f"{MODULE}.is_linux", return_value=True), pytest.raises(DatabaseError):
+    with (
+        patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True),
+        pytest.raises(DatabaseError),
+    ):
         actions.set_memory_share(0.65, tmp_path)
 
     assert CommonConfig.read(tmp_path).mariadb.memory_share != 0.65

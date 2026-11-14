@@ -47,6 +47,7 @@ class MailConfig:
 
     @property
     def is_configured(self) -> bool:
+        """Whether the mail settings can send mail."""
         if not (self.server and self.email):
             return False
         try:
@@ -56,6 +57,7 @@ class MailConfig:
         return True
 
     def get_endpoint(self) -> MailEndpoint:
+        """The SMTP endpoint; raise when the settings are invalid."""
         host = self.server.strip()
         if not host:
             raise ValueError("mail_server is required to send alert emails.")
@@ -74,6 +76,7 @@ class MailConfig:
         )
 
     def validate(self) -> None:
+        """Raise when the mail settings are invalid."""
         if self.server:
             self.get_endpoint()
 

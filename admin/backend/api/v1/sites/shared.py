@@ -3,27 +3,33 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from pilot.exceptions import InsufficientDiskSpaceError, TaskConflictError
 
 
 def site_name(kwargs: dict) -> str:
+    """The site name from the view arguments."""
     return kwargs["name"]
 
 
 def site_not_found():
+    """A 404 response for a missing site."""
     return error_response("site_not_found", "Site not found.", 404)
 
 
 def malformed_body():
+    """A 400 response for a body that is not a JSON object."""
     return error_response("malformed_body", "Request body must be a JSON object.", 400)
 
 
 def invalid_fields():
+    """A 422 response for invalid fields."""
     return error_response("invalid_fields", "One or more request fields are invalid.", 422)
 
 
 def text_fields(data: dict, *names: str) -> dict[str, str] | None:
+    """The named text fields, or None when one is not a string."""
     fields = {}
     for name in names:
         value = data.get(name, "")
@@ -34,10 +40,12 @@ def text_fields(data: dict, *names: str) -> dict[str, str] | None:
 
 
 def internal_error(message: str):
+    """A 500 response with the message."""
     return error_response("internal_error", message, 500)
 
 
 def task_failure(error: Exception):
+    """The error response for a task that could not be queued."""
     if isinstance(error, TaskConflictError):
         return error_response("task_conflict", "A conflicting task is already active.", 409)
     if isinstance(error, ValueError):
@@ -54,13 +62,11 @@ def server_access_locked_response():
     """Refuse a site token that would reach past its site while Central locks the server, as for
     an open free trial. A bench session and a server without Central are never locked. A
     Central server that cannot read its credential waits, like one that cannot reach Central."""
-    from flask import current_app
 
     from admin.backend.middleware import is_bench_scoped
-    from pilot.core.bench import Bench
     from pilot.integrations.central.client import CentralClient, CentralClientError
 
-    if is_bench_scoped() or not Bench(Path(current_app.config["BENCH_ROOT"])).config.central.enabled:
+    if is_bench_scoped() or not ApiRequest.get_bench().config.central.enabled:
         return None
 
     try:
@@ -76,6 +82,7 @@ def server_access_locked_response():
 
 
 def site_name_failure(message: str):
+    """The error response for an invalid or taken site name."""
     if "already" in message or "clashes" in message:
         return error_response("site_name_conflict", "The site name is already in use.", 409)
     return error_response("invalid_site_name", message, 422)
@@ -83,8 +90,8 @@ def site_name_failure(message: str):
 
 def host_resource_key(host: str) -> str:
     """Return the host-wide task resource key for a hostname."""
+    from pilot.internal.hostnames import normalize_host
     from pilot.internal.tasks.store import HOST_RESOURCE_PREFIX
-    from pilot.utils import normalize_host
 
     return f"{HOST_RESOURCE_PREFIX}{normalize_host(host)}"
 
@@ -92,7 +99,8 @@ def host_resource_key(host: str) -> str:
 def new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before its task starts."""
     from pilot.config import BenchConfig
-    from pilot.utils import host_owner, normalize_host
+    from pilot.core.bench.directory import BenchDirectory
+    from pilot.internal.hostnames import normalize_host
 
     sites_path = bench_root / "sites"
     if sites_path.is_symlink():
@@ -101,7 +109,7 @@ def new_site_name_error(bench_root: Path, name: str) -> str | None:
     if site_path.is_symlink() or (site_path / "site_config.json").exists():
         return f"Site '{name}' already exists."
 
-    owner = host_owner(bench_root, name)
+    owner = BenchDirectory.siblings_of(bench_root).get_host_owner(name)
     if owner:
         return f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). All benches share one nginx, so hostnames must be unique."
 
@@ -116,7 +124,7 @@ def new_site_name_error(bench_root: Path, name: str) -> str | None:
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
 
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import matches_wildcard
+    from pilot.internal.hostnames import matches_wildcard
 
     patterns = DomainRouteProvider.wildcard_domains()
     if patterns and not matches_wildcard(name, patterns):

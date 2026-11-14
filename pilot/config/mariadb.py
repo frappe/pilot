@@ -20,6 +20,7 @@ class MariaDBConfig:
     memory_max_mb: int | None = None
 
     def validate(self) -> None:
+        """Raise when the memory share is out of range."""
         low, high = MEMORY_SHARE_RANGE
         if not low <= self.memory_share <= high:
             raise ConfigError(f"mariadb.memory_share must be between {low} and {high}.")

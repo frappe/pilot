@@ -10,7 +10,7 @@ import pytest
 from pilot.config import BenchConfig
 from pilot.exceptions import DatabaseError
 
-_PROVIDER = "admin.backend.providers.database.DatabaseDiagnosticsProvider"
+_PROVIDER = "admin.backend.providers.database.diagnostics.DatabaseDiagnosticsProvider"
 
 
 def _patched_provider(**attributes):
@@ -349,7 +349,7 @@ def test_restart_database_queues_guarded_non_cancellable_task(tmp_path: Path) ->
         patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
         patch("admin.backend.api.v1.databases.RestartDatabaseTask.queue", return_value="task-1") as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-1"}, 202),
         ),
     ):
@@ -405,7 +405,7 @@ def test_performance_schema_queues_guarded_task(tmp_path: Path) -> None:
             return_value="task-2",
         ) as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-2"}, 202),
         ),
     ):
@@ -475,7 +475,7 @@ def test_innodb_buffer_pool_size_queues_guarded_task(tmp_path: Path) -> None:
             return_value="task-3",
         ) as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-3"}, 202),
         ),
     ):
@@ -505,7 +505,7 @@ def test_max_connections_queues_guarded_task(tmp_path: Path) -> None:
             return_value="task-4",
         ) as queue,
         patch(
-            "admin.backend.api.v1.databases.accepted_task_response",
+            "admin.backend.api.requests.accepted_task_response",
             return_value=({"task_id": "task-4"}, 202),
         ),
     ):
@@ -646,6 +646,10 @@ def test_database_settings_queue_without_bench_management(
         patch("admin.backend.api.v1.databases._configurations", return_value=configurations),
         patch(f"admin.backend.api.v1.databases.{queue_target}", return_value="task-1") as queue,
         patch(
+            "admin.backend.api.requests.accepted_task_response",
+            return_value=({"task_id": "task-1"}, 202),
+        ),
+        patch(
             "admin.backend.api.v1.databases.accepted_task_response",
             return_value=({"task_id": "task-1"}, 202),
         ),
@@ -727,6 +731,32 @@ def test_lockwaits_maps_unsupported_engine_to_422(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "lockwaits_unavailable"
 
 
+def test_deadlocks_pass_the_site_and_return_the_report(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    report = {"log_path": "/x/mariadb-error.log", "print_all_deadlocks": True, "deadlocks": []}
+    patcher, provider = _patched_provider(**{"get_deadlocks.return_value": report})
+    with patcher:
+        response = client.get("/api/v1/database/deadlocks?site=one.local")
+
+    assert response.status_code == 200
+    assert response.get_json() == report
+    provider.get_deadlocks.assert_called_once_with("one.local", None, None)
+
+
+def test_deadlocks_take_a_range_with_an_offset(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    patcher, provider = _patched_provider(**{"get_deadlocks.return_value": {"deadlocks": []}})
+    with patcher:
+        ok = client.get("/api/v1/database/deadlocks?since=2026-11-12T07:00:00.000Z")
+        naive = client.get("/api/v1/database/deadlocks?since=2026-11-12T07:00:00")
+
+    since = provider.get_deadlocks.call_args.args[1]
+    assert ok.status_code == 200
+    assert since.isoformat() == "2026-11-12T07:00:00+00:00"
+    assert naive.status_code == 422
+    assert naive.get_json()["error"]["code"] == "invalid_filter"
+
+
 def test_kill_process_succeeds(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
     patcher, provider = _patched_provider()
@@ -806,7 +836,7 @@ def test_binlog_listing_still_allowed_when_bench_management_disabled(tmp_path: P
 
 
 def test_diagnostics_reports_unsupported_for_sqlite_bench(tmp_path: Path) -> None:
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
 
     client = _client(tmp_path / "benches" / "current", db_type="sqlite")
     response = client.get("/api/v1/database/diagnostics")
@@ -820,7 +850,7 @@ def test_diagnostics_reports_unsupported_for_sqlite_bench(tmp_path: Path) -> Non
 
 
 def test_binlogs_rejected_for_sqlite_bench(tmp_path: Path) -> None:
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
 
     client = _client(tmp_path / "benches" / "current", db_type="sqlite")
     response = client.get("/api/v1/database/binlogs")
@@ -830,7 +860,7 @@ def test_binlogs_rejected_for_sqlite_bench(tmp_path: Path) -> None:
 
 
 def test_purge_rejected_for_sqlite_bench(tmp_path: Path) -> None:
-    from admin.backend.providers.database import NO_DATABASE_SERVER
+    from admin.backend.providers.database.diagnostics import NO_DATABASE_SERVER
 
     client = _client(tmp_path / "benches" / "current", db_type="sqlite")
     response = client.post("/api/v1/database/binlogs/purge", json={"up_to": "mysql-bin.000002"})
@@ -933,7 +963,7 @@ def test_memory_share_queues_guarded_task(tmp_path: Path) -> None:
     with (
         patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
         patch("admin.backend.api.v1.databases.SetMariaDBMemoryShareTask.queue", return_value="task-5") as queue,
-        patch("admin.backend.api.v1.databases.accepted_task_response", return_value=({"task_id": "task-5"}, 202)),
+        patch("admin.backend.api.requests.accepted_task_response", return_value=({"task_id": "task-5"}, 202)),
     ):
         response = client.post("/api/v1/database/quick-actions/memory-share", json={"memory_share": 0.6})
 

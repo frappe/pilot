@@ -25,7 +25,7 @@ def _client(bench_root: Path, production: bool = True):
 
 def test_enabling_cloudflare_saves_the_switch_and_rewrites_nginx(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
-    with patch("pilot.core.bench.settings.regenerate_nginx") as regenerate_nginx:
+    with patch("pilot.core.bench.settings.BenchSettings.regenerate_nginx", autospec=True) as regenerate_nginx:
         response = client.patch("/api/v1/settings", json={"proxy": {"cloudflare": True}})
 
     assert response.status_code == 200
@@ -38,18 +38,18 @@ def test_the_cloudflare_switch_rewrites_nginx_for_every_production_bench(tmp_pat
     client = _client(tmp_path / "bench", production=False)
     _client(tmp_path / "sibling")
     _client(tmp_path / "staging", production=False)
-    with patch("pilot.core.bench.settings.regenerate_nginx") as regenerate_nginx:
+    with patch("pilot.core.bench.settings.BenchSettings.regenerate_nginx", autospec=True) as regenerate_nginx:
         response = client.patch("/api/v1/settings", json={"proxy": {"cloudflare": True}})
 
     assert response.status_code == 200
-    assert [call.args[0].path.name for call in regenerate_nginx.call_args_list] == ["sibling"]
+    assert [call.args[0].bench.path.name for call in regenerate_nginx.call_args_list] == ["sibling"]
 
 
 def test_the_cloudflare_switch_reports_an_unreadable_bench(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     (tmp_path / "broken").mkdir()
     (tmp_path / "broken" / "bench.toml").write_text("not = [valid")
-    with patch("pilot.core.bench.settings.regenerate_nginx"):
+    with patch("pilot.core.bench.settings.BenchSettings.regenerate_nginx", autospec=True):
         response = client.patch("/api/v1/settings", json={"proxy": {"cloudflare": True}})
 
     assert response.status_code == 500
@@ -59,7 +59,7 @@ def test_the_cloudflare_switch_reports_an_unreadable_bench(tmp_path: Path) -> No
 
 def test_an_unchanged_cloudflare_switch_leaves_nginx_alone(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
-    with patch("pilot.core.bench.settings.regenerate_nginx") as regenerate_nginx:
+    with patch("pilot.core.bench.settings.BenchSettings.regenerate_nginx", autospec=True) as regenerate_nginx:
         response = client.patch("/api/v1/settings", json={"proxy": {"cloudflare": False}})
 
     assert response.status_code == 200
@@ -75,7 +75,7 @@ def test_cloudflare_status_reports_the_edge_proxy_and_proxied_domains(tmp_path: 
     )
     addresses = {"shop.example.com": "104.21.76.133", "direct.example.com": "203.0.113.7"}
 
-    def getaddrinfo(host, port):
+    def getaddrinfo(host, port, family):
         return [(None, None, None, "", (addresses[host], 0))]
 
     with (
@@ -95,3 +95,31 @@ def test_cloudflare_status_reports_the_edge_proxy_and_proxied_domains(tmp_path: 
             {"domain": "shop.example.com", "is_behind_cloudflare": True},
         ],
     }
+
+
+def test_cloudflare_check_asks_ipv6_only_when_there_is_no_ipv4_answer() -> None:
+    import socket
+
+    from pilot.core.bench.settings import BenchSettings
+
+    answers = {
+        ("v4.example.com", socket.AF_INET): "104.21.76.133",
+        ("v6.example.com", socket.AF_INET6): "2606:4700:3030::6815:4c85",
+    }
+    asked = []
+
+    def getaddrinfo(host, port, family):
+        asked.append((host, family))
+        if (host, family) not in answers:
+            raise socket.gaierror("no answer")
+        return [(None, None, None, "", (answers[host, family], 0))]
+
+    with patch("pilot.core.bench.settings.socket.getaddrinfo", side_effect=getaddrinfo):
+        assert BenchSettings.is_behind_cloudflare("v4.example.com")
+        assert BenchSettings.is_behind_cloudflare("v6.example.com")
+
+    assert asked == [
+        ("v4.example.com", socket.AF_INET),
+        ("v6.example.com", socket.AF_INET),
+        ("v6.example.com", socket.AF_INET6),
+    ]

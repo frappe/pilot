@@ -10,11 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import pilot.internal.tasks.callbacks as callback_module
 import pilot.internal.tasks.runner as task_runner_module
 import pilot.internal.tasks.store as task_store_module
 import pilot.internal.tasks.wrapper as wrapper_module
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
+from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
 from pilot.internal.tasks.wrapper import callback_handler, run_with_syslog_output
 from pilot.managers.task.reader import TaskReader
 from pilot.tasks import TaskRunner
@@ -25,22 +25,22 @@ TASK_ID = "20260715-120000-aabbcc"
 @pytest.fixture(autouse=True)
 def inline_test_callbacks(monkeypatch):
     # Synthetic callbacks in this module exist only in the test process.
-    monkeypatch.setattr(wrapper_module, "run_bounded_callback", callback_module.run_callback)
+    monkeypatch.setattr(BoundedCallback, "run", lambda self: CallbackOperations(self.meta).run(self.spec))
 
 
-def successful_callback(meta: dict, args: dict) -> None:
+def successful_callback(operations: CallbackOperations, args: dict) -> None:
     return None
 
 
-def write_success_marker(meta: dict, args: dict) -> None:
-    (Path(meta["bench_root"]) / "success.marker").write_text("")
+def write_success_marker(operations: CallbackOperations, args: dict) -> None:
+    (operations.bench_root / "success.marker").write_text("")
 
 
-def write_failure_marker(meta: dict, args: dict) -> None:
-    (Path(meta["bench_root"]) / "failure.marker").write_text("")
+def write_failure_marker(operations: CallbackOperations, args: dict) -> None:
+    (operations.bench_root / "failure.marker").write_text("")
 
 
-def failing_callback(meta: dict, args: dict) -> None:
+def failing_callback(operations: CallbackOperations, args: dict) -> None:
     raise RuntimeError("callback error")
 
 
@@ -75,7 +75,7 @@ def test_run_persists_task_before_starting_wrapper(
 
     monkeypatch.setattr(task_runner_module, "generate_task_id", lambda: TASK_ID)
     monkeypatch.setattr(task_runner_module.task_workers, "wake", wake_worker)
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-success", successful_callback)
+    monkeypatch.setitem(CallbackOperations.operations, "test-success", successful_callback)
 
     task_id = TaskRunner(tmp_path).run(
         "build",
@@ -227,7 +227,7 @@ def test_run_rejects_unknown_callback_trigger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-success", successful_callback)
+    monkeypatch.setitem(CallbackOperations.operations, "test-success", successful_callback)
 
     with pytest.raises(ValueError, match="Unknown callback trigger"):
         TaskRunner(tmp_path).run(
@@ -552,8 +552,8 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
             }
         )
     )
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-success", write_success_marker)
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-failure", write_failure_marker)
+    monkeypatch.setitem(CallbackOperations.operations, "test-success", write_success_marker)
+    monkeypatch.setitem(CallbackOperations.operations, "test-failure", write_failure_marker)
     monkeypatch.setattr(wrapper_module, "run_with_syslog_output", lambda *args: exit_code)
     monkeypatch.setattr(sys, "argv", ["wrapper", str(task_dir)])
 
@@ -587,9 +587,9 @@ def test_wrapper_runs_only_cancel_callback_after_cancellation(
             }
         )
     )
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-success", write_success_marker)
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-failure", write_failure_marker)
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-cancel", write_success_marker)
+    monkeypatch.setitem(CallbackOperations.operations, "test-success", write_success_marker)
+    monkeypatch.setitem(CallbackOperations.operations, "test-failure", write_failure_marker)
+    monkeypatch.setitem(CallbackOperations.operations, "test-cancel", write_success_marker)
 
     def cancel_during_task(*args) -> int:
         (task_dir / "status").write_text("killed")
@@ -620,13 +620,13 @@ def test_wrapper_terminal_state_wins_before_callback(
     )
     observed = []
 
-    def attempt_late_cancel(meta: dict, args: dict) -> None:
+    def attempt_late_cancel(operations: CallbackOperations, args: dict) -> None:
         observed.append((task_dir / "status").read_text())
         with pytest.raises(TaskNotRunningError, match="status=success"):
             TaskRunner(tmp_path).kill(TASK_ID)
 
     monkeypatch.setitem(
-        callback_module._OPERATIONS,
+        CallbackOperations.operations,
         "test-late-cancel",
         attempt_late_cancel,
     )
@@ -645,7 +645,7 @@ def test_callback_failure_is_logged_and_callback_is_removed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output_path = tmp_path / "output.log"
-    monkeypatch.setitem(callback_module._OPERATIONS, "test-failing", failing_callback)
+    monkeypatch.setitem(CallbackOperations.operations, "test-failing", failing_callback)
 
     callback_handler(
         {"operation": "test-failing", "args": {}},

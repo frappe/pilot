@@ -14,17 +14,20 @@ class SetupLetsEncryptTask(Task):
     email: str = ""
 
     def run(self) -> None:
+        """Issue the certificates."""
         self.setup_letsencrypt()
 
     @on_failure
     @on_cancel
     def disable_site_ssl(self) -> dict | None:
+        """The callback args that turn site SSL off, if a site is set."""
         if not self.site:
             return None
         return {"site": self.site}
 
     @step("letsencrypt", "Set up Let's Encrypt")
     def setup_letsencrypt(self) -> None:
+        """Save the email, turn on site TLS and issue the certificates."""
         self.require_production_privileges()
         self.apply_email()
         self.enable_site_tls()
@@ -32,6 +35,7 @@ class SetupLetsEncryptTask(Task):
         self.require_site_certificate()
 
     def apply_email(self) -> None:
+        """Save the Let's Encrypt email."""
         if not self.email:
             return
         with BenchConfig.open(self.bench_root) as config:
@@ -39,6 +43,7 @@ class SetupLetsEncryptTask(Task):
         self.bench.config.letsencrypt.email = self.email
 
     def enable_site_tls(self) -> None:
+        """Turn SSL on for the site."""
         if not self.site:
             return
         self.bench.site(self.site).set_ssl(True)

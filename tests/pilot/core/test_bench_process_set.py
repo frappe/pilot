@@ -7,7 +7,8 @@ import pytest
 
 from pilot.core.app.processes import AppProcessError
 from pilot.core.bench.production import BenchProduction
-from pilot.core.bench.settings import BenchSettings, restart_trigger_values
+from pilot.core.bench.settings import BenchSettings
+from pilot.core.bench.settings.payload import SettingsPayload
 from pilot.exceptions import CommandError
 from tests.pilot.managers.test_managers_extra import make_bench
 
@@ -21,7 +22,11 @@ def test_a_failed_rebuild_still_starts_the_workload(tmp_path: Path) -> None:
     with (
         patch("pilot.managers.processes.local.ProcessManager.for_bench", return_value=manager),
         patch.object(type(bench), "write_common_site_config"),
-        patch("pilot.core.bench.settings.regenerate_nginx", side_effect=CommandError("nginx -t failed")),
+        patch(
+            "pilot.core.bench.settings.BenchSettings.regenerate_nginx",
+            autospec=True,
+            side_effect=CommandError("nginx -t failed"),
+        ),
         pytest.raises(CommandError),
     ):
         BenchProduction(bench).rebuild_process_set(on_progress=lambda message: None)
@@ -49,14 +54,14 @@ def test_an_unsupported_lite_flag_change_restarts_nothing(tmp_path: Path) -> Non
     # Without frappe/runner.py the bench runs the classic process set either way.
     bench = make_bench(tmp_path)
     bench.config.lite_mode.enabled = True
-    old_restart = restart_trigger_values(bench.config)
+    old_restart = SettingsPayload(bench.config).restart_triggers
     bench.config.lite_mode.enabled = False
 
     with (
         patch("pilot.tasks.switch_lite_mode.SwitchLiteModeTask.queue") as queue,
-        patch("pilot.core.bench.settings.restart_running_workload") as restart,
+        patch("pilot.core.bench.settings.BenchSettings.restart_running_workload", autospec=True) as restart,
     ):
-        assert BenchSettings(bench)._regenerate_and_restart_if_needed(old_restart) is False
+        assert BenchSettings(bench).restart_if_needed(old_restart) is False
 
     queue.assert_not_called()
     restart.assert_not_called()

@@ -134,7 +134,7 @@ def test_list_sites_labels_each_site_by_its_primary_domain(tmp_path: Path) -> No
     assert labels == {"plain.localhost": "plain.localhost", "custom.localhost": "erp.example.com"}
 
 
-def test_list_sites_includes_uptime_and_requests(tmp_path: Path) -> None:
+def test_list_sites_includes_uptime_and_requests_from_the_hourly_rollups(tmp_path: Path) -> None:
     from datetime import UTC, datetime, timedelta
 
     bench_root = tmp_path / "benches" / "current"
@@ -171,7 +171,13 @@ def test_list_sites_includes_uptime_and_requests(tmp_path: Path) -> None:
         },
     ]
     (logs / "monitor.json.log").write_text("\n".join(json.dumps(record) for record in requests) + "\n")
+    assert client.get("/api/v1/sites").get_json()[0]["uptime_percent"] is None
 
+    from pilot.core.bench import Bench
+    from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
+
+    UptimeRollup(Bench(bench_root)).update()
+    RequestRollup(Bench(bench_root)).update()
     site = client.get("/api/v1/sites").get_json()[0]
 
     assert site["uptime_percent"] == 75.0

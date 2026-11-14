@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from pilot.config import BackupConfig
-from pilot.core.site.retention import BackupRetentionPolicy
+from pilot.core.site.backups.retention import BackupRetentionPolicy
 
 
 def _daily_runs(days: int, start=date(2026, 1, 1)) -> list[str]:

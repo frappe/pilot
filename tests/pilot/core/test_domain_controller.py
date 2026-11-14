@@ -9,6 +9,7 @@ from pilot.core.adapters.domain_provider import DomainRouteProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
 from pilot.managers.nginx import NginxConfigRenderer
+from pilot.managers.platform import HostPlatform
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -132,6 +133,16 @@ def test_register_rejects_missing_policy_and_rolls_back(tmp_path: Path, monkeypa
         DomainRouteProvider(bench).register("mysite", "app.example.com")
 
     assert _calls(log) == ["register app.example.com", "deregister app.example.com"]
+
+
+def test_register_releases_route_when_proxy_settings_fail(tmp_path: Path, monkeypatch) -> None:
+    log = _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+    monkeypatch.setenv("PROVIDER_FAIL", "proxy-servers")
+
+    with pytest.raises(DomainProviderError, match="proxy-servers"):
+        DomainRouteProvider(bench).register("mysite", "mysite")
+    assert _calls(log) == ["register mysite", "proxy-servers", "deregister mysite"]
 
 
 def test_deregister_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -> None:
@@ -280,7 +291,7 @@ def test_a_provider_that_does_not_answer_fails_within_its_timeout(monkeypatch) -
     def hang(argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
 
-    monkeypatch.setattr(domain_provider, "which", lambda name: "/usr/local/bin/bench-domain-provider")
+    monkeypatch.setattr(HostPlatform, "get_executable_path", lambda self, name: "/usr/local/bin/bench-domain-provider")
     monkeypatch.setattr(domain_provider.subprocess, "run", hang)
 
     with pytest.raises(DomainProviderError, match="did not answer within 30 seconds"):

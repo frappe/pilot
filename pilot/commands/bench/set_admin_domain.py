@@ -15,4 +15,5 @@ class SetAdminDomainCommand(Command):
     tls: Annotated[bool | None, Arg(help="Serve the admin over HTTPS.")] = None
 
     def run(self) -> None:
+        """Move the Admin to a new domain."""
         self.bench.change_admin_domain(self.domain, self.tls, on_progress=self.report)

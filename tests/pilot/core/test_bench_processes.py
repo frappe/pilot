@@ -160,7 +160,7 @@ def test_a_broken_declaration_blocks_only_the_apps_sites_use(bench, monkeypatch)
 
 @pytest.mark.parametrize(("parts", "applies"), [(["database"], True), (["public", "config"], False)])
 def test_a_database_restore_applies_the_process_set(bench, parts, applies) -> None:
-    from pilot.core.site.restore import SiteRestore
+    from pilot.core.site.backups.restore import SiteRestore
 
     with patch.object(SiteRestore, "restore"), patch.object(BenchProcesses, "apply") as apply:
         bench.site("site.local").restore_backup(MagicMock(), parts)
@@ -169,7 +169,8 @@ def test_a_database_restore_applies_the_process_set(bench, parts, applies) -> No
 
 
 def test_a_site_made_from_a_backup_applies_the_process_set(bench) -> None:
-    from pilot.core.site import Site, provision_from_backup
+    from pilot.core.site import Site
+    from pilot.core.site.provisioning import provision_from_backup
 
     calls = []
     with (

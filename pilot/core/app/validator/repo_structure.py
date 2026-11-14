@@ -13,6 +13,7 @@ class RepoStructureCheck:
     """Verifies a cloned app has the files pilot expects before installing it."""
 
     def run(self, app: "App") -> None:
+        """Raise when the repository is not an installable Frappe app."""
         if not (app.path / "pyproject.toml").exists():
             raise AppValidationError(
                 f"'{app.config.name}' has no pyproject.toml, so it isn't an installable frappe app. "

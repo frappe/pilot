@@ -20,5 +20,6 @@ class LLMConfig:
     api_base: str = ""  # endpoint URL for self-hosted providers
 
     def validate(self) -> None:
+        """Raise when max_tokens is not positive."""
         if self.max_tokens <= 0:
             raise ConfigError("llm.max_tokens must be a positive integer.")

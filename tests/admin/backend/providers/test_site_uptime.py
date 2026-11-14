@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from admin.backend.providers.site_uptime import SiteUptimeProvider
+from admin.backend.providers.site.uptime import SiteUptimeProvider
 
 
 def _record(site: str, when: datetime, up: bool) -> dict:
@@ -92,7 +92,7 @@ def test_buckets_cover_whole_window_even_with_short_history(tmp_path: Path) -> N
 
     result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
 
-    assert len(result["buckets"]) >= 45
+    assert len(result["buckets"]) >= 3600 // result["bucket_seconds"]
     assert sum(bucket["checks"] for bucket in result["buckets"]) == 5
     assert result["buckets"][0]["percent"] is None
 
@@ -101,7 +101,7 @@ def test_bucket_seconds_scales_with_window(tmp_path: Path) -> None:
     short = SiteUptimeProvider(tmp_path, "site-a.local", "30m")
     long = SiteUptimeProvider(tmp_path, "site-a.local", "1w")
 
-    assert short.bucket_seconds == 60  # floor, since 1800/45 < 60
+    assert short.bucket_seconds == 120  # floor, since 1800/45 < 120
     assert long.bucket_seconds == 604800 // 45
 
 
@@ -141,6 +141,16 @@ def test_malformed_entry_skipped(tmp_path: Path) -> None:
         json.dumps(_record("site-a.local", now, True)),
     ]
     (logs / "uptime.json.log").write_text("\n".join(lines) + "\n")
+
+    result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
+
+    assert result["overall_percent"] == 100.0
+
+
+def test_maintenance_checks_do_not_count_as_downtime(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    maintenance = {**_record("site-a.local", now - timedelta(seconds=5), False), "maintenance": True}
+    root = _write_log(tmp_path, [_record("site-a.local", now, True), maintenance])
 
     result = SiteUptimeProvider(root, "site-a.local", "1h").get_uptime()
 

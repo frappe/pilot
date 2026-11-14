@@ -7,12 +7,12 @@ from typing import ClassVar
 from pilot.integrations.central.client import CentralClient, CentralClientError
 from pilot.integrations.git.credentials import GITHUB_APP_AUTH_TYPE, GitCredentialStore
 
-# A token this close to expiry could expire during a long clone.
-_EXPIRY_MARGIN = timedelta(minutes=10)
-
 
 class GitHubAppTokens:
     """Per-process cache of the read-only repository tokens Central mints."""
+
+    # A token this close to expiry could expire during a long clone.
+    expiry_margin = timedelta(minutes=10)
 
     _tokens: ClassVar[dict[str, tuple[str, datetime]]] = {}
     _lock: ClassVar[threading.Lock] = threading.Lock()
@@ -23,7 +23,7 @@ class GitHubAppTokens:
         key = full_name.lower()
         with cls._lock:
             token, expires_at = cls._tokens.get(key, ("", datetime.min.replace(tzinfo=UTC)))
-        if expires_at > datetime.now(UTC) + _EXPIRY_MARGIN:
+        if expires_at > datetime.now(UTC) + cls.expiry_margin:
             return token
 
         try:
@@ -39,6 +39,7 @@ class GitHubAppTokens:
 
     @classmethod
     def clear(cls) -> None:
+        """Forget every cached token."""
         with cls._lock:
             cls._tokens.clear()
 
@@ -52,6 +53,7 @@ class GitHubAppGrant:
 
     @property
     def is_active(self) -> bool:
+        """Whether the GitHub App is the saved credential."""
         return (self.store.load() or {}).get("auth_type") == GITHUB_APP_AUTH_TYPE
 
     def get_status(self) -> dict:
@@ -65,9 +67,11 @@ class GitHubAppGrant:
         return status
 
     def disconnect(self) -> None:
+        """Disconnect GitHub and forget the credential."""
         self.client.disconnect_github()
         self._forget()
 
     def _forget(self) -> None:
+        """Forget the credential and cached tokens."""
         self.store.clear()
         GitHubAppTokens.clear()

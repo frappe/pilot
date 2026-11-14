@@ -26,6 +26,7 @@ INTEGRATIONS: tuple[type[LLMIntegration], ...] = (
 
 
 def _integration_for(provider: str) -> type[LLMIntegration]:
+    """The integration that serves the provider; raise for an unknown one."""
     for cls in INTEGRATIONS:
         if provider in cls.providers():
             return cls
@@ -33,6 +34,7 @@ def _integration_for(provider: str) -> type[LLMIntegration]:
 
 
 def known_providers() -> set[str]:
+    """Every known provider."""
     return {slug for cls in INTEGRATIONS for slug in cls.providers()}
 
 
@@ -59,10 +61,12 @@ def models_for(provider: str, api_key: str = "", api_base: str = "") -> list[str
 
 
 def models_need_api_key(provider: str) -> bool:
+    """Whether listing models needs an API key."""
     return _integration_for(provider).models_need_api_key
 
 
 def requires_api_base(provider: str) -> bool:
+    """Whether the provider needs an API base URL."""
     return _integration_for(provider).requires_api_base
 
 

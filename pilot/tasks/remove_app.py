@@ -11,6 +11,7 @@ class RemoveAppTask(Task):
     name: str
 
     def run(self) -> None:
+        """Remove the app and record it."""
         self.remove()
         self.bench.audit_action("app", {"event": "removed", "app": self.name})
 
@@ -22,6 +23,7 @@ class RemoveAppTask(Task):
 
     @step("remove", lambda self: f"Remove {self.name}")
     def remove(self) -> None:
+        """Remove the app from the bench."""
         self.bench.app(self.name).remove(force=True, on_progress=self.report)
 
 

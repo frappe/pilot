@@ -11,17 +11,18 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.command import run_command
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.managers.environment import PythonEnvManager
 
-_BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
 
 
 class PythonAssetBuilder:
+    bundle_re = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
+
     def __init__(self, manager: "PythonEnvManager") -> None:
         self.manager = manager
         self.bench = manager.bench
@@ -35,6 +36,7 @@ class PythonAssetBuilder:
             self._run_capped(argv, **kwargs)
 
     def _run_capped(self, argv: list[str], **kwargs) -> None:
+        """Run a build command within the memory limit."""
         from pilot.core.build_memory import build_memory_limit_mb, build_swap_limit_mb, can_read_memory
 
         limit_mb = build_memory_limit_mb(self.bench.config.build.memory_limit_mb) if can_read_memory() else 0
@@ -64,6 +66,7 @@ class PythonAssetBuilder:
 
     @staticmethod
     def get_build_env(env: dict, limit_mb: int) -> dict:
+        """The build environment with the Node.js memory limit."""
         env = {**systemctl_env(), **env}
         node_options = env.get("NODE_OPTIONS", "")
         # V8 stops near 2GB whatever the cap; leave a quarter of the cap for native memory.
@@ -72,8 +75,10 @@ class PythonAssetBuilder:
         return env
 
     def build_assets(self) -> None:
+        """Build the assets of every app."""
         for app in self.bench.apps():
-            NodePackages(app.path).ensure_installed()
+            for packages in get_app_packages(app.path, self.frontend_dirs(app)):
+                packages.ensure_installed()
         self.run_compiler(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
@@ -82,6 +87,7 @@ class PythonAssetBuilder:
         )
 
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
+        """Build one app's assets, from cache, release or source."""
         # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
         if app.config.name == "frappe" and not skip_frontend:
             NodePackages(app.path).ensure_installed()
@@ -124,6 +130,7 @@ class PythonAssetBuilder:
         return True
 
     def build_app_from_source(self, app: "App") -> None:
+        """Build the app's assets from source."""
         # Frappe's build runs the app's build script, which can build `frontend`/`roster`, so
         # their node_modules must be installed before it.
         for packages in get_app_packages(app.path, self.frontend_dirs(app)):
@@ -171,6 +178,7 @@ class PythonAssetBuilder:
         asset_maps: dict[str, dict[str, str]] | None = None,
         has_page_islands: bool = False,
     ) -> None:
+        """Link the prebuilt assets of an app."""
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(exist_ok=True)
 
@@ -228,9 +236,11 @@ class PythonAssetBuilder:
 
     @property
     def studio_editor(self) -> NodePackages:
+        """The Studio editor packages."""
         return NodePackages(self.bench.apps_path / "frappe" / "studio" / "frontend")
 
     def write_assets_json(self, app_name: str, dist_dir: Path, assets_dir: Path) -> None:
+        """Write the assets.json for an app."""
         assets = {
             **self._bundle_manifest(app_name, dist_dir, "js", "js"),
             **self._bundle_manifest(app_name, dist_dir, "css", "css"),
@@ -256,13 +266,14 @@ class PythonAssetBuilder:
         *,
         key_prefix: str = "",
     ) -> dict[str, str]:
+        """The bundle names mapped to their built files."""
         bundle_dir = dist_dir / directory
         if not bundle_dir.is_dir():
             return {}
 
         entries = {}
         for path in sorted(bundle_dir.iterdir()):
-            match = _BUNDLE_RE.match(path.name)
+            match = PythonAssetBuilder.bundle_re.match(path.name)
             if match and match.group(2) == extension:
                 key = f"{key_prefix}{match.group(1)}.bundle.{extension}"
                 entries[key] = f"/assets/{app_name}/dist/{directory}/{path.name}"

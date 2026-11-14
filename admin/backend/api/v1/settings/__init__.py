@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from admin.backend.api.v1.settings.config import ConfigPatcher
 from admin.backend.middleware import client_ip
@@ -18,25 +19,12 @@ from pilot.config import (
 from pilot.config.mail import MailConfig
 from pilot.config.monitor import bench_log_path, system_log_path
 from pilot.core.bench import Bench
-from pilot.core.bench.settings import (
-    SettingsApplyFailed,
-    firewall_payload,
-    is_restart_needed,
-    llm_payload,
-    mail_payload,
-    proxy_payload,
-    resource_limits_payload,
-    restart_trigger_values,
-    s3_payload,
-    waf_payload,
-    webhook_endpoints_payload,
-    webhook_events_payload,
-    worker_groups_payload,
-)
+from pilot.core.bench.settings import SettingsApplyFailed
+from pilot.core.bench.settings.payload import SettingsPayload
 from pilot.exceptions import MalformedSiteConfig
 from pilot.integrations.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.internal.validators import validate_external_url
-from pilot.managers.platform import is_linux, native_process_manager
+from pilot.managers.platform import HostPlatform
 from pilot.managers.redis import RedisManager
 from pilot.managers.waf import WafManager
 
@@ -48,18 +36,8 @@ __all__ = [
     "ConfigPatcher",
     "audit_bp",
     "build_settings_response",
-    "firewall_payload",
-    "is_restart_needed",
-    "llm_payload",
-    "mail_payload",
     "network_bp",
-    "resource_limits_payload",
-    "restart_trigger_values",
-    "s3_payload",
     "settings_bp",
-    "waf_payload",
-    "webhook_endpoints_payload",
-    "webhook_events_payload",
 ]
 
 
@@ -77,9 +55,11 @@ def lite_mode_payload(config: BenchConfig, bench_root: Path | None) -> dict:
 
 
 def build_settings_response(config: BenchConfig, bench_root: Path | None = None) -> dict:
+    """The settings for the API."""
+    payload = SettingsPayload(config)
     return {
-        "is_linux": is_linux(),
-        "native_process_manager": native_process_manager(),
+        "is_linux": HostPlatform().is_linux,
+        "native_process_manager": HostPlatform.native_process_manager,
         "bench": {
             "name": config.name,
             "python": config.python_version,
@@ -107,11 +87,11 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "queue_port": config.redis.queue_port,
             "version": RedisManager.installed_version() or config.redis.version or "",
         },
-        "workers": worker_groups_payload(config),
-        "firewall": firewall_payload(config),
-        "proxy": proxy_payload(config),
+        "workers": payload.worker_groups,
+        "firewall": payload.firewall,
+        "proxy": payload.proxy,
         "waf": {
-            **waf_payload(config),
+            **payload.waf,
             "installed": WafManager.is_installed(),
             "modes": list(WAF_MODES),
             "rule_fields": list(WAF_RULE_FIELDS),
@@ -131,17 +111,19 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "public_tls": config.admin.route_policy.public_tls,
         },
         "letsencrypt": {"email": config.letsencrypt.email},
-        "s3": s3_payload(config),
+        "s3": payload.s3,
         "s3_providers": s3_provider_options(config),
         "llm": {
-            **llm_payload(config),
+            **payload.llm,
             "system_prompt": read_system_prompt(bench_root) if bench_root else "",
         },
         "llm_providers": llm_provider_options(),
-        "resource_limits": resource_limits_payload(config),
-        "webhook_endpoints": webhook_endpoints_payload(config),
-        "webhook_events": webhook_events_payload(),
-        "mail": mail_payload(MailConfig.read(bench_root / "sites") if bench_root else MailConfig()),
+        "resource_limits": payload.resource_limits,
+        "webhook_endpoints": payload.webhook_endpoints,
+        "webhook_events": payload.webhook_events,
+        "mail": SettingsPayload.get_mail(
+            MailConfig.read(bench_root / "sites") if bench_root else MailConfig()
+        ),
         "monitor": {
             "system_log_path": str(system_log_path()),
             "log_path": str(bench_log_path(config.name)),
@@ -150,6 +132,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
 
 
 def s3_provider_options(config: BenchConfig) -> list[dict]:
+    """The S3 provider choices."""
     from pilot.integrations.s3.base import PROVIDER_LABELS, SUPPORTED_REGIONS
 
     options = [
@@ -165,6 +148,7 @@ def s3_provider_options(config: BenchConfig) -> list[dict]:
 
 
 def llm_provider_options() -> list[dict]:
+    """The LLM provider choices."""
     from pilot.integrations.llm.registry import provider_options
 
     return provider_options()
@@ -173,7 +157,7 @@ def llm_provider_options() -> list[dict]:
 def _saved_llm_api_key() -> str:
     """The key already stored in bench.toml, so editing settings does not force a retype."""
     try:
-        return BenchConfig.read(Path(current_app.config["BENCH_ROOT"])).llm.api_key
+        return BenchConfig.read(ApiRequest.get_bench_root()).llm.api_key
     except Exception:
         return ""
 
@@ -182,7 +166,7 @@ def _saved_llm_api_base() -> str:
     """The endpoint already stored in bench.toml - listing models must hit the same
     server the assistant will, not the provider's default."""
     try:
-        return BenchConfig.read(Path(current_app.config["BENCH_ROOT"])).llm.api_base
+        return BenchConfig.read(ApiRequest.get_bench_root()).llm.api_base
     except Exception:
         return ""
 
@@ -227,7 +211,8 @@ def llm_models():
 
 @settings_bp.get("")
 def get_settings():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    """Show the settings."""
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
     except Exception:
@@ -241,13 +226,9 @@ def get_cloudflare_status():
     from pilot.exceptions import DomainProviderError
 
     try:
-        return jsonify(Bench(Path(current_app.config["BENCH_ROOT"])).get_cloudflare_status())
+        return jsonify(ApiRequest.get_bench().get_cloudflare_status())
     except DomainProviderError as error:
         return error_response("cloudflare_status_unavailable", str(error), 502)
-
-
-_AUDIT_LOG_DEFAULT_LIMIT = 50
-_AUDIT_LOG_MAX_LIMIT = 500
 
 
 def _audit_filters(entry_type, site, status, jti, since, until) -> dict:
@@ -274,8 +255,8 @@ def audit_log():
     from admin.backend.api.responses import paginated_response, parse_pagination
     from pilot.core.bench.audit_log import AuditLog
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    limit, offset = parse_pagination(_AUDIT_LOG_DEFAULT_LIMIT, _AUDIT_LOG_MAX_LIMIT)
+    bench_root = ApiRequest.get_bench_root()
+    limit, offset = parse_pagination(50, 500)
     try:
         filters = _audit_filters(
             entry_type=request.args.get("type"),
@@ -291,6 +272,7 @@ def audit_log():
         log = AuditLog(Bench(bench_root))
 
         def fetch_newest(count: int) -> list:
+            """The newest audit entries that match the filters."""
             return log.entries(**filters, limit=count)
 
         return paginated_response(fetch_newest, limit, offset)
@@ -303,7 +285,7 @@ def export_audit_log():
     """Download filtered bench audit events as CSV."""
     from pilot.core.bench.audit_log import AuditLog
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         filters = _audit_filters(
             entry_type=request.args.get("type"),
@@ -342,10 +324,8 @@ def change_admin_domain():
     from pilot.internal.validators import validate_hostname
     from pilot.tasks.change_admin_domain import ChangeAdminDomainTask
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
 
     domain = data.get("domain")
     if not isinstance(domain, str):
@@ -368,7 +348,7 @@ def change_admin_domain():
             bench,
             domain=domain,
             tls=tls,
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             # Hold both hostnames until the old provider route is released.
             resource_key=resources,
         )
@@ -379,10 +359,9 @@ def change_admin_domain():
 
 @settings_bp.patch("")
 def update_settings():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+    """Save the settings and apply what changed."""
+    bench_root = ApiRequest.get_bench_root()
+    data = ApiRequest.get_json_body()
 
     try:
         update = _save_settings_update(bench_root, data)
@@ -408,13 +387,15 @@ def update_settings():
 
 
 def _save_settings_update(bench_root: Path, data: dict) -> dict:
+    """Save the settings and apply them; return the result."""
     mail = MailConfig.read(bench_root / "sites")
     with BenchConfig.open(bench_root) as config:
-        old_restart = restart_trigger_values(config)
-        old_firewall = firewall_payload(config)
-        old_waf = waf_payload(config)
-        old_s3_config = s3_payload(config)
-        old_proxy = proxy_payload(config)
+        payload = SettingsPayload(config)
+        old_restart = payload.restart_triggers
+        old_firewall = payload.firewall
+        old_waf = payload.waf
+        old_s3_config = payload.s3
+        old_proxy = payload.proxy
 
         patcher = ConfigPatcher(config, data, mail)
         if error := patcher.apply():
@@ -446,7 +427,8 @@ def _apply_system_prompt(bench_root: Path, llm: dict) -> None:
 
 
 def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
-    if s3_payload(config) == old_s3_config or not config.s3.access_key:
+    """Raise when the new S3 settings cannot reach the bucket."""
+    if SettingsPayload(config).s3 == old_s3_config or not config.s3.access_key:
         return
 
     from pilot.integrations.s3.base import S3, S3IntegrationError
@@ -458,6 +440,7 @@ def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
 
 
 def _settings_update_result(restarted: bool, waf_warning: str | None) -> dict[str, bool | str]:
+    """The update result for the API."""
     result: dict[str, bool | str] = {"restarted": restarted}
     if waf_warning:
         result["waf_warning"] = waf_warning
@@ -473,6 +456,7 @@ def apply_post_save_changes(
     old_s3_config: dict,
     old_proxy: dict,
 ) -> tuple[bool, str | None]:
+    """Apply the saved settings; return (restarted, WAF warning)."""
     return Bench(config, bench_root).apply_saved_settings(
         old_restart,
         old_firewall,

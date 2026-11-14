@@ -13,4 +13,5 @@ class SetupLetsEncryptCommand(Command):
     group: ClassVar[str] = "setup"
 
     def run(self) -> None:
+        """Issue the Let's Encrypt certificates."""
         self.bench.setup_letsencrypt(on_progress=self.report)

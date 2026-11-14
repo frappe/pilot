@@ -17,7 +17,11 @@ from pilot.exceptions import AppValidationError, BenchError
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
 
-_IMPORTS_AST_SCRIPT = """
+
+class ImportCheck:
+    """Validates imports in a throwaway venv without executing app modules."""
+
+    imports_ast_script = """
 import ast, json, sys
 
 def is_type_checking(test):
@@ -62,14 +66,11 @@ def file_imports(path):
 print(json.dumps({path: file_imports(path) for path in json.load(sys.stdin)["paths"]}))
 """
 
-
-class ImportCheck:
-    """Validates imports in a throwaway venv without executing app modules."""
-
     def __init__(self) -> None:
         self.tmp_env = TmpEnv()
 
     def run(self, app: "App") -> None:
+        """Raise when the app imports modules it cannot install."""
         locations = self._imported_module_locations(app)
         unresolved = self._get_on_disk_resolver(app).unresolved(locations)
         unresolved = self._get_missing_from_bench_env(app, unresolved)
@@ -139,6 +140,7 @@ class ImportCheck:
         return paths
 
     def _check_imports(self, app: "App", locations: dict[str, list[str]], unresolved: list[str]) -> None:
+        """Raise for the imports that still fail in a temporary environment."""
         reasons = missing_modules(self.tmp_env.python, unresolved)
         if not reasons:
             return  # find_spec disagrees with the stat check - nothing's actually missing
@@ -154,6 +156,7 @@ class ImportCheck:
         )
 
     def _imported_module_locations(self, app: "App", stdlib: set[str] | None = None) -> dict[str, list[str]]:
+        """The third-party modules the app imports, with where."""
         stdlib_names = sys.stdlib_module_names if stdlib is None else stdlib
         locations: dict[str, list[str]] = {}
         files = [p for p in python_files(app) if not self._is_test_file(p.relative_to(app.path))]
@@ -170,6 +173,7 @@ class ImportCheck:
 
     @staticmethod
     def _is_test_file(relpath: Path) -> bool:
+        """Whether the path is a test file."""
         # Test-only imports (responses, time_machine, ...) come from dev extras
         # a plain pip install never provides, so they'd always fail to resolve.
         if "tests" in relpath.parts[:-1]:
@@ -177,10 +181,11 @@ class ImportCheck:
         return relpath.name.startswith("test_") or relpath.name == "conftest.py"
 
     def _files_imported_modules(self, app: "App", paths: list[Path]) -> dict[Path, list[tuple[str, int]]]:
+        """The imports in each file, read by the bench Python."""
         if not paths:
             return {}
         bench_python = get_bench_python(app)
-        results = run_in_bench(bench_python, _IMPORTS_AST_SCRIPT, {"paths": [str(p) for p in paths]})
+        results = run_in_bench(bench_python, self.imports_ast_script, {"paths": [str(p) for p in paths]})
         modules: dict[Path, list[tuple[str, int]]] = {}
         for path in paths:
             data = results[str(path)]
@@ -202,6 +207,7 @@ class ImportCheck:
 
     @staticmethod
     def _resolve_relative_parts(app: "App", path: Path, module: str | None, level: int, lineno: int) -> str:
+        """The absolute module name of an import."""
         if level == 0:
             return module or ""
 

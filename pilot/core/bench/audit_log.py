@@ -70,10 +70,12 @@ def get_csv_row(record: dict) -> list[str]:
 # Extra fields merged into every audit entry. The admin backend registers a provider that
 # reads the current request (IP + actor); the CLI/worker leave the empty default.
 def _context_provider() -> dict:
+    """The default audit context: no extra fields."""
     return {}
 
 
 def set_audit_context_provider(provider: Callable[[], dict]) -> None:
+    """Set the function that adds request context, such as the user, to each audit entry."""
     global _context_provider
     _context_provider = provider
 
@@ -91,6 +93,7 @@ class AuditLog:
         self._log = JsonlLog(bench.logs_path, "audit")
 
     def append(self, entry_type: str, entry: dict) -> None:
+        """Add one entry with its type and time."""
         self._log.append({"type": entry_type, "logged_at": utc_now(), **entry})
 
     def entries(
@@ -126,6 +129,7 @@ class AuditLog:
 
     @staticmethod
     def _matches(record: dict, entry_type, site, status, jti=None) -> bool:
+        """Whether the record matches every filter that is set."""
         return (
             (entry_type is None or record.get("type") == entry_type)
             and (site is None or record.get("site") == site)

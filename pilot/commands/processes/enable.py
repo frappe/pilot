@@ -17,6 +17,7 @@ class EnableProcesses(Command):
     ]
 
     def run(self) -> None:
+        """Enable the processes."""
         enabled = self.bench.processes.enable(self.names)
         self.report(f"Enabled {', '.join(enabled)}. App processes run while a site uses their app.")
         if not self.bench.config.production.enabled:

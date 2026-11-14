@@ -7,8 +7,6 @@ from typing import Any
 
 from pilot.exceptions import BenchError
 
-_TIMEOUT_SECONDS = 10
-
 
 class CentralClientError(BenchError):
     """A Central call failed. `status_code` is Central's status when it answered
@@ -76,22 +74,27 @@ class CentralClient:
         return bool(self.forward("central.api.pilot.get_server_access", "GET")["is_locked"])
 
     def get_github_status(self) -> dict[str, Any]:
+        """The GitHub connection status."""
         return self.forward("central.api.integrations.github.status", "GET")
 
     def start_github_connection(self, return_url: str) -> str:
+        """Start a GitHub connection and return its URL."""
         return self.forward(
             "central.api.integrations.github.start_connection", "POST", {"return_url": return_url}
         )["url"]
 
     def get_github_repositories(self) -> list[dict[str, Any]]:
+        """The connected GitHub repositories."""
         return self.forward("central.api.integrations.github.repositories", "GET")
 
     def get_github_repository_token(self, repository: str) -> dict[str, str]:
+        """A token for one GitHub repository."""
         return self.forward(
             "central.api.integrations.github.repository_token", "POST", {"repository": repository}
         )
 
     def disconnect_github(self) -> None:
+        """Disconnect GitHub."""
         self.forward("central.api.integrations.github.disconnect", "POST", {})
 
     def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
@@ -112,7 +115,7 @@ class CentralClient:
         request = urllib.request.Request(url, data=body, method=http_method, headers=headers)
 
         try:
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(request, timeout=10) as response:
                 payload = json.loads(response.read().decode())
         except urllib.error.HTTPError as exc:
             detail = _error_detail(exc.read())

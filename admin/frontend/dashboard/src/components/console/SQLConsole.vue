@@ -57,7 +57,8 @@ const resultColumns = computed(() => {
   if (!currentResult.value) return []
   return [
     { key: 'sqlTableIndex', label: '#', class: 'w-8 tabular-nums text-ink-gray-4 text-xs' },
-    ...currentResult.value.columns.map((c) => ({ key: c, label: c })),
+    // Keyed by position: `SELECT a.name, b.name` returns two columns called name.
+    ...currentResult.value.columns.map((c, j) => ({ key: `column${j}`, label: c })),
   ]
 })
 
@@ -67,7 +68,7 @@ const paginatedRowObjects = computed<Record<string, unknown>[]>(() => {
   const offset = (page.value - 1) * perPage.value
   return rows.slice(offset, offset + perPage.value).map((row, i) => ({
     sqlTableIndex: offset + i + 1,
-    ...Object.fromEntries(columns.map((col, j) => [col, row[j]])),
+    ...Object.fromEntries(columns.map((_, j) => [`column${j}`, row[j]])),
   }))
 })
 
@@ -287,9 +288,13 @@ watch(perPage, () => {
 
           <template v-else>
             <Table height="h-auto" :columns="resultColumns" :rows="paginatedRowObjects">
-              <template v-for="name in currentResult.columns" :key="name" #[name]="{ row }">
-                <span v-if="row[name] === null" class="text-ink-gray-3 italic">null</span>
-                <span v-else class="block max-w-xs truncate">{{ row[name] }}</span>
+              <template
+                v-for="(_, j) in currentResult.columns"
+                :key="j"
+                #[`column${j}`]="{ row }"
+              >
+                <span v-if="row[`column${j}`] === null" class="text-ink-gray-3 italic">null</span>
+                <span v-else class="block max-w-xs truncate">{{ row[`column${j}`] }}</span>
               </template>
             </Table>
 

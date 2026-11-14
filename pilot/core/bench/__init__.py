@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pilot.core.bench.site_aliases import SiteAliases
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
+    from pilot.core.notification.notifier import Notifier
     from pilot.core.site import Site
     from pilot.core.site.storage import SiteStorageCollector
     from pilot.tasks import TaskRunner
@@ -48,13 +49,14 @@ class Bench:
 
     @staticmethod
     def _resolve_path(path_or_name: str | Path) -> Path:
+        """The bench path for a path, or for a bench name under the benches directory."""
         path = Path(path_or_name).expanduser()
         if isinstance(path_or_name, Path) or path.is_absolute() or path.parent != Path("."):
             return path.absolute()
 
-        from pilot.utils import benches_dir
+        from pilot.core.server import Server
 
-        return benches_dir() / path
+        return Server().benches_dir / path
 
     @classmethod
     def create_at(
@@ -88,68 +90,95 @@ class Bench:
 
     @property
     def db(self) -> "Database":
+        """The bench database connection, created on first use."""
         if self._db is None:
             from pilot.core.database import make_database
 
             self._db = make_database(self.config)
         return self._db
 
+    def clone(self, name: str, on_progress=print, *, branch="default", app_branches=None) -> "Bench":
+        """Clone this bench under a new name."""
+        from pilot.core.bench.cloning.bench import BenchClone
+
+        return BenchClone(self, name, branch, app_branches).run(on_progress)
+
+    def get_clone_branch_options(self, app_name: str) -> dict:
+        """The branch choices for cloning one app."""
+        from pilot.core.bench.cloning.branches import get_branch_options
+        from pilot.integrations.git import auth_config_for
+
+        app = next((app for app in self.apps() if app.config.name == app_name), None)
+        if app is None:
+            raise BenchError(f"Unknown app: {app_name}")
+        return get_branch_options(app.path, auth_config_for(self.path, app.config.repo))
+
     @cached_property
     def tasks(self) -> "TaskRunner":
+        """The bench task runner."""
         from pilot.tasks import TaskRunner
 
         return TaskRunner(self.path)
 
     @cached_property
     def migrations(self) -> "MigrationStore":
+        """The bench migration store."""
         from pilot.core.bench.migration.store import MigrationStore
 
         return MigrationStore(self)
 
     @cached_property
     def processes(self) -> "BenchProcesses":
+        """The bench processes."""
         from pilot.core.bench.processes import BenchProcesses
 
         return BenchProcesses(self)
 
     @cached_property
     def site_aliases(self) -> "SiteAliases":
+        """The bench site aliases."""
         from pilot.core.bench.site_aliases import SiteAliases
 
         return SiteAliases(self)
 
     @cached_property
     def backups(self) -> "BenchBackups":
+        """The bench backup schedule."""
         from pilot.core.bench.backups import BenchBackups
 
         return BenchBackups(self)
 
     @cached_property
     def certificates(self) -> "BenchCertificates":
+        """The bench certificate records."""
         from pilot.core.bench.certificates import BenchCertificates
 
         return BenchCertificates(self)
 
     @cached_property
     def notifications(self) -> "NotificationStore":
+        """The bench notification feed."""
         from pilot.core.notification import NotificationStore
 
         return NotificationStore(self.logs_path)
 
     @cached_property
     def hostname_aliases(self) -> "HostnameAliases":
+        """The bench hostname aliases."""
         from pilot.core.bench.hostname_aliases import HostnameAliases
 
         return HostnameAliases(self)
 
     @cached_property
     def site_storage(self) -> "SiteStorageCollector":
+        """The site storage usage collector."""
         from pilot.core.site.storage import SiteStorageCollector
 
         return SiteStorageCollector(self)
 
     @property
     def apps_path(self) -> Path:
+        """The apps directory."""
         return self.path / "apps"
 
     @property
@@ -158,19 +187,30 @@ class Bench:
         return self.path / ".staging"
 
     @property
+    def notifier(self) -> Notifier:
+        """Sends this bench's events to its webhooks, mail and Central."""
+        from pilot.core.notification.notifier import Notifier
+
+        return Notifier(self)
+
+    @property
     def sites_path(self) -> Path:
+        """The sites directory."""
         return self.path / "sites"
 
     @property
     def env_path(self) -> Path:
+        """The Python virtual environment directory."""
         return self.path / "env"
 
     @property
     def logs_path(self) -> Path:
+        """The logs directory."""
         return self.path / "logs"
 
     @property
     def config_path(self) -> Path:
+        """The generated config directory."""
         return self.path / "config"
 
     @property
@@ -185,14 +225,17 @@ class Bench:
 
     @property
     def pids_path(self) -> Path:
+        """The pid files directory."""
         return self.path / "pids"
 
     @property
     def python(self) -> Path:
+        """The bench Python interpreter."""
         return self.env_path / "bin" / "python"
 
     @property
     def is_initialized(self) -> bool:
+        """Whether setup finished: the environment exists and no setup is in progress."""
         return self.python.exists() and not (self.path / ".initializing").exists()
 
     @property
@@ -203,22 +246,23 @@ class Bench:
     @property
     def has_app_disabling(self) -> bool:
         """Whether this bench's Frappe can disable apps instead of uninstalling."""
-        from pilot.core.site.config import has_app_disabling
-
-        return any(has_app_disabling(self.path, site.config.name) for site in self.sites())
+        return any(site.database_state.has_app_disabling for site in self.sites())
 
     def get_db_root_args(self, db_type: str) -> list[str]:
+        """The bench new-site arguments for the database root user."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         return BenchConfigFiles(self).get_db_root_args(db_type)
 
     @property
     def postgres_root_password(self) -> str:
+        """The PostgreSQL root password."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         return BenchConfigFiles(self).postgres_root_password
 
     def app(self, name: str) -> "App":
+        """The app with this name."""
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).app(name)
@@ -226,42 +270,50 @@ class Bench:
     def new_app(
         self, app_name: str, options: "NewAppOptions | None" = None, on_progress=lambda message: None
     ) -> "App":
+        """Create a new app in this bench."""
         from pilot.core.app import App
 
         return App.scaffold(self, app_name, options, on_progress=on_progress)
 
     def apps(self) -> list["App"]:
+        """Every app in bench.toml."""
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).apps()
 
     def registered_apps(self) -> list[str]:
+        """The app names in sites/apps.txt."""
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).registered_apps()
 
     def is_app_installed(self, name: str) -> bool:
+        """Whether the app is installed in the bench environment."""
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).is_app_installed(name)
 
     def init_apps(self) -> list["App"]:
+        """The apps a new bench sets up first."""
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).init_apps()
 
     def sites(self) -> list["Site"]:
+        """Every site in the bench."""
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).sites()
 
     def site(self, name: str) -> "Site":
+        """The site with this name."""
         from pilot.config import SiteConfig
         from pilot.core.site import Site
 
         return Site(SiteConfig(name=name, apps=[]), self)
 
     def create_directories(self) -> None:
+        """Create the bench directories."""
         for directory in [
             self.apps_path,
             self.sites_path,
@@ -273,32 +325,38 @@ class Bench:
             directory.mkdir(parents=True, exist_ok=True)
 
     def write_apps_txt(self) -> None:
+        """Write sites/apps.txt from the installed apps."""
         from pilot.core.bench.inventory import BenchInventory
 
         BenchInventory(self).write_apps_txt()
 
     def set_maintenance_mode(self, enabled: bool) -> None:
+        """Turn maintenance mode on or off for every site."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).set_maintenance_mode(enabled)
 
     def sync_s3_credentials(self, s3_config: S3Config):
+        """Write the backup storage credentials to the common config."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).sync_s3_credentials(s3_config)
 
     def write_common_site_config(self) -> None:
+        """Write the managed keys to common_site_config.json."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).write_common_site_config()
 
     @property
     def public_common_site_config(self) -> dict:
+        """The common config keys a user may see and edit."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         return BenchConfigFiles(self).public_common_site_config
 
     def update_public_common_site_config(self, patch: dict) -> dict:
+        """Apply a patch to the editable common config."""
         from pilot.core.bench.config_files import BenchConfigFiles
 
         return BenchConfigFiles(self).update_public_common_site_config(patch)
@@ -308,11 +366,13 @@ class Bench:
         self.restart_processes()
 
     def start(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Start the bench processes."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).start(on_progress)
 
     def stop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Stop the bench processes."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).stop(on_progress)
@@ -322,26 +382,31 @@ class Bench:
         include_admin: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
+        """Restart the workload processes, and the Admin when asked."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).restart_workload(include_admin, on_progress)
 
     def run_production_action(self, action: str) -> None:
+        """Run a production process action, such as start or stop."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).run_production_action(action)
 
     def rebuild_runtime_config(self) -> None:
+        """Regenerate the runtime configs."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).rebuild_config()
 
     def rebuild_assets(self, apps: list[str] | None = None, force: bool = False) -> None:
+        """Build the assets for some or all apps."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).rebuild_assets(apps, force)
 
     def install_requirements(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Install every app's Python and node requirements."""
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).install_requirements(on_progress)
@@ -357,6 +422,13 @@ class Bench:
         the port itself, which a socket already holding it would refuse."""
         runner = self.apps_path / "frappe" / "frappe" / "runner.py"
         return runner.is_file() and "LISTEN_FDS" in runner.read_text()
+
+    @property
+    def has_python_reloader(self) -> bool:
+        """Whether dev processes reload on Python changes: `reload_python` is on and watchdog is installed."""
+        from pilot.internal.host_resources import InstalledPackages
+
+        return self.config.reload_python and bool(InstalledPackages(self.env_path).get_version("watchdog"))
 
     @property
     def is_lite_mode(self) -> bool:
@@ -424,6 +496,7 @@ class Bench:
         old_s3_config: dict,
         old_proxy: dict,
     ) -> tuple[bool, str | None]:
+        """Apply what changed in the saved settings; return (restarted, WAF warning)."""
         from pilot.core.bench.settings import BenchSettings
 
         return BenchSettings(self).apply_saved_settings(
@@ -435,31 +508,37 @@ class Bench:
         )
 
     def get_cloudflare_status(self) -> dict:
+        """The edge proxy and which site domains resolve to Cloudflare."""
         from pilot.core.bench.settings import BenchSettings
 
         return BenchSettings(self).get_cloudflare_status()
 
     def restart_processes(self) -> None:
+        """Restart the production processes."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).restart_processes()
 
     def rebuild_process_set(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Reinstall the production process units for the current process set."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).rebuild_process_set(on_progress)
 
     def remove_production(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Remove the production setup."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).remove_production(on_progress)
 
     def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Delete the bench and its production setup; it must have no sites."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).drop(on_progress)
 
     def ensure_no_sites(self) -> None:
+        """Raise when the bench still has sites."""
         sites = self.sites()
         if sites:
             listed = ", ".join(s.config.name for s in sites)
@@ -469,6 +548,7 @@ class Bench:
             )
 
     def setup_nginx(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Write and install the nginx config for this production bench."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).setup_nginx(on_progress)
@@ -483,7 +563,7 @@ class Bench:
 
     def site_claiming(self, host: str, ignoring: str = "") -> str | None:
         """Return the site claiming host, excluding one optional site."""
-        from pilot.utils import normalize_host
+        from pilot.internal.hostnames import normalize_host
 
         target = normalize_host(host)
         if not target:
@@ -505,20 +585,22 @@ class Bench:
 
     def certificate_name(self, site: "SiteConfig") -> str:
         """Return the certbot lineage this site may use."""
-        from pilot.utils import host_owner, normalize_host
+        from pilot.core.bench.directory import BenchDirectory
+        from pilot.internal.hostnames import normalize_host
 
         pinned = site.certificate_name
         if pinned == site.name:
             return pinned
         if normalize_host(pinned) == normalize_host(self.config.admin.domain):
             return site.name
-        if self.site_claiming(pinned, ignoring=site.name) or host_owner(self.path, pinned):
+        siblings = BenchDirectory.siblings_of(self.path)
+        if self.site_claiming(pinned, ignoring=site.name) or siblings.get_host_owner(pinned):
             return site.name
         return pinned
 
     def clear_cache(self) -> None:
         """Drop Frappe's cached config and assets for every site in this bench."""
-        from pilot.utils import run_command
+        from pilot.internal.command import run_command
 
         if not self.sites():
             return
@@ -532,14 +614,14 @@ class Bench:
     @property
     def admin_internal_endpoint(self) -> str:
         """The loopback admin URL a site stores as `pilot_endpoint`."""
-        from pilot.utils import admin_url
 
         if not self.config.production.enabled:
-            return admin_url(self.config)
+            return self.config.admin_url
         return f"http://127.0.0.1:{self.config.admin.internal_port}"
 
     @property
     def embed_endpoint(self) -> str:
+        """The path the sites embed the Admin from."""
         return "/_pilot" if self.config.production.enabled else self.admin_endpoint
 
     def configure_site_embeds(self) -> None:
@@ -572,10 +654,10 @@ class Bench:
     def admin_endpoint(self) -> str:
         """The public admin URL that a browser on a site reaches."""
         from pilot.core.adapters.domain_provider import DomainRouteProvider
-        from pilot.utils import admin_url, matches_wildcard
+        from pilot.internal.hostnames import matches_wildcard
 
         admin = self.config.admin
-        url = admin_url(self.config)
+        url = self.config.admin_url
         if admin.route or not self.config.production.enabled or not admin.domain:
             return url
         patterns = DomainRouteProvider.wildcard_domains()
@@ -587,6 +669,7 @@ class Bench:
         tls: bool | None = None,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
+        """Move the Admin to a new domain."""
         from pilot.core.bench.admin_domain import AdminDomainChange
 
         AdminDomainChange(self, domain, tls).run(on_progress)
@@ -599,11 +682,13 @@ class Bench:
         rebootstrap: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
+        """Enable Central management with its Admin and site alias patterns."""
         from pilot.core.bench.central import CentralSetup
 
         CentralSetup(self, admin_pattern, site_pattern, redirect, rebootstrap).run(on_progress)
 
     def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Issue Let's Encrypt certificates for the bench domains."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).setup_letsencrypt(on_progress)
@@ -631,6 +716,7 @@ class Bench:
         best_effort_tls: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
+        """Deploy the bench to production."""
         from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).setup_production(
@@ -643,6 +729,7 @@ class Bench:
         )
 
     def reload_workers(self, web_only: bool = False, raises: bool = False):
+        """Reload the workers, or only the web workers; print the error and raise only when asked."""
         from pilot.managers.processes.local import ProcessManager
 
         try:
@@ -658,16 +745,19 @@ class Bench:
         on_progress: Callable[[str], None],
         pins: dict[str, RevisionPin] | None = None,
     ) -> None:
+        """Update the apps, optionally to pinned revisions."""
         from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).update_apps(apps_filter, on_progress, pins)
 
     def _reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        """Reinstall the apps into the environment."""
         from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).reinstall_apps(apps_filter, on_progress)
 
     def _rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+        """Rebuild the assets of the apps."""
         from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).rebuild_assets(apps_filter, on_progress)

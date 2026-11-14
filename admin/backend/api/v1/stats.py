@@ -6,8 +6,9 @@ from datetime import UTC
 from pathlib import Path
 
 import psutil
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from pilot.config import BenchConfig
 
@@ -28,6 +29,7 @@ _io_state = {
 
 
 def _cpu_breakdown() -> dict:
+    """The CPU time split in percent."""
     times = psutil.cpu_times_percent()
     return {
         "user": round(times.user + times.nice, 2),
@@ -40,6 +42,7 @@ def _cpu_breakdown() -> dict:
 
 
 def _io_rates() -> dict:
+    """The network and disk rates since the last call."""
     now = time.monotonic()
     net, disk = psutil.net_io_counters(), psutil.disk_io_counters()
     elapsed = max(now - _io_state["time"], 0.001)
@@ -63,6 +66,7 @@ def _io_rates() -> dict:
 
 
 def _memory_breakdown(mem, swap) -> dict:
+    """The memory and swap split."""
     free_bytes = int(mem.free)
     cached_bytes = int(getattr(mem, "cached", 0) + getattr(mem, "buffers", 0))
     return {
@@ -74,6 +78,7 @@ def _memory_breakdown(mem, swap) -> dict:
 
 
 def _log_file_info(description: str, path: Path) -> dict:
+    """The size and modification time of a log file."""
     from datetime import datetime
 
     if path.exists():
@@ -85,9 +90,10 @@ def _log_file_info(description: str, path: Path) -> dict:
 
 @stats_bp.get("/monitor/status")
 def get_monitor_status():
+    """Show the monitor status."""
     from pilot.config.monitor import bench_log_path, system_log_path
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         config = BenchConfig.read(bench_root)
         return jsonify(
@@ -106,9 +112,10 @@ def get_monitor_status():
 
 @stats_bp.get("/monitor/history")
 def get_monitor_history():
-    from admin.backend.providers.system_monitoring import SystemMonitoringProvider
+    """Show the system metrics history."""
+    from admin.backend.providers.server.monitoring import SystemMonitoringProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "1h")
     try:
         return jsonify(SystemMonitoringProvider(bench_root, window).get_history())
@@ -122,9 +129,10 @@ def get_monitor_history():
 
 @stats_bp.get("/database/history")
 def get_db_history():
-    from admin.backend.providers.database_monitoring import DatabaseMonitoringProvider
+    """Show the database metrics history."""
+    from admin.backend.providers.database.monitoring import DatabaseMonitoringProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "1h")
     try:
         return jsonify(DatabaseMonitoringProvider(bench_root, window).get_history())
@@ -138,9 +146,10 @@ def get_db_history():
 
 @stats_bp.get("/waf")
 def get_waf_analytics():
-    from admin.backend.providers.waf import WafProvider
+    """Show the WAF analytics."""
+    from admin.backend.providers.server.waf import WafProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     window = request.args.get("window", "24h")
     try:
         return jsonify(WafProvider(bench_root, window).get_analytics())
@@ -150,10 +159,11 @@ def get_waf_analytics():
 
 @stats_bp.get("/system")
 def system_info():
-    from admin.backend.providers.os import OSProvider
-    from pilot.managers.platform import kernel_version, os_version
+    """Show the host details."""
+    from admin.backend.providers.server.os import OSProvider
+    from pilot.managers.platform import HostPlatform
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     config = BenchConfig.read(bench_root)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
@@ -163,8 +173,8 @@ def system_info():
             "cpu_count": os.cpu_count(),
             "memory_total": mem.total,
             "swap_total": swap.total,
-            "kernel_version": kernel_version(),
-            "os_version": os_version(),
+            "kernel_version": HostPlatform().kernel_version,
+            "os_version": HostPlatform().os_version,
             "runtime": OSProvider(bench_root, config).get_versions(),
         }
     )
@@ -172,6 +182,7 @@ def system_info():
 
 @stats_bp.get("/metrics")
 def stats():
+    """Show the current CPU, memory and disk use."""
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
     disk = psutil.disk_usage("/")
@@ -195,11 +206,12 @@ def stats():
 
 @stats_bp.get("/storage")
 def storage_breakdown():
+    """Show the storage breakdown."""
     from dataclasses import asdict
 
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     disk = psutil.disk_usage("/")
     try:
         breakdown = StorageProvider(bench_root).get_breakdown(disk.total, disk.used)

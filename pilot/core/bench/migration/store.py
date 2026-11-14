@@ -14,13 +14,12 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
     replace_private_text_locked,
 )
-from pilot.utils import make_private_directory
+from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
-_CHAIN_RECORD_WAIT_SECONDS = 30
 
 
 class MigrationStore:
@@ -81,7 +80,8 @@ class MigrationStore:
         return operation
 
     def save(self, operation: MigrationOperation) -> None:
-        make_private_directory(self.root, parents=True)
+        """Save the operation as private JSON."""
+        PrivateDirectory(self.root).create(parents=True)
         atomic_write_private_text(
             self.root / f"{operation.id}.json", json.dumps(operation.to_dict(), indent=2)
         )
@@ -99,7 +99,7 @@ class MigrationStore:
     ) -> MigrationOperation:
         """Wait for registration to avoid overwriting the chain entry.
         Recover the entry if the queuing task stopped before registering it."""
-        deadline = time.monotonic() + _CHAIN_RECORD_WAIT_SECONDS
+        deadline = time.monotonic() + 30
         while True:
             operation = self.get(operation_id)
             if not task_id or any(entry["task_id"] == task_id for entry in operation.chain):
@@ -111,9 +111,11 @@ class MigrationStore:
             time.sleep(0.2)
 
     def delete(self, operation_id: str) -> None:
+        """Delete a saved operation."""
         (self.root / f"{operation_id}.json").unlink(missing_ok=True)
 
     def get(self, operation_id: str) -> MigrationOperation:
+        """The saved operation; raise when it does not exist or cannot be read."""
         path = self.root / f"{operation_id}.json"
         if not path.exists():
             raise MigrationNotFoundError(f"Migration operation not found: {operation_id}")
@@ -124,6 +126,7 @@ class MigrationStore:
             raise BenchError(f"Could not load migration operation {path.name}: {error}") from error
 
     def get_all(self) -> list[MigrationOperation]:
+        """Every saved operation, newest first."""
         if not self.root.exists():
             return []
         operations = [self.get(path.stem) for path in self.root.glob("*.json")]
@@ -137,6 +140,7 @@ class MigrationStore:
         return failed or next(iter(unresolved), None)
 
     def unresolved_for_site(self, site_name: str) -> list[MigrationOperation]:
+        """The unresolved operations that include the site."""
         return [
             operation
             for operation in self.get_all()
@@ -151,6 +155,7 @@ class MigrationStore:
         apps_filter: list[str] | None,
         sites: list[str],
     ) -> MigrationOperation:
+        """Create and save a new operation; raise when another one is unresolved."""
         current = self.current()
         if current is not None:
             raise MigrationConflictError(
@@ -174,4 +179,5 @@ class MigrationStore:
 
     @staticmethod
     def _new_id() -> str:
+        """A new operation ID from the time and a random suffix."""
         return datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)

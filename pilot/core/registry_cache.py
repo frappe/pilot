@@ -4,41 +4,43 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 from pilot.exceptions import CommandError, RegistryUnavailableError
+from pilot.internal.atomic_file import exclusive_file_lock
+from pilot.internal.command import run_command
 from pilot.internal.git import GitRepo
 from pilot.managers.cron import CronManager, cron_module_command
-from pilot.utils import run_command
 
 REGISTRY_URL = "https://github.com/frappe/marketplace"
-
-_REFRESH_INTERVAL_SECONDS = 60 * 60
-_LS_REMOTE_TIMEOUT_SECONDS = 15
-_CRON_JOB_KEY = "marketplace-registry-refresh"
-_CRON_SCHEDULE = "0 3 * * *"  # once a day, 03:00
-_APP_NAME = re.compile(r"[a-z][a-z0-9_]*")
 
 
 class RegistryCache:
     """Shallow, read-only clone at <cli_root>/registry-cache."""
+
+    app_name = re.compile(r"[a-z][a-z0-9_]*")
 
     def __init__(self, cli_root: Path) -> None:
         self._cli_root = cli_root
 
     @property
     def path(self) -> Path:
+        """The registry clone directory."""
         return self._cli_root / "system" / "registry-cache"
 
     @property
     def index_path(self) -> Path:
+        """The app index file."""
         return self.path / "apps.json"
 
     @property
     def _last_checked_path(self) -> Path:
+        """The file whose time records the last refresh check."""
         return self._cli_root / "system" / "registry-cache.last_checked"
 
     def load(self) -> list[dict]:
@@ -56,7 +58,7 @@ class RegistryCache:
     def releases(self, app_name: str) -> list[dict]:
         """Releases for one indexed app. Assumes `load` has already run, so it does
         not re-check freshness - that check shells out to git."""
-        if not _APP_NAME.fullmatch(app_name):
+        if not self.app_name.fullmatch(app_name):
             raise RegistryUnavailableError(f"{app_name!r} is not a marketplace app name.")
         payload = self._read_json(self.path / "apps" / f"{app_name}.json")
         releases = payload.get("releases") if isinstance(payload, dict) else None
@@ -70,13 +72,14 @@ class RegistryCache:
         name = entry.get("name") or ""
         pointer = entry.get("releases")
         expected = f"apps/{name}.json"
-        if not _APP_NAME.fullmatch(name) or pointer != expected:
+        if not RegistryCache.app_name.fullmatch(name) or pointer != expected:
             raise RegistryUnavailableError(
                 f"The marketplace entry {name or entry!r} must point 'releases' at "
                 f"{expected!r}, not {pointer!r} - the registry cache is unusable."
             )
 
     def _read_json(self, path: Path):
+        """The parsed JSON file; raise when it cannot be read."""
         try:
             return json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
@@ -85,29 +88,40 @@ class RegistryCache:
             ) from exc
 
     def ensure_fresh(self) -> None:
-        """Clone on first use; later reject tampering and refresh hourly."""
-        if not self._is_cloned():
-            self._clone()
-            self._touch_last_checked()
-            return
+        """Clone on first use; later reject tampering and refresh hourly.
 
-        self._reject_if_tampered()
-        if self._refresh_due():
-            self._refresh()
-            self._touch_last_checked()
+        Admin pages ask for the registry in parallel, so one lock serializes the clone and refresh."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(self.path.with_name("registry-cache.guard")):
+            if not self._is_cloned():
+                self._clone()
+                self._touch_last_checked()
+                return
+
+            self._reject_if_tampered()
+            if self._refresh_due():
+                self._refresh()
+                self._touch_last_checked()
 
     def _is_cloned(self) -> bool:
+        """Whether the registry is cloned."""
         return (self.path / ".git").is_dir()
 
     def _clone(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        """Clone beside the cache and rename it in, so a failed clone leaves no partial directory."""
+        staging = Path(tempfile.mkdtemp(prefix=".registry-cache-", dir=self.path.parent))
         try:
-            run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(self.path)])
+            run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(staging)])
+            shutil.rmtree(self.path, ignore_errors=True)
+            staging.rename(self.path)
         except CommandError as exc:
             raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}") from exc
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
         self.install_daily_refresh_cron()
 
     def _reject_if_tampered(self) -> None:
+        """Raise when the clone has local changes."""
         try:
             result = run_command(["git", "-C", str(self.path), "status", "--porcelain"])
         except CommandError as exc:
@@ -122,12 +136,14 @@ class RegistryCache:
             )
 
     def _refresh_due(self) -> bool:
+        """Whether the refresh interval passed."""
         if not self._last_checked_path.exists():
             return True
         last_checked = self._last_checked_path.stat().st_mtime
-        return time.time() - last_checked >= _REFRESH_INTERVAL_SECONDS
+        return time.time() - last_checked >= 60 * 60
 
     def _refresh(self) -> None:
+        """Pull the registry when the remote head moved; keep the clone when offline."""
         remote_head = self._remote_head_sha()
         if remote_head is None:
             return  # offline - keep serving the existing clone
@@ -144,10 +160,9 @@ class RegistryCache:
             return  # local git trouble or network dropped mid-fetch - keep serving the existing clone
 
     def _remote_head_sha(self) -> str | None:
+        """The remote head commit, or None when offline."""
         try:
-            result = run_command(
-                ["git", "ls-remote", REGISTRY_URL, "HEAD"], timeout=_LS_REMOTE_TIMEOUT_SECONDS
-            )
+            result = run_command(["git", "ls-remote", REGISTRY_URL, "HEAD"], timeout=15)
         except (CommandError, subprocess.SubprocessError, OSError):
             return None
         stdout = result.stdout.decode()
@@ -156,6 +171,7 @@ class RegistryCache:
         return sha or None
 
     def _touch_last_checked(self) -> None:
+        """Record the refresh check time."""
         self._last_checked_path.touch()
 
     def install_daily_refresh_cron(self) -> None:
@@ -163,7 +179,7 @@ class RegistryCache:
         log_file = self._cli_root / "system" / "registry-cache.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         command = cron_module_command("pilot.core.registry_cache", [self._cli_root], log_file)
-        CronManager(self._cli_root).set_schedule(_CRON_JOB_KEY, _CRON_SCHEDULE, command)
+        CronManager(self._cli_root).set_schedule("marketplace-registry-refresh", "0 3 * * *", command)
 
 
 if __name__ == "__main__":

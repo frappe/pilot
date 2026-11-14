@@ -22,6 +22,7 @@ def run(benches_root: Path) -> None:
 
 
 def check_sessions_locally(bench) -> None:
+    """Make realtime check sessions locally."""
     from pilot.config.common_site_config import update_common_site_config
     from pilot.managers.processes.definitions import ProcessDefinitionBuilder
     from pilot.managers.processes.local import ProcessManager
@@ -42,6 +43,6 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from pilot.utils import benches_dir
+    from pilot.core.server import Server
 
-    run(benches_dir())
+    run(Server().benches_dir)

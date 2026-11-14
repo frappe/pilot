@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from pilot.config import BenchConfig
 from pilot.exceptions import CommandError
@@ -29,7 +29,8 @@ def test_metrics_does_not_measure_directories(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "admin.backend.providers.storage.directory_bytes",
+        "pilot.internal.host_resources.DiskUsage.bytes",
+        new_callable=PropertyMock,
         side_effect=CommandError("du failed"),
     ) as directory_bytes:
         response = client.get("/api/v1/metrics")

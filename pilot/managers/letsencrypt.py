@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import CommandError
+from pilot.internal.command import run_command
 from pilot.managers.nginx import LETSENCRYPT_LIVE
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import _privileged, which
+from pilot.managers.platform import HostPlatform, Privileges
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant
-from pilot.utils import run_command
 
 if TYPE_CHECKING:
     from pilot.config import SiteConfig
@@ -20,12 +20,8 @@ if TYPE_CHECKING:
     from pilot.core.bench.certificates import CertificateFile
     from pilot.core.site import Site
 
-_CERT_EXPIRY_THRESHOLD_DAYS = 30
 # certbot renews from 30 days left, so a certificate this close to expiry is failing to renew.
 # certbot exits at once while another run (e.g. the renewal timer) holds its lock.
-_CERTBOT_LOCKED = "Another instance of Certbot is already running"
-_CERTBOT_LOCK_ATTEMPTS = 6
-_CERTBOT_LOCK_WAIT_SECONDS = 10
 _RENEWAL_TIMER = """\
 [Unit]
 Description=certificate renewal timer
@@ -84,7 +80,7 @@ def certificate_domains(site: "SiteConfig") -> list[str]:
 def local_public_domains(site: "SiteConfig") -> list[str]:
     """Public domains eligible for local TLS, respecting provider routing."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import matches_wildcard
+    from pilot.internal.hostnames import matches_wildcard
 
     patterns: list[str] | None = None
     domains = []
@@ -104,7 +100,7 @@ def local_public_domains(site: "SiteConfig") -> list[str]:
 def is_admin_certificate_required(bench: "Bench") -> bool:
     """Whether the public Admin hostname needs a certificate on this host."""
     from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import matches_wildcard
+    from pilot.internal.hostnames import matches_wildcard
 
     admin = bench.config.admin
     if not admin.tls or not is_public_domain(admin.domain):
@@ -119,7 +115,7 @@ def certificate_domain_names(cert_file: Path) -> set[str]:
     import subprocess
 
     result = subprocess.run(
-        _privileged(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
+        Privileges.get_command(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
         capture_output=True,
         text=True,
         timeout=10,
@@ -141,7 +137,7 @@ def certificate_expiry(cert_file: Path) -> "datetime | None":
     import subprocess
 
     result = subprocess.run(
-        _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
+        Privileges.get_command(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
         capture_output=True,
         text=True,
         timeout=10,
@@ -189,13 +185,18 @@ def is_letsencrypt_required(bench: "Bench") -> bool:
 
 
 class LetsEncryptManager:
+    certbot_lock_attempts = 6
+    certbot_lock_wait_seconds = 10
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
     def is_installed(self) -> bool:
+        """Whether certbot is installed."""
         return shutil.which("certbot") is not None
 
     def install(self) -> None:
+        """Install certbot if it is missing."""
         if not self.is_installed():
             get_package_manager().install("certbot")
 
@@ -204,10 +205,10 @@ class LetsEncryptManager:
         if self.has_passwordless_sudo:
             return
         bench_user = pwd.getpwuid(self.bench.path.stat().st_uid).pw_name
-        certbot = which("certbot") or "/usr/bin/certbot"
-        openssl = which("openssl") or "/usr/bin/openssl"
-        mkdir = which("mkdir") or "/bin/mkdir"
-        test = which("test") or "/usr/bin/test"
+        certbot = HostPlatform().get_executable_path("certbot") or "/usr/bin/certbot"
+        openssl = HostPlatform().get_executable_path("openssl") or "/usr/bin/openssl"
+        mkdir = HostPlatform().get_executable_path("mkdir") or "/bin/mkdir"
+        test = HostPlatform().get_executable_path("test") or "/usr/bin/test"
         webroot_path = self.bench.config.letsencrypt.webroot_path
         hook = _nginx_reload_hook()
         # Domain/cert-name/email tokens must stay wildcarded (new sites arrive after
@@ -238,15 +239,17 @@ class LetsEncryptManager:
     @property
     def has_passwordless_sudo(self) -> bool:
         """Whether the certbot sudoers grant is active."""
-        certbot = which("certbot") or "/usr/bin/certbot"
+        certbot = HostPlatform().get_executable_path("certbot") or "/usr/bin/certbot"
         return has_passwordless_sudo_for([certbot, "renew", "--quiet"])
 
     def ensure_webroot(self) -> None:
+        """Create the ACME webroot."""
         # /var/www is root-owned, so create the webroot with sudo. Default 0755
         # lets certbot (root) write ACME challenges and nginx read them.
-        run_command(_privileged(["mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)]))
+        run_command(Privileges.get_command(["mkdir", "-p", str(self.bench.config.letsencrypt.webroot_path)]))
 
     def obtain(self, site: "SiteConfig") -> None:
+        """Issue or renew the site's certificate."""
         from pilot.managers.nginx import NginxManager
 
         domains = certificate_domains(site)
@@ -339,9 +342,10 @@ class LetsEncryptManager:
         from dataclasses import replace
 
         self.obtain(replace(site.config, cert_name=""))
-        site.clear_certificate_pin()
+        site.config_file.clear_certificate_pin()
 
     def obtain_admin(self) -> None:
+        """Issue or renew the Admin certificate."""
         from pilot.managers.nginx import NginxManager
 
         if not is_admin_certificate_required(self.bench):
@@ -374,27 +378,27 @@ class LetsEncryptManager:
     def run_certbot(self, argv: list[str]) -> None:
         """Run certbot with sudo, waiting while another certbot run holds its lock. Its output
         goes to the task log, and a failure keeps certbot's reason."""
-        for attempt in range(1, _CERTBOT_LOCK_ATTEMPTS + 1):
-            result = run_command(_privileged(argv), tee_output=True)
+        for attempt in range(1, self.certbot_lock_attempts + 1):
+            result = run_command(Privileges.get_command(argv), tee_output=True)
             if result.returncode == 0:
                 return
-            if _CERTBOT_LOCKED not in result.stdout:
+            if "Another instance of Certbot is already running" not in result.stdout:
                 raise CommandError(get_certbot_failure(result.stdout), returncode=result.returncode)
-            if attempt == _CERTBOT_LOCK_ATTEMPTS:
+            if attempt == self.certbot_lock_attempts:
                 raise CommandError(
                     "Another certbot run is in progress. Try again in a minute.", returncode=result.returncode
                 )
-            print(f"Another certbot run is in progress. Retrying in {_CERTBOT_LOCK_WAIT_SECONDS} seconds...")
-            time.sleep(_CERTBOT_LOCK_WAIT_SECONDS)
+            print(f"Another certbot run is in progress. Retrying in {self.certbot_lock_wait_seconds} seconds...")
+            time.sleep(self.certbot_lock_wait_seconds)
 
     def renew(self) -> None:
         """Refresh this bench's current origin certificates without renewing retired routes."""
         from pilot.internal.atomic_file import exclusive_file_lock
+        from pilot.internal.private_files import PrivateDirectory
         from pilot.managers.nginx import NginxManager
-        from pilot.utils import make_private_directory
 
         directory = self.bench.config_path / "site-renames"
-        make_private_directory(directory, parents=True)
+        PrivateDirectory(directory).create(parents=True)
         with exclusive_file_lock(directory / "operations"):
             if not any(
                 certificate_domains(site.config) for site in self.bench.sites()
@@ -404,14 +408,16 @@ class LetsEncryptManager:
             NginxManager(self.bench).apply_config()
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
+        """Whether the site's certificate is missing or near expiry."""
         from pilot.managers.nginx import NginxManager
 
         nginx_manager = NginxManager(self.bench)
         return self._is_near_expiry_cert(nginx_manager.cert_path(site))
 
     def _is_near_expiry_cert(self, cert_file: Path) -> bool:
+        """Whether the certificate is missing or near expiry."""
         days_left = certificate_days_left(cert_file)
-        return days_left is None or days_left < _CERT_EXPIRY_THRESHOLD_DAYS
+        return days_left is None or days_left < 30
 
     def get_certificate_files(self) -> list["CertificateFile"]:
         """The certificates this bench's current local TLS routes use, whether or not the file exists yet."""
@@ -435,6 +441,7 @@ class LetsEncryptManager:
 
 
 def is_renewal_timer_installed() -> bool:
+    """Whether the certificate renewal timer is installed."""
     from pilot.managers.systemd_user import user_timer_installed
 
     return user_timer_installed("pilot-certificates.timer")
@@ -443,13 +450,13 @@ def is_renewal_timer_installed() -> bool:
 def install_renewal_timer() -> None:
     """Install the host-wide daily timer that renews certificates and warns before one
     expires, once; Fedora and Arch do not enable certbot's timer."""
+    from pilot.core.server import Server
     from pilot.managers.environment import AdminEnvManager
     from pilot.managers.systemd_user import install_user_timer
-    from pilot.utils import cli_root
 
     if is_renewal_timer_installed():
         return
-    root = cli_root()
+    root = Server().root
     (root / "system" / "logs").mkdir(parents=True, exist_ok=True)
     install_user_timer(
         unit_dir=root / "system" / "certificates",
@@ -463,12 +470,12 @@ def install_renewal_timer() -> None:
 def main() -> None:
     """Refresh each bench's local certificates, then check their expiry."""
     from pilot.core.bench import Bench
+    from pilot.core.server import Server
     from pilot.exceptions import BenchError
-    from pilot.utils import cli_root, iter_sibling_benches
 
     benches = [
         Bench(config, path)
-        for path, config in iter_sibling_benches(cli_root() / "benches" / ".certificates-placeholder")
+        for path, config in Server().benches.iter_configs()
         if config.production.enabled and config.letsencrypt.email
     ]
     for bench in benches:

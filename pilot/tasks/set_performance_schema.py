@@ -19,6 +19,7 @@ class SetPerformanceSchemaTask(Task):
     state: Literal["enabled", "disabled"]
 
     def run(self) -> None:
+        """Turn the Performance Schema on or off."""
         if self.state not in ("enabled", "disabled"):
             raise DatabaseError("Performance Schema state must be 'enabled' or 'disabled'.")
         self.configure()
@@ -28,6 +29,7 @@ class SetPerformanceSchemaTask(Task):
         lambda self: f"{'Enabling' if self.state == 'enabled' else 'Disabling'} Performance Schema",
     )
     def configure(self) -> None:
+        """Change the Performance Schema setting."""
         DatabaseQuickActions(self.bench.config).set_performance_schema(
             self.state == "enabled",
             restart_executor=self.restart,
@@ -35,6 +37,7 @@ class SetPerformanceSchemaTask(Task):
 
     @step("restart", "Restarting MariaDB")
     def restart(self, callback: Callable[[], None]) -> None:
+        """Run the restart in a step."""
         callback()
 
 

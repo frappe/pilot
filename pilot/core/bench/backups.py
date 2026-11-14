@@ -22,6 +22,7 @@ class BenchBackups:
         self.bench = bench
 
     def install_schedule(self) -> None:
+        """Install the cron job that queues scheduled site backups."""
         from pilot.managers.cron import CronManager, cron_module_command
 
         command = cron_module_command(
@@ -38,6 +39,7 @@ class BenchBackups:
         return history
 
     def queue_scheduled(self, now: datetime | None = None) -> None:
+        """Queue each site's backup when its schedule is due."""
         now = now or datetime.now(UTC)
         history = self.get_recent_history(now)
         for site in self.bench.sites():

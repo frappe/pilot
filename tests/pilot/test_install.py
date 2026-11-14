@@ -122,6 +122,7 @@ def test_system_packages_present_fails_when_required_package_is_missing(distro: 
         f"""
 DISTRO={distro}
 base_tools_present() {{ return 0; }}
+pkg_available() {{ return 1; }}
 pkg_installed() {{ [ "$1" != "{missing}" ]; }}
 system_packages_present
 """,

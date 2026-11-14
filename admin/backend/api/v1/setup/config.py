@@ -10,7 +10,6 @@ from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
 _DB_ENGINES = ("mariadb", "postgres")
-_DB_FIELDS = ("admin_user", "existing", "host", "password", "port")
 
 SETTABLE_KEYS = frozenset(
     {
@@ -18,7 +17,7 @@ SETTABLE_KEYS = frozenset(
         "app_repo",
         "db_mode",
         "db_type",
-        *(f"{engine}_{field}" for engine in _DB_ENGINES for field in _DB_FIELDS),
+        *(f"{engine}_{field}" for engine in _DB_ENGINES for field in ("admin_user", "existing", "host", "password", "port")),
     }
 )
 
@@ -30,6 +29,7 @@ def validate_settable_keys(data: dict) -> str | None:
 
 
 def validate_configuration(data: dict) -> str | None:
+    """The error with the setup fields, or None."""
     if error := _validate_field_types(data):
         return error
     if error := _validate_required_fields(data):
@@ -40,6 +40,7 @@ def validate_configuration(data: dict) -> str | None:
 
 
 def _validate_field_types(data: dict) -> str | None:
+    """The error when a field has the wrong type, or None."""
     text_fields = (
         "app_branch",
         "app_repo",
@@ -67,6 +68,7 @@ def _validate_field_types(data: dict) -> str | None:
 
 
 def _validate_required_fields(data: dict) -> str | None:
+    """The error when a required field is missing, or None."""
     db_type = data.get("db_type", "mariadb")
     if db_type not in ("mariadb", "postgres"):
         return "db_type must be 'mariadb' or 'postgres'"
@@ -78,6 +80,7 @@ def _validate_required_fields(data: dict) -> str | None:
 
 
 def _validate_existing_database(data: dict) -> str | None:
+    """The error with existing database settings, or None."""
     db_type = data.get("db_type", "mariadb")
     if data.get(f"{db_type}_existing"):
         if not data.get(f"{db_type}_host"):
@@ -88,6 +91,7 @@ def _validate_existing_database(data: dict) -> str | None:
 
 
 def _validate_app_source(data: dict) -> str | None:
+    """The error with the app repository or branch, or None."""
     if "app_repo" in data and (error := validate_repo_url(data["app_repo"])):
         return error
     if "app_branch" in data and (error := validate_branch_name(data["app_branch"])):
@@ -116,7 +120,8 @@ def apply_existing_local_database(bench_root: Path, data: dict) -> dict:
 
 
 def read_defaults(bench_root: Path) -> dict:
-    from pilot.managers.platform import is_linux, native_process_manager
+    """The setup fields with their defaults."""
+    from pilot.managers.platform import HostPlatform
 
     # This is a read endpoint the wizard polls before login - it must never echo
     # a DB password back, default or real, whether or not bench.toml has one set.
@@ -124,8 +129,8 @@ def read_defaults(bench_root: Path) -> dict:
 
     result = {
         "bench_name": bench_root.name,
-        "is_linux": is_linux(),
-        "native_process_manager": native_process_manager(),
+        "is_linux": HostPlatform().is_linux,
+        "native_process_manager": HostPlatform.native_process_manager,
         **defaults,
     }
     toml_path = bench_root / "bench.toml"

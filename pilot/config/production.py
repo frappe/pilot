@@ -14,6 +14,7 @@ class ProductionConfig:
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "ProductionConfig":
+        """The production config from its TOML table."""
         if data is None:
             return cls()
         pm = cls._normalize_process_manager(str(data.get("process_manager", "")))
@@ -29,6 +30,7 @@ class ProductionConfig:
 
     @staticmethod
     def _normalize_process_manager(value: str) -> str:
+        """The process manager name in its standard form."""
         v = (value or "").strip().lower()
         if v in ("", "none"):
             return ""
@@ -37,6 +39,7 @@ class ProductionConfig:
         return v
 
     def validate(self, bench_name: str) -> None:
+        """Raise when the production config is invalid."""
         pm = self.process_manager
         if self.enabled:
             if pm not in VALID_PROCESS_MANAGERS:

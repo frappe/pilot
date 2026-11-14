@@ -7,11 +7,11 @@ import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.core.app.node_packages import PACKAGE_MANAGERS, YARN, NodePackages
+from pilot.core.app.node_packages import PACKAGE_MANAGERS, YARN, get_app_packages
 from pilot.exceptions import BenchError, CommandError
-from pilot.managers.platform import add_mysqlclient_flags, is_macos, which
+from pilot.internal.command import run_command
+from pilot.managers.platform import HostPlatform
 from pilot.managers.python_assets import PythonAssetBuilder
-from pilot.utils import run_command
 
 MINIMUM_NODE_MAJOR = 24
 
@@ -28,7 +28,7 @@ def find_uv() -> str | None:
     A service PATH rarely carries ~/.local/bin, which is exactly where the uv
     installer writes, so asking PATH alone reports a working uv as missing.
     """
-    if uv := which("uv"):
+    if uv := HostPlatform().get_executable_path("uv"):
         return uv
     installed = (Path.home() / ".local" / "bin" / "uv", Path.home() / ".cargo" / "bin" / "uv")
     return next((str(path) for path in installed if path.exists()), None)
@@ -60,14 +60,17 @@ class AdminEnvManager:
 
     @property
     def python(self) -> Path:
+        """The Admin Python."""
         return self.venv_path / "bin" / "python"
 
     @property
     def gunicorn(self) -> Path:
+        """The Admin gunicorn."""
         return self.venv_path / "bin" / "gunicorn"
 
     @property
     def uv(self) -> str:
+        """The uv binary; raise when it is missing."""
         uv = find_uv()
         if not uv:
             raise RuntimeError("uv not found - run the Pilot install script to set it up")
@@ -80,6 +83,7 @@ class AdminEnvManager:
         self._ensure_frontend_deps()
 
     def _ensure_venv(self) -> bool:
+        """Create the Admin environment; return whether it was created."""
         if self.python.exists():
             return False
         print("Setting up admin environment (one-time)...")
@@ -108,6 +112,7 @@ class AdminEnvManager:
         print("done")
 
     def _ensure_frontend_deps(self) -> None:
+        """Install the Admin frontend packages in a dev build."""
         from pilot import is_dev_build
 
         frontend = self.venv_path.parent / "admin" / "frontend"
@@ -121,6 +126,7 @@ class AdminEnvManager:
         print("  done")
 
     def _read_admin_deps(self) -> list[str]:
+        """The Admin dependencies from pyproject.toml."""
         pyproject = self.venv_path.parent / "pyproject.toml"
         if not pyproject.exists():
             return [
@@ -141,12 +147,15 @@ class PythonEnvManager:
 
     @property
     def _assets(self) -> PythonAssetBuilder:
+        """The asset builder."""
         return PythonAssetBuilder(self)
 
     def ensure_python(self) -> None:
+        """Do nothing; uv installs Python when it creates the environment."""
         pass
 
     def create_venv(self) -> None:
+        """Create the bench environment if it is missing."""
         if self.bench.python.exists():
             return
         uv = ensure_uv()
@@ -162,10 +171,12 @@ class PythonEnvManager:
             if manager.is_installed:
                 env["PATH"] = os.pathsep.join([env.get("PATH", ""), str(Path(manager.bin).parent)])
 
-        add_mysqlclient_flags(env)
+        HostPlatform().add_mysqlclient_flags(env)
         # frappe-ui's Vite plugins look for the bench here before walking up from the
         # app, whose real path is outside the bench when the app is linked.
         env["FRAPPE_BENCH_PATH"] = str(self.bench.path)
+        # backwards compatibility: framework's asset building requires this env variable
+        env["FRAPPE_BENCH_ROOT"] = str(self.bench.path)
 
         return env
 
@@ -182,22 +193,40 @@ class PythonEnvManager:
             )
             self._install_editable(str(app.path))
 
-    def _install_editable(self, target: str) -> None:
+    def install_apps(self, apps: list["App"]) -> None:
+        """Resolve editable apps together; per app, a dev extra that does not resolve does not block it."""
+        if not apps:
+            return
+        targets = [app.editable_target for app in apps]
+        try:
+            self._install_editable(*targets)
+        except CommandError:
+            if targets == [str(app.path) for app in apps]:
+                raise
+            print("Warning: the dev extras do not install together; installing apps one at a time.")
+            for app in apps:
+                self.install_app(app)
+
+    def _install_editable(self, *targets: str) -> None:
+        """Install packages in editable mode."""
         uv = ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
+        arguments = [argument for target in targets for argument in ("-e", target)]
         run_command(
-            [uv, "pip", "install", "--python", python, "-e", target],
+            [uv, "pip", "install", "--python", python, *arguments],
             stream_output=True,
             env=self._build_env(),
         )
 
     def uninstall_app(self, app_name: str) -> None:
+        """Uninstall an app's package."""
         uv = ensure_uv()
         python = str(self.bench.env_path / "bin" / "python")
         run_command([uv, "pip", "uninstall", "--python", python, app_name], stream_output=True)
 
     def install_node(self) -> None:
-        if not which("node"):
+        """Install Node.js and yarn, and check the Node.js version."""
+        if not HostPlatform().get_executable_path("node"):
             self._install_node()
         self.require_node_version()
         YARN.ensure_installed()
@@ -210,11 +239,12 @@ class PythonEnvManager:
         if major < MINIMUM_NODE_MAJOR:
             raise BenchError(
                 f"Node.js {MINIMUM_NODE_MAJOR} or later is required, but `node` on PATH is {version} "
-                f"({which('node')}). Install Node.js {MINIMUM_NODE_MAJOR} or put it first on PATH."
+                f"({HostPlatform().get_executable_path('node')}). Install Node.js {MINIMUM_NODE_MAJOR} or put it first on PATH."
             )
 
     def _install_node(self) -> None:
-        if is_macos():
+        """Install Node.js with Homebrew; raise on Linux."""
+        if HostPlatform().is_macos:
             run_command(["brew", "install", "node"])
             return
         raise BenchError(
@@ -222,11 +252,15 @@ class PythonEnvManager:
         )
 
     def install_node_dependencies(self) -> None:
+        """Install every app's node packages."""
         for app in self.bench.apps():
-            NodePackages(app.path).install()
+            for packages in get_app_packages(app.path, self._assets.frontend_dirs(app)):
+                packages.ensure_installed()
 
     def build_assets(self) -> None:
+        """Build the assets of every app."""
         self._assets.build_assets()
 
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
+        """Build one app's assets."""
         self._assets.build_assets_for_app(app, force=force, skip_frontend=skip_frontend)

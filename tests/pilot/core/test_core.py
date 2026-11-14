@@ -72,7 +72,7 @@ def test_bench_makes_a_relative_path_absolute(tmp_path: Path, monkeypatch) -> No
 def test_bench_loads_name_from_known_benches_dir(tmp_path: Path, monkeypatch) -> None:
     bench_dir = tmp_path / "benches" / "alpha"
     _write_bench_toml(bench_dir, "alpha")
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
 
     bench = Bench("alpha")
 
@@ -83,7 +83,7 @@ def test_bench_loads_name_from_known_benches_dir(tmp_path: Path, monkeypatch) ->
 def test_server_resolves_bench_by_name(tmp_path: Path, monkeypatch) -> None:
     bench_dir = tmp_path / "benches" / "alpha"
     _write_bench_toml(bench_dir, "alpha")
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
 
     bench = Server().bench("alpha")
 
@@ -346,7 +346,7 @@ def test_app_has_marketplace_update_false_when_advertised_commit_is_checked_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp")
-    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    monkeypatch.setattr("pilot.internal.host_resources.InstalledPackages.get_version", lambda *_: "1.0.0")
     entry = {
         "name": "myapp",
         "repo": "https://github.com/frappe/myapp",
@@ -363,7 +363,7 @@ def test_app_has_marketplace_update_false_when_advertised_commit_is_unrelated(
 ) -> None:
     """A commit git cannot fetch or relate to HEAD is not proof of an update."""
     app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp")
-    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    monkeypatch.setattr("pilot.internal.host_resources.InstalledPackages.get_version", lambda *_: "1.0.0")
     entry = {
         "name": "myapp",
         "repo": "https://github.com/frappe/myapp",
@@ -397,7 +397,7 @@ def _shallow_app(tmp_path: Path) -> tuple[App, Path, list[str]]:
 
 def test_shallow_clone_does_not_offer_an_older_release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app, _, shas = _shallow_app(tmp_path)
-    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    monkeypatch.setattr("pilot.internal.host_resources.InstalledPackages.get_version", lambda *_: "1.0.0")
     _publish(
         {
             "name": "myapp",
@@ -411,7 +411,7 @@ def test_shallow_clone_does_not_offer_an_older_release(tmp_path: Path, monkeypat
 
 def test_shallow_clone_offers_a_newer_release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app, _, shas = _shallow_app(tmp_path)
-    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    monkeypatch.setattr("pilot.internal.host_resources.InstalledPackages.get_version", lambda *_: "1.0.0")
     _publish(
         {
             "name": "myapp",
@@ -453,7 +453,7 @@ def test_app_update_target_prefers_the_release_on_the_apps_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = _app_on_branch(tmp_path, "https://github.com/frappe/myapp", branch="version-15")
-    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    monkeypatch.setattr("pilot.internal.host_resources.InstalledPackages.get_version", lambda *_: "1.0.0")
     ahead = _commit_ahead_of_head(app)
     entry = {
         "name": "myapp",
@@ -1252,7 +1252,7 @@ def test_after_a_revert_a_disconnected_newer_release_is_still_offered(
     subprocess.run(["git", "-C", str(app.path), "fetch", "-q", "--depth", "1", "origin", shas[3]], check=True)
     subprocess.run(["git", "-C", str(app.path), "fetch", "-q", "--depth", "1", "origin", shas[1]], check=True)
     subprocess.run(["git", "-C", str(app.path), "checkout", "-q", "-B", "main", shas[1]], check=True)
-    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    monkeypatch.setattr("pilot.internal.host_resources.InstalledPackages.get_version", lambda *_: "1.0.0")
     _publish(
         {
             "name": "myapp",

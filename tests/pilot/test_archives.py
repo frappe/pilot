@@ -7,12 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.utils import (
-    ArchiveLimits,
-    UnsafeArchiveError,
-    extract_tar_archive,
-    validate_tar_archive,
-)
+from pilot.internal.archive import ArchiveLimits, TarArchive, UnsafeArchiveError
 
 
 def _archive(path: Path, members: list[tuple[tarfile.TarInfo, bytes]]) -> Path:
@@ -32,7 +27,7 @@ def test_validate_rejects_paths_outside_destination(tmp_path: Path, name: str) -
     path = _archive(tmp_path / "unsafe.tar", [_file(name)])
 
     with pytest.raises(UnsafeArchiveError, match="unsafe path"):
-        validate_tar_archive(path)
+        TarArchive(path).validate()
 
 
 @pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE])
@@ -43,7 +38,7 @@ def test_validate_rejects_links(tmp_path: Path, kind: bytes) -> None:
     path = _archive(tmp_path / "link.tar", [(link, b"")])
 
     with pytest.raises(UnsafeArchiveError, match="links"):
-        validate_tar_archive(path)
+        TarArchive(path).validate()
 
 
 def test_validate_rejects_special_files(tmp_path: Path) -> None:
@@ -52,14 +47,14 @@ def test_validate_rejects_special_files(tmp_path: Path) -> None:
     path = _archive(tmp_path / "special.tar", [(fifo, b"")])
 
     with pytest.raises(UnsafeArchiveError, match="regular files and directories"):
-        validate_tar_archive(path)
+        TarArchive(path).validate()
 
 
 def test_validate_rejects_oversized_member(tmp_path: Path) -> None:
     path = _archive(tmp_path / "large.tar", [_file("large.bin", b"12345")])
 
     with pytest.raises(UnsafeArchiveError, match="member size"):
-        validate_tar_archive(path, ArchiveLimits(max_member_bytes=4))
+        TarArchive(path, ArchiveLimits(max_member_bytes=4)).validate()
 
 
 def test_validate_rejects_oversized_expansion(tmp_path: Path) -> None:
@@ -69,21 +64,21 @@ def test_validate_rejects_oversized_expansion(tmp_path: Path) -> None:
     )
 
     with pytest.raises(UnsafeArchiveError, match="expanded size"):
-        validate_tar_archive(path, ArchiveLimits(max_total_bytes=5))
+        TarArchive(path, ArchiveLimits(max_total_bytes=5)).validate()
 
 
 def test_validate_rejects_too_many_members(tmp_path: Path) -> None:
     path = _archive(tmp_path / "many.tar", [_file("one"), _file("two")])
 
     with pytest.raises(UnsafeArchiveError, match="member count"):
-        validate_tar_archive(path, ArchiveLimits(max_members=1))
+        TarArchive(path, ArchiveLimits(max_members=1)).validate()
 
 
 def test_extract_writes_regular_files_inside_destination(tmp_path: Path) -> None:
     path = _archive(tmp_path / "safe.tar", [_file("dist/app.js", b"app")])
     destination = tmp_path / "static"
 
-    extract_tar_archive(path, destination)
+    TarArchive(path).extract_to(destination)
 
     assert (destination / "dist" / "app.js").read_bytes() == b"app"
 
@@ -96,7 +91,7 @@ def test_extract_does_not_apply_root_entry_mode_to_destination(tmp_path: Path) -
     destination = tmp_path / "static"
     destination.mkdir(mode=0o700)
 
-    extract_tar_archive(path, destination)
+    TarArchive(path).extract_to(destination)
 
     assert stat.S_IMODE(destination.stat().st_mode) == 0o700
 
@@ -110,6 +105,6 @@ def test_extract_rejects_existing_symlink_parent(tmp_path: Path) -> None:
     (destination / "linked").symlink_to(outside, target_is_directory=True)
 
     with pytest.raises(UnsafeArchiveError, match="symlink"):
-        extract_tar_archive(path, destination)
+        TarArchive(path).extract_to(destination)
 
     assert not (outside / "escape.txt").exists()

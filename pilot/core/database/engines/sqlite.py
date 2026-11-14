@@ -12,6 +12,7 @@ class SQLite(Database):
         self._db_path = db_path
 
     def _connect(self):
+        """A new connection."""
         import sqlite3
 
         conn = sqlite3.connect(self._db_path)
@@ -19,6 +20,7 @@ class SQLite(Database):
         return conn
 
     def execute(self, query: str, read_only: bool = True) -> QueryResult:
+        """Run the query and return its result."""
         import sqlite3
 
         conn = self._connect()
@@ -51,6 +53,7 @@ class SQLite(Database):
             conn.close()
 
     def get_tables(self) -> list[str]:
+        """The table names."""
         conn = self._connect()
         try:
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
@@ -59,6 +62,7 @@ class SQLite(Database):
             conn.close()
 
     def get_table_columns(self, table: str) -> list[dict]:
+        """The columns of a table."""
         conn = self._connect()
         try:
             cursor = conn.execute(f"PRAGMA table_info({self.quote_identifier(table)})")
@@ -67,6 +71,7 @@ class SQLite(Database):
             conn.close()
 
     def get_schema(self) -> list[dict]:
+        """Every table with its columns."""
         conn = self._connect()
         try:
             cursor = conn.execute(

@@ -30,6 +30,7 @@ class NewSiteCommand(Command):
         self.site: "Site | None" = None
 
     def run(self) -> None:
+        """Create the site."""
         from pilot.core.site import Site
 
         self.site = Site.provision(

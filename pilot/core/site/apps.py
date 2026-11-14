@@ -1,23 +1,27 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError
-from pilot.utils import run_command
+from pilot.exceptions import BenchError, CommandError
+from pilot.internal.command import run_command
 
 if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.site import Site
+
+UNFINISHED_INSTALLS_KEY = "pilot_unfinished_installs"
 
 
 class SiteApps:
     def __init__(self, site: "Site") -> None:
         self.site = site
 
-    def install_app(self, app: "App") -> None:
+    def install_app(self, app: "App", force: bool = False) -> None:
+        """Install the app on the site, or enable it when it is disabled."""
         if app.config.name in self.disabled_apps():
             self.enable_app(app)
             return
@@ -28,19 +32,52 @@ class SiteApps:
                 f"'{app.config.name}' requires {', '.join(missing)}, which this bench does not have. "
                 "Add it with 'pilot get-app <repo>' first, then retry."
             )
+        self.run_install(app.config.name, force)
+
+    def run_install(self, name: str, force: bool) -> None:
+        """Run install-app, forcing a retry of an unfinished install."""
+        unfinished = name in self.get_unfinished_installs()
+        was_installed = name in self.get_committed_apps()
+        # A failed attempt leaves module rows behind, which a plain install refuses as duplicates.
+        force = force or unfinished or (not was_installed and self.site.database_state.has_module_rows(name))
+        command = self.site._frappe_call("frappe", "--site", self.site.config.name, "install-app", name)
+        if force:
+            command.append("--force")
         self._clear_cache()
         try:
-            run_command(
-                self.site._frappe_call(
-                    "frappe", "--site", self.site.config.name, "install-app", app.config.name
-                ),
-                cwd=self.site.bench.sites_path,
-                stream_output=True,
-            )
+            run_command(command, cwd=self.site.bench.sites_path, stream_output=True)
+        except CommandError:
+            if not was_installed and name in self.get_committed_apps():
+                self.set_unfinished_install(name, True)
+            raise
         finally:
             self._clear_cache()
+        if unfinished:
+            self.set_unfinished_install(name, False)
+
+    def get_committed_apps(self) -> list[str]:
+        """The installed apps Frappe committed to the database; empty when unreadable."""
+        return self.site.database_state.committed_apps or []
+
+    def get_unfinished_installs(self) -> list[str]:
+        """Apps Frappe lists as installed whose install failed later, in an after_install hook.
+        Frappe keeps no record of that, so Pilot keeps one in site_config.json."""
+        if not (self.site.path / "site_config.json").exists():
+            return []
+        apps = self._site_config().get(UNFINISHED_INSTALLS_KEY)
+        return [app for app in apps if isinstance(app, str)] if isinstance(apps, list) else []
+
+    def set_unfinished_install(self, app_name: str, unfinished: bool) -> None:
+        """Add or remove the app from the site's unfinished installs."""
+        apps = [app for app in self.get_unfinished_installs() if app != app_name]
+        if unfinished:
+            apps.append(app_name)
+        # Losing this marker must not replace the install error being reported.
+        with contextlib.suppress(OSError, ValueError, BenchError):
+            self.site.config_file.set_values({UNFINISHED_INSTALLS_KEY: apps})
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
+        """Install the app, then the apps it requires; return the installed dependencies."""
         self.site.install_app(app)
         required = self.get_required_apps(app)
         dependencies = []
@@ -52,6 +89,7 @@ class SiteApps:
         return dependencies
 
     def uninstall_app(self, app: "App", force: bool) -> None:
+        """Uninstall the app from the site."""
         cmd = self.site._frappe_call(
             "frappe",
             "--site",
@@ -73,21 +111,18 @@ class SiteApps:
         """Match the installed_apps copy in site_config.json to the database. A restore leaves it
         stale, and so can an uninstall: Frappe clears its installed apps cache before it commits,
         so a process that reads in between caches the old list, and Frappe copies it here."""
-        from pilot.core.site.config import query_installed_apps_setting_via_db, set_site_config_values
-
         if not (self.site.path / "site_config.json").exists():
             return
         copy = self._site_config().get("installed_apps")
         if not isinstance(copy, list):
             return
-        committed = query_installed_apps_setting_via_db(self.site.bench.path, self.site.config.name)
+        committed = self.site.database_state.committed_apps
         if committed is not None and committed != copy:
-            set_site_config_values(self.site.bench.sites_path, self.site.config.name, {"installed_apps": committed})
+            self.site.config_file.set_values({"installed_apps": committed})
 
     def disabled_apps(self) -> list[str]:
-        from pilot.core.site.config import query_disabled_apps_via_db
-
-        return query_disabled_apps_via_db(self.site.bench.path, self.site.config.name)
+        """The apps disabled on the site."""
+        return self.site.database_state.disabled_apps
 
     def enable_app(self, app: "App") -> None:
         """Bring a disabled app back on the site. Its schema and data never left, so this
@@ -119,7 +154,9 @@ class SiteApps:
                 continue
             names.append(current.config.name)
             bench = self.site.bench
-            pending += [bench.app(name) for name in self.get_required_apps(current) if bench.is_app_installed(name)]
+            pending += [
+                bench.app(name) for name in self.get_required_apps(current) if bench.is_app_installed(name)
+            ]
         return names
 
     def get_required_apps(self, app: "App") -> list[str]:
@@ -156,33 +193,42 @@ class SiteApps:
         )
 
     def _clear_cache(self) -> None:
+        """Clear the site cache."""
         run_command(
             self.site._frappe_call("frappe", "--site", self.site.config.name, "clear-cache"),
             cwd=self.site.bench.sites_path,
         )
 
     def list_apps(self) -> list[str]:
-        result = subprocess.run(
-            self.site._frappe_call("frappe", "--site", self.site.config.name, "list-apps"),
-            cwd=str(self.site.bench.sites_path),
-            capture_output=True,
-            text=True,
-        )
+        """The apps Frappe itself reports for the site; empty when Frappe cannot answer."""
+        try:
+            result = subprocess.run(
+                self.site._frappe_call("frappe", "--site", self.site.config.name, "list-apps"),
+                cwd=str(self.site.bench.sites_path),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
         if result.returncode != 0:
             return []
         return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
     def installed_apps(self) -> list[str]:
-        from pilot.core.site.config import list_installed_apps
-
-        return list_installed_apps(self._site_config(), self.site.bench.path, self.site.config.name)
+        """Every app installed on the site, the disabled ones included."""
+        copy = self._site_config().get("installed_apps")
+        if isinstance(copy, list):
+            return copy
+        apps = self.site.database_state.installed_apps
+        return apps if apps is not None else self.list_apps()
 
     def active_apps(self) -> list[str]:
-        from pilot.core.site.config import list_active_apps
-
-        return list_active_apps(self._site_config(), self.site.bench.path, self.site.config.name)
+        """Installed apps the site actually runs - what the Admin UI shows as installed."""
+        return self.site.database_state.exclude_disabled(self.installed_apps())
 
     def _site_config(self) -> dict:
+        """The parsed site_config.json; raise when the site does not exist."""
         config_path = self.site.path / "site_config.json"
         if not config_path.exists():
             raise BenchError(f"Site '{self.site.config.name}' does not exist.")
@@ -238,6 +284,7 @@ class SiteApps:
         app_name: str,
         on_progress: Callable[[str], None],
     ) -> None:
+        """Remove the app from the bench when no site has it installed."""
         for site in self.site.bench.sites():
             installed_apps = site.list_apps()
             if len(installed_apps) == 0 or app_name in installed_apps:

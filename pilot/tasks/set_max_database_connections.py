@@ -22,6 +22,7 @@ class SetMaxDatabaseConnectionsTask(Task):
         lambda self: f"Setting Max DB Connections to {self.max_connections}",
     )
     def run(self) -> None:
+        """Set max_connections."""
         if type(self.max_connections) is not int:
             raise DatabaseError("Max DB connections must be a whole number.")
         DatabaseQuickActions(self.bench.config).set_max_connections(self.max_connections)

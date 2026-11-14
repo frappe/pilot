@@ -3,6 +3,7 @@ import type { AvatarTheme } from 'frappe-ui'
 
 import { appsApi } from '@/api/apps'
 import type { MarketplaceApp } from '@/types/apps'
+import { errorMessage } from '@/utils/error'
 
 const THEMES: AvatarTheme[] = ['violet', 'blue', 'green', 'amber', 'red']
 export const FRAPPE_LOGO_URL =
@@ -10,6 +11,19 @@ export const FRAPPE_LOGO_URL =
 
 const registry = ref<MarketplaceApp[]>([])
 const loaded = ref(false)
+const error = ref('')
+// Pages mount several registry users at once; they share one request.
+let pending: Promise<void> | null = null
+
+const fetchRegistry = async () => {
+  try {
+    registry.value = await appsApi.marketplace()
+    loaded.value = true
+    error.value = ''
+  } catch (caught) {
+    error.value = errorMessage(caught, 'Could not load the app registry.')
+  }
+}
 
 export const isFrappeFramework = (name: string | null | undefined) => {
   const lower = name?.toLowerCase()
@@ -23,14 +37,12 @@ export const hashTheme = (name: string | null | undefined) => {
 }
 
 export const useAppRegistry = () => {
-  const load = async () => {
-    if (loaded.value) return
-    try {
-      registry.value = await appsApi.marketplace()
-      loaded.value = true
-    } catch {
-      registry.value = []
-    }
+  const load = () => {
+    if (loaded.value) return Promise.resolve()
+    pending ??= fetchRegistry().finally(() => {
+      pending = null
+    })
+    return pending
   }
 
   const logoMap = computed<Record<string, string>>(() => ({
@@ -63,6 +75,7 @@ export const useAppRegistry = () => {
   return {
     registry,
     loaded,
+    error,
     load,
     logoMap,
     titleMap,

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.managers.packages import get_package_manager
-from pilot.managers.platform import is_linux
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -17,12 +17,12 @@ if TYPE_CHECKING:
 # Shared, read-only CRS assets; every bench's generated main.conf Includes these.
 # Bench-user owned, so installing them never needs privileges.
 def shared_modsec_dir() -> Path:
-    from pilot.utils import cli_root
+    """The shared ModSecurity CRS directory."""
+    from pilot.core.server import Server
 
-    return cli_root() / "system" / "waf" / "modsecurity-crs"
+    return Server().root / "system" / "waf" / "modsecurity-crs"
 
 MODSEC_MODULE_NAME = "ngx_http_modsecurity_module.so"
-_MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 
 # Pinned OWASP CRS (the 4.x LTS line) so every host runs an identical,
 # reproducible rule set regardless of what - or whether - the distro packages it.
@@ -32,11 +32,6 @@ _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 # against the OWASP CRS PGP signing key (36006F0E0BA167832158821138EEACA1AB8A6E72,
 # security@coreruleset.org) at pin time.
 CRS_VERSION = "4.25.0"
-_CRS_URL = (
-    f"https://github.com/coreruleset/coreruleset/releases/download/"
-    f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
-)
-_CRS_SHA256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
 
 class WafManager:
@@ -44,6 +39,12 @@ class WafManager:
 
     # Canonical (apt-style) name; per-distro names live in each package manager's
     # package_aliases map.
+    module_dirs = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
+    crs_sha256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
+
+    crs_url = "https://github.com/coreruleset/coreruleset/releases/download/"
+    f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
+
     MODULE_PACKAGE = "modsecurity-nginx"
 
     def __init__(self, bench: "Bench | None" = None) -> None:
@@ -53,14 +54,15 @@ class WafManager:
     def module_available() -> bool:
         """True if nginx can load the module - the .so is on disk or a
         modules-enabled drop-in (the Debian package's mechanism) references it."""
-        if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in _MODULE_DIRS):
+        if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in WafManager.module_dirs):
             return True
         modules_dir = Path("/etc/nginx/modules-enabled")
         return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
 
     @staticmethod
     def module_path() -> str | None:
-        for base in _MODULE_DIRS:
+        """The ModSecurity nginx module, if found."""
+        for base in WafManager.module_dirs:
             candidate = Path(base) / MODSEC_MODULE_NAME
             if candidate.exists():
                 return str(candidate)
@@ -68,6 +70,7 @@ class WafManager:
 
     @staticmethod
     def crs_available() -> bool:
+        """Whether the CRS rules are installed."""
         shared = shared_modsec_dir()
         return (shared / "crs-setup.conf").exists() and (shared / "rules").is_dir()
 
@@ -77,7 +80,8 @@ class WafManager:
         return cls.module_available() and cls.crs_available()
 
     def install(self) -> None:
-        if not is_linux():
+        """Install the WAF; raise unless the host runs Linux."""
+        if not HostPlatform().is_linux:
             raise RuntimeError("The WAF (ModSecurity) is only supported on Linux production hosts.")
         if not self.module_available():
             get_package_manager().install(self.MODULE_PACKAGE)
@@ -89,7 +93,7 @@ class WafManager:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             archive = tmp_path / "crs.tar.gz"
-            urllib.request.urlretrieve(_CRS_URL, archive)
+            urllib.request.urlretrieve(self.crs_url, archive)
             self._verify_checksum(archive)
             with tarfile.open(archive) as tar:
                 tar.extractall(tmp_path, filter="data")
@@ -107,8 +111,8 @@ class WafManager:
     def _verify_checksum(archive: Path) -> None:
         """Abort before extraction if the archive digest changed."""
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        if digest != _CRS_SHA256:
+        if digest != WafManager.crs_sha256:
             raise RuntimeError(
-                f"CRS archive checksum mismatch: expected {_CRS_SHA256}, got {digest}. "
+                f"CRS archive checksum mismatch: expected {WafManager.crs_sha256}, got {digest}. "
                 f"Refusing to install potentially tampered WAF rules."
             )

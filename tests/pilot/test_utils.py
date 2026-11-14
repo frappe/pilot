@@ -1,4 +1,4 @@
-"""Tests for shared utilities and the raw bench TOML store interface."""
+"""Tests for hostname helpers, sibling benches and the raw bench TOML store."""
 
 from __future__ import annotations
 
@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from pilot.core.bench.directory import BenchDirectory
+from pilot.internal.hostnames import normalize_host
 from pilot.internal.toml import Toml
-from pilot.utils import host_owner, hosts_line_contains, iter_sibling_benches, normalize_host
+from pilot.managers.platform import HostsFile
 
 
 @pytest.mark.parametrize(
@@ -20,8 +22,8 @@ from pilot.utils import host_owner, hosts_line_contains, iter_sibling_benches, n
         ("::1 site.localhost", False),
     ],
 )
-def test_hosts_line_contains_exact_hostname_token(line: str, expected: bool) -> None:
-    assert hosts_line_contains(line, "site.localhost") is expected
+def test_hosts_entry_line_matches_exact_hostname_token(line: str, expected: bool) -> None:
+    assert HostsFile.is_entry_line(line, "site.localhost") is expected
 
 
 def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:
@@ -41,8 +43,8 @@ def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str]
     return bench
 
 
-def test_iter_sibling_benches_merges_real_common_config(tmp_path: Path) -> None:
-    """Regression: iter_sibling_benches used to parse each sibling's bench.toml
+def test_sibling_configs_merge_real_common_config(tmp_path: Path) -> None:
+    """Regression: sibling bench configs used to parse each sibling's bench.toml
     with BenchConfig._from_dict(data) - no common= kwarg - which silently
     defaults to an empty CommonConfig, leaving mariadb.root_password blank
     even when a real common_config.toml sits right beside the benches. This
@@ -55,39 +57,39 @@ def test_iter_sibling_benches_merges_real_common_config(tmp_path: Path) -> None:
         'admin_user = "root"\nsocket_path = ""\nexisting = false\n'
     )
 
-    results = dict(iter_sibling_benches(benches / "beta"))
+    results = dict(BenchDirectory.siblings_of(benches / "beta").iter_configs())
     assert results[alpha].mariadb.root_password == "s3cret"
 
 
 def test_host_owner_detects_sibling_site(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
-    assert host_owner(benches / "beta", "shop.localhost") == "alpha"
+    assert BenchDirectory.siblings_of(benches / "beta").get_host_owner("shop.localhost") == "alpha"
 
 
 def test_host_owner_detects_sibling_admin_domain(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     _make_bench(benches, "alpha", admin_domain="admin.example.com")
-    assert host_owner(benches / "beta", "admin.example.com") == "alpha"
+    assert BenchDirectory.siblings_of(benches / "beta").get_host_owner("admin.example.com") == "alpha"
 
 
 def test_host_owner_free_host_returns_none(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
-    assert host_owner(benches / "beta", "fresh.localhost") is None
+    assert BenchDirectory.siblings_of(benches / "beta").get_host_owner("fresh.localhost") is None
 
 
 def test_host_owner_ignores_self(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
     # Scanning from alpha itself must not report alpha as the owner.
-    assert host_owner(bench, "shop.localhost") is None
+    assert BenchDirectory.siblings_of(bench).get_host_owner("shop.localhost") is None
 
 
 def test_host_owner_normalizes_case_and_trailing_dot(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
     _make_bench(benches, "alpha", admin_domain="Admin.Example.COM")
-    assert host_owner(benches / "beta", "admin.example.com.") == "alpha"
+    assert BenchDirectory.siblings_of(benches / "beta").get_host_owner("admin.example.com.") == "alpha"
 
 
 def test_host_owner_detects_site_alias(tmp_path: Path) -> None:
@@ -95,7 +97,7 @@ def test_host_owner_detects_site_alias(tmp_path: Path) -> None:
     bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
     site_cfg = bench / "sites" / "shop.localhost" / "site_config.json"
     site_cfg.write_text('{"domains": ["www.shop.example.com"]}')
-    assert host_owner(benches / "beta", "www.shop.example.com") == "alpha"
+    assert BenchDirectory.siblings_of(benches / "beta").get_host_owner("www.shop.example.com") == "alpha"
 
 
 def test_normalize_host() -> None:

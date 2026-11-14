@@ -10,12 +10,12 @@ from pilot.config import SiteConfig
 from pilot.core.adapters.domain_provider import DomainRouteProvider
 from pilot.core.bench import Bench
 from pilot.core.bench.admin_domain import AdminDomainChange, ProductionAdminDomain
+from pilot.core.bench.directory import BenchDirectory
 from pilot.core.site.provisioning import validate_new_site
 from pilot.core.site.rename import SiteRename
 from pilot.exceptions import BenchError
 from pilot.managers.letsencrypt import LetsEncryptManager
 from pilot.managers.nginx import NginxManager
-from pilot.utils import host_owner
 from tests.pilot.integrations.test_central_client import _bench
 
 OLD = "old.example.com"
@@ -70,7 +70,7 @@ def test_a_sibling_benchs_pin_claims_the_hostname_too(tmp_path: Path) -> None:
     sibling = _bench(tmp_path, "b2")
     _released(sibling)
 
-    assert host_owner(here.path, OLD) == "b2"
+    assert BenchDirectory.siblings_of(here.path).get_host_owner(OLD) == "b2"
 
 
 # --- the release completes by moving the certificate -------------------------
@@ -191,7 +191,7 @@ def test_site_scoped_callers_cannot_set_a_pin(tmp_path: Path) -> None:
     _site(bench, NEW)
 
     with pytest.raises(BenchError):
-        bench.site(NEW).update_public_config({"cert_name": "future.example.com"})
+        bench.site(NEW).config_file.update_public({"cert_name": "future.example.com"})
 
 
 def test_the_admin_reports_http_when_no_certificate_was_issued(tmp_path: Path) -> None:

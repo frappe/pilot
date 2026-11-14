@@ -12,10 +12,12 @@ class TaskWorkerControl:
         self._store = WorkerStore(self._bench_root)
 
     def request_start(self) -> None:
+        """Ask the worker to run, and wake it."""
         self._store.write_intent(WorkerIntent.RUNNING)
         self.wake()
 
     def request_stop(self) -> None:
+        """Ask the worker to stop, and wake it."""
         self._store.write_intent(WorkerIntent.STOPPED)
         worker_module.task_workers.wake(self._bench_root)
 
@@ -30,5 +32,6 @@ class TaskWorkerControl:
         ProcessManager.for_bench(Bench(self._bench_root)).wake_admin()
 
     def start_background_worker(self) -> None:
+        """Start the worker in this process."""
         worker_module.task_workers.start(self._bench_root)
         worker_module.task_workers.install_signal_handlers()

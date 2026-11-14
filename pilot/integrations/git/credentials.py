@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pilot.utils import write_private_text
+from pilot.internal.private_files import PrivateFile
 
 CREDENTIALS_FILENAME = ".bench.git.info"
 GITHUB_APP_AUTH_TYPE = "github_app"
@@ -16,12 +16,14 @@ class GitCredentialStore:
         self.path = Path(bench_root) / CREDENTIALS_FILENAME
 
     def load(self) -> dict | None:
+        """The saved credential, or None."""
         try:
             return json.loads(self.path.read_text())
         except (FileNotFoundError, ValueError):
             return None
 
     def save(self, provider: str, token: str, *, username: str = "", expires_at: str | None = None) -> dict:
+        """Save a credential and return it."""
         existing = self.load() or {}
         record = {
             "provider": provider,
@@ -45,19 +47,23 @@ class GitCredentialStore:
         return record
 
     def mark_invalid(self) -> None:
+        """Mark the saved token as invalid."""
         record = self.load()
         if record and record.get("is_token_valid"):
             record["is_token_valid"] = False
             self._write(record)
 
     def mark_valid(self) -> None:
+        """Mark the saved token as valid."""
         record = self.load()
         if record and not record.get("is_token_valid"):
             record["is_token_valid"] = True
             self._write(record)
 
     def clear(self) -> None:
+        """Delete the saved credential."""
         self.path.unlink(missing_ok=True)
 
     def _write(self, record: dict) -> None:
-        write_private_text(self.path, json.dumps(record, indent=2))
+        """Write the credential file."""
+        PrivateFile(self.path).write_text(json.dumps(record, indent=2))

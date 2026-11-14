@@ -54,6 +54,7 @@ class BackingUp(MigrationState):
     allowed = frozenset({"updating", "migrating", "needs_attention"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
+        """Back up the next site, if any."""
         site = operation.next_backup_site()
         return ("migration-backup", {"site": site}) if site else None
 
@@ -65,6 +66,7 @@ class Updating(MigrationState):
     allowed = frozenset({"migrating", "needs_attention"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
+        """Update the apps, unless done."""
         return None if operation.apps_updated else ("update", {})
 
 
@@ -75,6 +77,7 @@ class Migrating(MigrationState):
     allowed = frozenset({"completed", "needs_attention"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
+        """Migrate the next site, or complete when none is left."""
         site = operation.next_migrate_site()
         return ("migrate", {"site": site}) if site else ("complete-migration", {})
 
@@ -99,6 +102,7 @@ class RevertingApps(MigrationState):
     allowed = frozenset({"reverting_sites", "restarting", "revert_failed"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
+        """Revert the apps, unless done."""
         return None if operation.revert_checkpoints.get("apps") else ("revert-apps", {})
 
 
@@ -109,6 +113,7 @@ class RevertingSites(MigrationState):
     allowed = frozenset({"restarting", "revert_failed"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
+        """Revert the next site, if any."""
         site = operation.next_revert_site()
         return ("revert-site", {"site": site}) if site else None
 
@@ -120,6 +125,7 @@ class Restarting(MigrationState):
     allowed = frozenset({"reverted", "revert_failed"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
+        """Restart the services, unless done."""
         return None if operation.revert_checkpoints.get("restarted") else ("restart-services", {})
 
 
@@ -171,6 +177,7 @@ _STATES: dict[str, MigrationState] = {
 
 
 def get_state(name: str | MigrationState) -> MigrationState:
+    """The state with this name; raise for an unknown one."""
     key = name.name if isinstance(name, MigrationState) else name
     try:
         return _STATES[key]
@@ -179,6 +186,7 @@ def get_state(name: str | MigrationState) -> MigrationState:
 
 
 def validate_transition(current: str | MigrationState, target: str | MigrationState) -> None:
+    """Raise when the move from current to target is not allowed."""
     source = get_state(current)
     goal = get_state(target)
     if goal.name not in source.allowed:

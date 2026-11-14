@@ -17,9 +17,9 @@ def ensure_admin_frontend(on_progress: Callable[[str], None] = lambda message: N
     Released tarballs carry the source too, so the version - not source presence -
     decides: only dev builds compile, releases always serve the bundled dist."""
     from pilot import is_dev_build
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
-    root = cli_root()
+    root = Server().root
     if is_dev_build and _has_frontend_source(root):
         build_admin_frontend(on_progress=on_progress)
         return
@@ -35,10 +35,10 @@ def build_admin_frontend(
 ) -> None:
     """Build dashboard, editor, and in-app-embed frontends from source, skipping any
     whose dist already exists unless force is set."""
-    from pilot.utils import cli_root
+    from pilot.core.server import Server
 
     _check_node_version()
-    root = cli_root()
+    root = Server().root
     _build_frontend(
         _find_frontend(), root / "admin" / "backend" / "static" / "dashboard", "dashboard", on_progress, force=force
     )
@@ -58,7 +58,8 @@ def build_admin_frontend(
 def _build_frontend(
     frontend: Path, dist: Path, label: str, on_progress: Callable[[str], None], *, force: bool = False
 ) -> None:
-    from pilot.utils import run_command
+    """Build a frontend unless it is built."""
+    from pilot.internal.command import run_command
 
     if not force and _is_built(dist):
         on_progress(f"{label} frontend is already built, skipping.")
@@ -83,6 +84,7 @@ def _build_frontend(
 
 
 def _is_built(dist: Path) -> bool:
+    """Whether the build output exists."""
     if not dist.is_dir():
         return False
     # Dashboard/editor write an assets/ folder; the in-app embed ships Desk's IIFE and the SDK's ES runtime.
@@ -92,17 +94,20 @@ def _is_built(dist: Path) -> bool:
 
 
 def _has_frontend_source(root: Path) -> bool:
+    """Whether the frontend source exists."""
     return (root / "admin" / "frontend" / "dashboard" / "package.json").exists()
 
 
 def is_admin_frontend_built(root: Path) -> bool:
+    """Whether the dashboard is built."""
     return _is_built(root / "admin" / "backend" / "static" / "dashboard")
 
 
 def _find_frontend() -> Path:
-    from pilot.utils import cli_root
+    """The dashboard source directory."""
+    from pilot.core.server import Server
 
-    candidate = cli_root() / "admin" / "frontend" / "dashboard"
+    candidate = Server().root / "admin" / "frontend" / "dashboard"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
@@ -112,9 +117,10 @@ def _find_frontend() -> Path:
 
 
 def _find_editor() -> Path:
-    from pilot.utils import cli_root
+    """The editor source directory."""
+    from pilot.core.server import Server
 
-    candidate = cli_root() / "admin" / "frontend" / "editor"
+    candidate = Server().root / "admin" / "frontend" / "editor"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
@@ -124,9 +130,10 @@ def _find_editor() -> Path:
 
 
 def _find_in_app_embed() -> Path:
-    from pilot.utils import cli_root
+    """The in-app embed source directory."""
+    from pilot.core.server import Server
 
-    candidate = cli_root() / "admin" / "frontend" / "in-app-embed"
+    candidate = Server().root / "admin" / "frontend" / "in-app-embed"
     if (candidate / "package.json").exists():
         return candidate
     raise BenchError(
@@ -136,6 +143,7 @@ def _find_in_app_embed() -> Path:
 
 
 def _is_npm_install_stale(frontend: Path) -> bool:
+    """Whether the npm packages are older than the lockfile."""
     install_state = frontend / "node_modules" / ".package-lock.json"
     if not install_state.exists():
         return True
@@ -148,8 +156,9 @@ def _is_npm_install_stale(frontend: Path) -> bool:
 
 
 def _check_node_version() -> None:
+    """Raise when Node.js is missing or too old."""
     from pilot.exceptions import CommandError
-    from pilot.utils import run_command
+    from pilot.internal.command import run_command
 
     try:
         output = run_command(["node", "--version"], timeout=5).stdout.decode().strip()

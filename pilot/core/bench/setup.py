@@ -37,6 +37,7 @@ class ProductionSetup:
         self._admin_domain = ProductionAdminDomain(bench, bench.config.admin.domain)
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Check the inputs, then set up the production deployment."""
         self._require_linux()
         self._check_sudo_available()
         self._resolve_target()
@@ -124,6 +125,7 @@ class ProductionSetup:
             )
 
     def _target_manager(self) -> "ManagedProcessManager":
+        """The process manager for this bench."""
         from pilot.managers.processes.local import ProcessManager
 
         return cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
@@ -162,6 +164,7 @@ class ProductionSetup:
             SystemdProcessManager(self.bench).remove_units()
 
     def _setup_monitoring(self) -> None:
+        """Install the monitoring, storage and uptime timers."""
         from pilot.core.server.monitoring_config import MonitorConfigurator
         from pilot.core.site.storage.systemd import SiteStorageConfigurator
         from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
@@ -214,9 +217,10 @@ class ProductionSetup:
                 common.letsencrypt.email = self._email_arg
 
     def _require_linux(self) -> None:
-        from pilot.managers.platform import is_linux
+        """Exit unless the host runs Linux."""
+        from pilot.managers.platform import HostPlatform
 
-        if not is_linux():
+        if not HostPlatform().is_linux:
             print(
                 "Error: pilot setup production only runs on Linux servers.\nOn macOS, use 'pilot start' for local development.",
                 file=sys.stderr,
@@ -228,11 +232,15 @@ class ProductionSetup:
         The installer's scoped nginx/certbot grants are enough and need no tty;
         only fall back to a password prompt when they are absent."""
         from pilot.managers.nginx import NginxManager
-        from pilot.managers.platform import has_passwordless_sudo, is_root, which
+        from pilot.managers.platform import HostPlatform
 
-        if is_root() or has_passwordless_sudo() or NginxManager(self.bench).has_passwordless_sudo:
+        if (
+            HostPlatform().is_root
+            or HostPlatform().has_passwordless_sudo
+            or NginxManager(self.bench).has_passwordless_sudo
+        ):
             return
-        if which("sudo") is None:
+        if HostPlatform().get_executable_path("sudo") is None:
             raise BenchError(
                 "sudo is required to deploy to production (nginx, certbot, systemd) but is not installed."
             )
@@ -244,15 +252,19 @@ class ProductionSetup:
             )
 
     def _check_admin_domain(self) -> None:
+        """Check that the admin domain is free."""
         self._admin_domain.check()
 
     def _register_admin_domain(self) -> None:
+        """Register the admin domain route."""
         self._admin_domain.register()
 
     def _rollback_admin_domain(self) -> None:
+        """Undo the admin domain registration."""
         self._admin_domain.rollback()
 
     def _release_previous_admin_domain(self) -> None:
+        """Release the previous admin domain."""
         self._admin_domain.release_previous()
 
     def _persist(self, updates: dict) -> None:
@@ -266,6 +278,7 @@ class ProductionSetup:
             data.get("production", {}).pop("nginx", None)
 
     def _write_dns_multitenancy(self) -> None:
+        """Turn on DNS multitenancy in the common site config."""
         from pilot.config.common_site_config import update_common_site_config
 
         self.bench.sites_path.mkdir(parents=True, exist_ok=True)
@@ -273,6 +286,7 @@ class ProductionSetup:
             config["dns_multitenant"] = 1
 
     def _setup_supervisor(self) -> None:
+        """Install supervisor and its bench config."""
         import subprocess
 
         from pilot.managers.packages import get_package_manager
@@ -289,6 +303,7 @@ class ProductionSetup:
         manager.reload_manager_config()
 
     def _setup_systemd(self) -> None:
+        """Write and install the systemd units."""
         from pilot.managers.processes.systemd import SystemdProcessManager
 
         manager = SystemdProcessManager(self.bench)
@@ -304,6 +319,7 @@ class ProductionSetup:
         ProcessManager.for_bench(self.bench).start()
 
     def _setup_letsencrypt_if_needed(self) -> None:
+        """Issue certificates when a public domain needs them."""
         from pilot.managers.letsencrypt import is_letsencrypt_required
 
         self._enable_public_site_tls()
@@ -321,6 +337,7 @@ class ProductionSetup:
             )
 
     def _enable_public_site_tls(self) -> None:
+        """Turn on SSL for the public site domains when the Admin uses TLS."""
         if not self.bench.config.admin.tls:
             return
 
@@ -331,11 +348,13 @@ class ProductionSetup:
                 site.set_ssl(True)
 
     def _build_admin_for_production(self) -> None:
+        """Build the Admin frontend."""
         from admin.backend.frontend import ensure_admin_frontend
 
         ensure_admin_frontend()
 
     def _report_summary(self, on_progress: Callable[[str], None]) -> None:
+        """Report the sites and the Admin URL."""
         from pilot.managers.nginx import NginxManager
 
         nginx_manager = NginxManager(self.bench)

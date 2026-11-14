@@ -16,6 +16,7 @@ class RevokeTOTP(Command):
     device_name: Annotated[str, Arg(help="Name of the device to revoke TOTP for.", required=True)]
 
     def run(self) -> None:
+        """Remove the user's two-factor secret."""
         from admin.backend.internal.two_factor_authentication import TwoFactorAuthentication
 
         two_factor = TwoFactorAuthentication(self.bench)

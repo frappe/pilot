@@ -11,11 +11,12 @@ import time
 import typing
 from datetime import UTC, datetime
 
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, SustainedAlerts, notify
 from pilot.core.notification.events import raise_event, record_alert
+from pilot.core.notification.sustained import SustainedAlerts
+from pilot.core.server import Server
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
-from pilot.utils import cli_root, iter_sibling_benches
+from pilot.managers.task import TaskReader
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -31,13 +32,16 @@ class UptimeMonitor:
         self._configurator = UptimeMonitorConfigurator(bench)
 
     def get_sites(self) -> list[str]:
-        return [site.config.name for site in self.bench.sites()]
+        """Sites still being created answer 500 until they are ready, which is not downtime."""
+        provisioning = TaskReader(self.bench.path).get_provisioning_site_names()
+        return [site.config.name for site in self.bench.sites() if site.config.name not in provisioning]
 
     def get_maintenance_sites(self) -> set[str]:
         """Sites serving frappe's 503 page on purpose, such as during an update."""
         return {site.config.name for site in self.bench.sites() if site.maintenance_mode}
 
     def ping_site(self, site_name: str) -> dict:
+        """Ping the site through the local web server and return the result."""
         # Stay on loopback. Traffic over the public address keeps a Sleepy VM awake, so
         # this client follows no redirect and uses no proxy.
         connection = http.client.HTTPConnection(
@@ -61,6 +65,7 @@ class UptimeMonitor:
 
     @property
     def alerts_path(self):
+        """The file with the uptime alert state."""
         return self._configurator.log_path.with_suffix(".alerts")
 
     def collect(self) -> None:
@@ -98,7 +103,7 @@ class UptimeMonitor:
         if not due:
             return
 
-        if notify(self.bench, self._alert_payload(due, results)):
+        if self.bench.notifier.send(self._alert_payload(due, results)):
             alerts.mark_notified(due)
 
     def announce_recovered(self, sites: list[str]) -> None:
@@ -139,7 +144,7 @@ class UptimeMonitor:
             "context": {
                 "bench": self.bench.config.name,
                 "time": datetime.now(UTC).isoformat(),
-                "sustained_seconds": ALERT_SUSTAINED_SECONDS,
+                "sustained_seconds": SustainedAlerts.window_seconds,
                 "sites": sites,
             },
         }
@@ -148,6 +153,7 @@ class UptimeMonitor:
     def _result(
         site_name: str, start: float, up: bool, status_code: int | None, error: str | None = None
     ) -> dict:
+        """One ping result record."""
         result = {
             "time": datetime.now(UTC).isoformat(),
             "site": site_name,
@@ -162,17 +168,17 @@ class UptimeMonitor:
 
 
 def _production_uptime_monitors() -> list[UptimeMonitor]:
+    """An uptime monitor for each production bench."""
     from pilot.core.bench import Bench
-
-    sentinel = cli_root() / "benches" / ".uptime-placeholder"
     return [
         UptimeMonitor(Bench(bench_config, bench_path))
-        for bench_path, bench_config in iter_sibling_benches(sentinel)
+        for bench_path, bench_config in Server().benches.iter_configs()
         if bench_config.production.enabled
     ]
 
 
 def main() -> None:
+    """Ping the sites of every production bench."""
     for monitor in _production_uptime_monitors():
         monitor.collect()
 

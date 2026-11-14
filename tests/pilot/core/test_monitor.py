@@ -10,8 +10,9 @@ import pytest
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
-from pilot.core.alerts import ALERT_SUSTAINED_SECONDS, notify
 from pilot.core.bench import Bench
+from pilot.core.notification.notifier import Notifier
+from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.notification.webhooks import WEBHOOK_TIMEOUT_SECONDS, WebhookDelivery, send_webhook
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
 from pilot.core.server.monitoring_proc import CPU_STAT_FIELDS
@@ -22,7 +23,7 @@ def _confine_monitor_logs_to_tmp_path(monkeypatch: pytest.MonkeyPatch, tmp_path:
     """log_path/system_log_path/etc. are computed from cli_root() with no
     override left - pin it to tmp_path so tests never touch the real host's
     system/logs/ directory."""
-    monkeypatch.setattr("pilot.utils.cli_root", lambda: tmp_path)
+    monkeypatch.setattr("pilot.core.server.Server.root", tmp_path)
 
 
 def _make_bench(path: Path, name: str = "my-bench") -> Bench:
@@ -316,7 +317,7 @@ def _alerting_monitor(tmp_path: Path, **limits: int) -> Monitor:
 @contextmanager
 def _captured_alerts():
     """Collect what reaches the webhook sink. Central is not enrolled on a bare
-    test config, so notify() falls through to the webhooks alone."""
+    test config, so Notifier.send() falls through to the webhooks alone."""
     payloads: list[dict] = []
 
     def capture(endpoint, body):
@@ -444,7 +445,7 @@ def _age_alerts(monitor: Monitor) -> None:
     """Push every recorded breach back past the sustain window."""
     state = json.loads(monitor.alerts_path.read_text())
     for entry in state.values():
-        entry["since"] -= ALERT_SUSTAINED_SECONDS + 1
+        entry["since"] -= SustainedAlerts.window_seconds + 1
     monitor.alerts_path.write_text(json.dumps(state))
 
 
@@ -539,7 +540,7 @@ def test_alert_reaches_every_webhook_even_when_one_is_down(tmp_path: Path) -> No
         return WebhookDelivery(200, "")
 
     with patch("pilot.core.notification.webhooks.send_webhook", fake_send):
-        delivered = notify(bench, {"event": "x", "message": "m", "context": {}})
+        delivered = Notifier(bench).send({"event": "x", "message": "m", "context": {}})
 
     assert reached == ["https://up.example.com"]
     assert delivered is True, "one sink answering is a delivered alert"
@@ -555,7 +556,7 @@ def test_an_alert_no_sink_accepted_is_not_delivered(tmp_path: Path) -> None:
         raise urllib.error.URLError("connection refused")
 
     with patch("pilot.core.notification.webhooks.send_webhook", refuse):
-        delivered = notify(bench, {"event": "x", "message": "m", "context": {}})
+        delivered = Notifier(bench).send({"event": "x", "message": "m", "context": {}})
 
     assert delivered is False
 
@@ -668,19 +669,53 @@ def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -
     from pilot.core.site import uptime_monitoring
 
     loops: list[tuple[str, float, object]] = []
-    uptime_started = threading.Event()
+    started = {"uptime": threading.Event(), "rollups": threading.Event()}
 
     def record_loop(interval: float, job: object) -> None:
         loops.append((threading.current_thread().name, interval, job))
-        if threading.current_thread().name == "uptime":
-            uptime_started.set()
+        if threading.current_thread().name in started:
+            started[threading.current_thread().name].set()
 
     monkeypatch.setattr(monitoring, "run_every", record_loop)
 
     monitoring.main()
 
-    assert uptime_started.wait(timeout=5)
-    assert sorted(loops, key=lambda loop: loop[1]) == [
-        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
+    assert all(event.wait(timeout=5) for event in started.values())
+    assert sorted(loops, key=lambda loop: loop[0]) == [
         ("MainThread", monitoring.METRICS_INTERVAL, monitoring.collect_metrics),
+        ("rollups", monitoring.ROLLUP_INTERVAL, monitoring.update_site_rollups),
+        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
     ]
+
+
+def test_site_rollups_update_every_bench_and_survive_one_failure(tmp_path) -> None:
+    from pilot.core.server import monitoring
+
+    benches = [(tmp_path / "a", object()), (tmp_path / "b", object())]
+    updated = []
+
+    def update(self) -> None:
+        updated.append((type(self).__name__, self.bench_path))
+        if self.bench_path == tmp_path / "a":
+            raise OSError("log unreadable")
+
+    with (
+        patch("pilot.core.bench.directory.BenchDirectory.iter_configs", return_value=benches),
+        patch("pilot.core.bench.Bench", side_effect=lambda config, path: SimpleNamespace(path=path)),
+        patch.object(monitoring.UptimeRollup, "__init__", _remember_bench),
+        patch.object(monitoring.RequestRollup, "__init__", _remember_bench),
+        patch.object(monitoring.UptimeRollup, "update", update),
+        patch.object(monitoring.RequestRollup, "update", update),
+    ):
+        monitoring.update_site_rollups()
+
+    assert updated == [
+        ("UptimeRollup", tmp_path / "a"),
+        ("RequestRollup", tmp_path / "a"),
+        ("UptimeRollup", tmp_path / "b"),
+        ("RequestRollup", tmp_path / "b"),
+    ]
+
+
+def _remember_bench(self, bench) -> None:
+    self.bench_path = bench.path

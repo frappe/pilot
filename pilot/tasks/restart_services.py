@@ -14,6 +14,7 @@ class RestartServicesTask(Task):
     operation_id: str
 
     def run(self) -> None:
+        """Restart the services after a revert."""
         operation = self.bench.migrations.get_for_chain_task(
             self.operation_id, self.running_task_id, self.command, {}
         )
@@ -27,6 +28,7 @@ class RestartServicesTask(Task):
     @on_failure
     @on_cancel
     def fail_migration_step(self) -> dict:
+        """The callback args that fail the restart step."""
         return {"operation_id": self.operation_id, "phase": "restarting", "site": None}
 
 

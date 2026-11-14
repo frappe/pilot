@@ -19,11 +19,13 @@ class RenameSiteTask(Task):
     make_primary: bool = False
 
     def run(self) -> None:
+        """Rename the site."""
         self.require_production_privileges()
         self.rename_site()
 
     @step("rename", lambda self: f"Rename {self.site} to {self.new_name}")
     def rename_site(self) -> None:
+        """Rename the site."""
         self.bench.site(self.site).rename_to(
             self.new_name,
             on_progress=self.report,

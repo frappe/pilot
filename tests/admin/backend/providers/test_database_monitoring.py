@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from admin.backend.providers.database_monitoring import DatabaseMonitoringProvider
+from admin.backend.providers.database.monitoring import DatabaseMonitoringProvider
 
 
 def _provider() -> DatabaseMonitoringProvider:

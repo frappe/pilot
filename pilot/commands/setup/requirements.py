@@ -13,4 +13,5 @@ class SetupRequirementsCommand(Command):
     group: ClassVar[str] = "setup"
 
     def run(self) -> None:
+        """Install the app requirements."""
         self.bench.install_requirements(on_progress=self.report)

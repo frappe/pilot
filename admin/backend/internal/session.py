@@ -50,6 +50,7 @@ class _JtiStore:
             self._merge({jti: {"exp": int(exp)} for jti, exp in entries.items()})
 
     def all(self) -> dict:
+        """Every stored token ID."""
         with exclusive_file_lock(self._path):
             return dict(self._entries())
 
@@ -97,12 +98,14 @@ class _JtiStore:
         return entries
 
     def _mtime(self) -> float | None:
+        """The store's modification time, or None."""
         try:
             return self._path.stat().st_mtime
         except FileNotFoundError:
             return None
 
     def _load_raw(self) -> dict:
+        """The raw store data."""
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
         except (FileNotFoundError, ValueError):
@@ -173,6 +176,7 @@ class Session:
 
     @property
     def admin_config(self):
+        """The Admin config."""
         return self.bench.config.admin
 
     def ensure_jwt_secret(self) -> str:
@@ -256,6 +260,7 @@ class Session:
         return True
 
     def has_scope(self, claims: dict | None, site: str, token: str = "") -> bool:
+        """Whether the claims allow access to the site."""
         if not claims:
             return False
         scope = claims.get("scope")
@@ -315,6 +320,7 @@ class Session:
         return claims
 
     def _is_current_site_token(self, site: str, token: str) -> bool:
+        """Whether the token is the site's current token."""
         if not token:
             return False
         from pilot.internal.site_paths import site_config_path
@@ -331,9 +337,11 @@ class Session:
 
     @staticmethod
     def _token_key(token: str) -> str:
+        """The store key of a token."""
         return f"token:{hashlib.sha256(token.encode()).hexdigest()}"
 
     def _encode(self, ttl: int, scope: str, jti: str | None = None, site: str | None = None) -> str:
+        """A signed token."""
         now = int(time.time())
         payload = {"sub": "admin", "iat": now, "exp": now + ttl, "scope": scope}
         if jti:
@@ -343,6 +351,7 @@ class Session:
         return hs256_jwt.encode(payload, self.ensure_jwt_secret())
 
     def _decode_local(self, token: str) -> dict | None:
+        """The claims of a locally signed token, or None."""
         import jwt
 
         secret = self.admin_config.jwt_secret
@@ -354,6 +363,7 @@ class Session:
             return None
 
     def _decode_jwks(self, token: str) -> dict | None:
+        """The claims of a JWKS-signed token, or None."""
         import jwt
 
         url, audience = self._jwks_config()
@@ -393,6 +403,7 @@ class Session:
 
     @classmethod
     def _staged_jwks_config(cls, directory: Path, generation: int | None) -> tuple[str, str]:
+        """The staged JWKS settings, loaded once per config generation."""
         with cls._staged_jwks_lock:
             cached = cls._staged_jwks_configs.get(directory)
             if cached is not None and cached[0] == generation:
@@ -420,6 +431,7 @@ class Session:
 
     @classmethod
     def _discard_staged_jwks_config(cls, directory: Path, future: Future[tuple[str, str]]) -> None:
+        """Forget a staged JWKS lookup."""
         with cls._staged_jwks_lock:
             cached = cls._staged_jwks_configs.get(directory)
             if cached is not None and cached[1] is future:
@@ -427,6 +439,7 @@ class Session:
 
     @staticmethod
     def _load_staged_jwks_config(directory: Path) -> tuple[str, str]:
+        """The JWKS settings from the instance metadata."""
         from pilot.integrations.central import CentralClientError, InstanceMetadata
 
         try:
@@ -444,6 +457,7 @@ class Session:
 
     @staticmethod
     def _common_config_generation(directory: Path) -> int | None:
+        """The common config generation, or None."""
         from pilot.config.common import CommonConfig
 
         try:

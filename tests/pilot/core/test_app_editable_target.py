@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pilot.config import AppConfig
 from pilot.core.app import App
 from tests.pilot.commands.test_commands import make_bench
@@ -126,3 +128,53 @@ def test_install_without_a_dev_extra_raises_the_install_error(tmp_path: Path) ->
         PythonEnvManager(bench).install_app(app)
 
     assert run.call_count == 1
+
+
+def test_batch_install_without_dev_extras_raises_the_install_error(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.exceptions import CommandError
+    from pilot.managers.environment import PythonEnvManager
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = False
+    apps = [_make_app(bench, name, _WITHOUT_DEV_EXTRA) for name in ("frappe", "myapp")]
+
+    with (
+        patch("pilot.managers.environment.ensure_uv", return_value="uv"),
+        patch("pilot.managers.environment.run_command", side_effect=CommandError("no solution")) as run,
+        pytest.raises(CommandError, match="no solution"),
+    ):
+        PythonEnvManager(bench).install_apps(apps)
+
+    assert run.call_count == 1
+
+
+def test_batch_install_drops_only_the_dev_extra_that_does_not_resolve(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pilot.exceptions import CommandError
+    from pilot.managers.environment import PythonEnvManager
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = False
+    broken = _make_app(bench, "frappe", _WITH_DEV_EXTRA)
+    working = _make_app(bench, "myapp", _WITH_DEV_EXTRA)
+    failure = CommandError("no solution")
+
+    with (
+        patch("pilot.managers.environment.ensure_uv", return_value="uv"),
+        patch("pilot.managers.environment.run_command", side_effect=[failure, failure, None, None]) as run,
+    ):
+        PythonEnvManager(bench).install_apps([broken, working])
+
+    installed = [
+        [argv[index + 1] for index, value in enumerate(argv) if value == "-e"]
+        for argv in (call.args[0] for call in run.call_args_list)
+    ]
+    assert installed == [
+        [broken.editable_target, working.editable_target],
+        [broken.editable_target],
+        [str(broken.path)],
+        [working.editable_target],
+    ]

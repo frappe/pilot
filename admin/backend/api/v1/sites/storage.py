@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from pathlib import Path
 
-from flask import current_app, jsonify, request
+from flask import jsonify
 
+from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
@@ -23,7 +23,7 @@ from pilot.tasks.refresh_storage_usage import RefreshStorageUsageTask
 def get_storage():
     """Every site's files and database usage, from the report the pilot-storage
     timer refreshes. Measured here only when there is no report yet."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     try:
         report = Bench(bench_root).site_storage.get_report()
     except Exception:
@@ -35,9 +35,9 @@ def get_storage():
 @require_scope(site_name)
 def get_site_storage(name: str):
     """One site's folder breakdown plus its database size, for callers holding only its token."""
-    from admin.backend.providers.storage import StorageProvider
+    from admin.backend.providers.server.storage import StorageProvider
 
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
@@ -60,13 +60,13 @@ def get_site_storage(name: str):
 def refresh_storage(name: str):
     """Measuring walks every site directory, so it runs as a task. One report
     covers the bench, and the resource key folds concurrent clicks into it."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
+    bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
         task_id = RefreshStorageUsageTask.queue(
             Bench(bench_root),
-            idempotency_key=request.headers.get("Idempotency-Key"),
+            idempotency_key=ApiRequest.get_idempotency_key(),
             resource_key="site-storage",
         )
     except Exception as error:

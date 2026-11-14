@@ -181,6 +181,8 @@ router.beforeEach(async (to) => {
     }
     return { path: target }
   }
+  // An unknown path would render an empty page.
+  if (!to.matched.length) return { path: '/' }
   return true
 })
 

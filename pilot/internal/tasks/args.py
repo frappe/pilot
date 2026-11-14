@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-_REDACTED = "[redacted]"
 _PRIVATE_ARGS = {
     "new-site-from-backup": frozenset({"db_file", "public_files", "private_files"}),
 }
@@ -18,8 +17,6 @@ SENSITIVE_KEY_PARTS = (
     "access_key",
     "private_key",
 )
-_REPO_ARGS = frozenset({"repo", "repo_url"})
-_BRANCH_ARGS = frozenset({"branch", "target_branch"})
 
 
 def task_secret_args(command: str, args: dict) -> dict:
@@ -28,20 +25,25 @@ def task_secret_args(command: str, args: dict) -> dict:
 
 
 def task_has_secrets(command: str, args: dict | None = None) -> bool:
+    """Whether this task was given credentials, so a retry would need fresh ones.
+    Reads the recorded args, where a secret is present but redacted."""
     return bool(task_secret_args(command, args or {}))
 
 
 def is_sensitive_key(key: str) -> bool:
+    """Whether an argument name looks like it holds a secret."""
     normalized = key.lower().replace("-", "_")
     return any(part in normalized for part in SENSITIVE_KEY_PARTS)
 
 
 def public_task_args(command: str, args: dict) -> dict:
+    """The arguments safe to store and show, without private paths or secrets."""
     private_args = _PRIVATE_ARGS.get(command, ())
     return redact_task_args({key: value for key, value in args.items() if key not in private_args})
 
 
 def fingerprint_task_args(command: str, args: dict) -> dict:
+    """The arguments that identify a request, with uploaded files reduced to a digest."""
     fingerprint_args = redact_task_args(args)
     if command != "new-site-from-backup":
         return fingerprint_args
@@ -52,6 +54,7 @@ def fingerprint_task_args(command: str, args: dict) -> dict:
 
 
 def redact_task_args(args: dict) -> dict:
+    """The arguments with secret values replaced, recursively."""
     return {key: _redact_value(key, value) for key, value in args.items()}
 
 
@@ -63,13 +66,14 @@ def reject_unsafe_git_args(args: dict) -> None:
     for key, value in args.items():
         if not isinstance(value, str) or not value:
             continue
-        if key in _REPO_ARGS and (error := validate_repo_url(value)):
+        if key in frozenset({"repo", "repo_url"}) and (error := validate_repo_url(value)):
             raise ValueError(error)
-        if key in _BRANCH_ARGS and (error := validate_branch_name(value)):
+        if key in frozenset({"branch", "target_branch"}) and (error := validate_branch_name(value)):
             raise ValueError(error)
 
 
 def reject_url_credentials(value) -> None:
+    """Raise when any URL in the arguments carries a user name or password."""
     if isinstance(value, dict):
         for child in value.values():
             reject_url_credentials(child)
@@ -81,8 +85,9 @@ def reject_url_credentials(value) -> None:
 
 
 def _redact_value(key: str, value):
+    """One value with secrets and URL credentials removed."""
     if is_sensitive_key(key):
-        return _REDACTED
+        return "[redacted]"
     if isinstance(value, dict):
         return redact_task_args(value)
     if isinstance(value, list):
@@ -93,6 +98,7 @@ def _redact_value(key: str, value):
 
 
 def _without_url_credentials(value: str) -> str:
+    """The URL without its user name and password."""
     try:
         parsed = urlsplit(value)
         if parsed.scheme not in ("http", "https") or parsed.username is None:
@@ -106,6 +112,7 @@ def _without_url_credentials(value: str) -> str:
 
 
 def _has_url_credentials(value: str) -> bool:
+    """Whether an http or https URL carries credentials."""
     try:
         parsed = urlsplit(value)
         return parsed.scheme in ("http", "https") and parsed.username is not None
@@ -114,6 +121,7 @@ def _has_url_credentials(value: str) -> bool:
 
 
 def _file_digest(path: str | Path) -> str:
+    """SHA-256 of a file, read in chunks."""
     digest = hashlib.sha256()
     with Path(path).open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
