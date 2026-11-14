@@ -442,7 +442,8 @@ def collect_metrics() -> None:
     # System/DB-wide metrics describe the shared host, not any one bench -
     # collect them exactly once per tick, not once per bench.
     host = monitors[0]
-    shipper.add_system(host.collect_system_metrics())
+    host.collect_system_metrics()
+    shipper.add_machine()
     shipper.add_database(host.collect_database_metrics())
     now = datetime.now(UTC)
     shipper.add_backups([monitor.bench.backups.get_recent_history(now) for monitor in monitors])

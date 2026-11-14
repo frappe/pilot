@@ -20,8 +20,7 @@ end
 
 local function get_service(source)
 
-    if source == "nginx-access.log"
-        or source == "nginx-error.log" then
+    if source == "nginx-error.log" then
 
         return "nginx"
     end
@@ -111,65 +110,6 @@ local function nginx_error_timestamp(value)
         hour,
         minute,
         second
-    )
-end
-
-
--- Nginx access timestamp
---
--- 21/Jul/2026:07:25:38 +0000
--- ->
--- 2026-07-21T07:25:38.000+00:00
-
-local months = {
-    Jan = "01",
-    Feb = "02",
-    Mar = "03",
-    Apr = "04",
-    May = "05",
-    Jun = "06",
-    Jul = "07",
-    Aug = "08",
-    Sep = "09",
-    Oct = "10",
-    Nov = "11",
-    Dec = "12"
-}
-
-
-local function nginx_access_timestamp(value)
-
-    if value == nil then
-        return nil
-    end
-
-    local day, month_name, year,
-          hour, minute, second, offset =
-        string.match(
-            value,
-            "^(%d%d)/(%a%a%a)/(%d%d%d%d):(%d%d):(%d%d):(%d%d) ([+-]%d%d%d%d)$"
-        )
-
-    if day == nil then
-        return value
-    end
-
-    local month = months[month_name]
-
-    if month == nil then
-        return value
-    end
-
-    return string.format(
-        "%s-%s-%sT%s:%s:%s.000%s:%s",
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        string.sub(offset, 1, 3),
-        string.sub(offset, 4, 5)
     )
 end
 
@@ -268,17 +208,23 @@ end
 -- Level normalization
 --
 -- We NEVER infer severity from message text.
--- If the source does not provide a level, use info.
+-- Datum accepts only the 8 syslog names and refuses the whole batch for
+-- another one, so a known alias gets its syslog name and the rest is info.
+
+local LEVELS = {
+    emergency = "emergency", alert = "alert", critical = "critical", error = "error",
+    warning = "warning", notice = "notice", info = "info", debug = "debug",
+    emerg = "emergency", crit = "critical", fatal = "critical", err = "error",
+    warn = "warning", trace = "debug"
+}
 
 local function normalize_level(level)
 
-    if level == nil or level == "" then
+    if level == nil then
         return "info"
     end
 
-    return string.lower(
-        tostring(level)
-    )
+    return LEVELS[string.lower(tostring(level))] or "info"
 end
 
 
@@ -372,12 +318,6 @@ function normalize(tag, timestamp, record)
     if tag == "pilot.python" then
 
         ts = python_timestamp(
-            record["time"]
-        )
-
-    elseif tag == "pilot.nginx.access" then
-
-        ts = nginx_access_timestamp(
             record["time"]
         )
 
@@ -480,54 +420,6 @@ function normalize(tag, timestamp, record)
         end
 
 
-    -- Nginx access
-
-    elseif tag == "pilot.nginx.access" then
-
-        level = "info"
-
-        message =
-            (record["method"] or "")
-            .. " "
-            .. (record["path"] or "")
-
-        add_attribute(
-            attributes,
-            "client_ip",
-            record["client_ip"]
-        )
-
-        add_attribute(
-            attributes,
-            "method",
-            record["method"]
-        )
-
-        add_attribute(
-            attributes,
-            "path",
-            record["path"]
-        )
-
-        add_attribute(
-            attributes,
-            "status",
-            record["status"]
-        )
-
-        add_attribute(
-            attributes,
-            "upstream_ip",
-            record["upstream_ip"]
-        )
-
-        add_attribute(
-            attributes,
-            "response_time",
-            record["response_time"]
-        )
-
-
     -- Nginx error
 
     elseif tag == "pilot.nginx.error" then
@@ -565,8 +457,8 @@ function normalize(tag, timestamp, record)
     --
     -- Redis severity markers:
     --
-    --   # -> warn
-    --   * -> info
+    --   # -> warning
+    --   * -> notice
     --   - -> info
     --   . -> debug
     --
@@ -576,8 +468,8 @@ function normalize(tag, timestamp, record)
     elseif tag == "pilot.redis" then
 
         local redis_levels = {
-            ["#"] = "warn",
-            ["*"] = "info",
+            ["#"] = "warning",
+            ["*"] = "notice",
             ["-"] = "info",
             ["."] = "debug"
         }

@@ -10,24 +10,23 @@ pytest.importorskip("datum_client", reason="datum is installed in the admin venv
 
 WHEN = "2026-08-04T10:00:00+00:00"
 
-SYSTEM_RECORD = {
-    "time": WHEN,
-    "load_avg": [0.5, 0.4, 0.3],
-    "cpu_percent": 12.5,
-    "cpu_breakdown": {"user": 8.0, "system": 4.5, "idle": 87.5},
-    "memory": {
-        "total_bytes": 8 * 1024**3,
-        "used_bytes": 4 * 1024**3,
-        "cached_bytes": 1024**3,
-        "free_bytes": 3 * 1024**3,
-        "swap_used_bytes": 0,
-        "percent": 50.0,
-    },
-    "storage": {
-        "disk": {"total_bytes": 50 * 1024**3, "used_bytes": 20 * 1024**3, "free_bytes": 30 * 1024**3, "percent": 40.0}
-    },
-    "network": {"rx_bytes_per_sec": 2000.0, "tx_bytes_per_sec": 500.0},
-    "disk_io": {"read_bytes_per_sec": 1000.0, "write_bytes_per_sec": 500.0},
+# The machine metrics of the telemetry contract, which every machine sends with these names.
+MACHINE_METRICS = {
+    "system_boot_time_seconds",
+    "system_cpu_count",
+    "system_cpu_seconds_total",
+    "system_load_average",
+    "system_memory_total_bytes",
+    "system_memory_available_bytes",
+    "system_memory_swap_used_bytes",
+    "system_filesystem_size_bytes",
+    "system_filesystem_available_bytes",
+    "system_disk_read_bytes_total",
+    "system_disk_written_bytes_total",
+    "system_network_receive_bytes_total",
+    "system_network_transmit_bytes_total",
+    "system_network_receive_errors_total",
+    "system_network_transmit_errors_total",
 }
 
 APPLICATION_RECORD = {
@@ -82,7 +81,7 @@ def _samples(shipper: MetricShipper) -> dict[tuple[str, str], float]:
 def test_shipping_is_off_until_endpoint_and_token_are_set() -> None:
     shipper = MetricShipper(TelemetryConfig(endpoint="https://datum.internal"))
 
-    shipper.add_system(SYSTEM_RECORD)
+    shipper.add_machine()
     shipper.add_application(APPLICATION_RECORD)
     shipper.add_database(DATABASE_RECORD)
 
@@ -95,26 +94,22 @@ def test_shipping_is_off_without_the_datum_client_package(monkeypatch) -> None:
     monkeypatch.setattr(monitoring_datum, "HAS_DATUM_CLIENT", False)
     shipper = _shipper()
 
-    shipper.add_system(SYSTEM_RECORD)
+    shipper.add_machine()
 
     assert not shipper.is_enabled
     assert shipper.batches == []
 
 
-def test_system_metrics_are_named_in_base_units() -> None:
+def test_machine_metrics_follow_the_contract() -> None:
     shipper = _shipper()
-    shipper.add_system(SYSTEM_RECORD)
-    samples = _samples(shipper)
+    shipper.add_machine()
+    samples = [sample for batch in shipper.batches for sample in batch.samples]
 
-    assert samples[("system_cpu_usage_percent", "")] == 12.5
-    assert samples[("system_cpu_mode_percent", "mode=user")] == 8.0
-    assert samples[("system_load_average", "window=5m")] == 0.4
-    assert samples[("system_memory_used_bytes", "")] == 4 * 1024**3
-    assert samples[("system_disk_total_bytes", "")] == 50 * 1024**3
-    assert samples[("system_disk_usage_percent", "")] == 40.0
-    assert samples[("system_network_receive_bytes_per_second", "")] == 2000.0
-    assert samples[("system_disk_write_bytes_per_second", "")] == 500.0
-    assert not [name for name, _ in samples if "_mb" in name or "_kb" in name]
+    assert {sample["metric"] for sample in samples} == MACHINE_METRICS
+    cpu = [sample["labels"] for sample in samples if sample["metric"] == "system_cpu_seconds_total"]
+    assert {"idle", "user", "iowait"} <= {labels["mode"] for labels in cpu}
+    assert all(set(labels) == {"cpu", "mode"} for labels in cpu)
+    assert ("system_load_average", "window=5m") in _samples(shipper)
 
 
 def test_application_metrics_carry_bench_and_service_labels() -> None:
@@ -177,17 +172,16 @@ def test_database_metrics_are_skipped_when_the_sample_failed() -> None:
     assert shipper.batches == []
 
 
-def test_every_sample_uses_the_time_the_reading_was_taken() -> None:
+def test_all_machine_metrics_of_one_reading_share_one_time() -> None:
     shipper = _shipper()
-    shipper.add_system(SYSTEM_RECORD)
+    shipper.add_machine()
 
-    taken = datetime.fromisoformat(WHEN).astimezone(UTC).isoformat().replace("+00:00", "Z")
-    assert {sample["ts"] for batch in shipper.batches for sample in batch.samples} == {taken}
+    assert len({sample["ts"] for batch in shipper.batches for sample in batch.samples}) == 1
 
 
 def test_a_tick_is_one_post_and_clears_the_batches() -> None:
     shipper = _shipper()
-    shipper.add_system(SYSTEM_RECORD)
+    shipper.add_machine()
     shipper.add_application(APPLICATION_RECORD)
     sent = []
 
@@ -203,7 +197,7 @@ def test_a_record_without_a_usable_time_still_ships() -> None:
     """An unreadable timestamp falls back to now, rather than dropping the tick."""
     shipper = _shipper()
 
-    shipper.add_system({**SYSTEM_RECORD, "time": "not-a-timestamp"})
+    shipper.add_application({**APPLICATION_RECORD, "time": "not-a-timestamp"})
     shipper.add_application({**APPLICATION_RECORD, "time": None})
     shipper.add_database({**DATABASE_RECORD})
 

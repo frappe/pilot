@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import ClassVar
+
+import psutil
 
 from pilot.config.telemetry import TelemetryConfig
 
@@ -15,15 +17,12 @@ except ImportError:
     HAS_DATUM_CLIENT = False
 
 
-
 class MetricShipper:
     """Turns one collection tick's records into Datum samples and posts them once.
 
-    The records stay exactly what the JSON-Lines logs hold - the logs remain the
-    Admin UI's source of truth, and Datum gets the same numbers as a time series.
-    Names follow the fact, not the shipper: host metrics are `system_*` and the
-    database's are `mariadb_*`, so another agent reporting the same fact lands on
-    the same series. Only Pilot's own processes are `pilot_*`.
+    The JSON-Lines logs remain the Admin UI's source of truth. Datum gets the
+    machine metrics of the telemetry contract, the same names that every machine
+    sends, and the database's as `mariadb_*`. Only Pilot's own processes are `pilot_*`.
     Without the datum_client package, or without an endpoint and token, every
     add_* call is a no-op.
     """
@@ -47,24 +46,24 @@ class MetricShipper:
         """Whether metrics are shipped."""
         return self.client is not None
 
-    def add_system(self, record: dict) -> None:
-        """Add the CPU, memory and storage metrics."""
+    def add_machine(self) -> None:
+        """Add the machine metrics of the telemetry contract, read now. Counters are totals since boot."""
         if not self.is_enabled:
             return
-        when = _read_time(record)
-        cpu = Batch("system", "cpu")
-        # The total is 100 - idle, so it duplicates the breakdown. It stays because
-        # it is the number every dashboard wants, and it keeps its own name so a
-        # sum() over the modes can never quietly count the same CPU twice.
-        cpu.gauge("usage", record.get("cpu_percent", 0.0), "percent", ts=when)
-        for mode, percent in (record.get("cpu_breakdown") or {}).items():
-            cpu.gauge("mode", percent, "percent", ts=when, mode=mode)
-
-        load = Batch("system", "load")
-        for window, value in zip(("1m", "5m", "15m"), record.get("load_avg") or [], strict=False):
-            load.gauge("average", value, ts=when, window=window)
-
-        self.batches += [cpu, load, self._memory(record, when), *self._storage(record, when)]
+        when = datetime.now(UTC)
+        system = Batch("system")
+        system.gauge("boot_time", psutil.boot_time(), "seconds", ts=when)
+        system.gauge("cpu_count", psutil.cpu_count(), ts=when)
+        for cpu, times in enumerate(psutil.cpu_times(percpu=True)):
+            for mode, seconds in times._asdict().items():
+                system.counter("cpu", seconds, "seconds", ts=when, cpu=cpu, mode=mode)
+        for window, value in zip(("1m", "5m", "15m"), psutil.getloadavg(), strict=True):
+            system.gauge("load_average", value, ts=when, window=window)
+        memory = psutil.virtual_memory()
+        system.gauge("memory_total", memory.total, "bytes", ts=when)
+        system.gauge("memory_available", memory.available, "bytes", ts=when)
+        system.gauge("memory_swap_used", psutil.swap_memory().used, "bytes", ts=when)
+        self.batches += [system, self._filesystems(when), self._devices(when)]
 
     def add_application(self, record: dict) -> None:
         """Add the process metrics."""
@@ -96,9 +95,7 @@ class MetricShipper:
             batch.counter("queries", record.get(key, 0), ts=when, kind=kind)
         batch.counter("questions", record.get("Questions", 0), ts=when)
         batch.counter("buffer_pool_reads", record.get("Innodb_buffer_pool_reads", 0), ts=when)
-        batch.counter(
-            "buffer_pool_read_requests", record.get("Innodb_buffer_pool_read_requests", 0), ts=when
-        )
+        batch.counter("buffer_pool_read_requests", record.get("Innodb_buffer_pool_read_requests", 0), ts=when)
         batch.counter("row_lock_waits", record.get("Innodb_row_lock_waits", 0), ts=when)
         # MariaDB reports Innodb_row_lock_time in milliseconds.
         batch.counter("row_lock_wait", record.get("Innodb_row_lock_time", 0) / 1000, "seconds", ts=when)
@@ -145,33 +142,38 @@ class MetricShipper:
         return status
 
     @staticmethod
-    def _memory(record: dict, when: datetime | None) -> Batch:
-        """The memory metrics batch."""
-        memory = record.get("memory") or {}
-        batch = Batch("system", "memory")
-        for target in ("total", "used", "cached", "free"):
-            batch.gauge(target, memory.get(f"{target}_bytes", 0), "bytes", ts=when)
-        batch.gauge("swap_used", memory.get("swap_used_bytes", 0), "bytes", ts=when)
-        batch.gauge("usage", memory.get("percent", 0.0), "percent", ts=when)
+    def _filesystems(when: datetime) -> Batch:
+        """The size and free space of each mounted disk. `available` is what a user other than root can use."""
+        batch = Batch("system", "filesystem")
+        for partition in psutil.disk_partitions():
+            if partition.fstype in VIRTUAL_FILESYSTEMS or partition.mountpoint.startswith(SYSTEM_MOUNTS):
+                continue
+            usage = psutil.disk_usage(partition.mountpoint)
+            labels = {
+                "mountpoint": partition.mountpoint,
+                "device": partition.device,
+                "type": partition.fstype,
+            }
+            batch.gauge("size", usage.total, "bytes", ts=when, **labels)
+            batch.gauge("available", usage.free, "bytes", ts=when, **labels)
         return batch
 
     @staticmethod
-    def _storage(record: dict, when: datetime | None) -> list[Batch]:
-        """The disk metrics batches."""
-        disk = (record.get("storage") or {}).get("disk") or {}
-        disk_io = record.get("disk_io") or {}
-        batch = Batch("system", "disk")
-        for target in ("total", "used", "free"):
-            batch.gauge(target, disk.get(f"{target}_bytes", 0), "bytes", ts=when)
-        batch.gauge("usage", disk.get("percent", 0.0), "percent", ts=when)
-        batch.gauge("read", disk_io.get("read_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-        batch.gauge("write", disk_io.get("write_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-
-        network = record.get("network") or {}
-        interface = Batch("system", "network")
-        interface.gauge("receive", network.get("rx_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-        interface.gauge("transmit", network.get("tx_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-        return [batch, interface]
+    def _devices(when: datetime) -> Batch:
+        """The byte and error counters of each disk and network interface."""
+        batch = Batch("system")
+        for device, disk in psutil.disk_io_counters(perdisk=True).items():
+            if not device.startswith(("loop", "ram")):
+                batch.counter("disk_read", disk.read_bytes, "bytes", ts=when, device=device)
+                batch.counter("disk_written", disk.write_bytes, "bytes", ts=when, device=device)
+        for interface, network in psutil.net_io_counters(pernic=True).items():
+            if interface == "lo" or interface.startswith(("veth", "docker")):
+                continue
+            batch.counter("network_receive", network.bytes_recv, "bytes", ts=when, interface=interface)
+            batch.counter("network_transmit", network.bytes_sent, "bytes", ts=when, interface=interface)
+            batch.counter("network_receive_errors", network.errin, ts=when, interface=interface)
+            batch.counter("network_transmit_errors", network.errout, ts=when, interface=interface)
+        return batch
 
 
 def _read_time(record: dict) -> datetime | None:
@@ -183,6 +185,37 @@ def _read_time(record: dict) -> datetime | None:
 
 
 SITE_STATES = ("up", "down", "maintenance")
+# The same file systems that the Datum agent leaves out, so every machine sends the same set.
+VIRTUAL_FILESYSTEMS = frozenset(
+    {
+        "autofs",
+        "binfmt_misc",
+        "bpf",
+        "cgroup",
+        "cgroup2",
+        "configfs",
+        "debugfs",
+        "devpts",
+        "devtmpfs",
+        "efivarfs",
+        "fusectl",
+        "hugetlbfs",
+        "mqueue",
+        "nsfs",
+        "overlay",
+        "proc",
+        "pstore",
+        "ramfs",
+        "rpc_pipefs",
+        "securityfs",
+        "selinuxfs",
+        "squashfs",
+        "sysfs",
+        "tmpfs",
+        "tracefs",
+    }
+)
+SYSTEM_MOUNTS = ("/proc/", "/sys/", "/dev/", "/run/", "/snap/")
 BACKUP_STATUSES = ("success", "failed")
 
 

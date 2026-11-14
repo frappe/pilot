@@ -44,7 +44,7 @@ def test_logs_install_writes_config_parsers_lua_and_unit(tmp_path: Path) -> None
 
     parsers = (tmp_path / "system" / "fluent-bit" / "parsers.conf").read_text()
     assert "pilot_python" in parsers
-    assert "pilot_nginx_access" in parsers
+    assert "pilot_nginx_access" not in parsers
 
     lua = (tmp_path / "system" / "fluent-bit" / "pilot.lua").read_text()
     assert "function normalize" in lua
