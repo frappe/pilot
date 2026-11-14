@@ -1,6 +1,6 @@
 -- title: Pilot silent
 -- severity: Medium
--- resource_type: Server
+-- resource_type: Virtual Machine
 -- interval: 60
 -- pending_for: 300
 -- resolve_after: 120

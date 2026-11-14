@@ -1,6 +1,6 @@
 -- title: Sites down on server
 -- severity: High
--- resource_type: Server
+-- resource_type: Virtual Machine
 -- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-sites-down.md
 -- interval: 60
 -- pending_for: 300
