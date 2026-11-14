@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 
 /** Editor card with a footer and a drag handle on its bottom border. The chosen height is kept per `storageKey` in this browser. */
-const props = defineProps<{ storageKey: string }>()
+const props = defineProps<{ storageKey: string; quiet?: boolean }>()
 
 const MIN_HEIGHT = 120
 const STEP = 40
@@ -48,7 +48,10 @@ const nudge = (direction: number) => setHeight((area.value?.offsetHeight ?? MIN_
 
 <template>
   <div class="relative">
-    <div class="border rounded-4 border-outline-gray-2 overflow-hidden">
+    <div
+      class="overflow-hidden"
+      :class="quiet ? 'border-b border-outline-gray-1' : 'border rounded-4 border-outline-gray-2'"
+    >
       <div ref="area" class="h-64 sm:h-[300px] lg:h-[360px]" :style="height ? { height: `${height}px` } : undefined">
         <slot />
       </div>

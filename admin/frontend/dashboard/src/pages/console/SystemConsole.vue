@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, KeepAlive, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Select, TabButtons } from 'frappe-ui'
+import { Button, Select, TabButtons } from 'frappe-ui'
 
 import EmptyState from '@/components/common/EmptyState.vue'
 import PythonConsole from '@/components/console/PythonConsole.vue'
@@ -16,6 +16,7 @@ const router = useRouter()
 const sites = ref<DatabaseSite[]>([])
 const selectedSite = ref(typeof route.query.site === 'string' ? route.query.site : '')
 const language = ref<'python' | 'sql'>(route.query.language === 'sql' ? 'sql' : 'python')
+const isHistoryOpen = ref(false)
 
 const languageOptions = [
   { label: 'Python', value: 'python' },
@@ -27,7 +28,9 @@ const siteOptions = computed(() => [
   ...sites.value.map((site) => ({ label: site.name, value: site.name })),
 ])
 
-const dbType = computed(() => sites.value.find((site) => site.name === selectedSite.value)?.db_type || 'mariadb')
+const dbType = computed(
+  () => sites.value.find((site) => site.name === selectedSite.value)?.db_type || 'mariadb',
+)
 
 watch([selectedSite, language], ([site]) => {
   router.replace({
@@ -46,10 +49,19 @@ onMounted(async () => {
 
 <template>
   <Teleport defer to="#header-actions">
-    <div class="flex items-center gap-2">
+    <div v-if="selectedSite" class="flex items-center gap-2">
+      <Button
+        v-if="language === 'python'"
+        :variant="isHistoryOpen ? 'subtle' : 'ghost'"
+        icon-left="lucide-history"
+        @click="isHistoryOpen = !isHistoryOpen"
+      >
+        History
+      </Button>
+
       <TabButtons v-model="language" :options="languageOptions" />
+
       <Select
-        v-if="selectedSite"
         side="bottom"
         v-model="selectedSite"
         :options="siteOptions"
@@ -69,9 +81,12 @@ onMounted(async () => {
     <Select side="bottom" v-model="selectedSite" :options="siteOptions" class="w-56" />
   </EmptyState>
 
-  <!-- Each console keeps its editor and output while the other is shown. -->
   <KeepAlive v-else>
-    <PythonConsole v-if="language === 'python'" :site="selectedSite" />
+    <PythonConsole
+      v-if="language === 'python'"
+      v-model:site="selectedSite"
+      v-model:history="isHistoryOpen"
+    />
     <SQLConsole v-else :site="selectedSite" :db-type="dbType" />
   </KeepAlive>
 </template>

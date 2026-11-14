@@ -1,6 +1,7 @@
 import { HighlightStyle } from '@codemirror/language'
+import { Prec } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { tags } from '@lezer/highlight'
+import { Tag, tags } from '@lezer/highlight'
 
 export const codeEditorTheme = EditorView.theme({
   // Not `&`: the tooltip container in document.body gets the theme class too, and would take the full page height.
@@ -43,37 +44,92 @@ export const codeEditorTheme = EditorView.theme({
   '.cm-tooltip': {
     backgroundColor: 'var(--surface-elevation-2, white)',
     border: '1px solid var(--outline-gray-2, #e8eaed)',
-    borderRadius: '6px',
+    borderRadius: '8px',
     color: 'var(--ink-gray-8, #1e293b)',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+    boxShadow: '0 12px 32px -8px rgba(0, 0, 0, 0.24)',
     overflow: 'hidden',
   },
   // The docs panel sits beside the list, so the list's tooltip must not clip it.
   '.cm-tooltip.cm-tooltip-autocomplete': { overflow: 'visible' },
-  '.cm-tooltip-autocomplete > ul': {
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    fontSize: '12px',
+    fontSize: '12.5px',
+    padding: '4px',
+    minWidth: '300px',
+    maxWidth: '520px',
+    maxHeight: '288px',
   },
-  '.cm-tooltip-autocomplete > ul > li': { color: 'var(--ink-gray-7, #475569)', padding: '3px 8px' },
-  '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
-    backgroundColor: 'var(--surface-gray-2, #f1f5f9)',
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    height: '28px',
+    padding: '0 10px 0 4px',
+    borderRadius: '5px',
+    color: 'var(--ink-gray-7, #475569)',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+    backgroundColor: 'var(--surface-gray-3, #ededed)',
     color: 'var(--ink-gray-9, #0f172a)',
   },
-  '.cm-completionInfo': {
-    whiteSpace: 'pre-wrap',
-    maxWidth: '520px',
-    maxHeight: '320px',
-    overflowY: 'auto',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    fontSize: '12px',
-    padding: '6px 8px',
+  '.cm-kindIcon': {
+    display: 'grid',
+    placeItems: 'center',
+    flexShrink: '0',
+    width: '20px',
+    height: '20px',
+    borderRadius: '5px',
   },
-  '.cm-completionDetail': { color: 'var(--ink-gray-5, #64748b)', fontStyle: 'italic' },
+  '.cm-completionLabel': { flexShrink: '0' },
+  '.cm-completionDetail': {
+    minWidth: '0',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    marginLeft: '0',
+    color: 'var(--ink-gray-5, #64748b)',
+    fontStyle: 'normal',
+  },
+  '.cm-kindLabel': {
+    marginLeft: 'auto',
+    paddingLeft: '16px',
+    flexShrink: '0',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+    fontSize: '12px',
+    color: 'var(--ink-gray-5, #64748b)',
+  },
   '.cm-completionMatchedText': {
     color: 'var(--ink-blue-5, #2563eb)',
     textDecoration: 'none',
     fontWeight: '600',
   },
+  '.cm-tooltip.cm-completionInfo': {
+    maxWidth: '460px',
+    maxHeight: '320px',
+    overflowY: 'auto',
+    padding: '0',
+    marginLeft: '4px',
+  },
+  '.cm-docs': { display: 'flex', flexDirection: 'column' },
+  '.cm-docsSignature': {
+    padding: '10px 12px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: '12.5px',
+    lineHeight: '20px',
+    color: 'var(--ink-gray-8, #1e293b)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  },
+  '.cm-docsSignature + .cm-docsBody': { borderTop: '1px solid var(--outline-gray-2, #e8eaed)' },
+  '.cm-docsBody': {
+    padding: '10px 12px',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+    fontSize: '13px',
+    lineHeight: '1.5',
+    color: 'var(--ink-gray-7, #475569)',
+    whiteSpace: 'pre-wrap',
+  },
+  '.cm-docsBody strong': { color: 'var(--ink-gray-9, #0f172a)', fontWeight: '600' },
 })
 
 // CodeMirror's basicSetup falls back to a fixed, non-theme-aware highlight
@@ -81,20 +137,66 @@ export const codeEditorTheme = EditorView.theme({
 // our own - keyed to the same --ink-* tokens as the rest of the editor theme
 // above - replaces that fallback and lets syntax colors flip with the app's
 // theme instead of staying stuck in light-mode hues on a dark background.
+export const codeTags = {
+  repeat: Tag.define(tags.controlKeyword),
+  exception: Tag.define(tags.controlKeyword),
+  parameter: Tag.define(tags.variableName),
+}
+
 export const codeEditorHighlightStyle = HighlightStyle.define([
-  { tag: [tags.keyword, tags.standard(tags.name)], color: 'var(--ink-blue-5, #2563eb)' },
-  { tag: [tags.string, tags.special(tags.string)], color: 'var(--ink-green-5, #16a34a)' },
+  { tag: [tags.keyword, tags.modifier], color: 'var(--ink-orange-7)' },
+  { tag: tags.moduleKeyword, color: 'var(--ink-teal-7)' },
+  { tag: codeTags.repeat, color: 'var(--ink-green-7)' },
+  { tag: codeTags.exception, color: 'var(--ink-blue-7)' },
   {
-    tag: [tags.lineComment, tags.blockComment],
-    color: 'var(--ink-gray-5, #64748b)',
-    fontStyle: 'italic',
+    tag: [
+      tags.function(tags.variableName),
+      tags.function(tags.propertyName),
+      tags.function(tags.definition(tags.variableName)),
+    ],
+    color: 'var(--ink-teal-7)',
   },
-  { tag: [tags.number, tags.bool, tags.null], color: 'var(--ink-amber-5, #d97706)' },
-  { tag: tags.typeName, color: 'var(--ink-amber-5, #d97706)' },
-  { tag: tags.special(tags.name), color: 'var(--ink-violet-5, #7c3aed)' },
-  { tag: tags.name, color: 'var(--ink-gray-8, #1e293b)' },
+  { tag: [tags.propertyName, codeTags.parameter], color: 'var(--ink-blue-7)' },
+  { tag: [tags.name, tags.variableName], color: 'var(--ink-gray-8)' },
   {
-    tag: [tags.operator, tags.punctuation, tags.paren, tags.brace, tags.squareBracket],
-    color: 'var(--ink-gray-6, #5f6368)',
+    tag: [tags.className, tags.typeName, tags.definition(tags.className), tags.meta],
+    color: 'var(--ink-green-7)',
+  },
+  { tag: [tags.string, tags.special(tags.string)], color: 'var(--ink-amber-8)' },
+  { tag: [tags.escape, tags.regexp], color: 'var(--ink-red-7)' },
+  { tag: [tags.number, tags.bool, tags.null, tags.self], color: 'var(--ink-purple-7)' },
+  { tag: [tags.lineComment, tags.blockComment], color: 'var(--ink-gray-5)' },
+  { tag: tags.operator, color: 'var(--ink-gray-8)' },
+  {
+    tag: [
+      tags.punctuation,
+      tags.separator,
+      tags.derefOperator,
+      tags.paren,
+      tags.brace,
+      tags.squareBracket,
+    ],
+    color: 'var(--ink-gray-5)',
   },
 ])
+
+export const browserFind = Prec.highest(
+  EditorView.domEventHandlers({
+    keydown: (event) => (event.ctrlKey || event.metaKey) && event.key === 'f',
+  }),
+)
+
+export const consoleEditorTheme = EditorView.theme({
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+    backgroundColor: 'var(--surface-gray-2) !important',
+  },
+  '.cm-content ::selection, .cm-content::selection': {
+    backgroundColor: 'var(--surface-gray-2) !important',
+  },
+  '&.cm-editor': { backgroundColor: 'var(--surface-gray-0)' },
+  '.cm-gutters': { backgroundColor: 'transparent', border: 'none' },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 10px 0 16px', minWidth: '26px' },
+  '.cm-foldGutter': { display: 'none !important' },
+  '.cm-line': { paddingLeft: '6px' },
+  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--ink-gray-8)' },
+})

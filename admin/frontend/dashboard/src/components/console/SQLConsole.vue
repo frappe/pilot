@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Alert, Button, Dialog, Select, TabButtons } from 'frappe-ui'
+import { Alert, Button, Checkbox, Dialog, KeyboardShortcut, Select, TabButtons } from 'frappe-ui'
 
 import ResizableEditor from '@/components/console/ResizableEditor.vue'
 import SQLCodeEditor from '@/components/database/SQLCodeEditor.vue'
@@ -31,10 +31,10 @@ const showSchema = ref(false)
 const schema = ref<TableSchema[]>([])
 const editorRef = ref<InstanceType<typeof SQLCodeEditor> | null>(null)
 
-const modeOptions = [
-  { label: 'Read-only', value: 'readonly' },
-  { label: 'Read/Write', value: 'readwrite' },
-]
+const isReadWrite = computed({
+  get: () => modeStr.value === 'readwrite',
+  set: (value: boolean) => (modeStr.value = value ? 'readwrite' : 'readonly'),
+})
 
 const currentResult = computed(() => results.value[activeTab.value] || null)
 
@@ -203,9 +203,8 @@ watch(perPage, () => {
 </script>
 
 <template>
-  <main class="p-3 md:p-4 flex flex-col gap-3">
-    <!-- editor -->
-    <ResizableEditor storage-key="console_sql_editor_height">
+  <main class="flex flex-col h-[calc(100dvh-6.5rem)] md:h-[calc(100dvh-3rem)]">
+    <ResizableEditor storage-key="console_sql_editor_height" quiet>
       <SQLCodeEditor
         ref="editorRef"
         v-model="query"
@@ -215,153 +214,159 @@ watch(perPage, () => {
       />
 
       <template #footer>
-        <!-- actions toolbar footer -->
-        <div
-          class="flex flex-wrap items-center gap-2 bg-surface-base px-2 py-2 border-t border-outline-gray-2"
-        >
-          <TabButtons v-model="modeStr" :options="modeOptions" />
+        <footer class="flex flex-wrap items-center gap-2 bg-surface-gray-1 px-4 py-1.5">
+          <Checkbox v-model="isReadWrite" size="xs" label="Read/Write" />
 
           <Button
-            variant="outline"
-            iconLeft="lucide-table"
+            class="mr-auto"
+            size="xs"
+            variant="ghost"
+            icon-left="lucide-table"
             :disabled="!schema.length"
             @click="showSchema = true"
           >
             Tables
             <template v-if="schema.length" #suffix>
-              <span class="text-ink-gray-4 text-xs">{{ schema.length }}</span>
+              <span class="text-ink-gray-5 text-xs">{{ schema.length }}</span>
             </template>
           </Button>
 
+          <KeyboardShortcut
+            v-if="!running"
+            combo="Mod+Enter"
+            class="max-sm:hidden text-ink-gray-4"
+          />
+
           <Button
-            class="md:ml-auto"
+            size="xs"
             variant="solid"
-            iconLeft="lucide-play"
+            icon-left="lucide-play"
             :loading="running"
             :disabled="!query.trim()"
             @click="runQuery"
           >
             Execute
           </Button>
-        </div>
+        </footer>
       </template>
     </ResizableEditor>
 
-    <Alert
-      v-if="error"
-      class="border border-outline-gray-2"
-      theme="red"
-      title="Query failed"
-      :dismissible="false"
-    >
-      <template #description>
-        <p class="font-mono text-xs break-words whitespace-pre-wrap">{{ error }}</p>
-      </template>
-    </Alert>
+    <section class="flex-1 space-y-3 pt-3 pb-10 pl-4 min-h-0 overflow-y-auto">
+      <Alert
+        v-if="error"
+        class="border border-outline-gray-2"
+        theme="red"
+        title="Query failed"
+        :dismissible="false"
+      >
+        <template #description>
+          <p class="font-mono text-xs break-words whitespace-pre-wrap">{{ error }}</p>
+        </template>
+      </Alert>
 
-    <template v-if="results.length && !error">
-      <TabButtons
-        v-if="results.length > 1"
-        class="overflow-x-auto hover-scrollbar"
-        v-model="activeTab"
-        type="underline"
-        :options="tabOptions"
-      />
+      <template v-if="results.length && !error">
+        <TabButtons
+          v-if="results.length > 1"
+          class="overflow-x-auto hover-scrollbar"
+          v-model="activeTab"
+          type="underline"
+          :options="tabOptions"
+        />
 
-      <div v-if="currentResult" class="border rounded-4 overflow-hidden">
-        <div
-          v-if="!currentResult.columns.length"
-          class="flex justify-center items-center gap-2 py-8 text-ink-gray-6 text-sm"
-        >
-          <span class="size-4 text-ink-green-3 lucide-check-circle" />
-          Query executed successfully
-          <span v-if="currentResult.affected_rows != null"
-            >· {{ currentResult.affected_rows }} row(s) affected</span
-          >
-        </div>
-
-        <template v-else>
-          <Table height="h-auto" :columns="resultColumns" :rows="paginatedRowObjects">
-            <template v-for="name in currentResult.columns" :key="name" #[name]="{ row }">
-              <span v-if="row[name] === null" class="text-ink-gray-3 italic">null</span>
-              <span v-else class="block max-w-xs truncate">{{ row[name] }}</span>
-            </template>
-          </Table>
-
-          <p
-            v-if="!paginatedRowObjects.length"
-            class="flex justify-center items-center min-h-[320px] text-ink-gray-4 text-sm"
-          >
-            No rows returned.
-          </p>
-
+        <div v-if="currentResult" class="border rounded-4 overflow-hidden">
           <div
-            v-if="currentResult.row_count"
-            class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-1 py-1 border-t border-outline-gray-2"
+            v-if="!currentResult.columns.length"
+            class="flex justify-center items-center gap-2 py-8 text-ink-gray-6 text-sm"
           >
-            <Button variant="ghost" size="xs" iconLeft="lucide-download" @click="exportCsv">
-              Download as CSV
-            </Button>
+            <span class="size-4 text-ink-green-3 lucide-check-circle" />
+            Query executed successfully
+            <span v-if="currentResult.affected_rows != null"
+              >· {{ currentResult.affected_rows }} row(s) affected</span
+            >
+          </div>
 
-            <div class="flex items-center gap-3">
-              <div
-                class="hidden sm:flex items-center gap-1.5 pr-3 border-r-2 border-outline-gray-2"
-              >
-                <span class="text-ink-gray-5 text-xs shrink-0">Per Page</span>
-                <Select side="bottom" v-model="perPage" class="max-w-16" :options="pageOptions" />
-              </div>
+          <template v-else>
+            <Table height="h-auto" :columns="resultColumns" :rows="paginatedRowObjects">
+              <template v-for="name in currentResult.columns" :key="name" #[name]="{ row }">
+                <span v-if="row[name] === null" class="text-ink-gray-3 italic">null</span>
+                <span v-else class="block max-w-xs truncate">{{ row[name] }}</span>
+              </template>
+            </Table>
 
-              <span class="hidden sm:inline tabular-nums text-ink-gray-5 text-xs whitespace-nowrap">
-                {{ rowRange }}
-                of {{ currentResult.row_count }} rows
-                <span v-if="currentResult.truncated">(truncated)</span>
-              </span>
+            <p
+              v-if="!paginatedRowObjects.length"
+              class="flex justify-center items-center min-h-[320px] text-ink-gray-4 text-sm"
+            >
+              No rows returned.
+            </p>
 
-              <div class="flex items-center">
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  iconLeft="lucide-arrow-left"
-                  :disabled="page <= 1"
-                  @click="page--"
-                  >Prev</Button
+            <div
+              v-if="currentResult.row_count"
+              class="flex flex-wrap justify-between items-center gap-2 bg-surface-base px-1 py-1 border-t border-outline-gray-2"
+            >
+              <Button variant="ghost" size="xs" iconLeft="lucide-download" @click="exportCsv">
+                Download as CSV
+              </Button>
+
+              <div class="flex items-center gap-3">
+                <div
+                  class="hidden sm:flex items-center gap-1.5 pr-3 border-r-2 border-outline-gray-2"
                 >
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  iconRight="lucide-arrow-right"
-                  :disabled="page >= totalPages"
-                  @click="page++"
-                  >Next</Button
+                  <span class="text-ink-gray-5 text-xs shrink-0">Per Page</span>
+                  <Select side="bottom" v-model="perPage" class="max-w-16" :options="pageOptions" />
+                </div>
+
+                <span
+                  class="hidden sm:inline tabular-nums text-ink-gray-5 text-xs whitespace-nowrap"
                 >
+                  {{ rowRange }}
+                  of {{ currentResult.row_count }} rows
+                  <span v-if="currentResult.truncated">(truncated)</span>
+                </span>
+
+                <div class="flex items-center">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    iconLeft="lucide-arrow-left"
+                    :disabled="page <= 1"
+                    @click="page--"
+                    >Prev</Button
+                  >
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    iconRight="lucide-arrow-right"
+                    :disabled="page >= totalPages"
+                    @click="page++"
+                    >Next</Button
+                  >
+                </div>
               </div>
             </div>
-          </div>
-        </template>
-      </div>
+          </template>
+        </div>
 
-      <details v-if="results.length > 1 && currentResult" class="group">
-        <summary
-          class="flex items-center gap-1.5 list-none text-ink-gray-5 hover:text-ink-gray-8 text-xs cursor-pointer"
-        >
-          <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />
-          View SQL Query
-        </summary>
+        <details v-if="results.length > 1 && currentResult" class="group">
+          <summary
+            class="flex items-center gap-1.5 list-none text-ink-gray-5 hover:text-ink-gray-8 text-xs cursor-pointer"
+          >
+            <span class="size-4 transition-transform group-open:rotate-90 lucide-chevron-right" />
+            View SQL Query
+          </summary>
 
-        <pre
-          class="bg-surface-gray-1 mt-3 p-3 border rounded-4 border-outline-gray-2 overflow-auto font-mono text-ink-gray-8 text-sm leading-relaxed whitespace-pre-wrap break-words"
-        >{{ currentResult.query }}</pre>
-      </details>
-    </template>
+          <pre
+            class="bg-surface-gray-1 mt-3 p-3 border rounded-4 border-outline-gray-2 overflow-auto font-mono text-ink-gray-8 text-sm leading-relaxed whitespace-pre-wrap break-words"
+          >{{ currentResult.query }}</pre>
+        </details>
+      </template>
+    </section>
   </main>
 
   <SQLSchemaDialog v-model="showSchema" :schema="schema" @preview="previewTable" />
 
   <Dialog v-model="showConfirm" title="Run in Read/Write mode">
-    <p class="text-ink-gray-7 text-sm">
-      This query will run in <strong>Read/Write</strong> mode and any changes will be committed to
-      the database. Are you sure you want to continue?
-    </p>
+    <p class="text-ink-gray-7 text-p-sm">Changes this query makes will be saved to the database.</p>
 
     <pre
       class="bg-surface-gray-1 mt-3 p-3 border rounded-4 border-outline-gray-2 max-h-40 overflow-auto font-mono text-ink-gray-8 text-sm leading-relaxed whitespace-pre-wrap break-words"

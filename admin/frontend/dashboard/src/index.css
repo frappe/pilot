@@ -7,7 +7,7 @@
 }
 
 [data-theme='dark'] {
-  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 30%, transparent);
+  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 40%, transparent);
 }
 
 body {
