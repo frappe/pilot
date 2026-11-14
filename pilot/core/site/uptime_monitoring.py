@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
-from pilot.core.server.monitoring_datum import MetricShipper
+from pilot.core.server.monitoring_datum import TelemetryShipper
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.task import TaskReader
@@ -186,7 +186,7 @@ def main() -> None:
     if not monitors:
         return
 
-    shipper = MetricShipper(monitors[0].bench.config.telemetry)
+    shipper = TelemetryShipper(monitors[0].bench.config.telemetry)
     shipper.add_sites(results)
     shipper.send()
 

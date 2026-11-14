@@ -1,75 +1,32 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from pilot.config.telemetry import TelemetryConfig
 from pilot.core.server import monitoring_datum
-from pilot.core.server.monitoring_datum import MetricShipper
+from pilot.core.server.monitoring_datum import TelemetryShipper, repository_name, update_line
+from pilot.internal.jsonl_log import JsonlLog
 
 pytest.importorskip("datum_client", reason="datum is installed in the admin venv only")
 
-WHEN = "2026-08-04T10:00:00+00:00"
 
-# The machine metrics of the telemetry contract, which every machine sends with these names.
-MACHINE_METRICS = {
-    "system_boot_time_seconds",
-    "system_cpu_count",
-    "system_cpu_seconds_total",
-    "system_load_average",
-    "system_memory_total_bytes",
-    "system_memory_available_bytes",
-    "system_memory_swap_used_bytes",
-    "system_filesystem_size_bytes",
-    "system_filesystem_available_bytes",
-    "system_disk_read_bytes_total",
-    "system_disk_written_bytes_total",
-    "system_network_receive_bytes_total",
-    "system_network_transmit_bytes_total",
-    "system_network_receive_errors_total",
-    "system_network_transmit_errors_total",
-}
-
-APPLICATION_RECORD = {
-    "time": WHEN,
-    "bench": "bench_0001",
-    "processes": [
-        {
-            "service": "bench_0001-web.service",
-            "pid": 42,
-            "state": "sleeping",
-            "cpu_percent": 1.2,
-            "memory_rss_bytes": 4 * 1024**2,
-            "read_bytes": 4096,
-            "write_bytes": 2048,
-            "open_fds": 30,
-        },
-        {"service": "bench_0001-worker.service", "pid": 43, "missing": True},
-    ],
-}
-
-DATABASE_RECORD = {
-    "time": WHEN,
-    "Com_insert": 10,
-    "Com_update": 5,
-    "Com_delete": 1,
-    "Com_select": 100,
-    "Questions": 200,
-    "Innodb_buffer_pool_reads": 7,
-    "Innodb_buffer_pool_read_requests": 700,
-    "Innodb_row_lock_time": 2500,
-    "Innodb_row_lock_waits": 3,
-    "Threads_connected": 9,
-    "innodb_buffer_pool_size": 1024**3,
-    "max_connections": 151,
-    "total_ram_bytes": 8 * 1024**3,
-}
+@pytest.fixture
+def log_dir(tmp_path: Path, monkeypatch) -> Path:
+    """The monitor log directory, with the Central and update records in it."""
+    monkeypatch.setattr(monitoring_datum, "monitor_log_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        monitoring_datum, "get_central_request_log", lambda: JsonlLog(tmp_path, "central-requests")
+    )
+    monkeypatch.setattr(monitoring_datum, "get_update_log", lambda: JsonlLog(tmp_path, "updates"))
+    return tmp_path
 
 
-def _shipper() -> MetricShipper:
-    return MetricShipper(TelemetryConfig(endpoint="https://datum.internal", token="secret"))
+def _shipper() -> TelemetryShipper:
+    return TelemetryShipper(TelemetryConfig(endpoint="https://datum.internal", token="secret"))
 
 
-def _samples(shipper: MetricShipper) -> dict[tuple[str, str], float]:
+def _samples(shipper: TelemetryShipper) -> dict[tuple[str, str], float]:
     """Every sample as {(metric, sorted labels): value}."""
     return {
         (sample["metric"], ",".join(f"{k}={v}" for k, v in sorted(sample["labels"].items()))): sample["value"]
@@ -78,111 +35,79 @@ def _samples(shipper: MetricShipper) -> dict[tuple[str, str], float]:
     }
 
 
-def test_shipping_is_off_until_endpoint_and_token_are_set() -> None:
-    shipper = MetricShipper(TelemetryConfig(endpoint="https://datum.internal"))
+def test_nothing_is_sent_until_endpoint_and_token_are_set() -> None:
+    shipper = TelemetryShipper(TelemetryConfig(endpoint="https://datum.internal"))
 
-    shipper.add_machine()
-    shipper.add_application(APPLICATION_RECORD)
-    shipper.add_database(DATABASE_RECORD)
+    shipper.add_info()
+    shipper.add_filesystems()
 
     assert not shipper.is_enabled
     assert shipper.batches == []
     assert shipper.send() == 0
 
 
-def test_shipping_is_off_without_the_datum_client_package(monkeypatch) -> None:
+def test_nothing_is_sent_without_the_datum_client_package(monkeypatch) -> None:
     monkeypatch.setattr(monitoring_datum, "HAS_DATUM_CLIENT", False)
     shipper = _shipper()
 
-    shipper.add_machine()
+    shipper.add_info()
 
     assert not shipper.is_enabled
     assert shipper.batches == []
 
 
-def test_machine_metrics_follow_the_contract() -> None:
+def test_the_heartbeat_names_the_pilot_version() -> None:
     shipper = _shipper()
-    shipper.add_machine()
-    samples = [sample for batch in shipper.batches for sample in batch.samples]
+    shipper.add_info()
 
-    assert {sample["metric"] for sample in samples} == MACHINE_METRICS
-    cpu = [sample["labels"] for sample in samples if sample["metric"] == "system_cpu_seconds_total"]
-    assert {"idle", "user", "iowait"} <= {labels["mode"] for labels in cpu}
-    assert all(set(labels) == {"cpu", "mode"} for labels in cpu)
-    assert ("system_load_average", "window=5m") in _samples(shipper)
+    assert _samples(shipper) == {("pilot_info", f"version={monitoring_datum.__version__}"): 1}
 
 
-def test_application_metrics_carry_bench_and_service_labels() -> None:
+def test_the_database_reports_up_or_down() -> None:
     shipper = _shipper()
-    shipper.add_application(APPLICATION_RECORD)
-    samples = _samples(shipper)
-    web = "bench=bench_0001,service=bench_0001-web.service"
+    shipper.add_database_up(False)
 
-    assert samples[("pilot_process_up", web)] == 1.0
-    assert samples[("pilot_process_cpu_percent", web)] == 1.2
-    assert samples[("pilot_process_memory_rss_bytes", web)] == 4 * 1024**2
-    assert samples[("pilot_process_io_read_bytes_total", web)] == 4096
-    assert samples[("pilot_process_state", f"{web},state=sleeping")] == 1.0
-    assert samples[("pilot_process_open_fds", web)] == 30
+    assert _samples(shipper) == {("pilot_database_up", ""): 0}
 
 
-def test_a_missing_process_reports_zero_rather_than_nothing() -> None:
+def test_disk_space_uses_the_contract_names() -> None:
     shipper = _shipper()
-    shipper.add_application(APPLICATION_RECORD)
-    samples = _samples(shipper)
-    worker = "bench=bench_0001,service=bench_0001-worker.service"
+    shipper.add_filesystems()
 
-    assert samples[("pilot_process_up", worker)] == 0.0
-    assert ("pilot_process_cpu_percent", worker) not in samples
+    assert {metric for metric, _ in _samples(shipper)} == {
+        "system_filesystem_size_bytes",
+        "system_filesystem_available_bytes",
+    }
 
 
-def test_pid_is_never_a_label() -> None:
+def test_central_calls_of_the_last_minute_are_counted(log_dir: Path) -> None:
+    now = datetime.now(UTC)
+    log = JsonlLog(log_dir, "central-requests")
+    for seconds, method, result in [
+        (90, "report_pilot_event", "failed"),
+        (30, "report_pilot_event", "failed"),
+        (20, "report_pilot_event", "ok"),
+        (10, "datum_token", "ok"),
+        (5, "report_pilot_event", "failed"),
+    ]:
+        log.append(
+            {"time": (now - timedelta(seconds=seconds)).isoformat(), "method": method, "result": result}
+        )
     shipper = _shipper()
-    shipper.add_application(APPLICATION_RECORD)
 
-    assert not [
-        sample for batch in shipper.batches for sample in batch.samples if "pid" in sample["labels"]
-    ]
+    shipper.add_central_requests(now)
+
+    assert _samples(shipper) == {
+        ("pilot_central_requests_last_minute", "method=report_pilot_event,result=failed"): 2,
+        ("pilot_central_requests_last_minute", "method=report_pilot_event,result=ok"): 1,
+        ("pilot_central_requests_last_minute", "method=datum_token,result=ok"): 1,
+    }
 
 
-def test_database_counters_ship_as_counters() -> None:
+def test_metrics_go_in_one_post_and_clear_the_batches() -> None:
     shipper = _shipper()
-    shipper.add_database(DATABASE_RECORD)
-    samples = _samples(shipper)
-
-    assert samples[("mariadb_queries_total", "kind=select")] == 100
-    assert samples[("mariadb_questions_total", "")] == 200
-    assert samples[("mariadb_row_lock_wait_seconds_total", "")] == 2.5
-    assert samples[("mariadb_connections", "")] == 9
-    assert samples[("mariadb_buffer_pool_size_bytes", "")] == 1024**3
-
-
-def test_host_memory_is_not_shipped_twice() -> None:
-    """The host's RAM is a system fact; MariaDB's sample must not repeat it."""
-    shipper = _shipper()
-    shipper.add_database(DATABASE_RECORD)
-
-    assert not [name for name, _ in _samples(shipper) if "memory" in name]
-
-
-def test_database_metrics_are_skipped_when_the_sample_failed() -> None:
-    shipper = _shipper()
-    shipper.add_database(None)
-
-    assert shipper.batches == []
-
-
-def test_all_machine_metrics_of_one_reading_share_one_time() -> None:
-    shipper = _shipper()
-    shipper.add_machine()
-
-    assert len({sample["ts"] for batch in shipper.batches for sample in batch.samples}) == 1
-
-
-def test_a_tick_is_one_post_and_clears_the_batches() -> None:
-    shipper = _shipper()
-    shipper.add_machine()
-    shipper.add_application(APPLICATION_RECORD)
+    shipper.add_info()
+    shipper.add_database_up(True)
     sent = []
 
     shipper.client.send = lambda *batches: sent.append(batches) or 202  # type: ignore[union-attr]
@@ -193,15 +118,94 @@ def test_a_tick_is_one_post_and_clears_the_batches() -> None:
     assert shipper.send() == 0
 
 
-def test_a_record_without_a_usable_time_still_ships() -> None:
-    """An unreadable timestamp falls back to now, rather than dropping the tick."""
+FAILED_UPDATE = {
+    "time": "2026-11-14T10:00:00+00:00",
+    "app": "erpnext",
+    "repository_url": "https://github.com/frappe/erpnext.git",
+    "from_version": "a1b2c3d4e5f6",
+    "to_version": "v15.40.0",
+    "status": "failed",
+    "phase": "migrating",
+    "site": "a.example.com",
+    "message": "Patch failed",
+    "output_excerpt": "Traceback ...",
+}
+
+
+def test_a_failed_update_becomes_one_error_line() -> None:
+    line = update_line(FAILED_UPDATE)
+
+    assert line["level"] == "error"
+    assert (line["product"], line["service"], line["source"]) == ("pilot", "update", "event")
+    assert line["attributes"]["repository"] == "frappe/erpnext"
+    assert line["attributes"]["phase"] == "migrating"
+    assert line["message"] == "Patch failed\nTraceback ..."
+
+
+def test_a_completed_update_has_no_failure_fields() -> None:
+    line = update_line(
+        {"time": "2026-11-14T10:00:00+00:00", "app": "frappe", "status": "completed", "to_version": "v15.1.0"}
+    )
+
+    assert line["level"] == "info"
+    assert line["attributes"] == {
+        "app": "frappe",
+        "repository": "frappe",
+        "to_version": "v15.1.0",
+        "status": "completed",
+    }
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/frappe/erpnext.git",
+        "git@github.com:frappe/erpnext.git",
+        "https://github.com/frappe/erpnext",
+    ],
+)
+def test_the_repository_is_owner_and_name(url: str) -> None:
+    assert repository_name(url) == "frappe/erpnext"
+
+
+def test_update_events_are_sent_once_and_in_order(log_dir: Path) -> None:
+    (log_dir / "updates.sent").write_text("2026-11-14T09:00:00+00:00")
+    log = JsonlLog(log_dir, "updates")
+    log.append({**FAILED_UPDATE, "time": "2026-11-14T08:00:00+00:00"})
+    log.append({**FAILED_UPDATE, "time": "2026-11-14T10:00:00+00:00", "app": "first"})
+    log.append({**FAILED_UPDATE, "time": "2026-11-14T11:00:00+00:00", "app": "second"})
     shipper = _shipper()
+    sent = []
+    shipper.client.send_logs = lambda lines: sent.append(lines) or 200  # type: ignore[union-attr]
 
-    shipper.add_application({**APPLICATION_RECORD, "time": "not-a-timestamp"})
-    shipper.add_application({**APPLICATION_RECORD, "time": None})
-    shipper.add_database({**DATABASE_RECORD})
+    shipper.send_update_events()
+    shipper.send_update_events()
 
-    assert all(sample["ts"] for batch in shipper.batches for sample in batch.samples)
+    assert [[line["attributes"]["app"] for line in lines] for lines in sent] == [["first", "second"]]
+    assert (log_dir / "updates.sent").read_text() == "2026-11-14T11:00:00+00:00"
+
+
+def test_a_refused_request_keeps_the_events_for_the_next_minute(log_dir: Path) -> None:
+    (log_dir / "updates.sent").write_text("2026-11-14T09:00:00+00:00")
+    JsonlLog(log_dir, "updates").append(FAILED_UPDATE)
+    shipper = _shipper()
+    shipper.client.send_logs = lambda lines: 503  # type: ignore[union-attr]
+
+    shipper.send_update_events()
+
+    assert (log_dir / "updates.sent").read_text() == "2026-11-14T09:00:00+00:00"
+
+
+def test_the_first_run_starts_from_now(log_dir: Path) -> None:
+    JsonlLog(log_dir, "updates").append(FAILED_UPDATE)
+    shipper = _shipper()
+    sent = []
+    shipper.client.send_logs = lambda lines: sent.append(lines) or 200  # type: ignore[union-attr]
+
+    shipper.send_update_events()
+
+    assert sent == []
+    assert (log_dir / "updates.sent").exists()
 
 
 def test_site_states_are_counted_with_zeroes() -> None:

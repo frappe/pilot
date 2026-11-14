@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import typing
-from datetime import UTC, datetime
 
 from pilot.config.mail import MailConfig
 from pilot.core.notification.mail import AlertMail
@@ -85,27 +83,9 @@ class Notifier:
                 context=payload.get("context"),
                 reference_name=self.bench.config.name,
             )
-        except CentralClientError as error:
-            self.log_central_delivery(event_type, str(error))
+        except CentralClientError:
             return False
-        self.log_central_delivery(event_type)
         return True
-
-    def log_central_delivery(self, event_type: str, error: str | None = None) -> None:
-        """Append the result to notifications.json.log. The log shipper sends it to Datum, where Beacon alerts on failures."""
-        accepted = "did not accept" if error else "accepted"
-        line = {
-            "time": datetime.now(UTC).isoformat(),
-            "level": "error" if error else "info",
-            "message": f"Central {accepted} the {event_type} event",
-            "sink": "central",
-            "event": event_type,
-            "delivered": "0" if error else "1",
-        }
-        if error:
-            line["error"] = error[:500]
-        with contextlib.suppress(OSError), (self.bench.logs_path / "notifications.json.log").open("a") as log:
-            log.write(json.dumps(line) + "\n")
 
     @classmethod
     def is_alert(cls, payload: dict[str, typing.Any]) -> bool:

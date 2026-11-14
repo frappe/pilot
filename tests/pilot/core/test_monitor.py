@@ -669,7 +669,7 @@ def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -
     from pilot.core.site import uptime_monitoring
 
     loops: list[tuple[str, float, object]] = []
-    started = {"uptime": threading.Event(), "rollups": threading.Event()}
+    started = {name: threading.Event() for name in ("uptime", "rollups", "telemetry")}
 
     def record_loop(interval: float, job: object) -> None:
         loops.append((threading.current_thread().name, interval, job))
@@ -684,6 +684,7 @@ def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -
     assert sorted(loops, key=lambda loop: loop[0]) == [
         ("MainThread", monitoring.METRICS_INTERVAL, monitoring.collect_metrics),
         ("rollups", monitoring.ROLLUP_INTERVAL, monitoring.update_site_rollups),
+        ("telemetry", monitoring.TELEMETRY_INTERVAL, monitoring.send_telemetry),
         ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
     ]
 

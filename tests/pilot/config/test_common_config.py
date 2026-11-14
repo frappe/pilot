@@ -78,7 +78,7 @@ def test_telemetry_omitted_from_output_when_unset(tmp_path: Path) -> None:
 
 
 def test_telemetry_is_shared_by_every_bench(tmp_path: Path) -> None:
-    """Metrics ship to one destination per host, so the config is not per-bench."""
+    """Telemetry goes to one destination per host, so the config is not per-bench."""
     from pilot.config import BenchConfig
 
     benches_root = tmp_path / "benches"
@@ -92,4 +92,4 @@ def test_telemetry_is_shared_by_every_bench(tmp_path: Path) -> None:
     config = BenchConfig.read(bench_root)
 
     assert config.telemetry.endpoint == "https://datum.internal"
-    assert config.telemetry.is_shipping_metrics
+    assert config.telemetry.is_enabled

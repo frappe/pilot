@@ -281,4 +281,4 @@ def test_version_is_pilots_own(capsys: pytest.CaptureFixture[str]) -> None:
 def test_every_command_group_is_discovered() -> None:
     names = {(command.group, command.name) for command in registry._discover()}
 
-    assert ("remove", "logs") in names
+    assert ("remove", "production") in names

@@ -19,6 +19,14 @@ def _dev_build(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _telemetry_records_in_tmp(monkeypatch, tmp_path):
+    """Central calls and update results write local records for the monitor; keep a test's in its own folder."""
+    from pilot.config import monitor
+
+    monkeypatch.setattr(monitor, "monitor_log_dir", lambda: tmp_path / "monitor-logs")
+
+
+@pytest.fixture(autouse=True)
 def _no_host_nginx_lock(monkeypatch):
     """The host-wide nginx lock lives in the installation's benches folder, not a test's."""
     from contextlib import nullcontext

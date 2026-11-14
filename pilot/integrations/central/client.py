@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.request
 from typing import Any
 
+from pilot.config.monitor import get_central_request_log
 from pilot.exceptions import BenchError
+from pilot.internal.jsonl_log import utc_now
 
 
 class CentralClientError(BenchError):
@@ -113,7 +116,20 @@ class CentralClient:
 
         url = f"{endpoint}/api/method/{method_path}"
         request = urllib.request.Request(url, data=body, method=http_method, headers=headers)
+        try:
+            payload = self._send(request, endpoint)
+        except CentralClientError:
+            self._record(method_path, "failed")
+            raise
+        self._record(method_path, "ok")
 
+        if isinstance(payload, dict) and "message" in payload:
+            return payload["message"]
+        return payload
+
+    @staticmethod
+    def _send(request: urllib.request.Request, endpoint: str) -> Any:
+        """One request. Raises CentralClientError when Central rejects it or cannot be reached."""
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 payload = json.loads(response.read().decode())
@@ -131,10 +147,15 @@ class CentralClient:
             raise CentralClientError(
                 "Frappe Cloud sent a response that could not be read. Try again in a minute."
             ) from exc
-
-        if isinstance(payload, dict) and "message" in payload:
-            return payload["message"]
         return payload
+
+    @staticmethod
+    def _record(method_path: str, result: str) -> None:
+        """Write the result of the call locally. The monitor sends the counts to Datum."""
+        with contextlib.suppress(OSError):
+            get_central_request_log().append(
+                {"time": utc_now(), "method": method_path.rsplit(".", 1)[-1], "result": result}
+            )
 
     def _credentials(self) -> tuple[str, str]:
         """From instance metadata, which owns them. Nothing is persisted."""

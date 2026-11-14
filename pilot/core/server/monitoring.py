@@ -17,12 +17,11 @@ from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
-from pilot.core.server.monitoring_datum import MetricShipper
+from pilot.core.server.monitoring_datum import TelemetryShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
 from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
-from pilot.managers.fluentbit import LogsConfigurator
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -33,6 +32,7 @@ CPU_SAMPLE_INTERVAL = 1.0
 METRICS_INTERVAL = 10.0
 UPTIME_INTERVAL = 60.0
 ROLLUP_INTERVAL = 60.0
+TELEMETRY_INTERVAL = 60.0
 
 ALERT_EVENT = "resource_limit_breached"
 
@@ -423,35 +423,45 @@ def collect_metrics() -> None:
     if not monitors:
         return
 
-    # Before the shipper and Fluent Bit read the token, so both ship with the rotated one.
-    bench = monitors[0].bench
-    if bench.config.central.enabled:
-        DatumCredential(bench, bench.config.telemetry.token, on_progress=print).rotate_if_expiring()
-
     for monitor in monitors:
         monitor.sample_cpu()
         monitor.sample_io()
     time.sleep(CPU_SAMPLE_INTERVAL)
 
-    shipper = MetricShipper(bench.config.telemetry)
     for monitor in monitors:
         monitor.compute_cpu()
         monitor.compute_io()
-        shipper.add_application(monitor.collect_application_metrics())
+        monitor.collect_application_metrics()
 
     # System/DB-wide metrics describe the shared host, not any one bench -
     # collect them exactly once per tick, not once per bench.
     host = monitors[0]
     host.collect_system_metrics()
-    shipper.add_machine()
-    shipper.add_database(host.collect_database_metrics())
+    host.collect_database_metrics()
+    host.collect_slow_queries()
+
+
+def send_telemetry() -> None:
+    """Send Datum what Beacon reads from this server, once a minute. The uptime thread sends `pilot_sites`."""
+    from pilot.core.bench.runtime import BenchRuntime
+
+    monitors = _production_monitors()
+    if not monitors:
+        return
+
+    bench = monitors[0].bench
+    if bench.config.central.enabled:
+        DatumCredential(bench, bench.config.telemetry.token, on_progress=print).rotate_if_expiring()
+
+    shipper = TelemetryShipper(bench.config.telemetry)
+    shipper.add_info()
+    shipper.add_database_up(BenchRuntime(bench).is_database_ready)
+    shipper.add_filesystems()
     now = datetime.now(UTC)
     shipper.add_backups([monitor.bench.backups.get_recent_history(now) for monitor in monitors])
-    host.collect_slow_queries()
-    # One tick, one POST, after every log is on disk.
+    shipper.add_central_requests(now)
     shipper.send()
-    # Logs read the same config, so a credential that arrives later starts both.
-    LogsConfigurator().sync(host.bench.config.telemetry)
+    shipper.send_update_events()
 
 
 def run_every(interval: float, job: typing.Callable[[], None]) -> None:
@@ -478,12 +488,15 @@ def update_site_rollups() -> None:
 
 
 def main() -> None:
-    """Uptime pings get their own thread, so a slow metrics tick cannot delay them."""
+    """Uptime pings and telemetry get their own threads, so a slow metrics tick cannot delay them."""
     threading.Thread(
         target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.main), name="uptime", daemon=True
     ).start()
     threading.Thread(
         target=run_every, args=(ROLLUP_INTERVAL, update_site_rollups), name="rollups", daemon=True
+    ).start()
+    threading.Thread(
+        target=run_every, args=(TELEMETRY_INTERVAL, send_telemetry), name="telemetry", daemon=True
     ).start()
     run_every(METRICS_INTERVAL, collect_metrics)
 

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pilot.internal.jsonl_log import JsonlLog
+
 
 def monitor_log_dir() -> Path:
     """Monitor logs live beside the install, not in root-owned /var/log."""
@@ -26,3 +28,13 @@ def slow_query_log_path() -> Path:
 def bench_log_path(bench_name: str) -> Path:
     """The bench metrics log."""
     return monitor_log_dir() / f"{bench_name}-stats.log"
+
+
+def get_central_request_log() -> JsonlLog:
+    """One record for each call to Central: the method and its result."""
+    return JsonlLog(monitor_log_dir(), "central-requests")
+
+
+def get_update_log() -> JsonlLog:
+    """One record for each app of an update that failed or ended."""
+    return JsonlLog(monitor_log_dir(), "updates")

@@ -393,24 +393,6 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
     )
 
 
-def test_a_failed_central_delivery_is_logged_for_datum(tmp_path: Path) -> None:
-    from unittest.mock import patch
-
-    bench = _bench(tmp_path, MailConfig())
-    bench.config.central.enabled = True
-    bench.logs_path.mkdir(parents=True, exist_ok=True)
-
-    with patch.object(notifier, "CentralClient") as client:
-        client.return_value.notify_central.side_effect = notifier.CentralClientError("HTTP 502")
-        Notifier(bench).send({"event": "site_down", "message": "down", "context": {}})
-
-    line = json.loads((bench.logs_path / "notifications.json.log").read_text())
-    assert line["level"] == "error"
-    assert line["event"] == "site_unavailable"
-    assert line["delivered"] == "0"
-    assert line["error"] == "HTTP 502"
-
-
 @pytest.mark.parametrize(
     ("payload", "central_event_type"),
     [
