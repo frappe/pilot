@@ -291,6 +291,8 @@ After each backup, Pilot clears expired runs with the default GFS policy: every 
 
 `[telemetry]` is one credential for both shippers. `endpoint` is the base URL of the region's Datum, with no path: metrics append `/v1/ingest` and logs append `/v1/logs/ingest`. `token` is the JWT Central mints for the region, which Datum tells apart by route rather than by token, so one serves both. `logs_enabled` and `metrics_enabled` switch each shipper independently.
 
+The metrics shipper sends host metrics (`system_*`), database metrics (`mariadb_*`), process metrics (`pilot_process_*`) and, after each round of uptime pings, `pilot_sites` with the number of sites in each `state`: `up`, `down` or `maintenance`. The ping is `/api/method/ping`, so it measures whether a site answers. Request hooks of installed apps still run on it, so a `down` site can have an app fault. Beacon reads `pilot_sites` for the Sites service.
+
 Either shipper runs only when its switch is on and both `endpoint` and `token` are set. Logs are written locally regardless of shipping settings.
 
 `pilot setup telemetry` writes this section and installs the log shipper. Central is asked for the credential when `[central] enabled` is set, and what it returns replaces what is already there, because the token expires. `--endpoint` and `--token` override the fetch. `pilot setup production` does the same, once, before configuring either shipper.

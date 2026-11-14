@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import ClassVar
 
@@ -108,6 +109,19 @@ class MetricShipper:
         batch.gauge("buffer_pool_size", record.get("innodb_buffer_pool_size", 0), "bytes", ts=when)
         self.batches.append(batch)
 
+    def add_sites(self, results: list[dict]) -> None:
+        """Add the number of sites in each state from one round of uptime pings.
+
+        The ping is /api/method/ping. Installed apps can still run request hooks on it, so a down
+        site can be an app fault, not only a platform fault. Every state is sent, with zeroes, so a reader can tell "no site is down" from "no data"."""
+        if not self.is_enabled:
+            return
+        states = Counter(site_state(result) for result in results)
+        batch = Batch("pilot")
+        for state in SITE_STATES:
+            batch.gauge("sites", states[state], state=state)
+        self.batches.append(batch)
+
     def send(self) -> int:
         """One tick, one POST. Returns the HTTP status, or 0 when nothing landed."""
         # Datum has a __len__ for its buffer, so an idle client is falsy.
@@ -153,3 +167,13 @@ def _read_time(record: dict) -> datetime | None:
         return datetime.fromisoformat(record["time"])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+SITE_STATES = ("up", "down", "maintenance")
+
+
+def site_state(result: dict) -> str:
+    """The state of one site in one uptime ping result."""
+    if result.get("maintenance"):
+        return "maintenance"
+    return "up" if result["up"] else "down"

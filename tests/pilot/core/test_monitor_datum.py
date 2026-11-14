@@ -208,3 +208,27 @@ def test_a_record_without_a_usable_time_still_ships() -> None:
     shipper.add_database({**DATABASE_RECORD})
 
     assert all(sample["ts"] for batch in shipper.batches for sample in batch.samples)
+
+
+def test_site_states_are_counted_with_zeroes() -> None:
+    shipper = _shipper()
+    shipper.add_sites(
+        [
+            {"site": "a.local", "up": True},
+            {"site": "b.local", "up": False},
+            {"site": "c.local", "up": False, "maintenance": True},
+            {"site": "d.local", "up": True},
+        ]
+    )
+    samples = _samples(shipper)
+
+    assert samples[("pilot_sites", "state=up")] == 2
+    assert samples[("pilot_sites", "state=down")] == 1
+    assert samples[("pilot_sites", "state=maintenance")] == 1
+
+
+def test_no_site_still_reports_every_state() -> None:
+    shipper = _shipper()
+    shipper.add_sites([])
+
+    assert _samples(shipper)[("pilot_sites", "state=down")] == 0
