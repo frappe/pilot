@@ -228,8 +228,7 @@ cloudflare = false
 [telemetry]
 endpoint = "https://telemetry-svc.par-1.frappe.cloud"
 token = ""
-logs_enabled = true
-metrics_enabled = true
+enabled = true
 
 [admin]
 jwks_url = "https://issuer.example.com/jwks.json"
@@ -289,13 +288,29 @@ After each backup, Pilot clears expired runs with the default GFS policy: every 
 
 ### Telemetry
 
-`[telemetry]` is one credential for both shippers. `endpoint` is the base URL of the region's Datum, with no path: metrics append `/v1/ingest` and logs append `/v1/logs/ingest`. `token` is the JWT Central mints for the region, which Datum tells apart by route rather than by token, so one serves both. `logs_enabled` and `metrics_enabled` switch each shipper independently.
+`[telemetry]` is the Datum credential of the server. `endpoint` is the base URL of the region's Datum, with no path: metrics append `/v1/ingest` and update lines append `/v1/logs/ingest`. `token` is the JWT that Central mints for the server. `enabled` switches telemetry on and off.
 
-Either shipper runs only when its switch is on and both `endpoint` and `token` are set. Logs are written locally regardless of shipping settings.
+Pilot sends only what a Beacon rule, an SLI or a dashboard reads. Pilot tells the customer about the problems of one server through Central, and Datum gets the numbers that show a problem across many servers. All other metrics and logs stay on the server.
 
-`pilot setup telemetry` writes this section and installs the log shipper. Central is asked for the credential when `[central] enabled` is set, and what it returns replaces what is already there, because the token expires. `--endpoint` and `--token` override the fetch. `pilot setup production` does the same, once, before configuring either shipper.
+After each round of uptime pings, Pilot sends `pilot_sites` with the number of sites in each `state`: `up`, `down` or `maintenance`. The ping is `/api/method/ping`, so it measures whether a site answers. Request hooks of installed apps still run on it, so a `down` site can have an app fault. Beacon reads `pilot_sites` for the Sites service.
 
-The monitor checks this section on every run, so both shippers start when a credential arrives later, such as from Central's bootstrap. It rewrites the Fluent Bit config and restarts Fluent Bit when the endpoint or token changes, and it starts Fluent Bit again when it is not running. Fluent Bit must be installed. `install.sh` installs it on Debian and Ubuntu. `pilot remove logs` stops Fluent Bit and sets `logs_enabled = false`, so the monitor does not start it again.
+Each 5 minutes, the telemetry thread of the monitor sends:
+
+| Metric | Meaning |
+| --- | --- |
+| `pilot_info{version}` | The heartbeat of Pilot, with the value 1. |
+| `pilot_database_up` | 1 when the database accepts connections, else 0. |
+| `system_filesystem_size_bytes`, `system_filesystem_available_bytes` | The size and the free space of each disk, with `mountpoint`, `device` and `type`. |
+| `pilot_central_requests_last_5_minutes{method, result}` | The calls to Central in the last 5 minutes. `result` is `ok` or `failed`. |
+| `pilot_site_backups{status}` | The number of sites whose newest backup of the last day has `status` `success` or `failed`, over every bench. Beacon sees backups that fail on many servers at once. |
+
+It also sends one log line for each app of each finished or failed update, with product `pilot`, service `update` and source `event`. The attributes are `app`, `repository` (such as `frappe/erpnext`), `from_version`, `to_version`, `status`, `phase` and `site`. A failed line has level `error` and the end of the output in the message. Pilot keeps the time of the newest accepted line in `system/logs/updates.sent`, and sends the next lines again until Datum accepts them. On the first run it starts from now.
+
+Pilot sends telemetry only when `enabled` is on and both `endpoint` and `token` are set. Logs and records are written locally in all cases.
+
+`pilot setup telemetry` writes this section. Central is asked for the credential when `[central] enabled` is set, and what it returns replaces what is already there, because the token expires. `--endpoint` and `--token` override the fetch. `pilot setup production` does the same, once.
+
+The monitor reads this section on every run, so telemetry starts when a credential arrives later, such as from Central's bootstrap.
 
 ### Nginx Ports
 
@@ -317,7 +332,7 @@ Automatic Pilot updates are on by default for release installs. Set `auto_pilot_
 
 `[resource_limits]` sets when an alert is raised and where it goes. The CPU, memory and disk alerts start at 90%, and `site_uptime` starts on. A usage percentage of `0` disables that alert. The `enable_default_alerts` patch turns the three usage alerts on once, at 90%, on an older host that had all three off. `site_uptime` covers sites that stop answering their ping. Pilot sends the ping to the bench's local app server, so a failure in nginx, TLS, DNS, or the edge proxy does not raise this alert. A condition must hold for five minutes before anything is sent.
 
-Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each `[[webhook_endpoints]]` entry receives events either way. Mail is a third sink, off until a mail server is configured and `email_recipients` is set. Mail and Central get only alerts: `resource_limit_breached`, `site_down` (Central's `site_unavailable`), `backups_failing` (Central's `backup_failure`), and a failed update (Central's `migration_failure`). Central refuses an event type it does not define, so Pilot sends Central's names. Webhooks get every event they chose, including Info events such as a new site or a finished backup. Of the Info events, only long operations that a user waits for (a new, restored or reinstalled site, a finished update, and a Pilot update) also go to the activity feed.
+Where an alert goes depends on what is configured. A Central-managed host reports every alert to Central; a self-hosted one does not, and the dashboard drops the Central wording along with it. Each `[[webhook_endpoints]]` entry receives events either way. Mail is a third sink, off until a mail server is configured and `email_recipients` is set. Mail and Central get only alerts: `resource_limit_breached`, `site_down` (Central's `site_unavailable`), `backups_failing` (Central's `backup_failure`), `certificate_expiry`, `certificate_failed`, and a failed update (Central's `migration_failure`). Central refuses an event type it does not define, so Pilot sends Central's names. Webhooks get every event they chose, including Info events such as a new site or a finished backup. Of the Info events, only long operations that a user waits for (a new, restored or reinstalled site, a finished update, and a Pilot update) also go to the activity feed.
 
 #### Webhooks
 

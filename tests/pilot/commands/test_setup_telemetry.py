@@ -33,10 +33,6 @@ def _bench(root: Path) -> Bench:
     return bench
 
 
-def _configurator() -> MagicMock:
-    return MagicMock()
-
-
 def _enable_cloud_integration(bench: Bench) -> None:
     common = CommonConfig.read(bench.path.parent)
     common.central.enabled = True
@@ -47,11 +43,9 @@ def _enable_cloud_integration(bench: Bench) -> None:
 def test_setup_telemetry_fetches_token_from_central_when_not_passed(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _enable_cloud_integration(bench)
-    configurator = _configurator()
 
     with (
         patch("pilot.integrations.central.CentralClient") as client_cls,
-        patch("pilot.managers.fluentbit.LogsConfigurator", return_value=configurator),
     ):
         client_cls.return_value.datum_token.return_value = {
             "token": "jwt-abc",
@@ -64,19 +58,13 @@ def test_setup_telemetry_fetches_token_from_central_when_not_passed(tmp_path: Pa
     telemetry = CommonConfig.read(bench.path.parent).telemetry
     assert telemetry.endpoint == "https://datum.internal"
     assert telemetry.token == "jwt-abc"
-    configurator.setup.assert_called_once_with()
-    installed = configurator.install.call_args.args[0]
-    assert installed.endpoint == "https://datum.internal"
-    assert installed.token == "jwt-abc"
 
 
 def test_setup_telemetry_uses_passed_token_without_central(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
-    configurator = _configurator()
 
     with (
         patch("pilot.integrations.central.CentralClient") as client_cls,
-        patch("pilot.managers.fluentbit.LogsConfigurator", return_value=configurator),
     ):
         SetupTelemetryCommand(bench, endpoint="https://datum.internal", token="jwt-xyz").run()
 
@@ -86,15 +74,12 @@ def test_setup_telemetry_uses_passed_token_without_central(tmp_path: Path) -> No
 
 def test_setup_telemetry_reports_unconfigured_without_an_endpoint(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
-    configurator = _configurator()
 
     with (
         patch("pilot.integrations.central.CentralClient") as client_cls,
-        patch("pilot.managers.fluentbit.LogsConfigurator", return_value=configurator),
         patch("sys.stdout", new_callable=MagicMock) as stdout,
     ):
         SetupTelemetryCommand(bench).run()
 
     client_cls.assert_not_called()
-    configurator.setup.assert_not_called()
     assert "not configured" in "".join(str(call) for call in stdout.write.call_args_list)

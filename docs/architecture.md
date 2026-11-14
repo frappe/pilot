@@ -119,4 +119,4 @@ Domain provider binaries are wrapped by `pilot/core/adapters/domain_provider.py`
 
 Nginx, systemd, supervisor, Redis, Python environments, and databases are implemented by managers. Core objects use managers to keep system integration code away from command and API layers.
 
-Fluent Bit (`pilot/managers/fluentbit`) tails `benches/*/logs/*.log` only, not the per-site log mirror under `benches/*/sites/*/logs/`. Frappe copies every site-context line into both byte-for-byte, so tailing both would ship each line twice.
+Pilot sends no logs. Each call to Central writes one line to `system/logs/central-requests_<year>_<week>.jsonl`, and each app of a finished or failed update writes one line to `system/logs/updates_<year>_<week>.jsonl`. The telemetry thread of the monitor reads these records and sends the counts and the update lines to Datum. Beacon reads the alert rules, the `sites` service and the runbooks for these signals from `beacon/` in this repository. Change them in the same pull request as the signal that they read.

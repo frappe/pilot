@@ -50,9 +50,6 @@ markers = [
 "pilot.managers.gunicorn" = [
   "templates/*.template",
 ]
-"pilot.managers.fluentbit" = [
-  "templates/*",
-]
 "pilot._vendor.packaging" = [
   "py.typed",
   "LICENSE*",

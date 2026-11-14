@@ -1,115 +1,115 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import ClassVar
+from collections import Counter
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlsplit
 
+from pilot import __version__
+from pilot.config.monitor import get_central_request_log, get_update_log, monitor_log_dir
 from pilot.config.telemetry import TelemetryConfig
 
 try:
+    import psutil
     from datum_client import Batch, Datum
 
     HAS_DATUM_CLIENT = True
 except ImportError:
-    # Only the admin venv has it; the stdlib-only CLI does not. The logs are written regardless.
+    # Only the admin venv has them; the stdlib-only CLI does not. The logs are written regardless.
     HAS_DATUM_CLIENT = False
 
 
+class TelemetryShipper:
+    """Sends Datum only what Beacon reads from a Pilot server: the health of Pilot and its sites,
+    backups, disk space, calls to Central and update results. Everything else stays on the server.
 
-class MetricShipper:
-    """Turns one collection tick's records into Datum samples and posts them once.
-
-    The records stay exactly what the JSON-Lines logs hold - the logs remain the
-    Admin UI's source of truth, and Datum gets the same numbers as a time series.
-    Names follow the fact, not the shipper: host metrics are `system_*` and the
-    database's are `mariadb_*`, so another agent reporting the same fact lands on
-    the same series. Only Pilot's own processes are `pilot_*`.
-    Without the datum_client package, or without an endpoint and token, every
-    add_* call is a no-op.
+    Pilot tells the customer about the problems of one server through Central. Datum gets the
+    numbers that show a problem across many servers. Without the datum_client package, or
+    without an endpoint and token, every call is a no-op.
     """
-
-    # Raw MariaDB counter -> the label that separates it from its siblings.
-    query_kinds: ClassVar[dict[str, str]] = {
-        "Com_insert": "insert",
-        "Com_update": "update",
-        "Com_delete": "delete",
-        "Com_select": "select",
-    }
 
     def __init__(self, config: TelemetryConfig):
         self.config = config
-        ships = HAS_DATUM_CLIENT and config.is_shipping_metrics
+        ships = HAS_DATUM_CLIENT and config.is_enabled
         self.client = Datum(config.endpoint, config.token) if ships else None
         self.batches: list[Batch] = []
 
     @property
     def is_enabled(self) -> bool:
-        """Whether metrics are shipped."""
+        """Whether telemetry is sent."""
         return self.client is not None
 
-    def add_system(self, record: dict) -> None:
-        """Add the CPU, memory and storage metrics."""
+    def add_info(self) -> None:
+        """Add `pilot_info` with the Pilot version. It is the heartbeat of Pilot."""
+        if self.is_enabled:
+            self.batches.append(Batch("pilot").info("", version=__version__))
+
+    def add_database_up(self, is_up: bool) -> None:
+        """Add whether the database of the server accepts connections."""
+        if self.is_enabled:
+            self.batches.append(Batch("pilot", "database").up("", is_up))
+
+    def add_filesystems(self) -> None:
+        """Add the size and free space of each disk. `available` is what a user other than root can use."""
         if not self.is_enabled:
             return
-        when = _read_time(record)
-        cpu = Batch("system", "cpu")
-        # The total is 100 - idle, so it duplicates the breakdown. It stays because
-        # it is the number every dashboard wants, and it keeps its own name so a
-        # sum() over the modes can never quietly count the same CPU twice.
-        cpu.gauge("usage", record.get("cpu_percent", 0.0), "percent", ts=when)
-        for mode, percent in (record.get("cpu_breakdown") or {}).items():
-            cpu.gauge("mode", percent, "percent", ts=when, mode=mode)
-
-        load = Batch("system", "load")
-        for window, value in zip(("1m", "5m", "15m"), record.get("load_avg") or [], strict=False):
-            load.gauge("average", value, ts=when, window=window)
-
-        self.batches += [cpu, load, self._memory(record, when), *self._storage(record, when)]
-
-    def add_application(self, record: dict) -> None:
-        """Add the process metrics."""
-        if not self.is_enabled:
-            return
-        when = _read_time(record)
-        batch = Batch("pilot", "process", bench=record["bench"])
-        for process in record.get("processes") or []:
-            service = process["service"]
-            batch.up("", not process.get("missing"), ts=when, service=service)
-            if process.get("missing"):
+        batch = Batch("system", "filesystem")
+        for partition in psutil.disk_partitions():
+            if partition.fstype in VIRTUAL_FILESYSTEMS or partition.mountpoint.startswith(SYSTEM_MOUNTS):
                 continue
-            batch.gauge("cpu", process["cpu_percent"], "percent", ts=when, service=service)
-            batch.gauge("memory_rss", process["memory_rss_bytes"], "bytes", ts=when, service=service)
-            batch.counter("io_read", process["read_bytes"], "bytes", ts=when, service=service)
-            batch.counter("io_write", process["write_bytes"], "bytes", ts=when, service=service)
-            batch.gauge("state", 1, ts=when, service=service, state=process["state"])
-            if process["open_fds"] >= 0:
-                batch.gauge("open_fds", process["open_fds"], ts=when, service=service)
+            usage = psutil.disk_usage(partition.mountpoint)
+            labels = {
+                "mountpoint": partition.mountpoint,
+                "device": partition.device,
+                "type": partition.fstype,
+            }
+            batch.gauge("size", usage.total, "bytes", **labels)
+            batch.gauge("available", usage.free, "bytes", **labels)
         self.batches.append(batch)
 
-    def add_database(self, record: dict | None) -> None:
-        """Add the database metrics."""
-        if not self.is_enabled or record is None:
+    def add_central_requests(self, now: datetime) -> None:
+        """Add the calls to Central since the previous send, by method and result."""
+        if not self.is_enabled:
             return
-        when = _read_time(record)
-        batch = Batch("mariadb")
-        for key, kind in self.query_kinds.items():
-            batch.counter("queries", record.get(key, 0), ts=when, kind=kind)
-        batch.counter("questions", record.get("Questions", 0), ts=when)
-        batch.counter("buffer_pool_reads", record.get("Innodb_buffer_pool_reads", 0), ts=when)
-        batch.counter(
-            "buffer_pool_read_requests", record.get("Innodb_buffer_pool_read_requests", 0), ts=when
-        )
-        batch.counter("row_lock_waits", record.get("Innodb_row_lock_waits", 0), ts=when)
-        # MariaDB reports Innodb_row_lock_time in milliseconds.
-        batch.counter("row_lock_wait", record.get("Innodb_row_lock_time", 0) / 1000, "seconds", ts=when)
-        batch.gauge("connections", record.get("Threads_connected", 0), ts=when)
-        batch.gauge("max_connections", record.get("max_connections", 0), ts=when)
-        # total_ram_bytes is not shipped: it is the host's memory, already sent as
-        # system_memory_total_bytes. It stays in the log for the Admin UI's ratio.
-        batch.gauge("buffer_pool_size", record.get("innodb_buffer_pool_size", 0), "bytes", ts=when)
+        since = (now - SEND_INTERVAL).isoformat()
+        counts: Counter[tuple[str, str]] = Counter()
+        for record in get_central_request_log().read_newest_first():
+            if record.get("time", "") <= since:
+                break
+            counts[(record["method"], record["result"])] += 1
+        batch = Batch("pilot", "central")
+        for (method, result), count in counts.items():
+            batch.gauge("requests_last_5_minutes", count, method=method, result=result)
+        self.batches.append(batch)
+
+    def add_sites(self, results: list[dict]) -> None:
+        """Add the number of sites in each state from one round of uptime pings.
+
+        The ping is /api/method/ping. Installed apps can still run request hooks on it, so a down
+        site can be an app fault, not only a platform fault. Every state is sent, with zeroes, so a reader can tell "no site is down" from "no data"."""
+        if not self.is_enabled:
+            return
+        states = Counter(site_state(result) for result in results)
+        batch = Batch("pilot")
+        for state in SITE_STATES:
+            batch.gauge("sites", states[state], state=state)
+        self.batches.append(batch)
+
+    def add_backups(self, histories: list[dict[str, list[tuple[datetime, dict]]]]) -> None:
+        """Add the number of sites whose newest backup of the last day succeeded or failed, over every bench.
+
+        Pilot tells the owner of one site whose backups keep failing. Beacon reads the count, so it sees
+        when backups fail on many servers at once, such as when object storage refuses uploads."""
+        if not self.is_enabled:
+            return
+        newest = Counter(runs[0][1]["status"] for history in histories for runs in history.values() if runs)
+        batch = Batch("pilot")
+        for status in BACKUP_STATUSES:
+            batch.gauge("site_backups", newest[status], status=status)
         self.batches.append(batch)
 
     def send(self) -> int:
-        """One tick, one POST. Returns the HTTP status, or 0 when nothing landed."""
+        """Post the metrics as one request. Returns the HTTP status, or 0 when nothing landed."""
         # Datum has a __len__ for its buffer, so an idle client is falsy.
         if self.client is None or not self.batches:
             return 0
@@ -117,39 +117,107 @@ class MetricShipper:
         self.batches = []
         return status
 
-    @staticmethod
-    def _memory(record: dict, when: datetime | None) -> Batch:
-        """The memory metrics batch."""
-        memory = record.get("memory") or {}
-        batch = Batch("system", "memory")
-        for target in ("total", "used", "cached", "free"):
-            batch.gauge(target, memory.get(f"{target}_bytes", 0), "bytes", ts=when)
-        batch.gauge("swap_used", memory.get("swap_used_bytes", 0), "bytes", ts=when)
-        batch.gauge("usage", memory.get("percent", 0.0), "percent", ts=when)
-        return batch
+    def send_update_events(self) -> None:
+        """Send the update records written since the last accepted request, oldest first.
 
-    @staticmethod
-    def _storage(record: dict, when: datetime | None) -> list[Batch]:
-        """The disk metrics batches."""
-        disk = (record.get("storage") or {}).get("disk") or {}
-        disk_io = record.get("disk_io") or {}
-        batch = Batch("system", "disk")
-        for target in ("total", "used", "free"):
-            batch.gauge(target, disk.get(f"{target}_bytes", 0), "bytes", ts=when)
-        batch.gauge("usage", disk.get("percent", 0.0), "percent", ts=when)
-        batch.gauge("read", disk_io.get("read_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-        batch.gauge("write", disk_io.get("write_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-
-        network = record.get("network") or {}
-        interface = Batch("system", "network")
-        interface.gauge("receive", network.get("rx_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-        interface.gauge("transmit", network.get("tx_bytes_per_sec", 0.0), "bytes_per_second", ts=when)
-        return [batch, interface]
+        The time of the newest sent record is kept in `updates.sent`. On the first run, Pilot
+        starts from now, so the history of a server is not sent at once."""
+        if self.client is None:
+            return
+        cursor = monitor_log_dir() / "updates.sent"
+        if not cursor.exists():
+            cursor.write_text(datetime.now(UTC).isoformat())
+            return
+        sent_until = cursor.read_text().strip()
+        records = []
+        for record in get_update_log().read_newest_first():
+            if record.get("time", "") <= sent_until:
+                break
+            records.append(record)
+        # The oldest first, so the cursor never passes a record that was not sent.
+        records = records[::-1][:MAX_UPDATE_EVENTS]
+        if not records:
+            return
+        if self.client.send_logs([update_line(record) for record in records]) == 200:
+            cursor.write_text(records[-1]["time"])
 
 
-def _read_time(record: dict) -> datetime | None:
-    """Producer time from the record, so every sample in a tick lines up."""
-    try:
-        return datetime.fromisoformat(record["time"])
-    except (KeyError, TypeError, ValueError):
-        return None
+def update_line(record: dict) -> dict:
+    """One Datum log line for one app of an update."""
+    attributes = {
+        "app": record["app"],
+        "repository": repository_name(record.get("repository_url", "")) or record["app"],
+        "from_version": record.get("from_version", ""),
+        "to_version": record.get("to_version", ""),
+        "status": record["status"],
+        "phase": record.get("phase", ""),
+        "site": record.get("site", ""),
+    }
+    message = record.get("message") or f"update {record['status']}"
+    if excerpt := record.get("output_excerpt"):
+        message = f"{message}\n{excerpt}"
+    return {
+        "ts": record["time"],
+        "product": "pilot",
+        "service": "update",
+        "source": "event",
+        "level": "error" if record["status"] == "failed" else "info",
+        # Keep the end of the output: the error is at the end.
+        "message": message[-MAX_MESSAGE:],
+        "attributes": {name: value for name, value in attributes.items() if value},
+    }
+
+
+def repository_name(url: str) -> str:
+    """`owner/repository` from a git remote URL, such as `frappe/erpnext`."""
+    if not url:
+        return ""
+    if url.startswith("git@"):
+        url = "ssh://" + url.replace(":", "/", 1)
+    return Path(urlsplit(url).path).as_posix().strip("/").removesuffix(".git")
+
+
+# The values change slowly: backups once a day. pilot_sites goes each minute from the uptime thread.
+SEND_INTERVAL = timedelta(minutes=5)
+SITE_STATES = ("up", "down", "maintenance")
+BACKUP_STATUSES = ("success", "failed")
+MAX_UPDATE_EVENTS = 1000
+MAX_MESSAGE = 8192
+# The same file systems that the Datum agent leaves out, so every machine sends the same set.
+VIRTUAL_FILESYSTEMS = frozenset(
+    {
+        "autofs",
+        "binfmt_misc",
+        "bpf",
+        "cgroup",
+        "cgroup2",
+        "configfs",
+        "debugfs",
+        "devpts",
+        "devtmpfs",
+        "efivarfs",
+        "fusectl",
+        "hugetlbfs",
+        "mqueue",
+        "nsfs",
+        "overlay",
+        "proc",
+        "pstore",
+        "ramfs",
+        "rpc_pipefs",
+        "securityfs",
+        "selinuxfs",
+        "squashfs",
+        "sysfs",
+        "tmpfs",
+        "tracefs",
+    }
+)
+SYSTEM_MOUNTS = ("/proc/", "/sys/", "/dev/", "/run/", "/snap/")
+
+
+def site_state(result: dict) -> str:
+    """The state of one site in one uptime ping result."""
+    if result.get("maintenance"):
+        return "maintenance"
+    return "up" if result["up"] else "down"

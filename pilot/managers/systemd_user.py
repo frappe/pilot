@@ -121,7 +121,7 @@ def install_user_service(
 ) -> None:
     """Write a long-running service unit into unit_dir, symlink it into
     ~/.config/systemd/user, then reload and enable --now. Sibling of
-    `install_user_timer` for services that run continuously (Fluent Bit),
+    `install_user_timer` for services that run continuously (the monitor),
     not on a timer."""
     unit_dir.mkdir(parents=True, exist_ok=True)
     service_path = unit_dir / unit_name
