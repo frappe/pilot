@@ -74,6 +74,7 @@ These rules are mandatory for agents changing this repo:
 - The top-level `benches/` directory is local data and must stay ignored.
 - Use `apply_patch` for manual edits.
 - Run `uv run ruff check admin pilot tests` after Python changes.
+- Run `uv run mypy pilot admin/backend` before committing Python changes; CI fails on any error.
 - Run targeted tests for narrow behavior changes and `uv run pytest` before committing broad refactors.
 - For bug fixes, identify the root cause before attempting a fix.
 

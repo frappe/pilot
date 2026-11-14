@@ -413,6 +413,21 @@ class Site:
             on_progress, schedule_backups=schedule_backups
         )
 
+    @classmethod
+    def adopt(
+        cls,
+        bench: "Bench",
+        name: str,
+        config: dict,
+        on_progress: Callable[[str], None] = lambda message: None,
+        *,
+        schedule_backups: bool = True,
+    ) -> "Site":
+        """Create a site on an existing database, as `provision` does for a new one."""
+        from pilot.core.site.provisioning import SiteProvisioner
+
+        return SiteProvisioner(bench, name, [], None).adopt(config, on_progress, schedule_backups=schedule_backups)
+
     def finish_provisioning(
         self, apps: list[str], on_progress: Callable[[str], None] = lambda message: None
     ) -> None:
