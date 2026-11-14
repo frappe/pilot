@@ -120,3 +120,5 @@ Domain provider binaries are wrapped by `pilot/core/adapters/domain_provider.py`
 Nginx, systemd, supervisor, Redis, Python environments, and databases are implemented by managers. Core objects use managers to keep system integration code away from command and API layers.
 
 Fluent Bit (`pilot/managers/fluentbit`) tails `benches/*/logs/*.log` only, not the per-site log mirror under `benches/*/sites/*/logs/`. Frappe copies every site-context line into both byte-for-byte, so tailing both would ship each line twice.
+
+Each attempt to send a notification to Central writes one line to `benches/<bench>/logs/notifications.json.log`, with `sink=central`, `event`, `delivered` (`1` or `0`) and, on failure, `error`. Fluent Bit ships it as service `notifications`, so Beacon can alert when events do not reach Central.
