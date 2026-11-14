@@ -1,4 +1,5 @@
 import type { Completion } from '@codemirror/autocomplete'
+import type { EditorView, Rect } from '@codemirror/view'
 
 type Kind = { label: string; icon: string; tone: string }
 
@@ -74,8 +75,17 @@ const renderIcon = (completion: Completion) => {
 const renderKind = (completion: Completion) =>
   element('span', 'cm-kindLabel', kindOf(completion).label)
 
+const positionInfo = (_view: EditorView, list: Rect, _option: Rect, info: Rect, space: Rect) => {
+  const width = info.right - info.left
+  const isLeft =
+    space.right - list.right < width && list.left - space.left > space.right - list.right
+
+  return { style: 'top: 0', class: isLeft ? 'cm-completionInfo-left' : 'cm-completionInfo-right' }
+}
+
 export const completionKinds = {
   icons: false,
+  positionInfo,
   addToOptions: [
     { render: renderIcon, position: 20 },
     { render: renderKind, position: 90 },
