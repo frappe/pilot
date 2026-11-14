@@ -18,5 +18,5 @@ WHERE least(info_ts, sites_ts) < now() - INTERVAL 10 MINUTE
   AND resource_id IN (
       SELECT labels['machine']
       FROM datum.samples_recent
-      WHERE metric = 'atlas_machine' AND ts > now() - INTERVAL 5 MINUTE
+      WHERE metric = 'atlas_machine' AND resource_id = 'atlas' AND ts > now() - INTERVAL 5 MINUTE
   )
