@@ -1,22 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Codemirror } from 'vue-codemirror'
 import { autocompletion, type CompletionSource } from '@codemirror/autocomplete'
-import { python } from '@codemirror/lang-python'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { syntaxHighlighting } from '@codemirror/language'
+import { pythonLanguage } from '@codemirror/lang-python'
+import { LanguageSupport, syntaxHighlighting } from '@codemirror/language'
 import { Prec } from '@codemirror/state'
 import {
-  tooltips,
   drawSelection,
   highlightActiveLine,
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
   placeholder,
+  tooltips,
 } from '@codemirror/view'
+import { styleTags, tags } from '@lezer/highlight'
+import { computed } from 'vue'
+import { Codemirror } from 'vue-codemirror'
 
-import { codeEditorHighlightStyle, codeEditorTheme } from '@/components/common/codeEditorTheme'
+import {
+  browserFind,
+  codeEditorHighlightStyle,
+  codeEditorTheme,
+  codeTags,
+  consoleEditorTheme,
+} from '@/components/common/codeEditorTheme'
+import { completionKinds } from '@/components/common/completionKinds'
 import { fillLinesOnResize } from '@/components/common/fillLinesOnResize'
 
 const props = defineProps<{
@@ -43,7 +51,22 @@ const runKeymap = Prec.highest(
   ]),
 )
 
+const python = pythonLanguage.configure({
+  props: [
+    styleTags({
+      'for while': codeTags.repeat,
+      'try except finally raise': codeTags.exception,
+      from: tags.moduleKeyword,
+      async: tags.keyword,
+      '"*" "**"': tags.operator,
+      'ParamList/VariableName': codeTags.parameter,
+      'FormatSpec FormatConversion': tags.escape,
+    }),
+  ],
+})
+
 const extensions = [
+  consoleEditorTheme,
   codeEditorTheme,
   fillLinesOnResize,
   Prec.highest(syntaxHighlighting(codeEditorHighlightStyle)),
@@ -54,16 +77,17 @@ const extensions = [
   history(),
   keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
   placeholder('print(frappe.get_all("User", fields=["name", "enabled"], limit=5))'),
-  python(),
+  new LanguageSupport(python),
   // Replaces the Python language's own word list; Jedi covers locals and builtins.
   autocompletion({
-    icons: false,
+    ...completionKinds,
     maxRenderedOptions: 30,
     ...(props.completions && { override: [props.completions] }),
   }),
   // Outside the editor card, whose overflow-hidden would clip the docs panel.
   tooltips({ parent: document.body }),
   runKeymap,
+  browserFind,
 ]
 </script>
 

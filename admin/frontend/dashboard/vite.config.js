@@ -36,6 +36,8 @@ export default defineConfig(({ mode }) => {
         proxy: {
           '/api': { target: backendProxyUrl, changeOrigin: true, secure: false },
           '/socket.io': { target: backendProxyUrl, ws: true, changeOrigin: true, secure: false },
+          '/editor/': { target: backendProxyUrl, changeOrigin: true, secure: false },
+          '/editor-assets': { target: backendProxyUrl, changeOrigin: true, secure: false },
         },
       }),
     },

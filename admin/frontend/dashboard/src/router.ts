@@ -105,7 +105,10 @@ const routes = [
   },
   {
     path: '/database/sql-playground',
-    redirect: (to: RouteLocation) => ({ path: '/console', query: { ...to.query, language: 'sql' } }),
+    redirect: (to: RouteLocation) => ({
+      path: '/console',
+      query: { ...to.query, language: 'sql' },
+    }),
   },
   {
     path: '/console',
