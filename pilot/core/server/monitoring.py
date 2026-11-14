@@ -444,6 +444,8 @@ def collect_metrics() -> None:
     host = monitors[0]
     shipper.add_system(host.collect_system_metrics())
     shipper.add_database(host.collect_database_metrics())
+    now = datetime.now(UTC)
+    shipper.add_backups([monitor.bench.backups.get_recent_history(now) for monitor in monitors])
     host.collect_slow_queries()
     # One tick, one POST, after every log is on disk.
     shipper.send()

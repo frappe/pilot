@@ -232,3 +232,21 @@ def test_no_site_still_reports_every_state() -> None:
     shipper.add_sites([])
 
     assert _samples(shipper)[("pilot_sites", "state=down")] == 0
+
+
+def test_backups_count_the_newest_run_of_each_site() -> None:
+    now = datetime(2026, 11, 14, tzinfo=UTC)
+    shipper = _shipper()
+    shipper.add_backups(
+        [
+            {
+                "a.local": [(now, {"status": "failed"}), (now, {"status": "success"})],
+                "b.local": [(now, {"status": "success"})],
+            },
+            {"c.local": [(now, {"status": "failed"})], "d.local": []},
+        ]
+    )
+    samples = _samples(shipper)
+
+    assert samples[("pilot_site_backups", "status=failed")] == 2
+    assert samples[("pilot_site_backups", "status=success")] == 1

@@ -122,6 +122,19 @@ class MetricShipper:
             batch.gauge("sites", states[state], state=state)
         self.batches.append(batch)
 
+    def add_backups(self, histories: list[dict[str, list[tuple[datetime, dict]]]]) -> None:
+        """Add the number of sites whose newest backup of the last day succeeded or failed, over every bench.
+
+        Pilot tells the owner of one site whose backups keep failing. Beacon reads the count, so it sees
+        when backups fail on many servers at once, such as when object storage refuses uploads."""
+        if not self.is_enabled:
+            return
+        newest = Counter(runs[0][1]["status"] for history in histories for runs in history.values() if runs)
+        batch = Batch("pilot")
+        for status in BACKUP_STATUSES:
+            batch.gauge("site_backups", newest[status], status=status)
+        self.batches.append(batch)
+
     def send(self) -> int:
         """One tick, one POST. Returns the HTTP status, or 0 when nothing landed."""
         # Datum has a __len__ for its buffer, so an idle client is falsy.
@@ -170,6 +183,7 @@ def _read_time(record: dict) -> datetime | None:
 
 
 SITE_STATES = ("up", "down", "maintenance")
+BACKUP_STATUSES = ("success", "failed")
 
 
 def site_state(result: dict) -> str:
