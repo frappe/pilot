@@ -399,6 +399,8 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
         ({"event": "resource_limit_breached"}, "resource_limit_breached"),
         ({"event": "site_down"}, "site_unavailable"),
         ({"event": "backups_failing"}, "backup_failure"),
+        ({"event": "certificate_expiry"}, "certificate_expiry"),
+        ({"event": "certificate_failed"}, "certificate_failed"),
         ({"event": "task_failed", "category": "Updates"}, "migration_failure"),
         ({"event": "task_failed", "category": "Sites"}, None),
         ({"event": "update_completed", "category": "Updates"}, None),
@@ -514,8 +516,8 @@ def test_a_ping_goes_to_an_endpoint_whatever_events_it_chose(tmp_path: Path) -> 
     assert body["event"] == "ping"
 
 
-def test_a_certificate_alert_is_mailed_but_not_sent_to_central(tmp_path: Path) -> None:
-    """Central has no certificate event type and would refuse it."""
+def test_a_certificate_alert_is_mailed_and_sent_to_central(tmp_path: Path) -> None:
+    """Central defines certificate_expiry, so a customer without mail or webhooks still learns of it."""
 
     bench = _bench(tmp_path, _mail())
     bench.config.central.enabled = True
@@ -524,4 +526,4 @@ def test_a_certificate_alert_is_mailed_but_not_sent_to_central(tmp_path: Path) -
         assert Notifier(bench).send({**PAYLOAD, "event": "certificate_expiry", "title": "Certificate for a.test is not renewing"})
 
     assert FakeSMTP.sends[0].messages[0]["Subject"] == "[Pilot] Certificate for a.test is not renewing"
-    central.assert_not_called()
+    assert central.return_value.notify_central.call_args.kwargs["event"] == "certificate_expiry"
