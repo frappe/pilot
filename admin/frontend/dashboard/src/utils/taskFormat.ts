@@ -186,12 +186,15 @@ type ScopedTask = Pick<TaskPayload, 'command'> & { args?: TaskPayload['args'] }
 export const siteLabel = (task: ScopedTask): string => {
   const key = SITE_ARG_KEY[task.command]
   const site = key && task.args?.[key]
+
   return (typeof site === 'string' && site) || SERVER_SCOPE
 }
 
 export const siteRoute = (task: ScopedTask) => {
   const site = siteLabel(task)
+
   if (site === SERVER_SCOPE) return null
+
   return { name: 'SiteDetail', params: { name: site } }
 }
 
@@ -230,10 +233,14 @@ export const redirectRouteOnSuccess = (task: ScopedTask) => {
   if (task.command === 'rename-site' && typeof task.args?.new_name === 'string')
     return { name: 'SiteDetail', params: { name: task.args.new_name } }
   const route = siteRoute(task)
+
   if (!route) return null
+
   const appKey = APP_ARG_KEY[task.command]
   const app = appKey && task.args?.[appKey]
+
   if (typeof app !== 'string' || !app) return route
+
   return { ...route, query: { app, action: APP_ACTION_FOR_COMMAND[task.command] } }
 }
 
@@ -249,13 +256,18 @@ export const fmtDuration = (
 ) => {
   if (seconds == null) return ''
   if (precise && seconds < 60) return `${seconds.toFixed(1)}s`
+
   const total = Math.round(seconds)
+
   if (total < 60) return `${total}s`
-  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, '0')}s`
+  if (total < 3600) return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, '0')}s`
+
+  return `${Math.floor(total / 3600)}h ${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}m`
 }
 
 export const fmtDateTime = (value: string | number | Date | null | undefined) => {
   if (!value) return '-'
+
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
@@ -264,6 +276,7 @@ export const taskDuration = (task: TaskLike) => {
   if (task.status === 'queued') {
     return task.queue_position ? `#${task.queue_position} in queue` : ''
   }
+
   return fmtDuration(task.duration_seconds)
 }
 

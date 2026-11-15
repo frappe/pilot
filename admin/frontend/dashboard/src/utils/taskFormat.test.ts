@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  fmtDuration,
   isTaskActive,
   isTaskCancellable,
   redirectRouteOnSuccess,
@@ -121,6 +122,7 @@ test('cancelling follows the flag the backend sends', () => {
 
 test('taskDuration gives a queued task its place in the queue', () => {
   const queued = { status: 'queued', queue_position: 3, queued_at: new Date().toISOString() }
+
   assert.equal(taskDuration(queued), '#3 in queue')
   // Nothing has started, so a stale duration from an earlier attempt is ignored.
   assert.equal(taskDuration({ ...queued, duration_seconds: 42 }), '#3 in queue')
@@ -136,5 +138,12 @@ test('taskDuration reports how long a finished task took', () => {
 
 test('taskLastRun falls back to the queued time when a task never started', () => {
   const queuedAt = new Date(Date.now() - 3 * 60 * 1000).toISOString()
+
   assert.equal(taskLastRun({ status: 'killed', queued_at: queuedAt }), relativeTime(queuedAt))
+})
+
+test('durations past an hour show hours and minutes', () => {
+  assert.equal(fmtDuration(42), '42s')
+  assert.equal(fmtDuration(62), '1m 02s')
+  assert.equal(fmtDuration(84411), '23h 26m')
 })
