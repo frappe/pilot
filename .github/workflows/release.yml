@@ -1,8 +1,6 @@
 name: Release
+# Releases are cut only by Weekly Release, from master.
 on:
-  release:
-    types: [published]
-  # Weekly Release calls this for a draft, before the release has a tag.
   workflow_call:
     inputs:
       tag:
@@ -19,11 +17,11 @@ jobs:
       contents: write
     env:
       UV_PYTHON: "3.14"
-      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.event.release.tag_name }}
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
