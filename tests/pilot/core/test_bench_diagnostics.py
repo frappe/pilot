@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import venv
@@ -16,7 +17,7 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 def run_doctor(path: Path | None, *arguments: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
-    command = [sys.executable, "-c", "from pilot.cli import main; main()", "doctor"]
+    command = [sys.executable, "-c", "from pilot.cli import main; main()", "doctor", "--offline"]
     if path is not None:
         command.extend(["--path", str(path)])
     return subprocess.run(
@@ -156,7 +157,7 @@ def test_database_engine_uses_site_override_before_shared_settings(
         values["db_type"] = site_engine
     site_config.write_text(json.dumps(values))
 
-    report = BenchDiagnostics(bench_path).run()
+    report = BenchDiagnostics(bench_path, offline=True).run()
 
     engine_checks = [check for check in report.checks if check.code == "site_database_engine"]
     assert [(check.path, check.status) for check in engine_checks] == [(str(site_config), expected_status)]
@@ -168,7 +169,7 @@ def test_invalid_site_does_not_prevent_inspecting_the_next_site(bench_path: Path
     invalid.mkdir()
     (invalid / "site_config.json").write_text("[]")
 
-    report = BenchDiagnostics(bench_path).run()
+    report = BenchDiagnostics(bench_path, offline=True).run()
 
     assert report.has_errors
     site_checks = [check for check in report.checks if check.code == "site_config"]
@@ -197,7 +198,7 @@ def test_doctor_discovers_broken_bench_without_parsing_it_first(installation, tm
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(SystemExit) as error:
-        run_native(CliContext(installation_root=root), ["doctor", "--json"])
+        run_native(CliContext(installation_root=root), ["doctor", "--offline", "--json"])
 
     assert error.value.code == 1
     report = json.loads(capsys.readouterr().out)
@@ -229,10 +230,10 @@ def test_doctor_discovers_bench_from_linked_workspace(
 
     if invalid_config:
         with pytest.raises(SystemExit) as error:
-            run_native(CliContext(installation_root=root), ["doctor", "--json"])
+            run_native(CliContext(installation_root=root), ["doctor", "--offline", "--json"])
         assert error.value.code == 1
     else:
-        run_native(CliContext(installation_root=root), ["doctor", "--json"])
+        run_native(CliContext(installation_root=root), ["doctor", "--offline", "--json"])
 
     report = json.loads(capsys.readouterr().out)
     assert report["path"] == str(bench)
@@ -243,7 +244,7 @@ def test_doctor_discovers_bench_from_linked_workspace(
 def test_slow_doctor_keeps_json_parseable_and_human_timing(bench_path, monkeypatch, capsys, json_output):
     ticks = iter([100.0, 103.0])
     monkeypatch.setattr("time.monotonic", lambda: next(ticks))
-    arguments = ["doctor", "--path", str(bench_path)]
+    arguments = ["doctor", "--offline", "--path", str(bench_path)]
     if json_output:
         arguments.append("--json")
     run_native(CliContext(installation_root=REPO), arguments)
@@ -253,3 +254,56 @@ def test_slow_doctor_keeps_json_parseable_and_human_timing(bench_path, monkeypat
         assert json.loads(output)["ok"] is True
     else:
         assert "Done in 3s" in output
+
+
+def test_default_runtime_cli_reports_healthy_protocols_and_real_database(bench_path):
+    from tests.pilot.core.test_diagnostic_runtime import protocol_server, read_redis_command
+
+    def redis(reader, writer):
+        if read_redis_command(reader) == [b"PING"]:
+            writer.write(b"+PONG\r\n")
+            writer.flush()
+
+    def web(reader, writer):
+        while reader.readline() not in (b"\r\n", b""):
+            pass
+        body = b'{"message":"pong"}'
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+        writer.flush()
+
+    database = bench_path / "sites" / "demo.localhost" / "db" / "demo.db"
+    database.parent.mkdir()
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE example (value TEXT)")
+    with protocol_server(redis) as cache, protocol_server(redis) as queue, protocol_server(web) as http:
+        config = BenchConfig.read(bench_path)
+        config.redis.cache_port, config.redis.queue_port, config.http_port = cache, queue, http
+        config.write(bench_path)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from pilot.cli import main; main()",
+                "doctor",
+                "--path",
+                str(bench_path),
+                "--json",
+            ],
+            env=dict(os.environ, PYTHONPATH=str(REPO)),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["mode"] == "runtime" and report["complete"] and report["ok"]
+    checked = {
+        (check["code"], check["target"]) for check in report["checks"] if check["duration_ms"] is not None
+    }
+    assert checked == {
+        ("redis_ping", "redis_cache"),
+        ("redis_ping", "redis_queue"),
+        ("database_connectivity", "demo.localhost"),
+        ("web_health", "demo.localhost"),
+    }

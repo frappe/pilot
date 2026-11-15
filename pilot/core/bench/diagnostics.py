@@ -14,45 +14,67 @@ from pilot.exceptions import BenchError
 @dataclass(frozen=True)
 class DiagnosticCheck:
     code: str
-    status: Literal["ok", "error"]
+    status: Literal["ok", "error", "skipped", "unavailable"]
     path: str
     message: str
     fix: str = ""
+    scope: str = "bench"
+    target: str = ""
+    reason: str = ""
+    duration_ms: int | None = None
 
 
 @dataclass
 class DiagnosticReport:
     path: str
     checks: list[DiagnosticCheck] = field(default_factory=list)
+    mode: str = "runtime"
 
     @property
     def has_errors(self) -> bool:
         return any(check.status == "error" for check in self.checks)
 
+    @property
+    def has_unavailable(self) -> bool:
+        return any(check.status == "unavailable" for check in self.checks)
+
     def to_dict(self) -> dict:
         return {
             "schema_version": 1,
             "path": self.path,
-            "ok": not self.has_errors,
+            "ok": not self.has_errors and not self.has_unavailable,
+            "mode": self.mode,
+            "complete": not any(check.status in ("skipped", "unavailable") for check in self.checks),
+            "summary": {
+                status: sum(check.status == status for check in self.checks)
+                for status in ("ok", "error", "skipped", "unavailable")
+            },
             "checks": [asdict(check) for check in self.checks],
         }
 
 
 class BenchDiagnostics:
-    """Read-only filesystem and configuration checks, independent of bench initialization."""
+    """Read-only local checks and bounded runtime protocol probes."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, offline: bool = False, timeout: float = 2.0) -> None:
+        from pilot.core.bench.diagnostic_runtime import RuntimeDiagnostics
+
         self.path = Path(path).expanduser().absolute()
         self.report = DiagnosticReport(str(self.path))
+        self.runtime = RuntimeDiagnostics(self.report, offline, timeout)
+        self.site_configs: dict[str, dict] = {}
 
     def run(self) -> DiagnosticReport:
-        self.report = DiagnosticReport(str(self.path))
+        self.report.checks.clear()
+        self.site_configs.clear()
+        self.report.mode = "offline" if self.runtime.offline else "runtime"
         config = self.check_config()
         self.run_check("environment", self.check_environment)
         common = self.check_json(self.path / "sites" / "common_site_config.json", "common_config")
         if config is not None:
             self.run_check("apps", lambda: self.check_apps(config))
         self.run_check("sites", lambda: self.check_sites(config, common or {}))
+        self.runtime.run(config, common or {}, self.site_configs)
         return self.report
 
     def run_check(self, code: str, check: Callable[[], None]) -> None:
@@ -68,8 +90,12 @@ class BenchDiagnostics:
             )
 
     def record(self, code: str, path: Path, passed: bool, message: str, fix: str = "") -> None:
+        scope = "site" if code.startswith("site_") else "app" if code.startswith("app_") else "bench"
+        target = path.parent.name if scope == "site" and path.name == "site_config.json" else str(path)
         self.report.checks.append(
-            DiagnosticCheck(code, "ok" if passed else "error", str(path), message, "" if passed else fix)
+            DiagnosticCheck(
+                code, "ok" if passed else "error", str(path), message, "" if passed else fix, scope, target
+            )
         )
 
     def check_config(self) -> BenchConfig | None:
@@ -209,7 +235,9 @@ class BenchDiagnostics:
                 continue
             values = self.check_json(site / "site_config.json", "site_config")
             if values is not None:
-                self.check_site_database(site, {**common, **values}, config)
+                merged = {**common, **values}
+                self.check_site_database(site, merged, config)
+                self.site_configs[site.name] = merged
 
     def check_site_database(self, site: Path, values: dict, config: BenchConfig | None) -> None:
         engine = values.get("db_type", "mariadb")
