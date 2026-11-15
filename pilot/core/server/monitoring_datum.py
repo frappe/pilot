@@ -85,8 +85,9 @@ class TelemetryShipper:
     def add_sites(self, results: list[dict]) -> None:
         """Add the number of sites in each state from one round of uptime pings.
 
-        The ping is /api/method/ping. Installed apps can still run request hooks on it, so a down
-        site can be an app fault, not only a platform fault. Every state is sent, with zeroes, so a reader can tell "no site is down" from "no data"."""
+        The ping is /api/method/ping. Installed apps can still run request hooks on it, so a failed ping
+        that app code caused is `app_error`, and only a platform fault is `down`. Every state is sent, with
+        zeroes, so a reader can tell "no site is down" from "no data"."""
         if not self.is_enabled:
             return
         states = Counter(site_state(result) for result in results)
@@ -179,7 +180,7 @@ def repository_name(url: str) -> str:
 
 # The values change slowly: backups once a day. pilot_sites goes each minute from the uptime thread.
 SEND_INTERVAL = timedelta(minutes=5)
-SITE_STATES = ("up", "down", "maintenance")
+SITE_STATES = ("up", "down", "app_error", "maintenance")
 BACKUP_STATUSES = ("success", "failed")
 MAX_UPDATE_EVENTS = 1000
 MAX_MESSAGE = 8192
@@ -220,4 +221,6 @@ def site_state(result: dict) -> str:
     """The state of one site in one uptime ping result."""
     if result.get("maintenance"):
         return "maintenance"
-    return "up" if result["up"] else "down"
+    if result["up"]:
+        return "up"
+    return "app_error" if result.get("fault") == "app" else "down"
