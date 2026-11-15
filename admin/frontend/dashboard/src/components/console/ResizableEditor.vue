@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 
 /** Editor card with a footer and a drag handle on its bottom border. The chosen height is kept per `storageKey` in this browser. */
-const props = defineProps<{ storageKey: string; quiet?: boolean }>()
+const props = defineProps<{ storageKey: string; quiet?: boolean; compact?: boolean }>()
 
 const MIN_HEIGHT = 120
 const STEP = 40
@@ -21,6 +21,7 @@ const area = ref<HTMLElement | null>(null)
 const setHeight = (value: number | null) => {
   // Leave room below for the toolbar and the output panel.
   height.value = value === null ? null : Math.round(Math.min(Math.max(value, MIN_HEIGHT), window.innerHeight * 0.7))
+
   try {
     if (height.value === null) localStorage.removeItem(props.storageKey)
     else localStorage.setItem(props.storageKey, String(height.value))
@@ -52,7 +53,11 @@ const nudge = (direction: number) => setHeight((area.value?.offsetHeight ?? MIN_
       class="overflow-hidden"
       :class="quiet ? 'border-b border-outline-gray-1' : 'border rounded-4 border-outline-gray-2'"
     >
-      <div ref="area" class="h-64 sm:h-[300px] lg:h-[360px]" :style="height ? { height: `${height}px` } : undefined">
+      <div
+        ref="area"
+        :class="compact ? 'h-60' : 'h-64 sm:h-[300px] lg:h-[360px]'"
+        :style="height ? { height: `${height}px` } : undefined"
+      >
         <slot />
       </div>
       <slot name="footer" />

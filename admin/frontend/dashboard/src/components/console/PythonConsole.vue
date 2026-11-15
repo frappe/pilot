@@ -19,6 +19,8 @@ type RunState = {
   theme: 'gray' | 'blue' | 'green' | 'red' | 'amber'
 }
 
+defineProps<{ compact?: boolean }>()
+
 const site = defineModel<string>('site', { required: true })
 const isHistoryOpen = defineModel<boolean>('history', { default: false })
 const history = ref<InstanceType<typeof ConsoleHistory> | null>(null)
@@ -67,6 +69,7 @@ const runScript = async () => {
   duration.value = ''
   startedAt = performance.now()
   controller = new AbortController()
+
   try {
     const response = await sitesApi.runConsoleScript(
       site.value,
@@ -74,7 +77,9 @@ const runScript = async () => {
       isReadWrite.value,
       controller.signal,
     )
+
     if (!response.ok || !response.body) throw new Error(apiErrorMessage(await response.json()))
+
     await readEventStream(response.body, onEvent)
     history.value?.load()
 
@@ -90,6 +95,7 @@ const runScript = async () => {
 
 const onEvent = (payload: unknown) => {
   const event = payload as ConsoleOutputEvent | ConsoleErrorEvent | ConsoleExitEvent
+
   if ('output' in event) write(event.output)
   else if ('error' in event) finish('Failed', 'red', event.error)
   else if (event.timed_out) finish('Timed out', 'red', 'The script ran too long and was stopped.')
@@ -101,8 +107,10 @@ const onEvent = (payload: unknown) => {
 const write = async (text: string) => {
   const element = outputElement.value
   const isAtEnd = !element || element.scrollHeight - element.scrollTop - element.clientHeight < 24
+
   output.value += text
   await nextTick()
+
   if (isAtEnd && outputElement.value)
     outputElement.value.scrollTop = outputElement.value.scrollHeight
 }
@@ -131,6 +139,7 @@ const loadRun = (run: AuditEntry) => {
   if (run.site && run.site !== site.value) {
     localStorage.setItem(`last_console_script_${run.site}`, run.code ?? '')
     site.value = run.site
+
     return
   }
 
@@ -157,9 +166,13 @@ onBeforeUnmount(stopScript)
 </script>
 
 <template>
-  <div class="relative flex h-[calc(100dvh-6.5rem)] md:h-[calc(100dvh-3rem)]">
+  <div class="relative flex h-full">
     <main class="flex flex-col flex-1 min-w-0">
-      <ResizableEditor storage-key="console_python_editor_height" quiet>
+      <ResizableEditor
+        :storage-key="compact ? 'console_python_floating_editor_height' : 'console_python_editor_height'"
+        :compact="compact"
+        quiet
+      >
         <PythonCodeEditor v-model="code" :completions="completions" @run="requestRun" />
 
         <template #footer>
@@ -200,6 +213,7 @@ onBeforeUnmount(stopScript)
         <header class="flex items-center gap-3 px-4 pt-1 h-11 shrink-0">
           <h2 class="text-ink-gray-8 text-base-medium">Output</h2>
           <Badge v-if="runState" :label="runState.label" :theme="runState.theme" />
+
           <span v-if="duration && !isRunning" class="tabular-nums text-ink-gray-5 text-sm">
             {{ duration }}
           </span>

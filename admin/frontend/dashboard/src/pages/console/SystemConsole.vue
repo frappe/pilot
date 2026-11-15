@@ -42,6 +42,7 @@ watch([selectedSite, language], ([site]) => {
 onMounted(async () => {
   try {
     sites.value = await databaseApi.sites()
+
     if (!selectedSite.value && sites.value.length === 1) selectedSite.value = sites.value[0].name
   } catch {}
 })
@@ -81,12 +82,15 @@ onMounted(async () => {
     <Select side="bottom" v-model="selectedSite" :options="siteOptions" class="w-56" />
   </EmptyState>
 
-  <KeepAlive v-else>
-    <PythonConsole
-      v-if="language === 'python'"
-      v-model:site="selectedSite"
-      v-model:history="isHistoryOpen"
-    />
-    <SQLConsole v-else :site="selectedSite" :db-type="dbType" />
-  </KeepAlive>
+  <div v-else class="h-[calc(100dvh-6.5rem)] md:h-[calc(100dvh-3rem)]">
+    <KeepAlive>
+      <PythonConsole
+        v-if="language === 'python'"
+        v-model:site="selectedSite"
+        v-model:history="isHistoryOpen"
+      />
+
+      <SQLConsole v-else :site="selectedSite" :db-type="dbType" />
+    </KeepAlive>
+  </div>
 </template>
