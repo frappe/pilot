@@ -14,18 +14,21 @@ interface Props {
   label?: string
   logo?: string
   size?: AvatarProps['size']
+  shape?: AvatarProps['shape']
 }
 
 const props = withDefaults(defineProps<Props>(), {
   label: '',
   logo: '',
   size: '2xl',
+  shape: 'square',
 })
 
 const { logoMap } = useAppRegistry()
 
 const logoUrl = computed(() => {
   if (isFrappeFramework(props.name)) return FRAPPE_LOGO_URL
+
   return props.logo || logoMap.value[props.name]
 })
 </script>
@@ -37,6 +40,6 @@ const logoUrl = computed(() => {
     :label="label || name"
     :size="size"
     :theme="hashTheme(name)"
-    shape="square"
+    :shape="shape"
   />
 </template>

@@ -8,6 +8,7 @@ interface Props {
   wrap?: boolean
   rounded?: boolean
   fill?: boolean
+  dense?: boolean
   emptyText?: string
 }
 
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
   wrap: false,
   rounded: true,
   fill: false,
+  dense: false,
   emptyText: 'No output.',
 })
 
@@ -37,6 +39,7 @@ const onScroll = (event: Event) => {
   if (!(event.target instanceof HTMLElement)) return
 
   const { scrollHeight, scrollTop, clientHeight } = event.target
+
   follow.value = scrollHeight - scrollTop - clientHeight < 8
 }
 
@@ -44,6 +47,7 @@ watch(
   () => props.streaming,
   (on) => {
     if (!on) return
+
     follow.value = true
     scrollToBottom()
   },
@@ -63,8 +67,8 @@ defineExpose({ scrollToBottom })
 <template>
   <div
     ref="el"
-    class="bg-surface-gray-1 overflow-auto font-mono text-ink-gray-8 text-p-sm p-1"
-    :class="[wrap ? 'whitespace-pre-wrap' : 'whitespace-pre', rounded ? 'rounded-4' : '', fill ? 'flex-1 h-0' : 'max-h-[50vh]']"
+    class="bg-surface-gray-1 overflow-auto font-mono text-ink-gray-8 p-1"
+    :class="[wrap ? 'whitespace-pre-wrap' : 'whitespace-pre', rounded ? 'rounded-4' : '', fill ? 'flex-1 h-0' : 'max-h-[50vh]', dense ? 'text-p-xs py-2' : 'text-p-sm']"
     @scroll="onScroll"
   >
     <p v-if="!lines.length" class="px-2 py-1.5 text-ink-gray-4">
@@ -74,7 +78,8 @@ defineExpose({ scrollToBottom })
     <div
       v-for="(line, index) in lines"
       :key="index"
-      class="flex gap-3 hover:bg-surface-gray-3 px-2 py-1.5 rounded-4"
+      class="flex gap-3 hover:bg-surface-gray-3 px-2 rounded-4"
+      :class="dense ? 'py-0' : 'py-1.5'"
     >
       <span
         v-if="lineNumbers"

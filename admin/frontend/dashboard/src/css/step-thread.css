@@ -1,0 +1,9 @@
+.step-thread:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 42px;
+  bottom: 6px;
+  left: 17.5px;
+  width: 1px;
+  background: var(--step-thread-color, var(--outline-gray-2));
+}
