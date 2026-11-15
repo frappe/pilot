@@ -1,6 +1,6 @@
 name: Weekly Release
 
-# Cuts the next vX.Y.N-pre-alpha release from master. Run it by hand once a week.
+# Cuts the next vX.Y.N-pre-alpha release. Run it by hand from master once a week.
 # The release stays a draft until its tarball is uploaded, because installs and
 # auto-updates take the newest published release and need pilot.tar.gz on it.
 on:
@@ -24,9 +24,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Require master
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "Run Weekly Release from master, not $GITHUB_REF_NAME." >&2
+          exit 1
+
       - uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 0
 
       - name: Pick the next version
