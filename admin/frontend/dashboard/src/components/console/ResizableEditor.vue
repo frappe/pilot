@@ -51,7 +51,7 @@ const nudge = (direction: number) => setHeight((area.value?.offsetHeight ?? MIN_
   <div class="relative">
     <div
       class="overflow-hidden"
-      :class="quiet ? 'border-b border-outline-gray-1' : 'border rounded-4 border-outline-gray-2'"
+      :class="quiet ? 'border-b border-outline-gray-2' : 'border rounded-4 border-outline-gray-2'"
     >
       <div
         ref="area"
