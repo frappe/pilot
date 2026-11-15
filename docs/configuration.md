@@ -292,7 +292,7 @@ After each backup, Pilot clears expired runs with the default GFS policy: every 
 
 Pilot sends only what a Beacon rule, an SLI or a dashboard reads. Pilot tells the customer about the problems of one server through Central, and Datum gets the numbers that show a problem across many servers. All other metrics and logs stay on the server.
 
-After each round of uptime pings, Pilot sends `pilot_sites` with the number of sites in each `state`: `up`, `down` or `maintenance`. The ping is `/api/method/ping`, so it measures whether a site answers. Request hooks of installed apps still run on it, so a `down` site can have an app fault. Beacon reads `pilot_sites` for the Sites service.
+After each round of uptime pings, Pilot sends `pilot_sites` with the number of sites in each `state`: `up`, `down`, `app_error` or `maintenance`. The ping is `/api/method/ping`, so it measures whether a site answers. Request hooks of installed apps still run on it. A failed ping that app code caused is `app_error`: a 4xx other than 404, or a 500 whose Frappe error body names an exception that does not come from the database, Redis or the network. Every other failed ping is `down`. The Sites service of Beacon counts only `up` and `down`, and the "Sites down on server" rule counts `down` and `app_error`. The `site_down` alert to the site owner covers both.
 
 Each 5 minutes, the telemetry thread of the monitor sends:
 

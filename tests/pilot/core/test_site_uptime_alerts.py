@@ -8,12 +8,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
 from pilot.core.bench import Bench
 from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.notification.webhooks import WebhookDelivery
-from pilot.core.site.uptime_monitoring import UptimeMonitor
+from pilot.core.site.uptime_monitoring import UptimeMonitor, get_ping_fault
 
 
 def _accept(record):
@@ -243,17 +245,18 @@ class _AppServer(BaseHTTPRequestHandler):
         self.server.requests.append(self.headers["X-Frappe-Site-Name"])
         self.send_response(self.server.status)
         self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/redirected")
-        self.send_header("Content-Length", "0")
+        self.send_header("Content-Length", str(len(self.server.body)))
         self.end_headers()
+        self.wfile.write(self.server.body)
 
     def log_message(self, *args) -> None:
         pass
 
 
 @contextmanager
-def _app_server(monitor: UptimeMonitor, status: int) -> Iterator[ThreadingHTTPServer]:
+def _app_server(monitor: UptimeMonitor, status: int, body: bytes = b"") -> Iterator[ThreadingHTTPServer]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), _AppServer)
-    server.status, server.requests = status, []
+    server.status, server.body, server.requests = status, body, []
     monitor.bench.config.http_port = server.server_port
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
@@ -300,6 +303,7 @@ def test_a_ping_without_an_http_answer_keeps_its_reason(tmp_path: Path) -> None:
 
     assert result["up"] is False
     assert result["status_code"] is None
+    assert result["fault"] == "platform"
     assert "refused" in result["error"].lower()
 
 
@@ -312,6 +316,37 @@ def test_an_http_failure_has_no_extra_error_field(tmp_path: Path) -> None:
     assert "error" not in result
 
 
+def test_an_exception_in_app_code_is_an_app_fault(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    with _app_server(monitor, 500, json.dumps({"exc_type": "ImportError"}).encode()):
+        result = monitor.ping_site("a.test")
+
+    assert result["up"] is False
+    assert result["fault"] == "app"
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "fault"),
+    [
+        (403, b"", "app"),
+        (429, b"", "app"),
+        (404, b"", "platform"),
+        (301, b"", "platform"),
+        (502, b"", "platform"),
+        (500, b'{"exc_type": "ValidationError"}', "app"),
+        (500, b'{"exc_type": "OperationalError"}', "platform"),
+        (500, b'{"exc_type": "ConnectionError"}', "platform"),
+        (500, b"<html>Internal Server Error</html>", "platform"),
+        (500, b"[]", "platform"),
+        (500, b"{}", "platform"),
+    ],
+)
+def test_a_failed_ping_is_the_fault_of_app_code_or_of_the_platform(
+    status: int, body: bytes, fault: str
+) -> None:
+    assert get_ping_fault(status, body) == fault
+
+
 def test_a_site_down_alert_names_the_site_or_counts_them(tmp_path: Path) -> None:
     monitor = _monitor(tmp_path)
     results = [_ping("a.test", up=False), _ping("b.test", up=False)]
@@ -319,7 +354,11 @@ def test_a_site_down_alert_names_the_site_or_counts_them(tmp_path: Path) -> None
     one = monitor._alert_payload(["a.test"], results)
     two = monitor._alert_payload(["a.test", "b.test"], results)
 
-    assert (one["title"], one["site"], one["action_route"]) == ("a.test is unreachable", "a.test", "/sites/a.test")
+    assert (one["title"], one["site"], one["action_route"]) == (
+        "a.test is unreachable",
+        "a.test",
+        "/sites/a.test",
+    )
     assert (two["title"], two["site"], two["action_route"]) == ("2 sites are unreachable", None, "/sites")
     assert one["severity"] == "Error" and one["category"] == "Sites"
 
@@ -344,7 +383,9 @@ def test_a_site_that_recovers_before_any_alert_sends_nothing(tmp_path: Path) -> 
     monitor = _monitor(tmp_path)
     payloads = []
 
-    with patch("pilot.core.notification.webhooks.send_webhook", _accept(lambda endpoint, body: payloads.append(body))):
+    with patch(
+        "pilot.core.notification.webhooks.send_webhook", _accept(lambda endpoint, body: payloads.append(body))
+    ):
         monitor.send_alert_if_required([_ping("a.test", up=False)])
         monitor.send_alert_if_required([_ping("a.test", up=True)])
 
@@ -353,7 +394,9 @@ def test_a_site_that_recovers_before_any_alert_sends_nothing(tmp_path: Path) -> 
 
 def test_a_site_still_being_created_is_not_pinged(tmp_path: Path) -> None:
     monitor = _monitor(tmp_path)
-    sites = [type("S", (), {"config": type("C", (), {"name": name})()})() for name in ("ready.local", "new.local")]
+    sites = [
+        type("S", (), {"config": type("C", (), {"name": name})()})() for name in ("ready.local", "new.local")
+    ]
 
     with (
         patch.object(Bench, "sites", return_value=sites),

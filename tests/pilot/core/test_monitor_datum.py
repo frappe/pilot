@@ -213,8 +213,9 @@ def test_site_states_are_counted_with_zeroes() -> None:
     shipper.add_sites(
         [
             {"site": "a.local", "up": True},
-            {"site": "b.local", "up": False},
+            {"site": "b.local", "up": False, "fault": "platform"},
             {"site": "c.local", "up": False, "maintenance": True},
+            {"site": "e.local", "up": False, "fault": "app"},
             {"site": "d.local", "up": True},
         ]
     )
@@ -222,6 +223,7 @@ def test_site_states_are_counted_with_zeroes() -> None:
 
     assert samples[("pilot_sites", "state=up")] == 2
     assert samples[("pilot_sites", "state=down")] == 1
+    assert samples[("pilot_sites", "state=app_error")] == 1
     assert samples[("pilot_sites", "state=maintenance")] == 1
 
 
