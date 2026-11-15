@@ -2,7 +2,7 @@ name: Unit Tests
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, master]
   pull_request:
     branches: [develop]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
