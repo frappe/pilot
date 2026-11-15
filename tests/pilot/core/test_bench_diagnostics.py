@@ -271,12 +271,14 @@ def test_default_runtime_cli_reports_healthy_protocols_and_real_database(bench_p
         writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
         writer.flush()
 
+    (bench_path / "apps" / "frappe" / "frappe" / "runner.py").touch()
     database = bench_path / "sites" / "demo.localhost" / "db" / "demo.db"
     database.parent.mkdir()
     with sqlite3.connect(database) as connection:
         connection.execute("CREATE TABLE example (value TEXT)")
     with protocol_server(redis) as cache, protocol_server(redis) as queue, protocol_server(web) as http:
         config = BenchConfig.read(bench_path)
+        config.lite_mode.enabled = True
         config.redis.cache_port, config.redis.queue_port, config.http_port = cache, queue, http
         config.write(bench_path)
         result = subprocess.run(

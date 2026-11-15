@@ -6,14 +6,16 @@ from pathlib import Path
 from typing import Annotated, ClassVar
 
 from pilot.commands import Arg, BenchMode, Command
-from pilot.core.bench.diagnostics import BenchDiagnostics
+from pilot.core.bench.diagnostics import BenchDiagnostics, DiagnosticCheck
 from pilot.exceptions import BenchError
 
 
 @dataclass(kw_only=True)
 class DoctorCommand(Command):
     name: ClassVar[str] = "doctor"
-    help: ClassVar[str] = "Check bench configuration and runtime protocol health without changing data."
+    help: ClassVar[str] = (
+        "Check configuration, disk capacity, maintenance, runtime protocols, and worker processes."
+    )
     bench_mode: ClassVar[BenchMode] = BenchMode.PATH
 
     path: Annotated[Path | None, Arg(help="Bench directory, including one with broken configuration.")] = None
@@ -31,19 +33,24 @@ class DoctorCommand(Command):
         else:
             self.report(f"Bench checks ({result.mode}): {result.path}")
             for check in result.checks:
-                self.report(f"{check.status.upper()} {check.code} [{check.target}]: {check.message}")
-                if check.reason:
-                    self.report(f"      Reason: {check.reason}")
-                if check.fix:
-                    self.report(f"      Fix: {check.fix}")
+                self.report_check(check)
             self.report(
                 "Summary: "
                 + ", ".join(f"{count} {status}" for status, count in result.to_dict()["summary"].items())
             )
             self.report(
-                "Runtime probes cover database queries, Redis PING, and local HTTP; worker and scheduler health is not checked."
+                "Worker and scheduler findings describe process state, not heartbeats, queue backlog, or successful job execution."
             )
         if result.has_errors:
             raise SystemExit(1)
         if result.has_unavailable:
             raise SystemExit(2)
+
+    def report_check(self, check: DiagnosticCheck) -> None:
+        self.report(f"{check.status.upper()} {check.code} [{check.target}]: {check.message}")
+        if check.reason:
+            self.report(f"      Reason: {check.reason}")
+        if check.fix:
+            self.report(f"      Fix: {check.fix}")
+        if check.details:
+            self.report("      Evidence: " + json.dumps(check.details, sort_keys=True))

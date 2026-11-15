@@ -128,11 +128,21 @@ def failure_result(error: Exception) -> dict:
     return {"status": "error", "reason": "probe_failed"}
 
 
+def processes(settings: dict) -> list[dict]:
+    from pilot.core.bench.diagnostic_processes import check_processes
+
+    return check_processes(settings)
+
+
 def main() -> None:
     try:
         request = json.load(sys.stdin)
-        {"database": database, "redis": redis, "web": web}[request["kind"]](request["settings"])
+        findings = {"database": database, "redis": redis, "web": web, "processes": processes}[
+            request["kind"]
+        ](request["settings"])
         result = {"status": "ok", "reason": ""}
+        if findings is not None:
+            result["checks"] = findings
     except Exception as error:
         result = failure_result(error)
     print(json.dumps(result))

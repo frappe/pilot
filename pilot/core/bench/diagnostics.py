@@ -22,6 +22,7 @@ class DiagnosticCheck:
     target: str = ""
     reason: str = ""
     duration_ms: int | None = None
+    details: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -44,7 +45,14 @@ class DiagnosticReport:
             "path": self.path,
             "ok": not self.has_errors and not self.has_unavailable,
             "mode": self.mode,
-            "complete": not any(check.status in ("skipped", "unavailable") for check in self.checks),
+            "complete": not any(
+                check.status == "unavailable"
+                or (
+                    check.status == "skipped"
+                    and check.reason not in ("integrated_lite", "integrated_worker_pool")
+                )
+                for check in self.checks
+            ),
             "summary": {
                 status: sum(check.status == status for check in self.checks)
                 for status in ("ok", "error", "skipped", "unavailable")
@@ -74,6 +82,12 @@ class BenchDiagnostics:
         if config is not None:
             self.run_check("apps", lambda: self.check_apps(config))
         self.run_check("sites", lambda: self.check_sites(config, common or {}))
+        from pilot.core.bench.diagnostic_local import LocalDiagnostics
+
+        local = LocalDiagnostics(self.report)
+        self.run_check("capacity", local.check_capacity)
+        for site, values in self.site_configs.items():
+            local.check_maintenance(site, values)
         self.runtime.run(config, common or {}, self.site_configs)
         return self.report
 

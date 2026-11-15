@@ -51,6 +51,7 @@ def main() -> None:
     (app / "frappe").mkdir(parents=True)
     subprocess.run(["git", "init", "--quiet", str(app)], check=True)
     (app / "frappe" / "hooks.py").write_text("raise RuntimeError('Do not import app code')\n")
+    (app / "frappe" / "runner.py").touch()
     site = bench / "sites" / "demo.localhost"
     site.mkdir(parents=True)
     (site.parent / "apps.txt").write_text("frappe\n")
@@ -82,14 +83,25 @@ def main() -> None:
         protocol_server(response) as http,
     ):
         settings = BenchConfig.read(bench)
+        settings.lite_mode.enabled = True
         settings.redis.cache_port, settings.redis.queue_port, settings.http_port = cache, queue, http
         settings.write(bench)
-        for label, expected in (
-            ("runtime healthy", 0),
-            ("runtime database corrupt", 1),
-            ("runtime repaired", 0),
+        for label, issue, expected in (
+            ("runtime healthy (lite roles integrated into web)", "", 0),
+            ("runtime database corrupt", "database", 1),
+            ("maintenance enabled and scheduler paused", "maintenance", 1),
+            ("runtime repaired", "", 0),
         ):
-            database.write_bytes(b"corrupt database" if expected else original)
+            database.write_bytes(b"corrupt database" if issue == "database" else original)
+            config.write_text(
+                json.dumps(
+                    {
+                        "db_name": "demo",
+                        "maintenance_mode": issue == "maintenance",
+                        "pause_scheduler": issue == "maintenance",
+                    }
+                )
+            )
             result = subprocess.run(
                 [*command, "--json"], env=environment, capture_output=True, text=True, check=False
             )

@@ -54,6 +54,7 @@ class RuntimeDiagnostics:
                 "Repair bench configuration and retry.",
             )
             return
+        self.check_processes()
         for role, port in (("cache", config.redis.cache_port), ("queue", config.redis.queue_port)):
             url = common.get(f"redis_{role}", f"redis://127.0.0.1:{port}")
             self.probe("redis", "service", f"redis_{role}", {"url": url})
@@ -70,6 +71,45 @@ class RuntimeDiagnostics:
         for site, values in sites.items():
             self.check_database(config, site, values)
             self.probe("web", "site", site, {"port": config.http_port, "site": site})
+
+    def check_processes(self) -> None:
+        if self.offline:
+            for code in ("worker_process", "scheduler_process"):
+                self.add(
+                    code,
+                    "skipped",
+                    "bench",
+                    self.report.path,
+                    "offline",
+                    "Runtime probe disabled by --offline.",
+                    "",
+                )
+            return
+        result = self.execute("processes", {"path": self.report.path})
+        if result["status"] != "ok":
+            self.add(
+                "worker_process",
+                result["status"],
+                "bench",
+                self.report.path,
+                result["reason"],
+                "Cannot inspect worker and scheduler process states.",
+                "Check process manager availability and retry.",
+            )
+            return
+        for row in result.get("checks", []):
+            self.add(
+                row["code"],
+                row["status"],
+                "service",
+                row["target"],
+                row["reason"],
+                "Process state observed; execution and heartbeat health are not verified.",
+                "Check bench process status and logs; use pilot start or the configured manager to restore the workload."
+                if row["status"] in ("error", "unavailable")
+                else "",
+                details=row["details"],
+            )
 
     def check_database(self, config: BenchConfig, site: str, values: dict) -> None:
         try:
@@ -170,6 +210,7 @@ class RuntimeDiagnostics:
         message: str,
         fix: str,
         duration_ms: int | None = None,
+        details: dict | None = None,
     ) -> None:
         from pilot.core.bench.diagnostics import DiagnosticCheck
 
@@ -184,5 +225,6 @@ class RuntimeDiagnostics:
                 target=target,
                 reason=reason,
                 duration_ms=duration_ms,
+                details=details or {},
             )
         )
