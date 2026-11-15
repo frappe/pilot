@@ -1,12 +1,9 @@
 name: Weekly Release
 
-# Cuts the next vX.Y.N-pre-alpha release from develop every Tuesday.
+# Cuts the next vX.Y.N-pre-alpha release from master. Run it by hand once a week.
 # The release stays a draft until its tarball is uploaded, because installs and
 # auto-updates take the newest published release and need pilot.tar.gz on it.
 on:
-  schedule:
-    # Tuesday 05:30 UTC (11:00 IST), ahead of the 00:00 UTC auto-update.
-    - cron: "30 5 * * 2"
   workflow_dispatch:
 
 permissions:
@@ -19,7 +16,6 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.repository == 'frappe/pilot' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -30,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: develop
+          ref: master
           fetch-depth: 0
 
       - name: Pick the next version
@@ -43,7 +39,7 @@ jobs:
           fi
           sha=$(git rev-parse HEAD)
           if [ "$(git rev-list --count "$previous..$sha")" -eq 0 ]; then
-            echo "develop has no commits since $previous. Skipping the release."
+            echo "master has no commits since $previous. Skipping the release."
             exit 0
           fi
           tag="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))${BASH_REMATCH[4]}"
