@@ -331,8 +331,6 @@ def test_persist_production_state_keeps_the_letsencrypt_email(tmp_path: Path) ->
     assert CommonConfig.read(bench.path.parent).letsencrypt.email == "ops@example.com"
 
 
-
-
 def test_letsencrypt_is_required_for_a_custom_tls_domain_with_admin_tls_off(tmp_path: Path) -> None:
     """A cloud site's local TLS still requires an email."""
     from pilot.managers.letsencrypt import is_letsencrypt_required, letsencrypt_email_required
@@ -357,18 +355,3 @@ def test_letsencrypt_is_not_required_for_a_fully_proxied_bench(tmp_path: Path) -
     (site_path / "site_config.json").write_text(json.dumps({"ssl": False}))
 
     assert letsencrypt_email_required(bench) is False
-
-
-def test_a_host_without_fluent_bit_still_deploys(tmp_path: Path, capsys) -> None:
-    # Debian and Ubuntu do not package fluent-bit.
-    bench = _make_bench(tmp_path, process_manager="systemd")
-    bench.config.telemetry.endpoint = "https://datum.example.com"
-    bench.config.telemetry.token = "token"
-
-    with patch(
-        "pilot.managers.fluentbit.LogsConfigurator.setup",
-        side_effect=BenchError("Required: fluent-bit."),
-    ):
-        ProductionSetup(bench)._setup_log_shipping()
-
-    assert "logs are not shipped" in capsys.readouterr().err

@@ -1392,8 +1392,10 @@ def test_a_refused_migration_leaves_no_site_in_maintenance(tmp_path: Path, monke
     operation = _operation_with_backups(tmp_path, {"a.localhost": 600})
     monkeypatch.setattr(MigrationOperation, "ensure_disk_space", _ensure_disk_space)
 
-    with _free_disk(100), patch.object(MigrationOperation, "_prepare_sites") as prepare, pytest.raises(
-        InsufficientDiskSpaceError
+    with (
+        _free_disk(100),
+        patch.object(MigrationOperation, "_prepare_sites") as prepare,
+        pytest.raises(InsufficientDiskSpaceError),
     ):
         operation.begin()
 
@@ -1535,3 +1537,44 @@ def test_a_failed_chain_task_gets_its_finish_time(tmp_path: Path) -> None:
 
     assert operation.chain[0]["finished_at"]
     assert operation.apps[0].update_status == "pending"
+
+
+def test_a_failed_update_records_each_app_for_datum(tmp_path: Path) -> None:
+    """The monitor sends these records, so Beacon sees one app version that fails on many servers."""
+    from pilot.config.monitor import get_update_log
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    operation = MigrationStore(mock_bench)._create(
+        "update",
+        apps=[
+            AppRevision(
+                "erpnext",
+                "a1b2c3d4e5f6a7b8",
+                "https://github.com/frappe/erpnext",
+                target_sha="v15.40.0",
+                target_kind="tag",
+            )
+        ],
+        apps_filter=None,
+        sites=[],
+    )
+    operation.state = get_state("migrating")
+    operation.diagnosis = {"phase": "migrating", "message": "Patch failed", "output_excerpt": "Traceback"}
+
+    operation._enter_needs_attention("migrating", "a.example.com")
+
+    [record] = get_update_log().read_newest_first()
+    assert {
+        key: record[key]
+        for key in ("app", "from_version", "to_version", "status", "phase", "site", "message")
+    } == {
+        "app": "erpnext",
+        "from_version": "a1b2c3d4e5f6",
+        "to_version": "v15.40.0",
+        "status": "failed",
+        "phase": "migrating",
+        "site": "a.example.com",
+        "message": "Patch failed",
+    }

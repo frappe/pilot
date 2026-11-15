@@ -202,8 +202,7 @@ class CommonConfig:
             data["telemetry"] = {
                 "endpoint": self.telemetry.endpoint,
                 "token": self.telemetry.token,
-                "logs_enabled": self.telemetry.logs_enabled,
-                "metrics_enabled": self.telemetry.metrics_enabled,
+                "enabled": self.telemetry.enabled,
             }
         if self.frappe_cloud != FrappeCloudConfig():
             data["frappe_cloud"] = {"url": self.frappe_cloud.url}
