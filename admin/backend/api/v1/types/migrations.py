@@ -22,6 +22,17 @@ MigrationStateName = Literal[
 ]
 
 
+AppStepStatus = Literal["pending", "running", "success", "failed", "skipped"]
+
+
+class MigrationChainLink(TypedDict):
+    command: str
+    task_id: str
+    site: NotRequired[str]
+    started_at: NotRequired[str]
+    finished_at: NotRequired[str]
+
+
 class MigrationApp(TypedDict):
     name: str
     sha: str
@@ -30,6 +41,8 @@ class MigrationApp(TypedDict):
     target_sha: str | None
     target_kind: Literal["tag", "commit"]
     has_migrate_changes: bool
+    validate_status: AppStepStatus
+    update_status: AppStepStatus
     compare_url: str | None
 
 
@@ -76,6 +89,7 @@ class MigrationTaskLog(TypedDict):
     label: str
     site: str | None
     status: TaskStatus | None
+    activity: str | None
 
 
 class MigrationPendingAction(TypedDict):
@@ -101,7 +115,7 @@ class MigrationSummary(TypedDict):
     return_state: MigrationStateName | None
     root_task_id: str | None
     task_ids: dict[str, str]
-    chain: list[dict]
+    chain: list[MigrationChainLink]
     revert_checkpoints: dict[str, bool]
     decisions: list[MigrationDecision]
     can_restore: bool

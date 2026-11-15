@@ -14,6 +14,7 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
     replace_private_text_locked,
 )
+from pilot.internal.jsonl_log import utc_now
 from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
@@ -97,15 +98,19 @@ class MigrationStore:
     def get_for_chain_task(
         self, operation_id: str, task_id: str, command: str, args: dict
     ) -> MigrationOperation:
-        """Wait for registration to avoid overwriting the chain entry.
+        """Wait for registration to avoid overwriting the chain entry, then record when the task started.
         Recover the entry if the queuing task stopped before registering it."""
         deadline = time.monotonic() + 30
         while True:
             operation = self.get(operation_id)
-            if not task_id or any(entry["task_id"] == task_id for entry in operation.chain):
+            if not task_id:
                 return operation
-            if time.monotonic() >= deadline:
-                operation.chain.append({"command": command, "task_id": task_id, **args})
+            entry = next((entry for entry in operation.chain if entry["task_id"] == task_id), None)
+            if entry is None and time.monotonic() >= deadline:
+                entry = {"command": command, "task_id": task_id, **args}
+                operation.chain.append(entry)
+            if entry is not None:
+                entry.setdefault("started_at", utc_now())
                 self.save(operation)
                 return operation
             time.sleep(0.2)

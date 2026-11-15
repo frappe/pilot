@@ -246,15 +246,34 @@ def test_migration_detail_includes_retained_task_logs(tmp_path: Path) -> None:
     data = response.get_json()
     # Status is what tells the UI which attempt of a retried step was the one that broke.
     assert data["task_logs"] == [
-        {"id": backup, "label": "Backup", "site": "site1.localhost", "status": "success"},
-        {"id": first_try, "label": "Migrate", "site": "site1.localhost", "status": "failed"},
+        {
+            "id": backup,
+            "label": "Backup",
+            "site": "site1.localhost",
+            "status": "success",
+            "activity": None,
+        },
+        {
+            "id": first_try,
+            "label": "Migrate",
+            "site": "site1.localhost",
+            "status": "failed",
+            "activity": None,
+        },
         {
             "id": second_try,
             "label": "Migrate (attempt 2)",
             "site": "site1.localhost",
             "status": "running",
+            "activity": None,
         },
-        {"id": finish, "label": "Finish update", "site": None, "status": "queued"},
+        {
+            "id": finish,
+            "label": "Finish update",
+            "site": None,
+            "status": "queued",
+            "activity": None,
+        },
     ]
     # Pruned task logs are omitted; the operation stays readable.
     assert all("tasks" not in site for site in data["sites"])
@@ -277,7 +296,13 @@ def test_task_logs_report_no_status_for_a_half_pruned_task(tmp_path: Path) -> No
     assert response.status_code == 200
     # The entry still links to its log; only the verdict is missing.
     assert response.get_json()["task_logs"] == [
-        {"id": task_id, "label": "Migrate", "site": "site1.localhost", "status": None}
+        {
+            "id": task_id,
+            "label": "Migrate",
+            "site": "site1.localhost",
+            "status": None,
+            "activity": None,
+        }
     ]
 
 
@@ -334,3 +359,58 @@ def test_post_updates_is_refused_when_the_disk_cannot_hold_the_backups(tmp_path:
     assert "Not enough disk space for the backups this migration takes first" in resp.get_json()["error"]["message"]
     queue.assert_not_called()
     assert client.get("/api/v1/migrations").get_json()["data"] == []
+
+
+def test_detail_reports_chain_times_and_the_running_task_activity(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    site_dir = bench_root / "sites" / "site1.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+    client = _client(bench_root)
+    operation = Bench(bench_root).migrations.create_site_migrate("site1.localhost")
+    task_id = "20260101-000005-eeeeee"
+    operation.chain = [{"command": "migrate", "task_id": task_id, "site": "site1.localhost"}]
+    operation.store.save(operation)
+    _write_task(bench_root, task_id, status="running")
+    task_dir = bench_root / "tasks" / task_id
+    (task_dir / "meta.json").write_text(
+        json.dumps({"task_id": task_id, "command": "migrate", "started_at": "2026-01-01T00:00:05+00:00"})
+    )
+    (task_dir / "output.log").write_text(
+        "STEP migrate,1767225605.000 Migrating site1.localhost\n"
+        "Waiting for the background jobs of site1.localhost...\n"
+    )
+
+    response = client.get(f"/api/v1/migrations/{operation.id}")
+
+    data = response.get_json()
+    assert data["chain"][0]["started_at"] == "2026-01-01T00:00:05+00:00"
+    assert "finished_at" not in data["chain"][0]
+    assert data["task_logs"][0]["activity"] == "Waiting for the background jobs of site1.localhost..."
+
+
+def test_detail_reads_pruned_chain_times_from_task_ids(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    bench_root = tmp_path / "benches" / "current"
+    site_dir = bench_root / "sites" / "site1.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+    client = _client(bench_root)
+    operation = Bench(bench_root).migrations.create_site_migrate("site1.localhost")
+    operation.chain = [
+        {"command": "migration-backup", "task_id": "20260805-165628-5f0022", "site": "site1.localhost"},
+        {"command": "migrate", "task_id": "20260805-165632-a402a2", "site": "site1.localhost"},
+    ]
+    operation.finished_at = "2026-08-05T11:26:37+00:00"
+    operation.store.save(operation)
+
+    chain = client.get(f"/api/v1/migrations/{operation.id}").get_json()["chain"]
+
+    queued = [
+        datetime.strptime(stamp, "%Y%m%d-%H%M%S").astimezone(UTC).isoformat()
+        for stamp in ("20260805-165628", "20260805-165632")
+    ]
+    assert [entry["started_at"] for entry in chain] == queued
+    assert chain[0]["finished_at"] == queued[1]
+    assert chain[1]["finished_at"] == "2026-08-05T11:26:37+00:00"

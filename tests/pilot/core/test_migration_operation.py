@@ -1299,9 +1299,9 @@ def test_a_chain_task_records_itself_when_its_queuer_stopped_first(tmp_path: Pat
     ):
         store.get_for_chain_task(operation.id, "task-501", "migrate", {"site": "site1.localhost"})
 
-    assert store.get(operation.id).chain == [
-        {"command": "migrate", "task_id": "task-501", "site": "site1.localhost"}
-    ]
+    [entry] = store.get(operation.id).chain
+    assert entry.pop("started_at")
+    assert entry == {"command": "migrate", "task_id": "task-501", "site": "site1.localhost"}
 
 
 @pytest.mark.parametrize("suffix", ["", "."])
@@ -1488,3 +1488,50 @@ def test_revert_apps_skips_an_app_removed_after_the_update(tmp_path: Path) -> No
     operation.bench.app.assert_called_once_with("frappe")
     assert any("Skipping removed_app" in message for message in progress)
     assert operation.revert_checkpoints["apps"] is True
+
+
+def test_update_apps_records_each_app_through_validate_and_update(tmp_path: Path) -> None:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+
+    def validate(apps_filter, on_progress, pins, on_app):
+        on_app("frappe", "success")
+
+    def build(apps_filter, on_progress, on_app):
+        on_app("frappe", "success")
+
+    mock_bench.app.return_value.installed_hash = "2222222"
+    mock_bench._update_apps.side_effect = validate
+    mock_bench._rebuild_assets.side_effect = build
+    store = MigrationStore(mock_bench)
+    operation = store._create("update", apps=[AppRevision("frappe", "1111111")], apps_filter=None, sites=[])
+    operation.state = get_state("updating")
+    steps: list[str] = []
+
+    operation.update_apps(on_step=lambda key, label: steps.append(key))
+
+    saved = store.get(operation.id).apps[0]
+    assert (saved.validate_status, saved.update_status) == ("success", "success")
+    assert steps[:2] == ["validate", "update"]
+
+
+def test_a_failed_chain_task_gets_its_finish_time(tmp_path: Path) -> None:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench._rebuild_assets.side_effect = MigrateError("yarn build failed")
+    store = MigrationStore(mock_bench)
+    operation = store._create("update", apps=[AppRevision("frappe", "1111111")], apps_filter=None, sites=[])
+    operation.state = get_state("updating")
+    operation.chain = [
+        {"command": "update", "task_id": "task-301", "started_at": "2026-01-01T00:00:00+00:00"}
+    ]
+
+    with pytest.raises(MigrateError):
+        operation.update_apps()
+
+    assert operation.chain[0]["finished_at"]
+    assert operation.apps[0].update_status == "pending"

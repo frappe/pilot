@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from flask import Blueprint, jsonify, request, url_for
 
 from admin.backend.api.requests import ApiRequest
@@ -29,6 +31,7 @@ def _summary(operation: MigrationOperation) -> dict:
     for app, revision in zip(data["apps"], operation.apps, strict=True):
         app["compare_url"] = revision.compare_url
     data["can_restore"] = operation.can_revert
+    data["chain"] = _chain(operation)
     data["task_logs"] = _task_logs(operation)
     data["pending_action"] = _pending_action(operation)
     return data
@@ -76,8 +79,57 @@ def _task_logs(operation: MigrationOperation) -> list[dict]:
         key = (record["command"], site)
         attempts[key] = attempts.get(key, 0) + 1
         label = base if attempts[key] == 1 else f"{base} (attempt {attempts[key]})"
-        logs.append({"id": task_id, "label": label, "site": site, "status": _task_status(store, task_id)})
+        status = _task_status(store, task_id)
+        activity = _activity(operation, task_id) if status == "running" else None
+        logs.append({"id": task_id, "label": label, "site": site, "status": status, "activity": activity})
     return logs
+
+
+def _chain(operation: MigrationOperation) -> list[dict]:
+    """Chain records with their task times. Records saved before times were kept read them from the
+    task, or once the task is pruned from its id (queue time) and the next record's start."""
+    store = TaskStore(operation.bench.path)
+    records = []
+    for record in operation.chain:
+        entry = dict(record)
+        task_id = entry.get("task_id")
+        if "started_at" not in entry and isinstance(task_id, str):
+            entry.update(_task_times(store, task_id))
+        records.append(entry)
+    for index, entry in enumerate(records):
+        if "started_at" not in entry or "finished_at" in entry:
+            continue
+        following = records[index + 1] if index + 1 < len(records) else None
+        end = following.get("started_at") if following else operation.finished_at
+        if end:
+            entry["finished_at"] = end
+    return records
+
+
+def _task_times(store: TaskStore, task_id: str) -> dict:
+    """A chain task's start and finish from its metadata, or its queue time from the task id."""
+    try:
+        metadata = store.read_metadata(task_id)
+        return {key: metadata[key] for key in ("started_at", "finished_at") if metadata.get(key)}
+    except (TaskNotFoundError, OSError, ValueError):
+        pass
+    try:
+        queued = datetime.strptime(task_id[:15], "%Y%m%d-%H%M%S").astimezone(UTC)
+    except ValueError:
+        return {}
+    return {"started_at": queued.isoformat()}
+
+
+def _activity(operation: MigrationOperation, task_id: str) -> str | None:
+    """The latest progress line of a running chain task."""
+    try:
+        lines = TaskReader(operation.bench.path).read_output(task_id, lines=20)
+    except (TaskNotFoundError, OSError):
+        return None
+    return next(
+        (line.strip() for line in reversed(lines) if line.strip() and not line.startswith("STEP")),
+        None,
+    )
 
 
 def _task_status(store: TaskStore, task_id: str) -> str | None:

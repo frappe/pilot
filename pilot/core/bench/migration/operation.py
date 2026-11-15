@@ -5,6 +5,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
@@ -56,6 +57,8 @@ class AppRevision:
     target_kind: Literal["tag", "commit"] = "commit"  # how to check target_sha out
     branch: str = ""  # branch to return to on revert, set when a branch switch changed it
     has_migrate_changes: bool = True
+    validate_status: str = "pending"  # pending | running | success | failed | skipped
+    update_status: str = "pending"  # pending | running | success | failed | skipped
 
     @property
     def compare_url(self) -> str | None:
@@ -180,6 +183,7 @@ class MigrationOperation(MigrationRecovery):
         if step is None:
             return None
         command, args = step
+        self._stamp_finished(handoff_from)
         task_id = _load_task(command).queue(
             self.bench,
             operation_id=self.id,
@@ -233,13 +237,18 @@ class MigrationOperation(MigrationRecovery):
         backup phase may have taken a while, and code may have moved upstream
         since the user chose these targets.
         """
-        on_step("update", "Updating apps")
+        on_step("validate", "Validating apps")
         filter_set = set(self.apps_filter) if self.apps_filter else None
         self.wait_for_background_jobs("updating", [site.name for site in self.sites], on_progress)
+        for revision in self.apps:
+            revision.validate_status = revision.update_status = "pending"
         try:
-            self.bench._update_apps(filter_set, on_progress, self.revision_pins)
-            self.bench._reinstall_apps(filter_set, on_progress)
-            self.bench._rebuild_assets(filter_set, on_progress)
+            self.bench._update_apps(
+                filter_set, on_progress, self.revision_pins, partial(self.track_app, "validate")
+            )
+            on_step("update", "Updating apps")
+            self.bench._reinstall_apps(filter_set, on_progress, partial(self.track_app, "update"))
+            self.bench._rebuild_assets(filter_set, on_progress, partial(self.track_app, "update"))
             for revision in self.apps:
                 revision.updated_sha = self.bench.app(revision.name).installed_hash
         except Exception as error:
@@ -258,6 +267,14 @@ class MigrationOperation(MigrationRecovery):
         self._transition("migrating")
         if self.next_migrate_site() is None:
             self.complete(on_step)
+
+    def track_app(self, step: str, name: str, status: str) -> None:
+        """Record one app's progress through the validate or update step."""
+        revision = next((app for app in self.apps if app.name == name), None)
+        if revision is None:
+            return
+        setattr(revision, f"{step}_status", status)
+        self._save()
 
     def migrate_site(
         self, name: str, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS
@@ -473,7 +490,15 @@ class MigrationOperation(MigrationRecovery):
             self.started_at = utc_now()
         if self.state.is_terminal:
             self.finished_at = utc_now()
+        if self.state.is_terminal or self.state.is_failure:
+            self._stamp_finished(self.chain[-1]["task_id"] if self.chain else None)
         self._save()
+
+    def _stamp_finished(self, task_id: str | None) -> None:
+        """Record when a chain task finished, once."""
+        entry = next((entry for entry in self.chain if entry["task_id"] == task_id), None)
+        if entry is not None and "started_at" in entry:
+            entry.setdefault("finished_at", utc_now())
 
     def _save(self) -> None:
         """Save the operation."""
