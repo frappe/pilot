@@ -21,8 +21,6 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
-
-
 class MigrationStore:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -31,9 +29,7 @@ class MigrationStore:
     def create_update(self, apps_filter: set[str] | None = None) -> MigrationOperation:
         """Sites are backed up and migrated only when some app's change needs a migrate. Linked
         checkouts get no saved revision: Pilot never moves their code, so a revert leaves them alone."""
-        selected = [
-            app for app in self.bench.apps() if apps_filter is None or app.config.name in apps_filter
-        ]
+        selected = [app for app in self.bench.apps() if apps_filter is None or app.config.name in apps_filter]
         apps = [self._revision(app) for app in selected if not app.is_linked]
         is_migrating = any(revision.has_migrate_changes for revision in apps)
         sites = self.sites_for_apps({app.config.name for app in selected}) if is_migrating else []
@@ -118,6 +114,20 @@ class MigrationStore:
     def delete(self, operation_id: str) -> None:
         """Delete a saved operation."""
         (self.root / f"{operation_id}.json").unlink(missing_ok=True)
+        self.withdraw_stop(operation_id)
+
+    def request_stop(self, operation_id: str) -> None:
+        """Mark the operation for a stop. A marker file, so a chain task saving its own copy cannot erase it."""
+        PrivateDirectory(self.root).create(parents=True)
+        atomic_write_private_text(self.root / f"{operation_id}.stop", datetime.now(UTC).isoformat())
+
+    def withdraw_stop(self, operation_id: str) -> None:
+        """Remove the stop mark."""
+        (self.root / f"{operation_id}.stop").unlink(missing_ok=True)
+
+    def is_stop_requested(self, operation_id: str) -> bool:
+        """Whether a stop was requested for the operation."""
+        return (self.root / f"{operation_id}.stop").exists()
 
     def get(self, operation_id: str) -> MigrationOperation:
         """The saved operation; raise when it does not exist or cannot be read."""

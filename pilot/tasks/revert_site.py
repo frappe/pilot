@@ -10,6 +10,7 @@ class RevertSiteTask(Task):
     """Chain link: restore one site's database and clear its cache, then queue the next site."""
 
     command: ClassVar[str] = "revert-site"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 86400
 
     operation_id: str

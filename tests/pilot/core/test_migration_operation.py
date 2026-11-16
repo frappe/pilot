@@ -1578,3 +1578,86 @@ def test_a_failed_update_records_each_app_for_datum(tmp_path: Path) -> None:
         "site": "a.example.com",
         "message": "Patch failed",
     }
+
+
+def backing_up_operation(tmp_path: Path):
+    from pilot.core.bench.migration.store import MigrationStore
+
+    bench = MagicMock()
+    bench.path = tmp_path
+    bench.site.return_value.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+    operation = MigrationStore(bench)._create(
+        "update", apps=[AppRevision("frappe", "abc")], apps_filter=None, sites=["one.local", "two.local"]
+    )
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="backup-1"):
+        operation.begin()
+    return operation
+
+
+def test_stop_cancels_the_backup_and_its_callback_ends_the_migration(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+
+    operation.stop()
+
+    operation.bench.tasks.kill.assert_called_once_with("backup-1")
+    stopped = operation.store.get(operation.id)
+    stopped.fail_stopped_step("backup-1", "backing_up", "one.local")
+    assert stopped.state == "stopped"
+    assert stopped.decisions[-1]["action"] == "stop"
+    operation.bench.site.return_value.set_maintenance_settings.assert_called_with(
+        {"maintenance_mode": 0, "pause_scheduler": 0}
+    )
+
+
+def test_a_stopped_chain_queues_no_next_task(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+    operation.store.request_stop(operation.id)
+
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue") as queue:
+        operation.back_up_site("one.local")
+        assert operation.enqueue_next() is None
+
+    queue.assert_not_called()
+    assert operation.state == "stopped"
+    operation.bench.site.return_value.migration_backup.discard.assert_called()
+
+
+def test_stop_is_refused_once_the_update_has_started(tmp_path: Path) -> None:
+    from pilot.exceptions import TaskNotCancellableError
+
+    operation = backing_up_operation(tmp_path)
+    operation.bench.tasks.kill.side_effect = TaskNotCancellableError("running")
+
+    with pytest.raises(MigrationStateError, match="update has started"):
+        operation.stop()
+
+    assert not operation.is_stop_requested
+
+
+def test_stop_cancels_the_task_the_chain_queued_meanwhile(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+    latest = operation.store.get(operation.id)
+    latest.chain.append({"command": "migration-backup", "task_id": "backup-2", "site": "two.local"})
+    latest._save()
+
+    operation.stop()
+
+    assert [call.args[0] for call in operation.bench.tasks.kill.call_args_list] == ["backup-1", "backup-2"]
+
+
+@pytest.mark.parametrize("state", ["updating", "migrating", "needs_attention"])
+def test_stop_is_allowed_only_while_backing_up(tmp_path: Path, state: str) -> None:
+    operation = backing_up_operation(tmp_path)
+    operation.state = get_state(state)
+
+    with pytest.raises(MigrationStateError, match="only while it takes backups"):
+        operation.stop()
+
+    assert not operation.is_stop_requested
+
+
+def test_a_migration_that_already_switched_app_code_cannot_stop(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+    operation.apps_updated = True
+
+    assert not operation.can_stop

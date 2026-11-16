@@ -9,6 +9,7 @@ from pilot.tasks import Task, on_cancel, on_failure, step
 @dataclass(kw_only=True)
 class BypassPatchTask(Task):
     command: ClassVar[str] = "bypass-patch"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 300
 
     operation_id: str

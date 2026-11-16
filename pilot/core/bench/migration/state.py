@@ -51,7 +51,7 @@ class BackingUp(MigrationState):
     name = "backing_up"
     label = "Backing up"
     starts_work = True
-    allowed = frozenset({"updating", "migrating", "needs_attention"})
+    allowed = frozenset({"updating", "migrating", "needs_attention", "stopped"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
         """Back up the next site, if any."""
@@ -63,7 +63,7 @@ class Updating(MigrationState):
     name = "updating"
     label = "Updating apps"
     starts_work = True
-    allowed = frozenset({"migrating", "needs_attention"})
+    allowed = frozenset({"migrating", "needs_attention", "stopped"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
         """Update the apps, unless done."""
@@ -74,7 +74,7 @@ class Migrating(MigrationState):
     name = "migrating"
     label = "Migrating"
     starts_work = True
-    allowed = frozenset({"completed", "needs_attention"})
+    allowed = frozenset({"completed", "needs_attention", "stopped"})
 
     def next_step(self, operation: "MigrationOperation") -> ChainStep | None:
         """Migrate the next site, or complete when none is left."""
@@ -148,6 +148,14 @@ class Reverted(MigrationState):
     is_terminal = True
 
 
+class Stopped(MigrationState):
+    """Stopped by the user while it took backups, before it changed any code or site."""
+
+    name = "stopped"
+    label = "Stopped"
+    is_terminal = True
+
+
 class Dismissed(MigrationState):
     """Closed by the user from a failure without a recovery; kept as history."""
 
@@ -172,6 +180,7 @@ _STATES: dict[str, MigrationState] = {
         Completed(),
         Reverted(),
         Dismissed(),
+        Stopped(),
     )
 }
 

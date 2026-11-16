@@ -191,6 +191,30 @@ def test_dismiss_action_is_refused_while_the_update_runs(tmp_path: Path) -> None
     assert response.status_code == 409
 
 
+def test_stop_action_stops_a_migration_that_backs_up(tmp_path: Path) -> None:
+    client, operation = _paused_operation(tmp_path / "benches" / "current", "backing_up")
+    operation.chain.append(
+        {"command": "migration-backup", "task_id": "task-backup", "site": "site1.localhost"}
+    )
+    operation.store.save(operation)
+
+    with patch("pilot.tasks.base.TaskRunner.kill") as kill:
+        response = client.post(f"/api/v1/migrations/{operation.id}/actions/stop")
+
+    assert response.status_code == 202
+    kill.assert_called_with("task-backup")
+    assert operation.store.is_stop_requested(operation.id)
+
+
+def test_stop_action_is_refused_once_the_backups_are_done(tmp_path: Path) -> None:
+    client, operation = _paused_operation(tmp_path / "benches" / "current", "migrating")
+
+    response = client.post(f"/api/v1/migrations/{operation.id}/actions/stop")
+
+    assert response.status_code == 409
+    assert client.get(f"/api/v1/migrations/{operation.id}").get_json()["can_stop"] is False
+
+
 def test_bypass_patch_rejects_a_stale_patch_identifier(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     site_dir = bench_root / "sites" / "site1.localhost"
@@ -340,7 +364,9 @@ def test_detail_reports_a_queued_action_while_the_operation_is_paused(tmp_path: 
     assert client.get(f"/api/v1/migrations/{operation.id}").get_json()["pending_action"] is None
 
 
-def test_post_updates_is_refused_when_the_disk_cannot_hold_the_backups(tmp_path: Path, database_estimate) -> None:
+def test_post_updates_is_refused_when_the_disk_cannot_hold_the_backups(
+    tmp_path: Path, database_estimate
+) -> None:
     bench_root = tmp_path / "benches" / "current"
     (bench_root / "sites" / "site1.localhost").mkdir(parents=True)
     (bench_root / "sites" / "site1.localhost" / "site_config.json").write_text("{}")
@@ -356,7 +382,10 @@ def test_post_updates_is_refused_when_the_disk_cannot_hold_the_backups(tmp_path:
 
     assert resp.status_code == 507
     assert resp.get_json()["error"]["code"] == "insufficient_disk_space"
-    assert "Not enough disk space for the backups this migration takes first" in resp.get_json()["error"]["message"]
+    assert (
+        "Not enough disk space for the backups this migration takes first"
+        in resp.get_json()["error"]["message"]
+    )
     queue.assert_not_called()
     assert client.get("/api/v1/migrations").get_json()["data"] == []
 

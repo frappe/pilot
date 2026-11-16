@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pilot.core.bench.migration.state import MigrationState, MigrationStateError
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, TaskNotCancellableError, TaskNotRunningError
 from pilot.internal.jsonl_log import utc_now
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.bench.migration.operation import AppRevision, OnProgress, OnStep, SiteProgress
+    from pilot.core.bench.migration.store import MigrationStore
 
 
 def _no_step(key: str, label: str) -> None:
@@ -20,7 +21,7 @@ def _no_progress(message: str) -> None:
 
 
 class MigrationRecovery:
-    """Recovery actions of a paused MigrationOperation: retry, skip a patch, restore, dismiss."""
+    """User actions on a MigrationOperation: stop while it backs up, and retry, skip a patch, restore or dismiss once paused."""
 
     if TYPE_CHECKING:
         id: str
@@ -33,7 +34,10 @@ class MigrationRecovery:
         apps_filter: list[str] | None
         revert_checkpoints: dict
         decisions: list
+        chain: list[dict]
+        apps_updated: bool
         bench: Bench
+        store: MigrationStore
 
         @property
         def can_revert(self) -> bool:
@@ -56,6 +60,54 @@ class MigrationRecovery:
 
         def _discard_snapshots(self) -> None:
             """Discard the migration backups."""
+
+        def _lift_maintenance(self) -> None:
+            """Restore maintenance settings and refresh web workers."""
+
+    @property
+    def can_stop(self) -> bool:
+        """Whether the migration may stop: it still takes backups and no app code has changed."""
+        return self.state == "backing_up" and not self.apps_updated
+
+    @property
+    def is_stop_requested(self) -> bool:
+        """Whether a stop was requested; the chain ends at its next step."""
+        return self.store.is_stop_requested(self.id)
+
+    def stop(self) -> None:
+        """Stop a migration that takes backups. The killed backup task, or the chain at its next
+        step, finishes the stop; raise when the chain has already started to change the bench."""
+        if not self.can_stop:
+            raise MigrationStateError(
+                f"A migration can stop only while it takes backups, not while {self.state}."
+            )
+        self.store.request_stop(self.id)
+        self._cancel_chain_task(self.chain[-1]["task_id"])
+        latest_task_id = self.store.get(self.id).chain[-1]["task_id"]
+        if latest_task_id != self.chain[-1]["task_id"]:  # the chain queued its next task meanwhile
+            self._cancel_chain_task(latest_task_id)
+        self.bench.audit_action("stop_migration", {"operation": self.id})
+
+    def _cancel_chain_task(self, task_id: str) -> None:
+        """Cancel the chain task; withdraw the stop when the task can no longer be cancelled."""
+        try:
+            self.bench.tasks.kill(task_id)
+        except TaskNotRunningError:
+            pass
+        except TaskNotCancellableError as error:
+            self.store.withdraw_stop(self.id)
+            raise MigrationStateError("The update has started; it can no longer stop.") from error
+
+    def finish_stop(self) -> None:
+        """End a stopped migration: sites leave maintenance and the backups it took are deleted."""
+        if self.state == "stopped":
+            return
+        if self.apps_updated or any(site.migration_status != "pending" for site in self.sites):
+            raise MigrationStateError("The migration has changed the bench; it can no longer stop.")
+        self._lift_maintenance()
+        self._discard_snapshots()
+        self.decisions.append({"action": "stop", "state": str(self.state), "at": utc_now()})
+        self._transition("stopped")
 
     def retry(self) -> None:
         """Resume the chain from needs_attention so the failed unit runs again."""

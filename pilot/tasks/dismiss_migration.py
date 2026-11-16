@@ -10,6 +10,7 @@ class DismissMigrationTask(Task):
     """Close a failed migration without recovering it, so updates are no longer blocked."""
 
     command: ClassVar[str] = "dismiss-migration"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 300
 
     operation_id: str

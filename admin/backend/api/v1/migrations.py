@@ -14,6 +14,7 @@ from admin.backend.api.responses import (
 from admin.backend.api.v1.sites.shared import task_failure
 from pilot.core.bench import Bench
 from pilot.core.bench.migration.operation import MigrationOperation
+from pilot.core.bench.migration.state import MigrationStateError
 from pilot.exceptions import MigrationNotFoundError, TaskNotFoundError
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.task import TaskReader
@@ -32,6 +33,7 @@ def _summary(operation: MigrationOperation) -> dict:
         app["compare_url"] = revision.compare_url
     data["can_restore"] = operation.can_revert
     data["chain"] = _chain(operation)
+    data["can_stop"] = operation.can_stop
     data["task_logs"] = _task_logs(operation)
     data["pending_action"] = _pending_action(operation)
     return data
@@ -249,6 +251,19 @@ def dismiss_action(operation_id: str):
     if not operation.state.is_failure:
         return _invalid_state(operation)
     return _queue_action(operation, DismissMigrationTask, "dismiss")
+
+
+@migrations_bp.post("/migrations/<operation_id>/actions/stop")
+def stop_action(operation_id: str):
+    """Stop a migration while it takes backups; sites leave maintenance once the backup task ends."""
+    operation = _load(operation_id)
+    if operation is None:
+        return _not_found()
+    try:
+        operation.stop()
+    except MigrationStateError as error:
+        return error_response("invalid_operation_state", str(error), 409)
+    return jsonify(_summary(operation.store.get(operation_id))), 202
 
 
 @migrations_bp.post("/migrations/<operation_id>/actions/bypass-patch")
