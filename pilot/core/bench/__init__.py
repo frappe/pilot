@@ -257,8 +257,26 @@ class Bench:
     def python_argv(self) -> list[str]:
         """The venv Python for a run outside the sandbox. Pilot runs it in sites/, which a workload can
         write, and Python puts the working directory first on sys.path, so a planted sites/frappe/ would
-        replace Frappe. -P leaves it out; Python 3.10 has no -P, and the sandbox refuses it."""
-        return [str(self.python), *(["-P"] if self.python_version >= (3, 11) else [])]
+        replace Frappe. -P leaves it out; Python 3.10 has no -P, and the sandbox refuses it.
+
+        On a sandboxed bench the run starts through `unsandboxed_entry.py`, so Frappe follows no link that
+        the workload planted where Frappe writes its logs."""
+        if self.python_version < (3, 11):
+            return [str(self.python)]
+        if not self.is_workload_sandboxed:
+            return [str(self.python), "-P"]
+        from pilot.managers.processes import unsandboxed_entry
+
+        return [str(self.python), "-P", unsandboxed_entry.__file__, str(self.path)]
+
+    @property
+    def is_workload_sandboxed(self) -> bool:
+        """Whether systemd runs the workload in the sandbox, as the units Pilot wrote say."""
+        if self.config.production.process_manager != "systemd":
+            return False
+        from pilot.managers.processes.systemd import SystemdProcessManager
+
+        return SystemdProcessManager(self).is_sandboxed
 
     @property
     def frappe_call(self) -> list[str]:

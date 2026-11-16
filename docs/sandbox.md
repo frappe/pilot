@@ -44,6 +44,8 @@ Pilot adds the sandbox to every workload unit that it writes for a systemd bench
 
 The Admin stays out because it runs the nginx and certbot commands with sudo. `get-app`, `install-app`, `migrate` and asset builds run from the CLI or as Admin tasks, so the app code that they run is outside the sandbox too.
 
+A Frappe run outside the sandbox writes its log files in `sites/<site>/logs/`, where a workload can plant a link. On a sandboxed bench, Pilot starts every such run through `pilot/managers/processes/unsandboxed_entry.py`, which opens each log file below the bench one folder at a time and refuses a link at each step. The run then fails instead of writing through the link. Remove the link to run it again.
+
 ## Turn it on or off
 
 ```toml

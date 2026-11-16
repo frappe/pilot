@@ -227,11 +227,7 @@ class NginxConfigRenderer:
     def is_refusing_symlinks(self) -> bool:
         """Only a sandboxed workload gains from a link in sites/: one without the sandbox already reads
         everything the bench user can. So a bench without it keeps links, such as a storage folder."""
-        from pilot.managers.processes.systemd import SystemdProcessManager
-
-        if self.bench.config.production.process_manager != "systemd":
-            return False
-        return SystemdProcessManager(self.bench).is_sandboxed
+        return self.bench.is_workload_sandboxed
 
     def render_asset_locations(self) -> str:
         rule = "        disable_symlinks on from={unchecked};\n" if self.is_refusing_symlinks else ""

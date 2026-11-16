@@ -88,3 +88,96 @@ def test_setting_the_admin_password_runs_the_bench_python_with_its_safe_argv(tmp
 
     assert run_command.call_args.args[0][:2] == [str(bench.python), "-P"]
     assert run_command.call_args.kwargs["cwd"] == bench.sites_path
+
+
+def _sandboxed_bench(tmp_path: Path) -> Bench:
+    """A bench with a real Python whose web unit runs in the sandbox."""
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    (bench.env_path / "bin").mkdir(parents=True)
+    (bench.env_path / "bin" / "python").symlink_to(sys.executable)
+    _write_venv(bench, f"version_info = {sys.version_info.major}.{sys.version_info.minor}.0\n")
+    services = bench.config_path / "services"
+    services.mkdir(parents=True)
+    (services / f"{bench.config.name}-web.service").write_text("[Service]\nPrivateUsers=yes\n")
+    (bench.sites_path / "site1" / "logs").mkdir(parents=True)
+    (bench.path / "logs").mkdir(exist_ok=True)
+    return bench
+
+
+# What Frappe's logger does in sites/: one file in the bench logs, one in the site logs.
+_LOG_TWICE = (
+    "import logging.handlers as h\n"
+    "for path in ('../logs/frappe.log', 'site1/logs/frappe.log'):\n"
+    "    h.RotatingFileHandler(path, maxBytes=100_000, backupCount=2).emit(\n"
+    "        __import__('logging').makeLogRecord({'msg': 'migrated'}))\n"
+)
+
+
+def test_a_sandboxed_bench_starts_python_through_the_log_guard(tmp_path: Path) -> None:
+    bench = _sandboxed_bench(tmp_path)
+
+    assert bench.python_argv[:2] == [str(bench.python), "-P"]
+    assert bench.python_argv[2].endswith("unsandboxed_entry.py")
+    assert bench.python_argv[3] == str(bench.path)
+
+
+def test_the_log_guard_writes_logs_that_are_plain_files(tmp_path: Path) -> None:
+    bench = _sandboxed_bench(tmp_path)
+
+    result = subprocess.run([*bench.python_argv, "-c", _LOG_TWICE], cwd=bench.sites_path, capture_output=True)
+
+    assert result.returncode == 0, result.stderr
+    assert (bench.path / "logs" / "frappe.log").read_text() == "migrated\n"
+    assert (bench.sites_path / "site1" / "logs" / "frappe.log").read_text() == "migrated\n"
+
+
+@pytest.mark.parametrize("planted", ["file", "folder"])
+def test_the_log_guard_refuses_a_link_the_workload_planted(tmp_path: Path, planted: str) -> None:
+    bench = _sandboxed_bench(tmp_path)
+    target = tmp_path / "bashrc"
+    target.write_text("original\n")
+    logs = bench.sites_path / "site1" / "logs"
+    if planted == "file":
+        (logs / "frappe.log").symlink_to(target)
+    else:
+        logs.rmdir()
+        logs.symlink_to(tmp_path)
+        target = tmp_path / "frappe.log"
+
+    result = subprocess.run([*bench.python_argv, "-c", _LOG_TWICE], cwd=bench.sites_path, capture_output=True)
+
+    assert result.returncode != 0
+    assert not target.exists() or "migrated" not in target.read_text()
+
+
+def test_the_log_guard_runs_a_module_with_its_arguments(tmp_path: Path) -> None:
+    bench = _sandboxed_bench(tmp_path)
+
+    result = subprocess.run(
+        [*bench.python_argv, "-c", "import sys; print(sys.argv)", "a", "b"],
+        cwd=bench.sites_path,
+        capture_output=True,
+        text=True,
+    )
+    module = subprocess.run(
+        [*bench.python_argv, "-m", "json.tool", "--compact"],
+        cwd=bench.sites_path,
+        input='{"a": 1}',
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "['-c', 'a', 'b']"
+    assert module.stdout.strip() == '{"a":1}'
+
+
+def test_a_package_planted_in_sites_does_not_run_through_the_log_guard(tmp_path: Path) -> None:
+    bench = _sandboxed_bench(tmp_path)
+    marker = tmp_path / "planted-code-ran"
+    (bench.sites_path / "json").mkdir()
+    (bench.sites_path / "json" / "__init__.py").write_text(f"open({str(marker)!r}, 'w').close()\n")
+
+    subprocess.run([*bench.python_argv, "-c", "import json"], cwd=bench.sites_path, capture_output=True)
+
+    assert not marker.exists()
