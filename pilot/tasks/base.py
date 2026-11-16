@@ -64,6 +64,8 @@ class Task:
     is_cancellable_while_running: ClassVar[bool] = True
     # Turn off to keep a task out of listings; it stays readable by task id.
     is_listed: ClassVar[bool] = True
+    # Fixed resources the task always holds, such as "database-server".
+    static_resource_keys: ClassVar[tuple[str, ...]] = ()
     # Non-sensitive queue args safe to record in the audit entry.
     _AUDIT_ARG_KEYS: ClassVar[tuple[str, ...]] = (
         "site",
@@ -88,6 +90,24 @@ class Task:
 
         return os.environ.get(TASK_ID_ENV, "")
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active; a task that needs one of them is refused."""
+        return list(self.static_resource_keys)
+
+    @staticmethod
+    def get_site_resource_key(name: str) -> str:
+        """The resource key of a site."""
+        return f"site:{name.lower()}"
+
+    @staticmethod
+    def get_host_resource_key(host: str) -> str:
+        """The host-wide resource key of a hostname, shared by every bench on the host."""
+        from pilot.internal.hostnames import normalize_host
+        from pilot.internal.tasks.store import HOST_RESOURCE_PREFIX
+
+        return f"{HOST_RESOURCE_PREFIX}{normalize_host(host)}"
+
     @classmethod
     def queue(
         cls,
@@ -98,13 +118,13 @@ class Task:
         resource_handoff_from: str | None = None,
         **args,
     ) -> str:
-        """Queue the task and return its ID."""
-        callbacks = cls._queue_callbacks(bench, args, callbacks)
+        """Queue the task and return its ID. `resource_key` replaces the task's own `resource_keys`."""
+        task = cls.get_queued_task(bench, args)
         task_id = bench.tasks.run_task(
             cls,
-            callbacks=callbacks,
+            callbacks=task.get_callbacks(callbacks),
             idempotency_key=idempotency_key,
-            resource_key=resource_key,
+            resource_key=task.resource_keys if resource_key is None else resource_key,
             resource_handoff_from=resource_handoff_from,
             **args,
         )
@@ -125,26 +145,22 @@ class Task:
         bench.audit_action("task", fields)
 
     @classmethod
-    def _queue_callbacks(
-        cls,
-        bench: "Bench",
-        args: dict,
-        explicit: "TaskCallbacks | None",
-    ) -> "TaskCallbacks | None":
-        """The callbacks of the task with these arguments; raise ValueError for a missing argument."""
+    def get_queued_task(cls, bench: "Bench", args: dict) -> "Task":
+        """The task these queue arguments describe; raise ValueError for a missing argument."""
         from pilot.internal.tasks.authoring import required_task_args
-        from pilot.tasks.callbacks import task_callbacks_for
 
         if missing := [name for name in required_task_args(cls) if name not in args]:
             raise ValueError(f"Command {cls.command!r} requires arg {missing[0]!r}")
-        constructor_args = cls._constructor_args(args)
-        task = cls(bench=bench, bench_root=bench.path, **constructor_args)
-        declared = task_callbacks_for(task)
+        return cls(bench=bench, bench_root=bench.path, **cls._constructor_args(args))
+
+    def get_callbacks(self, explicit: "TaskCallbacks | None") -> "TaskCallbacks | None":
+        """The callbacks this task declares, with explicit ones taking precedence."""
+        from pilot.tasks.callbacks import task_callbacks_for
+
+        declared = task_callbacks_for(self)
         if not declared:
             return explicit
-        if explicit:
-            return {**declared, **explicit}
-        return declared
+        return {**declared, **explicit} if explicit else declared
 
     @classmethod
     def _constructor_args(cls, args: dict) -> dict:

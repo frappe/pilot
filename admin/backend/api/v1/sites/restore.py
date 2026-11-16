@@ -70,7 +70,7 @@ def restore_site_from_upload(name: str):
             if upload := request.files.get(field):
                 upload.save(upload_dir / upload_file_name(field, upload.filename or ""))
         response = current_app.make_response(
-            _queue(bench_root, name, parts, {name}, upload_dir=str(upload_dir), idempotent=False)
+            _queue(bench_root, name, parts, upload_dir=str(upload_dir), idempotent=False)
         )
     except Exception:
         shutil.rmtree(upload_dir, ignore_errors=True)
@@ -92,7 +92,7 @@ def _restore_from_chunked_upload(bench_root: Path, name: str, parts: list[str], 
     except BenchError as error:
         return _invalid(str(error))
     response = current_app.make_response(
-        _queue(bench_root, name, parts, {name}, upload_dir=str(upload_dir), idempotent=False)
+        _queue(bench_root, name, parts, upload_dir=str(upload_dir), idempotent=False)
     )
     if response.status_code >= 400:
         shutil.rmtree(upload_dir, ignore_errors=True)
@@ -110,7 +110,7 @@ def _restore_from_bench_site(bench_root: Path, name: str, parts: list[str], data
         return site_not_found()
     if not isinstance(timestamp, str) or (timestamp and not _TIMESTAMP_RE.fullmatch(timestamp)):
         return _invalid("The backup timestamp is not valid.")
-    return _queue(bench_root, name, parts, {name, source}, source_site=source, backup_timestamp=timestamp)
+    return _queue(bench_root, name, parts, source_site=source, backup_timestamp=timestamp)
 
 
 @sites_bp.post("/<name>/actions/remote-backups")
@@ -147,8 +147,12 @@ def _restore_from_remote(bench_root: Path, name: str, parts: list[str], data: di
     _, failure = _signed_in_remote(data)
     if failure:
         return failure
-    source = {"remote_site": data["remote_site"], "remote_password": data["password"], "backup_timestamp": timestamp}
-    return _queue(bench_root, name, parts, {name}, **source)
+    source = {
+        "remote_site": data["remote_site"],
+        "remote_password": data["password"],
+        "backup_timestamp": timestamp,
+    }
+    return _queue(bench_root, name, parts, **source)
 
 
 def _restore_from_frappe_cloud(bench_root: Path, name: str, parts: list[str], data: dict):
@@ -169,7 +173,6 @@ def _restore_from_frappe_cloud(bench_root: Path, name: str, parts: list[str], da
         bench_root,
         name,
         parts,
-        {name},
         frappe_cloud_backup=backup,
         frappe_cloud_secret_urls=links,
         frappe_cloud_token=client.token,
@@ -197,7 +200,7 @@ def _signed_in_remote(data: dict):
     return remote, None
 
 
-def _queue(bench_root: Path, name: str, parts: list[str], sites: set[str], idempotent: bool = True, **source):
+def _queue(bench_root: Path, name: str, parts: list[str], idempotent: bool = True, **source):
     """`idempotent` is off for uploads: a replayed key would leave the new upload unused."""
     try:
         task_id = RestoreSiteTask.queue(
@@ -205,7 +208,6 @@ def _queue(bench_root: Path, name: str, parts: list[str], sites: set[str], idemp
             site=name,
             parts=parts,
             idempotency_key=ApiRequest.get_idempotency_key() if idempotent else None,
-            resource_key=[f"site:{site.lower()}" for site in sorted(sites)],
             skip_failing_patches=_skips_failing_patches(),
             **source,
         )

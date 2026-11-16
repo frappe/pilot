@@ -9,7 +9,7 @@ from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.api.v1.benches import benches_bp
 from admin.backend.api.v1.benches.support import BENCH_NAME_RE, guard_bench_management, target_bench_dir
 from admin.backend.api.v1.sites import sites_bp
-from admin.backend.api.v1.sites.shared import host_resource_key, task_failure
+from admin.backend.api.v1.sites.shared import task_failure
 from admin.backend.providers.apps import AppProvider
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
@@ -102,7 +102,6 @@ def clone_bench(name: str):
             branch=branch,
             app_branches=app_branches,
             idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=[f"bench:{name}", f"bench:{target}"],
         )
     except TaskConflictError as error:
         return task_failure(error)
@@ -153,7 +152,6 @@ def clone_site(name: str):
             target_bench=bench_name,
             admin_password=password,
             idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=[f"site:{name.lower()}", f"bench:{bench_name}", host_resource_key(target)],
         )
     except TaskConflictError as error:
         return task_failure(error)

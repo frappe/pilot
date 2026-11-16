@@ -149,7 +149,11 @@ Explicit callbacks passed to `queue()` override callbacks declared on the task.
 
 ## Idempotency
 
-Use `idempotency_key` when duplicate submissions should return the same task. Use `resource_key` when only one active task should own a resource.
+Use `idempotency_key` when duplicate submissions should return the same task.
+
+## Resource keys
+
+A task declares the resources it holds while queued or running in its `resource_keys` property. `Task.queue()` refuses the task with `TaskConflictError` while another active task holds one of them. Build site and hostname keys with `get_site_resource_key()` and `get_host_resource_key()`; set `static_resource_keys` for fixed keys such as `"database-server"`. Pass `resource_key=` to `queue()` only to replace the task's own keys, as a migration chain does with its operation's keys.
 
 Required submit-only args can be named in `required_submit_args` when the runner needs a value that is not a dataclass constructor field.
 
@@ -196,18 +200,18 @@ For example, an admin API route:
 task_id = WizardSetupTask.queue(bench)
 ```
 
-`Task.queue()` in `pilot/tasks/base.py:65-81` does almost nothing itself — it forwards to `bench.tasks`, which is a `pilot.tasks.base.TaskRunner` (the facade), which forwards again to the real engine:
+`Task.queue()` in `pilot/tasks/base.py` builds the task to read its callbacks and resource keys, then forwards to `bench.tasks`, which is a `pilot.tasks.base.TaskRunner` (the facade), which forwards again to the real engine:
 
 ```python
 # pilot/tasks/base.py
 @classmethod
 def queue(cls, bench, callbacks=None, idempotency_key=None, resource_key=None, **args) -> str:
-    callbacks = cls._queue_callbacks(bench, args, callbacks)
+    task = cls.get_queued_task(bench, args)
     return bench.tasks.run_task(
         cls,
-        callbacks=callbacks,
+        callbacks=task.get_callbacks(callbacks),
         idempotency_key=idempotency_key,
-        resource_key=resource_key,
+        resource_key=task.resource_keys if resource_key is None else resource_key,
         **args,
     )
 ```

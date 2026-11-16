@@ -320,7 +320,7 @@ def my_ip():
 def change_admin_domain():
     """Queue an admin hostname change."""
     from admin.backend.api.responses import accepted_task_response
-    from admin.backend.api.v1.sites.shared import host_resource_key, task_failure
+    from admin.backend.api.v1.sites.shared import task_failure
     from pilot.internal.validators import validate_hostname
     from pilot.tasks.change_admin_domain import ChangeAdminDomainTask
 
@@ -338,19 +338,9 @@ def change_admin_domain():
     if tls is not None and not isinstance(tls, bool):
         return error_response("invalid_settings", "tls must be true or false.", 422)
 
-    bench = Bench(bench_root)
-    resources = ["admin-domain", host_resource_key(domain)]
-    if bench.config.admin.domain:
-        resources.append(host_resource_key(bench.config.admin.domain))
-
     try:
         task_id = ChangeAdminDomainTask.queue(
-            bench,
-            domain=domain,
-            tls=tls,
-            idempotency_key=ApiRequest.get_idempotency_key(),
-            # Hold both hostnames until the old provider route is released.
-            resource_key=resources,
+            Bench(bench_root), domain=domain, tls=tls, idempotency_key=ApiRequest.get_idempotency_key()
         )
     except Exception as error:
         return task_failure(error)

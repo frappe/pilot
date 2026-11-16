@@ -16,6 +16,11 @@ class NewSiteTask(Task):
     db_type: str | None = None
     apps: list[str] = field(default_factory=list)
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """Holds the new site and its hostname."""
+        return [self.get_site_resource_key(self.name), self.get_host_resource_key(self.name)]
+
     def run(self) -> None:
         """Get missing apps and create the site."""
         self.require_production_privileges()

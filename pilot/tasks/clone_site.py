@@ -13,6 +13,15 @@ class CloneSiteTask(Task):
     target_bench: str
     admin_password: Annotated[str, Arg(cli=False)]
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active."""
+        return [
+            self.get_site_resource_key(self.site),
+            f"bench:{self.target_bench}",
+            self.get_host_resource_key(self.name),
+        ]
+
     @step("clone", lambda self: f"Clone {self.site} into {self.name}")
     def run(self) -> None:
         """Clone the site to the target bench."""

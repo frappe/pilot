@@ -16,7 +16,6 @@ from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.login import no_store as _no_store
 from admin.backend.api.v1.sites.login import unreachable_host_hint
 from admin.backend.api.v1.sites.shared import (
-    host_resource_key,
     internal_error,
     invalid_fields,
     malformed_body,
@@ -158,7 +157,6 @@ def create_site():
             admin_password=admin_password,
             apps=apps,
             idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=[f"site:{name.lower()}", host_resource_key(name)],
         )
     except Exception as error:
         return task_failure(error)
@@ -179,7 +177,6 @@ def drop_site(name: str):
             site=name,
             no_backup=request.args.get("no_backup") in ("1", "true"),
             idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return task_failure(error)
@@ -217,13 +214,6 @@ def rename_site(name: str):
             keep_old_hostname=keep_old_hostname,
             make_primary=make_primary,
             idempotency_key=ApiRequest.get_idempotency_key(),
-            # Hold both hostnames until the old provider route is retained or released.
-            resource_key=[
-                f"site:{name.lower()}",
-                f"site:{new_name.lower()}",
-                host_resource_key(name),
-                host_resource_key(new_name),
-            ],
         )
     except Exception as error:
         return task_failure(error)
@@ -251,7 +241,6 @@ def reinstall_site(name: str):
             site=name,
             admin_password=admin_password,
             idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return task_failure(error)
@@ -267,10 +256,7 @@ def clear_cache(name: str):
         return site_not_found()
     try:
         task_id = ClearCacheTask.queue(
-            Bench(bench_root),
-            site=name,
-            idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=f"site:{name.lower()}",
+            Bench(bench_root), site=name, idempotency_key=ApiRequest.get_idempotency_key()
         )
     except Exception as error:
         return task_failure(error)
@@ -286,11 +272,7 @@ def build_assets(name: str):
         return site_not_found()
     try:
         task_id = BuildTask.queue(
-            Bench(bench_root),
-            site=name,
-            idempotency_key=ApiRequest.get_idempotency_key(),
-            # The built assets are shared by every site, as an update's are.
-            resource_key=[f"site:{name.lower()}", "bench:update"],
+            Bench(bench_root), site=name, idempotency_key=ApiRequest.get_idempotency_key()
         )
     except Exception as error:
         return task_failure(error)

@@ -27,13 +27,12 @@ class SwitchBranchTask(Task):
             branch=branch,
             sites=sites,
             idempotency_key=idempotency_key,
-            resource_key=cls.migration_locks(sites),
         )
 
-    @staticmethod
-    def migration_locks(sites: list[str]) -> list[str]:
+    @property
+    def resource_keys(self) -> list[str]:
         """The locks a branch switch holds."""
-        return ["bench:update", *(f"site:{site.lower()}" for site in sites)]
+        return ["bench:update", *(self.get_site_resource_key(site) for site in self.sites)]
 
     def run(self) -> None:
         """Switch the app branch, install it and build its assets."""
@@ -65,8 +64,10 @@ class SwitchBranchTask(Task):
         if not self.sites or not self.running_task_id:
             return
         held = set(TaskStore(self.bench_root).read_metadata(self.running_task_id).get("resource_keys") or [])
-        if not set(self.migration_locks(self.sites)) <= held:
-            raise BenchError("Queue a branch switch with SwitchBranchTask.queue_switch, which takes the site locks.")
+        if not set(self.resource_keys) <= held:
+            raise BenchError(
+                "Queue a branch switch with SwitchBranchTask.queue_switch, which takes the site locks."
+            )
 
     @on_success
     def reload_workers(self) -> dict:
@@ -114,7 +115,9 @@ class SwitchBranchTask(Task):
 
         if not self.sites:
             return
-        switched_app = AppRevision(name=self.name, sha=previous_sha, updated_sha=new_sha, branch=previous_branch)
+        switched_app = AppRevision(
+            name=self.name, sha=previous_sha, updated_sha=new_sha, branch=previous_branch
+        )
         operation = self.bench.migrations.create_site_migrate(*self.sites, switched_app=switched_app)
         operation.begin(handoff_from=self.running_task_id or None)
         print(f"Queued migration {operation.id} for {', '.join(self.sites)}.")

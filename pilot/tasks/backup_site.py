@@ -21,6 +21,11 @@ class BackupSiteTask(Task):
     with_files: bool = False
     automatic: bool = False
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active."""
+        return [self.get_site_resource_key(self.site)]
+
     @cached_property
     def site_record(self) -> Site:
         """The site."""

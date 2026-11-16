@@ -10,6 +10,7 @@ from pilot.tasks import Task, step
 @dataclass(kw_only=True)
 class RestartDatabaseTask(Task):
     command: ClassVar[str] = "restart-database"
+    static_resource_keys: ClassVar[tuple[str, ...]] = ("database-server",)
     is_cancellable_while_running: ClassVar[bool] = False
 
     @step("restart", "Restarting MariaDB and checking its health")
