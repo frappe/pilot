@@ -165,11 +165,10 @@ def create_update():
 
 
 def _begin(bench: Bench, operation: MigrationOperation):
-    """Start the operation's task chain, cleaning up the record if queuing fails."""
+    """Start the operation's task chain."""
     try:
         task_id = operation.begin()
     except Exception as error:
-        bench.migrations.delete(operation.id)
         return task_failure(error)
     return _accepted(operation, task_id)
 
