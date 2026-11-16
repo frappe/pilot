@@ -111,14 +111,15 @@ class GitHubProvider(GitProvider):
             if "refs/heads/" in line
         ]
 
-    def has_branch(self, full_name: str, branch: str) -> bool:
-        """Whether the repository has the branch."""
+    def get_branch_commit(self, full_name: str, branch: str) -> dict | None:
+        """The head commit of the branch, or None when it does not exist."""
         url = f"{self.api_base}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"
         try:
-            self._get_json(url, self._headers())
+            data, _ = self._get_json(url, self._headers())
         except GitProviderError:
-            return False
-        return True
+            return None
+        lines = (data.get("commit", {}).get("commit", {}).get("message") or "").splitlines()
+        return {"sha": data.get("commit", {}).get("sha", ""), "message": lines[0] if lines else ""}
 
     def get_default_branch(self, full_name: str) -> str:
         """The default branch of a repository."""
