@@ -13,6 +13,7 @@ import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import type { MigrationAccepted, MigrationSummary } from '@/types/migrations'
 import { processLine } from '@/utils/ansi'
 import { errorMessage } from '@/utils/error'
+import { knownErrorMessage } from '@/utils/knownErrors'
 import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
 import { opTitle, patchSkipped, pendingActionLabel, skippedPatches } from '@/utils/updateFormat'
 
@@ -80,6 +81,12 @@ const showsFailure = computed(
     isAttention.value ||
     (['reverted', 'dismissed'].includes(op.value?.state || '') && !!op.value?.diagnosis),
 )
+
+const failureMessage = computed(() => {
+  const diagnosis = op.value?.diagnosis
+
+  return knownErrorMessage(diagnosis?.message, diagnosis?.output_excerpt) ?? diagnosis?.message
+})
 
 const showOutput = ref(false)
 const outputLines = computed(() =>
@@ -318,7 +325,7 @@ onUnmounted(() => clearTimeout(timer))
               @dismiss="confirmDismiss = true"
             >
               <template #description>
-                <p v-if="op.diagnosis?.message">{{ op.diagnosis.message }}</p>
+                <p v-if="failureMessage">{{ failureMessage }}</p>
 
                 <p v-if="op.diagnosis?.patch" class="mt-1 font-mono text-xs">
                   {{ op.diagnosis.patch }}{{ patchAlreadySkipped ? ' · skipped' : '' }}
