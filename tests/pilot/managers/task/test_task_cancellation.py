@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from pilot.core.notification import events
 from pilot.exceptions import TaskConflictError, TaskNotRunningError
 from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
 from pilot.internal.tasks.process import TaskProcess, TaskProcessRecord
@@ -220,6 +221,37 @@ def test_cancel_kills_nested_command_session(tmp_path: Path) -> None:
         stop_process_group(task)
 
 
+def test_cancel_lets_the_cancel_callback_finish(tmp_path: Path) -> None:
+    marker = tmp_path / "callback.done"
+    ready = tmp_path / "wrapper.ready"
+    callback_code = "import sys,time; time.sleep(1.5); open(sys.argv[1], 'w').write('done')"
+    wrapper_code = (
+        "import os,signal,subprocess,sys; "
+        "signal.signal(signal.SIGTERM, lambda *_: None); "
+        "command = subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+        "open(sys.argv[3], 'w').close(); command.wait(); "
+        "subprocess.run([sys.executable,'-c',sys.argv[1],sys.argv[2]], start_new_session=True, "
+        "env={**os.environ,'BENCH_TASK_CALLBACK':'1'})"
+    )
+    argv = [sys.executable, "-c", wrapper_code, callback_code, str(marker), str(ready)]
+    store = create_running_task(tmp_path)
+    task = start_owned_process(store, argv)
+
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        started = time.monotonic()
+        TaskProcess(tmp_path).cancel(TASK_ID, grace_seconds=1.0)
+        assert time.monotonic() - started < 1.5
+        task.wait(timeout=10)
+
+        assert marker.read_text() == "done"
+        assert store.read_status(TASK_ID) == TaskStatus.KILLED
+    finally:
+        stop_process_group(task)
+
+
 def test_cancel_does_not_signal_a_stale_process_identity(tmp_path: Path) -> None:
     store = create_running_task(tmp_path)
     argv = [sys.executable, "-c", "import time; time.sleep(60)"]
@@ -263,7 +295,11 @@ def test_cancel_fails_closed_for_malformed_process_identity(
     assert (task_dir / "process.json").exists()
 
 
-def test_a_task_claimed_by_a_worker_that_stopped_before_starting_it_is_interrupted(tmp_path: Path) -> None:
+def test_a_task_claimed_by_a_worker_that_stopped_before_starting_it_is_interrupted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reported = []
+    monkeypatch.setattr(events, "task_failed", lambda bench_root, meta: reported.append(meta["task_id"]))
     store = create_running_task(tmp_path)
     assert not (store.task_dir(TASK_ID) / "process.json").exists()
 
@@ -271,3 +307,4 @@ def test_a_task_claimed_by_a_worker_that_stopped_before_starting_it_is_interrupt
 
     assert store.read_status(TASK_ID) == TaskStatus.FAILED
     assert store.read_metadata(TASK_ID)["failure"] == {"code": "task_interrupted"}
+    assert reported == [TASK_ID]

@@ -101,6 +101,7 @@ class TaskRunner:
                 idempotency_digest,
                 payload.request_fingerprint,
                 resource_key=resource_key,
+                resource_handoff_from=resource_handoff_from,
             )
             if not creation.created:
                 return SubmissionResult(creation.task_id, False)
@@ -120,7 +121,7 @@ class TaskRunner:
         """Wake the worker and purge old tasks; a failure here does not fail the submit."""
         for operation in (
             TaskWorkerControl(self._bench_root).wake,
-            lambda: self._store.purge_terminal(TASK_RETENTION_LIMIT),
+            lambda: self._store.purge_terminal(TASK_RETENTION_LIMIT, is_command_listed),
         ):
             try:
                 operation()
@@ -144,8 +145,9 @@ class TaskRunner:
                 TaskStatus.KILLED,
                 {"finished_at": datetime.now(UTC).isoformat()},
             ):
-                current = self._store.read_status(task_id)
-                raise TaskNotRunningError(f"Task is not active: {task_id} (status={current.value})")
+                # The task started or ended since the status read; status only moves forward.
+                self.kill(task_id)
+                return
             self._store.remove_private_files(task_id, "secrets.json")
             try:
                 task_workers.wake(self._bench_root)
@@ -177,9 +179,13 @@ def runner_class() -> type:
 @functools.cache
 def task_registry() -> tuple[dict[str, type[Task]], dict[str, list[str]]]:
     """Every task class by command, with each command's required arguments."""
-    tasks = discover_tasks()
-    jobs = {cls.command: cls for cls in tasks}
-    required_args = {cls.command: required_task_args(cls) for cls in tasks}
+    jobs: dict[str, type[Task]] = {}
+    for cls in discover_tasks():
+        if jobs.setdefault(cls.command, cls) is not cls:
+            raise ValueError(
+                f"Task command {cls.command!r} is declared by both {jobs[cls.command]} and {cls}"
+            )
+    required_args = {command: required_task_args(cls) for command, cls in jobs.items()}
     return jobs, required_args
 
 

@@ -15,6 +15,8 @@ import pilot.internal.tasks.store as task_store_module
 import pilot.internal.tasks.wrapper as wrapper_module
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
+from pilot.internal.tasks.models import TaskStatus
+from pilot.internal.tasks.process import TaskProcess
 from pilot.internal.tasks.wrapper import callback_handler, run_with_syslog_output
 from pilot.managers.task.reader import TaskReader
 from pilot.tasks import TaskRunner
@@ -186,7 +188,7 @@ def test_submit_returns_published_task_when_housekeeping_fails(
         housekeeping.append(("wake", bench_root))
         raise RuntimeError("wake failed")
 
-    def fail_purge(_store, limit: int) -> None:
+    def fail_purge(_store, limit: int, _is_listed) -> None:
         housekeeping.append(("purge", limit))
         raise OSError("purge failed")
 
@@ -423,6 +425,30 @@ def test_kill_cancels_queued_task_without_pid(tmp_path: Path) -> None:
     TaskRunner(tmp_path).kill(TASK_ID)
 
     assert (task_dir / "status").read_text() == "killed"
+
+
+def test_kill_stops_a_queued_task_that_starts_during_the_kill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("queued")
+    original_transition = task_store_module.TaskStore.transition
+
+    def start_first(store, task_id, expected, target, updates=None):
+        if expected == TaskStatus.QUEUED:
+            original_transition(store, task_id, TaskStatus.QUEUED, TaskStatus.RUNNING)
+            return False
+        return original_transition(store, task_id, expected, target, updates)
+
+    cancelled = []
+    monkeypatch.setattr(task_store_module.TaskStore, "transition", start_first)
+    monkeypatch.setattr(TaskProcess, "cancel", lambda _process, task_id: cancelled.append(task_id))
+
+    TaskRunner(tmp_path).kill(TASK_ID)
+
+    assert cancelled == [TASK_ID]
 
 
 def test_kill_rejects_missing_task(tmp_path: Path) -> None:

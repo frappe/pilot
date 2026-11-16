@@ -136,8 +136,10 @@ class TaskReader:
         self._files = TaskFiles(self._bench_root / "tasks")
         self._queue = TaskQueue(bench_root)
 
-    def list_tasks(self, limit: int | None = 50, include_unlisted: bool = False) -> list[TaskInfo]:
-        """The newest tasks."""
+    def list_tasks(
+        self, limit: int | None = 50, include_unlisted: bool = False, status: TaskStatus | None = None
+    ) -> list[TaskInfo]:
+        """The newest tasks, only those in `status` when it is given."""
         from pilot.internal.tasks.runner import is_command_listed
 
         tasks: list[TaskInfo] = []
@@ -147,6 +149,8 @@ class TaskReader:
                 task = _read_task_dir(self, entry, queue_positions)
             except Exception as exc:
                 logging.debug("Skipping unreadable task directory %s: %s", entry, exc)
+                continue
+            if status is not None and task.status != status:
                 continue
             if include_unlisted or is_command_listed(task.command):
                 tasks.append(task)

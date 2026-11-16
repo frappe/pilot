@@ -42,12 +42,12 @@ class ExampleTask(Task):
         self.bench.site(self.site).migrate()
 
     @on_success
-    def refresh_site(self) -> dict:
-        return {"site": self.site}
+    def reload_workers(self) -> dict:
+        return {"web_only": True}
 
     @on_failure
-    def reload_task_list(self) -> dict:
-        return {}
+    def disable_site_ssl(self) -> dict:
+        return {"site": self.site}
 ```
 
 `command` is the stable task name stored in task records. Constructor fields are validated before submission.
@@ -143,7 +143,7 @@ Call `self.step_failed()` only when a task handles an error internally and still
 
 ## Callbacks
 
-`@on_success`, `@on_failure`, and `@on_cancel` take no arguments. The decorated method returns callback args, and the method name becomes the operation with underscores converted to hyphens.
+`@on_success`, `@on_failure`, and `@on_cancel` take no arguments. The decorated method returns callback args, and the method name becomes the operation with underscores converted to hyphens. The operation must exist in `CallbackOperations.operations` (`pilot/internal/tasks/callbacks.py`); an unknown operation fails at queue time with `ValueError`.
 
 Return `None` to skip a callback for that task instance.
 

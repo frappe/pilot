@@ -38,7 +38,6 @@ def test_command_argv_migrate(tmp_path: Path) -> None:
     assert "mysite.localhost" in argv
 
 
-
 def test_command_argv_clear_cache(tmp_path: Path) -> None:
     argv = task_argv(tmp_path, "clear-cache", {"site": "mysite.localhost"})
     assert argv[0] == sys.executable
@@ -181,7 +180,6 @@ def test_command_argv_update(tmp_path: Path) -> None:
     assert str(tmp_path) in argv
 
 
-
 def test_command_argv_switch_branch(tmp_path: Path) -> None:
     argv = task_argv(tmp_path, "switch-branch", {"name": "gameplan", "branch": "develop"})
     assert argv[0] == sys.executable
@@ -208,7 +206,6 @@ def test_command_argv_unknown_command_raises(tmp_path: Path) -> None:
 def test_command_argv_missing_site_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="site"):
         TaskRunner(tmp_path).run("migrate", {"operation_id": "op123"})
-
 
 
 def test_command_argv_install_app_requires_app(tmp_path: Path) -> None:
@@ -719,3 +716,15 @@ def test_provisioning_site_names_cover_active_site_creation_only(tmp_path: Path)
         names = TaskReader(tmp_path).get_provisioning_site_names()
 
     assert names == {"new.local", "copy.local"}
+
+
+def test_task_registry_rejects_a_duplicate_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.tasks.build import BuildTask
+
+    class OtherBuildTask(BuildTask):
+        pass
+
+    monkeypatch.setattr(task_runner_module, "discover_tasks", lambda: [BuildTask, BuildTask, OtherBuildTask])
+
+    with pytest.raises(ValueError, match="'build' is declared by both"):
+        task_runner_module.task_registry.__wrapped__()

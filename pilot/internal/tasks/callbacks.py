@@ -225,7 +225,7 @@ class BoundedCallback:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
-            env={**os.environ, "BENCH_TASK_LAUNCH_ID": launch_id},
+            env={**os.environ, "BENCH_TASK_LAUNCH_ID": launch_id, "BENCH_TASK_CALLBACK": "1"},
         )
         inspector = ProcessInspector()
         identity = None

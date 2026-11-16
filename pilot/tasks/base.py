@@ -158,9 +158,12 @@ class Task:
         args: dict,
         explicit: "TaskCallbacks | None",
     ) -> "TaskCallbacks | None":
-        """The callbacks of the task with these arguments."""
+        """The callbacks of the task with these arguments; raise ValueError for a missing argument."""
+        from pilot.internal.tasks.authoring import required_task_args
         from pilot.tasks.callbacks import task_callbacks_for
 
+        if missing := [name for name in required_task_args(cls) if name not in args]:
+            raise ValueError(f"Command {cls.command!r} requires arg {missing[0]!r}")
         constructor_args = cls._constructor_args(args)
         task = cls(bench=bench, bench_root=bench.path, **constructor_args)
         declared = task_callbacks_for(task)
