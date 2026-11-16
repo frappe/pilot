@@ -191,3 +191,44 @@ def test_script_builds_frappe_s_framework_and_page_islands(tmp_path: Path, envir
         "node ui/vite/island/build-framework.js --production @ frappe",
         "node ui/vite/island/build-pages.js --production @ frappe",
     ]
+
+
+def make_repository(path: Path, branches: list[str]) -> None:
+    """A git repository with one commit on each of `branches`; the first is the default."""
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "-b", branches[0], str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(path), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "c"],
+        check=True,
+    )
+    for branch in branches[1:]:
+        subprocess.run(["git", "-C", str(path), "branch", branch], check=True)
+
+
+def test_script_checks_out_required_apps_next_to_the_app(tmp_path: Path, environment: dict[str, str]) -> None:
+    github = tmp_path / "github"
+    write_package(github / "frappe" / "frappe")
+    (github / "frappe" / "frappe" / "yarn.lock").write_text("")
+    make_repository(github / "frappe" / "frappe", ["develop"])
+    make_repository(github / "frappe" / "whatsapp", ["main", "develop"])
+    make_repository(github / "acme" / "telephony", ["main"])
+    app = tmp_path / "crm"
+    (app / "crm").mkdir(parents=True)
+    (app / "crm" / "hooks.py").write_text('required_apps = ["whatsapp", "acme/telephony"]\n')
+    make_repository(app, ["develop"])
+    # The build runs in apps/frappe, so it sees the required apps as siblings.
+    write_executable(
+        tmp_path / "bin" / "yarn",
+        YARN_STUB + 'echo "whatsapp $(git -C ../whatsapp branch --show-current), '
+        'telephony $(git -C ../telephony branch --show-current)" >> "$LOG"\n',
+    )
+
+    subprocess.run(
+        ["bash", str(SCRIPT), str(app), "develop", str(tmp_path / "out")],
+        env={**environment, "PILOT_GITHUB_URL": str(github)},
+        check=True,
+        capture_output=True,
+    )
+
+    assert read_calls(environment)[-1] == "whatsapp develop, telephony main"
