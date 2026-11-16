@@ -43,6 +43,15 @@ def _error_detail(body: bytes) -> str:
     return exception.split(":", 1)[-1].strip() if ":" in exception else exception.strip()
 
 
+def _status_message(status_code: int, body: bytes) -> str:
+    """The status, plus the body when it is short plain text. A proxy in front of Central,
+    such as Cloudflare, answers with plain text that names the block."""
+    text = " ".join(body.decode(errors="replace").split())
+    if not text or text.startswith("<") or len(text) > 200:
+        return f"Frappe Cloud returned HTTP {status_code}."
+    return f"Frappe Cloud returned HTTP {status_code}: {text}"
+
+
 class CentralClient:
     """Central transport using this host's pilot token."""
 
@@ -105,7 +114,8 @@ class CentralClient:
         ``{"message": ...}`` envelope unwrapped. The caller decides what's reachable."""
         endpoint, token = self._credentials()
 
-        headers = {self.TOKEN_HEADER: token}
+        # Cloudflare's Browser Integrity Check blocks urllib's default User-Agent with HTTP 403.
+        headers = {self.TOKEN_HEADER: token, "User-Agent": "pilot"}
         body = None
         if data is not None:
             # Frappe dispatches a body-level cmd before the method in the URL.
@@ -134,9 +144,9 @@ class CentralClient:
             with urllib.request.urlopen(request, timeout=10) as response:
                 payload = json.loads(response.read().decode())
         except urllib.error.HTTPError as exc:
-            detail = _error_detail(exc.read())
+            body = exc.read()
             raise CentralClientError(
-                detail or f"Frappe Cloud returned HTTP {exc.code}.", status_code=exc.code
+                _error_detail(body) or _status_message(exc.code, body), status_code=exc.code
             ) from exc
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Frappe Cloud at {endpoint}: {exc.reason}") from exc
