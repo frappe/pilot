@@ -267,7 +267,7 @@ To recognize a new failure:
 
 `resolver_id` is reserved for a future suggestion lookup: once populated, it will key
 into a table of human-readable remediation text per `failure_kind`, shown next to
-`diagnosis.message` in `MigrationDetail.vue`. It is not read anywhere yet, so setting
+`diagnosis.message` in `UpdateDetail.vue`. It is not read anywhere yet, so setting
 it today has no visible effect — leave it `None` until that lookup exists.
 
 ## Recovery Actions
@@ -334,7 +334,7 @@ Starting an update or standalone migration returns both an operation identity an
 
 The global migration status button shows unresolved failures before active work, and active work before ordinary update availability.
 
-The list page filters by status through five tabs — All, Running, Attention, Completed, Closed — held in the `status` query parameter so a filtered view survives a reload. Running covers every in-flight state and Attention covers both `needs_attention` and `revert_failed`, Closed covers `reverted` and `dismissed`, groupings the `status` API parameter cannot express because it matches one state exactly; the list therefore filters client-side over the page it already fetched.
+The list page filters by status through five tabs — All, Running, Attention, Completed, Closed — held in the `status` query parameter (`all`, `active`, `attention`, `completed`, `closed`) so a filtered view survives a reload. Running covers every in-flight state, Attention covers `needs_attention` and `revert_failed`, and Closed covers `reverted`, `dismissed` and `stopped`. The `status` API parameter cannot express these groups because it matches one state exactly, so the list filters client-side over the page it already fetched. The groups are `FILTER_STATES` in `utils/updateFormat.ts`.
 
 The detail page groups the chain into a Server section and a Sites section, split on whether a `task_logs` entry names a site: bench-level tasks (`update`, `revert-apps`, `restart-services`) on one side, per-site ones under their site row on the other. Every entry carries the task's own `status`, which is how the UI marks the attempt that failed; it is `null` only when the task is no longer readable. The Target Apps card shows the original and updated commit and offers a GitHub comparison link when the app uses a GitHub repository.
 
@@ -365,8 +365,11 @@ pilot/tasks/
 admin/backend/api/v1/migrations.py
   migration history, detail, and recovery endpoints
 
-admin/frontend/dashboard/src/pages/migrations/
-  migration history and detail pages
+admin/frontend/dashboard/src/pages/updates/
+  update history (Updates.vue) and detail (UpdateDetail.vue) pages
+
+admin/frontend/dashboard/src/components/updates/UpdateFlow.vue
+  the stage and per-site progress view on the detail page
 ```
 
 When debugging, start with the operation JSON and its current state. Then follow the latest task ID for execution output.
