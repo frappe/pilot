@@ -49,3 +49,8 @@
     right: calc(0.5rem + env(safe-area-inset-right, 0px));
   }
 }
+
+.dialog-content[data-state] {
+  animation: none;
+  transform: none;
+}
