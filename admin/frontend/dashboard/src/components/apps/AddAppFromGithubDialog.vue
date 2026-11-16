@@ -15,7 +15,7 @@ import { useRouter } from 'vue-router'
 import { appsApi } from '@/api/apps'
 import { apiErrorMessage } from '@/api/client'
 import { gitApi } from '@/api/git'
-import type { GitConnection, GitRepository } from '@/types/git'
+import type { BranchCommit, GitConnection, GitRepository } from '@/types/git'
 import { branchComboboxOptions } from '@/utils/branchComboboxOptions'
 import { errorMessage } from '@/utils/error'
 import { openTaskDetailPage } from '@/utils/taskRoute'
@@ -72,7 +72,7 @@ const goToGithubSettings = () => {
 
 const resolving = ref(false)
 const foundName = ref('')
-const commit = ref<{ sha: string; message: string } | null>(null)
+const commit = ref<BranchCommit | null>(null)
 const canSubmit = computed(() =>
   Boolean(repo.value.trim() && branch.value.trim() && foundName.value && !resolving.value),
 )
