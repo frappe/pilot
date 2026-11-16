@@ -16,7 +16,7 @@ from pilot.integrations.git import (
     parse_github_owner_repo,
     resolve_app_name_from_repo,
 )
-from pilot.integrations.git.base import GitAuthError
+from pilot.integrations.git.base import GitAuthError, GitNotFoundError
 
 
 def test_github_provider_omits_auth_header_without_token() -> None:
@@ -215,7 +215,7 @@ def test_resolve_app_name_succeeds_with_hooks_file(tmp_path: Path) -> None:
     ]
     with patch("pilot.integrations.git.provider_for_repo", return_value=provider):
         resolved = resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
-    assert resolved == {"name": "myapp", "description": "A demo app"}
+    assert resolved == {"name": "myapp", "description": "A demo app", "commit": None}
 
 
 def test_resolve_app_name_defaults_description_when_missing(tmp_path: Path) -> None:
@@ -226,4 +226,28 @@ def test_resolve_app_name_defaults_description_when_missing(tmp_path: Path) -> N
     ]
     with patch("pilot.integrations.git.provider_for_repo", return_value=provider):
         resolved = resolve_app_name_from_repo(tmp_path, "https://github.com/acme/myapp")
-    assert resolved == {"name": "myapp", "description": ""}
+    assert resolved == {"name": "myapp", "description": "", "commit": None}
+
+
+def test_github_get_branch_commit_returns_sha_and_subject() -> None:
+    payload = {"commit": {"sha": "abc1234def", "commit": {"message": "fix: thing\n\nbody"}}}
+    provider = GitHubProvider(token="")
+    with patch.object(provider, "_get_json", return_value=(payload, {})) as get_json:
+        commit = provider.get_branch_commit("acme/myapp", "feature/x")
+    assert commit == {"sha": "abc1234def", "message": "fix: thing"}
+    assert get_json.call_args.args[0].endswith("/repos/acme/myapp/branches/feature%2Fx")
+
+
+def test_github_get_branch_commit_is_none_for_missing_branch() -> None:
+    provider = GitHubProvider(token="")
+    with patch.object(provider, "_get_json", side_effect=GitNotFoundError("HTTP 404")):
+        assert provider.get_branch_commit("acme/myapp", "nope") is None
+
+
+def test_github_get_branch_commit_raises_on_provider_outage() -> None:
+    provider = GitHubProvider(token="")
+    with (
+        patch.object(provider, "_get_json", side_effect=GitProviderError("HTTP 500")),
+        pytest.raises(GitProviderError),
+    ):
+        provider.get_branch_commit("acme/myapp", "main")

@@ -24,6 +24,10 @@ class GitProviderError(BenchError):
     """A provider API call failed for a non-auth reason."""
 
 
+class GitNotFoundError(GitProviderError):
+    """The provider API answered HTTP 404."""
+
+
 class BranchNotFoundError(GitProviderError):
     """The repository has no branch by that name."""
 
@@ -53,10 +57,13 @@ class GitProvider(abc.ABC):
     def list_branches(self, full_name: str) -> list[str]:
         """Return branch names for *full_name* (``owner/repo``)."""
 
-    def has_branch(self, full_name: str, branch: str) -> bool:
-        """Whether *branch* exists, asked of the provider rather than of the
-        branch list - a repository can have more branches than a page holds."""
-        return branch in self.list_branches(full_name)
+    def get_branch_commit(self, full_name: str, branch: str) -> dict | None:
+        """The head commit ``{"sha", "message"}`` of *branch*, or None when it
+        does not exist. Asked of the provider rather than of the branch list -
+        a repository can have more branches than a page holds."""
+        if branch not in self.list_branches(full_name):
+            return None
+        return {"sha": "", "message": ""}
 
     def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
         """Return raw text content from a repository ref."""
@@ -78,6 +85,8 @@ class GitProvider(abc.ABC):
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
                 raise GitAuthError(f"{self.name} rejected the token (HTTP {exc.code}).") from exc
+            if exc.code == 404:
+                raise GitNotFoundError(f"{self.name} API error (HTTP 404).") from exc
             raise GitProviderError(f"{self.name} API error (HTTP {exc.code}).") from exc
         except urllib.error.URLError as exc:
             raise GitProviderError(f"Could not reach {self.name}: {exc.reason}.") from exc
