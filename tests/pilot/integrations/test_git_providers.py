@@ -16,7 +16,7 @@ from pilot.integrations.git import (
     parse_github_owner_repo,
     resolve_app_name_from_repo,
 )
-from pilot.integrations.git.base import GitAuthError
+from pilot.integrations.git.base import GitAuthError, GitNotFoundError
 
 
 def test_github_provider_omits_auth_header_without_token() -> None:
@@ -240,5 +240,14 @@ def test_github_get_branch_commit_returns_sha_and_subject() -> None:
 
 def test_github_get_branch_commit_is_none_for_missing_branch() -> None:
     provider = GitHubProvider(token="")
-    with patch.object(provider, "_get_json", side_effect=GitProviderError("HTTP 404")):
+    with patch.object(provider, "_get_json", side_effect=GitNotFoundError("HTTP 404")):
         assert provider.get_branch_commit("acme/myapp", "nope") is None
+
+
+def test_github_get_branch_commit_raises_on_provider_outage() -> None:
+    provider = GitHubProvider(token="")
+    with (
+        patch.object(provider, "_get_json", side_effect=GitProviderError("HTTP 500")),
+        pytest.raises(GitProviderError),
+    ):
+        provider.get_branch_commit("acme/myapp", "main")

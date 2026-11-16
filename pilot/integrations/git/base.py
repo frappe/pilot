@@ -24,6 +24,10 @@ class GitProviderError(BenchError):
     """A provider API call failed for a non-auth reason."""
 
 
+class GitNotFoundError(GitProviderError):
+    """The provider API answered HTTP 404."""
+
+
 class BranchNotFoundError(GitProviderError):
     """The repository has no branch by that name."""
 
@@ -81,6 +85,8 @@ class GitProvider(abc.ABC):
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
                 raise GitAuthError(f"{self.name} rejected the token (HTTP {exc.code}).") from exc
+            if exc.code == 404:
+                raise GitNotFoundError(f"{self.name} API error (HTTP 404).") from exc
             raise GitProviderError(f"{self.name} API error (HTTP {exc.code}).") from exc
         except urllib.error.URLError as exc:
             raise GitProviderError(f"Could not reach {self.name}: {exc.reason}.") from exc

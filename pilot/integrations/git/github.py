@@ -8,6 +8,7 @@ import urllib.request
 
 from pilot.integrations.git.base import (
     GitAuthError,
+    GitNotFoundError,
     GitProvider,
     GitProviderError,
     basic_auth_config,
@@ -116,7 +117,7 @@ class GitHubProvider(GitProvider):
         url = f"{self.api_base}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"
         try:
             data, _ = self._get_json(url, self._headers())
-        except GitProviderError:
+        except GitNotFoundError:
             return None
         lines = (data.get("commit", {}).get("commit", {}).get("message") or "").splitlines()
         return {"sha": data.get("commit", {}).get("sha", ""), "message": lines[0] if lines else ""}
