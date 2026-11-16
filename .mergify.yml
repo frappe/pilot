@@ -1,0 +1,10 @@
+pull_request_rules:
+  - name: backport to master
+    conditions:
+      - label="backport-master"
+    actions:
+      backport:
+        branches:
+          - master
+        assignees:
+          - "{{ author }}"
