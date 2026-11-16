@@ -38,7 +38,8 @@ CONTROL_ENTRIES = (*CONTROL_DIRECTORIES, *CONTROL_FILES)
 # The bench folders a workload uses. The rest of the bench root, such as bench.toml, .credentials and the
 # admin's tasks/, stays outside the sandbox. Folders, because Linux detaches a file mount once Pilot
 # replaces the file by rename.
-WORKLOAD_DIRECTORIES = ("sites", "config", "logs", "pids", "chromium")
+# Frappe keeps the flow server's socket and pid file in flow-server/, and web connects to that socket.
+WORKLOAD_DIRECTORIES = ("sites", "config", "logs", "pids", "chromium", "flow-server")
 # The folder in logs/ that a workload sees as its logs/. Pilot's and systemd's own files stay outside it.
 WORKLOAD_LOGS = "workload"
 # The bench folders that hold code. The admin and the CLI run it outside the sandbox, so a workload
