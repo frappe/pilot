@@ -577,12 +577,9 @@ EOF
     chmod 644 /etc/logrotate.d/pilot
 }
 
-# The distro MariaDB package (Ubuntu 26.04 and others) ships an enforced
-# AppArmor profile for mariadbd that does not allow paths under ~/pilot, so
-# mariadb-install-db cannot read Pilot's my.cnf. The profile includes
-# local/mariadbd, so this adds the rootless server's own directories there.
-# MariaDB's own repo ships the profile empty, and a host without AppArmor has
-# no profile at all; both skip this.
+# The distro mariadbd AppArmor profile (Ubuntu 26.04) denies ~/pilot; it includes
+# local/mariadbd, where this keeps one block per bench user. An empty profile
+# (MariaDB's own repo) or no AppArmor skips it.
 install_mariadb_apparmor_override() {
     home="$(bench_home "$1")"
     apparmor_dir="${APPARMOR_DIR:-/etc/apparmor.d}"
@@ -590,16 +587,25 @@ install_mariadb_apparmor_override() {
     [ -n "$home" ] && [ -f "$profile" ] || return 0
     grep -q '^[[:space:]]*profile[[:space:]]' "$profile" || return 0
     echo "Allowing mariadbd to use Pilot's MariaDB directories for '$1'..."
+    override="$apparmor_dir/local/mariadbd"
+    begin="# BEGIN Pilot for '$1'"
+    end="# END Pilot for '$1'"
     mkdir -p "$apparmor_dir/local"
-    cat > "$apparmor_dir/local/mariadbd" <<EOF
-# Managed by Pilot install.sh for '$1'.
+    touch "$override"
+    {
+        awk -v begin="$begin" -v end="$end" '$0 == begin { skip = 1 } !skip { print } $0 == end { skip = 0 }' "$override"
+        cat <<EOF
+$begin
 owner $home/pilot/databases/ r,
 owner $home/pilot/databases/mariadb/ r,
 owner $home/pilot/databases/mariadb/** rwk,
 owner $home/pilot/system/logs/ r,
 owner $home/pilot/system/logs/** rw,
+$end
 EOF
-    chmod 644 "$apparmor_dir/local/mariadbd"
+    } > "$override.pilot"
+    mv "$override.pilot" "$override"
+    chmod 644 "$override"
     if command -v apparmor_parser >/dev/null 2>&1; then
         apparmor_parser -r "$profile"
     fi
