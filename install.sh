@@ -577,6 +577,34 @@ EOF
     chmod 644 /etc/logrotate.d/pilot
 }
 
+# The distro MariaDB package (Ubuntu 26.04 and others) ships an enforced
+# AppArmor profile for mariadbd that does not allow paths under ~/pilot, so
+# mariadb-install-db cannot read Pilot's my.cnf. The profile includes
+# local/mariadbd, so this adds the rootless server's own directories there.
+# MariaDB's own repo ships the profile empty, and a host without AppArmor has
+# no profile at all; both skip this.
+install_mariadb_apparmor_override() {
+    home="$(bench_home "$1")"
+    apparmor_dir="${APPARMOR_DIR:-/etc/apparmor.d}"
+    profile="$apparmor_dir/mariadbd"
+    [ -n "$home" ] && [ -f "$profile" ] || return 0
+    grep -q '^[[:space:]]*profile[[:space:]]' "$profile" || return 0
+    echo "Allowing mariadbd to use Pilot's MariaDB directories for '$1'..."
+    mkdir -p "$apparmor_dir/local"
+    cat > "$apparmor_dir/local/mariadbd" <<EOF
+# Managed by Pilot install.sh for '$1'.
+owner $home/pilot/databases/ r,
+owner $home/pilot/databases/mariadb/ r,
+owner $home/pilot/databases/mariadb/** rwk,
+owner $home/pilot/system/logs/ r,
+owner $home/pilot/system/logs/** rw,
+EOF
+    chmod 644 "$apparmor_dir/local/mariadbd"
+    if command -v apparmor_parser >/dev/null 2>&1; then
+        apparmor_parser -r "$profile"
+    fi
+}
+
 # `command -v` returns the bare name for shell builtins like `test`, but a
 # sudoers Cmnd must be a fully-qualified path or visudo rejects the whole file.
 # Mirror the runtime's shutil.which by taking only an absolute PATH match.
@@ -709,6 +737,7 @@ prepare_host() {
     install_nginx_include "$BENCH_USER"
     set_nginx_worker_user "$BENCH_USER"
     install_logrotate "$BENCH_USER"
+    install_mariadb_apparmor_override "$BENCH_USER"
     install_sudoers_grants "$BENCH_USER"
     install_build_swap_helper "$BENCH_USER"
 
