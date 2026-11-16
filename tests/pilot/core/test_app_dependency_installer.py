@@ -9,7 +9,12 @@ import pytest
 
 from pilot.core.app import App
 from pilot.core.app.dependency_installer import AppDependencyInstaller
-from pilot.exceptions import BenchError, DependencyResolutionError, RegistryUnavailableError
+from pilot.exceptions import (
+    AppValidationError,
+    BenchError,
+    DependencyResolutionError,
+    RegistryUnavailableError,
+)
 from pilot.integrations.marketplace import Marketplace, Resolver
 from tests.pilot.commands.test_commands import make_bench
 from tests.pilot.commands.test_get_app import make_resolver
@@ -187,3 +192,14 @@ def test_marketplace_dependencies_stay_when_the_checkout_declares_none(tmp_path:
         (bench.apps_path / "helpdesk" / "pyproject.toml").write_text(pyproject)
 
     assert AppDependencyInstaller(bench, app).get_declared_dependencies() is None
+
+
+def test_a_malformed_dependency_table_fails_instead_of_using_the_marketplace(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app = make_app(bench, "crm")
+    (bench.apps_path / "crm").mkdir(parents=True)
+    (bench.apps_path / "crm" / "pyproject.toml").write_text('[tool.bench]\nfrappe-dependencies = "16"\n')
+
+    with pytest.raises(AppValidationError, match="frappe-dependencies"):
+        AppDependencyInstaller(bench, app).get_declared_dependencies()

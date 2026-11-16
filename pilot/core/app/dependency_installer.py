@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import AppNotFoundError, AppValidationError, BenchError, DependencyResolutionError
+from pilot.exceptions import AppNotFoundError, BenchError, DependencyResolutionError
 from pilot.integrations.marketplace import Marketplace, Resolver
 
 if TYPE_CHECKING:
@@ -43,12 +43,9 @@ class AppDependencyInstaller:
         from pilot.core.app.validator.base import bench_table
         from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
 
-        try:
-            if "frappe-dependencies" not in bench_table(self.app):
-                return None
-            declared = DependencyDeclarationsCheck().get_frappe_dependencies(self.app)
-        except AppValidationError:
+        if "frappe-dependencies" not in bench_table(self.app):
             return None
+        declared = DependencyDeclarationsCheck().get_frappe_dependencies(self.app)
         return {name: specifier for name, specifier in declared.items() if name != "frappe"}
 
     def _find_resolver(self) -> Resolver | None:
