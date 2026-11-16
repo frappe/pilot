@@ -429,3 +429,41 @@ def test_a_linked_workload_logs_folder_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(BenchError, match="not a link"):
         PilotSandboxPaths.create_entries(bench)
+
+
+def _flow_server(manager: str = "supervisor") -> ProcessDefinition:
+    return ProcessDefinition(
+        name="frappe-flow_server",
+        argv=["/bin/flow"],
+        log_file=Path("/srv/b/logs/flow.log"),
+        env={"FLOW_SERVER_MANAGER": manager},
+    )
+
+
+def test_pilot_records_the_flow_server_manager_the_sandbox_keeps_frappe_from_writing(tmp_path: Path) -> None:
+    import json
+
+    from pilot.managers.processes.systemd import SystemdProcessManager
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True, exist_ok=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    config_path.write_text('{"db_host": "127.0.0.1"}')
+    manager = SystemdProcessManager(bench)
+
+    manager.record_flow_server_manager([_definition(), _flow_server()])
+
+    assert json.loads(config_path.read_text()) == {"db_host": "127.0.0.1", "flow_server_manager": "supervisor"}
+
+
+def test_a_bench_without_the_flow_server_keeps_its_common_site_config(tmp_path: Path) -> None:
+    from pilot.managers.processes.systemd import SystemdProcessManager
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True, exist_ok=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    config_path.write_text('{"db_host": "127.0.0.1"}')
+
+    SystemdProcessManager(bench).record_flow_server_manager([_definition()])
+
+    assert config_path.read_text() == '{"db_host": "127.0.0.1"}'

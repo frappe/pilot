@@ -64,6 +64,7 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         # Build and probe first, so a broken app declaration or sandbox leaves the current units in place.
         defs = self._prod_process_definitions()
         sandbox_properties = self.get_checked_sandbox_properties(defs)
+        self.record_flow_server_manager(defs)
 
         self._remove_units()
         renderer = SystemdRenderer(self.bench.config.name, self.database_service, sandbox_properties)
@@ -79,6 +80,22 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         self.changed_sockets = tuple(
             name for name, text in sockets_after.items() if sockets_before.get(name) != text
         )
+
+    def record_flow_server_manager(self, defs: list[ProcessDefinition]) -> None:
+        """Frappe's flow server writes in common_site_config.json that a process manager runs it, and the
+        sandbox mounts that file read-only. So Pilot writes it before the units start, and Frappe skips it."""
+        from pilot.config.common_site_config import read_common_site_config, update_common_site_config
+
+        manager = next(
+            (pd.env["FLOW_SERVER_MANAGER"] for pd in defs if "FLOW_SERVER_MANAGER" in pd.env), None
+        )
+        if (
+            manager is None
+            or read_common_site_config(self.bench.sites_path).get("flow_server_manager") == manager
+        ):
+            return
+        with update_common_site_config(self.bench.sites_path) as config:
+            config["flow_server_manager"] = manager
 
     @property
     def is_sandboxed(self) -> bool:
@@ -142,7 +159,9 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         # Folders an app declares in the bench: for every unit, or for one process.
         declared = [*write_paths, *(path for pd in defs or [] for path in pd.write_paths)]
         PilotSandboxPaths.create_entries(self.bench, declared)
-        properties = SystemdRenderer.get_sandbox_properties(self.bench.path, self.bench.path.parent, read_paths, write_paths)
+        properties = SystemdRenderer.get_sandbox_properties(
+            self.bench.path, self.bench.path.parent, read_paths, write_paths
+        )
         if error := self.get_python_error() or get_sandbox_error(properties):
             if production.sandbox is None:
                 logging.warning(

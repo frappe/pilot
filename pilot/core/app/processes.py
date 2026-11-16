@@ -126,7 +126,9 @@ class AppProcesses:
             raise self._error(f"process '{name}' frappe_command always runs in the sites directory.")
         sites_path = self.app.bench.sites_path
         arguments = self._get_argv(name, "frappe_command", declaration, sites_path)
-        return [*self.app.bench.frappe_call, "frappe", *arguments], sites_path
+        # A workload process, so not `bench.frappe_call`: that one starts runs outside the sandbox.
+        helper = [str(self.app.bench.python), "-m", "frappe.utils.bench_helper"]
+        return [*helper, "frappe", *arguments], sites_path
 
     def _get_argv(self, name: str, field: str, declaration: dict, working_dir: Path) -> list[str]:
         """The validated command of a process field."""

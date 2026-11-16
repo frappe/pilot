@@ -75,7 +75,14 @@ def test_frappe_command_runs_through_the_bench_helper_in_sites(tmp_path: Path) -
 
     (definition,) = app.processes.get_definitions()
 
-    assert definition.argv == [*app.bench.frappe_call, "frappe", "flow-server", "serve"]
+    assert definition.argv == [
+        str(app.bench.python),
+        "-m",
+        "frappe.utils.bench_helper",
+        "frappe",
+        "flow-server",
+        "serve",
+    ]
     assert definition.working_dir == app.bench.sites_path
     assert definition.env["MODE"] == "test"
 
@@ -114,7 +121,8 @@ def test_malformed_declaration_is_rejected(tmp_path: Path, pyproject: str) -> No
 def test_a_process_declares_sandbox_paths(tmp_path: Path) -> None:
     app = _app(
         tmp_path,
-        _SECTION + 'command = ["./stalwart"]\nread_paths = ["/opt/models"]\nwrite_paths = ["/var/lib/stalwart"]\n',
+        _SECTION
+        + 'command = ["./stalwart"]\nread_paths = ["/opt/models"]\nwrite_paths = ["/var/lib/stalwart"]\n',
     )
 
     (definition,) = app.processes.get_definitions()

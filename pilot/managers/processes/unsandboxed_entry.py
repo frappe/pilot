@@ -24,7 +24,7 @@ class LinkSafeLogs:
         def open_log(handler: logging.FileHandler):
             return guard.open_log(handler) or open_outside(handler)
 
-        logging.FileHandler._open = open_log
+        logging.FileHandler._open = open_log  # type: ignore[method-assign, assignment]
 
     def open_log(self, handler: logging.FileHandler):
         """The handler's open file, or None when the file is outside the bench."""
