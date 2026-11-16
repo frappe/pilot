@@ -231,20 +231,15 @@ class TaskStore:
         with self.locked():
             self._files.remove_files(task_id, names)
 
-    def purge_terminal(
-        self, limit: int, is_listed: Callable[[str], bool] = lambda command: True
-    ) -> list[str]:
-        """Delete the oldest finished tasks beyond the newest `limit`; return their ids.
-        Listed and unlisted commands keep `limit` tasks each, so polling cannot push out real history."""
+    def purge_terminal(self, limit: int, matches: Callable[[str], bool] = lambda command: True) -> list[str]:
+        """Delete the oldest finished tasks whose command matches, beyond the newest `limit`; return their ids."""
         if limit < 0:
             raise ValueError("Task retention limit must not be negative")
         with self.locked():
-            groups: dict[bool, list[tuple[tuple[float, str], str]]] = {True: [], False: []}
-            for sort_key, task_id, command in self._terminal_tasks_locked():
-                groups[is_listed(command)].append((sort_key, task_id))
-            to_delete = sorted(
-                old for group in groups.values() for old in group[: max(0, len(group) - limit)]
-            )
+            terminal = [
+                (key, task_id) for key, task_id, command in self._terminal_tasks_locked() if matches(command)
+            ]
+            to_delete = terminal[: max(0, len(terminal) - limit)]
             for _, task_id in to_delete:
                 shutil.rmtree(self.task_dir(task_id))
             return [task_id for _, task_id in to_delete]

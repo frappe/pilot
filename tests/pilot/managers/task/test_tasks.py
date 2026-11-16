@@ -12,7 +12,7 @@ import pytest
 
 import pilot.internal.tasks.runner as task_runner_module
 import pilot.managers.task.reader as task_reader_module
-from pilot.internal.tasks.runner import TASK_RETENTION_LIMIT
+from pilot.internal.tasks.runner import UNLISTED_TASK_RETENTION_LIMIT
 from pilot.internal.tasks.store import TaskStore
 from pilot.managers.task.models import TaskStatus
 from pilot.managers.task.reader import TaskReader, collapse_cr
@@ -638,53 +638,30 @@ def test_read_output_collapses_cr_lines(tmp_path: Path) -> None:
     assert result == ["[70%]", "Done"]
 
 
-def test_task_retention_limit(tmp_path: Path) -> None:
-    runner = TaskRunner(tmp_path)
-
-    # Pre-create TASK_RETENTION_LIMIT + 1 completed tasks directly on disk
+def test_retention_keeps_listed_tasks_and_prunes_unlisted_ones(tmp_path: Path) -> None:
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
-
-    total_pre = TASK_RETENTION_LIMIT + 1
-    completed_ids: list[str] = []
-    for i in range(total_pre):
-        task_id = f"20260521-{i:06d}-aabbcc"
-        task_dir = tasks_dir / task_id
-        task_dir.mkdir()
-        meta = {
-            "task_id": task_id,
-            "command": "build",
-            "args": {},
-            "command_argv": ["/usr/bin/bench", "frappe", "build"],
-            "started_at": f"2026-05-21T{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}+00:00",
-            "finished_at": f"2026-05-21T{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}+00:00",
-            "exit_code": 0,
-        }
-        (task_dir / "meta.json").write_text(json.dumps(meta))
-        (task_dir / "status").write_text("success")
-        (task_dir / "pid").write_text("99998")
-        (task_dir / "output.log").write_text("")
-        completed_ids.append(task_id)
-
-    oldest_id = sorted(completed_ids)[0]
-    oldest_dir = tasks_dir / oldest_id
-    assert oldest_dir.exists()
+    total = UNLISTED_TASK_RETENTION_LIMIT + 1
+    for command, suffix in (("build", "aaaaaa"), ("fetch-all-app-updates", "bbbbbb")):
+        for i in range(total):
+            task_dir = tasks_dir / f"20260521-{i:06d}-{suffix}"
+            task_dir.mkdir()
+            finished_at = f"2026-05-21T00:{i // 60:02d}:{i % 60:02d}+00:00"
+            meta = {"task_id": task_dir.name, "command": command, "args": {}, "finished_at": finished_at}
+            (task_dir / "meta.json").write_text(json.dumps(meta))
+            (task_dir / "status").write_text("success")
 
     with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=True):
-        runner.run("build", {})
+        TaskRunner(tmp_path).run("build", {})
 
-    # The oldest completed task directory should have been removed.
-    assert not oldest_dir.exists()
-
-    # Completed tasks on disk should now equal TASK_RETENTION_LIMIT
-    remaining_completed = [
-        entry
+    finished = [
+        entry.name
         for entry in tasks_dir.iterdir()
-        if entry.is_dir()
-        and (entry / "status").exists()
-        and (entry / "status").read_text().strip() in {"success", "failed", "killed"}
+        if entry.is_dir() and (entry / "status").read_text() == "success"
     ]
-    assert len(remaining_completed) == TASK_RETENTION_LIMIT
+    assert len([name for name in finished if name.endswith("aaaaaa")]) == total
+    assert len([name for name in finished if name.endswith("bbbbbb")]) == UNLISTED_TASK_RETENTION_LIMIT
+    assert not (tasks_dir / "20260521-000000-bbbbbb").exists()
 
 
 def test_a_running_task_stream_ends_when_the_worker_drains(tmp_path: Path) -> None:

@@ -21,7 +21,8 @@ from pilot.tasks import Task
 from pilot.tasks.callbacks import TaskCallback as TaskCallback
 from pilot.tasks.callbacks import TaskCallbacks
 
-TASK_RETENTION_LIMIT = 100
+# Unlisted polling tasks are pruned; listed tasks are kept for good.
+UNLISTED_TASK_RETENTION_LIMIT = 100
 
 
 def generate_task_id() -> str:
@@ -89,10 +90,12 @@ class TaskRunner:
         return self._store.find_idempotent_task(digest, payload.request_fingerprint)
 
     def _run_post_submission_housekeeping(self) -> None:
-        """Wake the worker and purge old tasks; a failure here does not fail the submit."""
+        """Wake the worker and purge old unlisted tasks; a failure here does not fail the submit."""
         for operation in (
             TaskWorkerControl(self._bench_root).wake,
-            lambda: self._store.purge_terminal(TASK_RETENTION_LIMIT, is_command_listed),
+            lambda: self._store.purge_terminal(
+                UNLISTED_TASK_RETENTION_LIMIT, lambda command: not is_command_listed(command)
+            ),
         ):
             try:
                 operation()

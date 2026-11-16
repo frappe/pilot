@@ -473,7 +473,7 @@ def test_retention_keeps_terminal_task_with_live_process_record(tmp_path: Path) 
     assert store.task_dir(protected).exists()
 
 
-def test_retention_counts_unlisted_tasks_apart(tmp_path: Path) -> None:
+def test_retention_purges_only_matching_commands(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     listed = "20260715-120000-000000"
     polls = [f"20260715-12000{index}-aaaaaa" for index in range(1, 4)]
@@ -485,7 +485,7 @@ def test_retention_counts_unlisted_tasks_apart(tmp_path: Path) -> None:
         (task_dir / "meta.json").write_text(json.dumps(record))
         (task_dir / "status").write_text("success")
 
-    deleted = store.purge_terminal(1, is_listed=lambda command: command != "poll")
+    deleted = store.purge_terminal(1, matches=lambda command: command == "poll")
 
     assert deleted == polls[:2]
     assert store.task_dir(listed).exists()

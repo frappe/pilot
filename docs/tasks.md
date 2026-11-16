@@ -50,7 +50,7 @@ class ExampleTask(Task):
 
 `command` is the stable task name stored in task records. Constructor fields are validated before submission.
 
-Class flags tune runtime behavior: `audit_on_queue`, `is_cancellable_while_running`, and `is_listed`. Set `is_listed = False` on frequent polling tasks to keep them out of task listings (`TaskReader.list_tasks` and `GET /api/v1/tasks`, which honors a positive integer `limit` parameter, default 50); unlisted tasks stay readable by task id.
+Class flags tune runtime behavior: `audit_on_queue`, `is_cancellable_while_running`, and `is_listed`. Set `is_listed = False` on frequent polling tasks to keep them out of task listings (`TaskReader.list_tasks` and `GET /api/v1/tasks`, which honors a positive integer `limit` parameter, default 50); unlisted tasks stay readable by task id. Pilot keeps every finished listed task; it keeps only the newest 100 finished unlisted tasks.
 
 ## Deadlines and recovery
 

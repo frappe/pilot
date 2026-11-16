@@ -187,7 +187,7 @@ def test_run_returns_published_task_when_housekeeping_fails(
         housekeeping.append(("wake", bench_root))
         raise RuntimeError("wake failed")
 
-    def fail_purge(_store, limit: int, _is_listed) -> None:
+    def fail_purge(_store, limit: int, _matches) -> None:
         housekeeping.append(("purge", limit))
         raise OSError("purge failed")
 
@@ -199,7 +199,7 @@ def test_run_returns_published_task_when_housekeeping_fails(
     assert (tmp_path / "tasks" / TASK_ID / "meta.json").exists()
     assert housekeeping == [
         ("wake", tmp_path),
-        ("purge", task_runner_module.TASK_RETENTION_LIMIT),
+        ("purge", task_runner_module.UNLISTED_TASK_RETENTION_LIMIT),
     ]
 
 
