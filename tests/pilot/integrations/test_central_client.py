@@ -118,6 +118,8 @@ def test_forward_unwraps_message_and_targets_method_path() -> None:
         )
 
     assert result == {"currency": "INR"}
+    # Cloudflare refuses urllib's default User-Agent before the call reaches Central.
+    assert captured["headers"]["User-agent"] == "pilot"
     assert captured["url"] == "https://central.test/api/method/central.billing.api.billing_api.change_plan"
     assert captured["method"] == "POST"
     assert json.loads(captured["body"]) == {"plan": "biz"}
@@ -375,7 +377,24 @@ def test_rejection_without_a_message_falls_back_to_the_status() -> None:
     ):
         CentralClient().forward("central.billing.api.billing_api.save_billing_profile", "POST", {})
 
-    assert "HTTP 403" in str(excinfo.value)
+    assert str(excinfo.value) == "Frappe Cloud returned HTTP 403."
+    assert excinfo.value.status_code == 403
+
+
+def test_a_plain_text_rejection_keeps_its_body() -> None:
+    """A block in front of Central, such as Cloudflare's, must name itself, not read as a bare 403."""
+    _stage_credentials("https://central.test", "tok")
+
+    with (
+        patch(
+            "pilot.integrations.central.client.urllib.request.urlopen",
+            side_effect=_http_error(403, b"error code: 1010\n"),
+        ),
+        pytest.raises(CentralClientError) as excinfo,
+    ):
+        CentralClient().forward("central.billing.api.billing_api.get_billing_summary", "GET")
+
+    assert str(excinfo.value) == "Frappe Cloud returned HTTP 403: error code: 1010"
     assert excinfo.value.status_code == 403
 
 
