@@ -18,6 +18,7 @@ class TaskWorker:
     database_poll_seconds = 1.0
 
     control_poll_seconds = 0.2
+    idle_rescan_seconds = 5.0
 
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = Path(bench_root)
@@ -29,6 +30,8 @@ class TaskWorker:
         self._drain = threading.Event()
         self._claim_lock = threading.Lock()
         self._last_state: tuple[WorkerStatus, int | None, str | None] | None = None
+        self._idle_mtime: int | None = None
+        self._idle_rescan_at = 0.0
         self._thread = threading.Thread(
             target=self._run,
             name="bench-task-worker",
@@ -105,7 +108,13 @@ class TaskWorker:
 
     def _work_once(self, pid: int) -> None:
         """One pass: reconcile processes, then run the next task if nothing blocks."""
+        woken = self._wake.is_set()
         self._wake.clear()
+        tasks_mtime = self.tasks_mtime
+        if not woken and self.is_idle_unchanged(tasks_mtime):
+            self._wake.wait(self.control_poll_seconds)
+            return
+        self._idle_mtime = None
         blocking_task = self._processes.reconcile()
         if blocking_task is not None:
             status = WorkerStatus.DRAINING if self._intent_stopped() else WorkerStatus.RUNNING
@@ -121,7 +130,25 @@ class TaskWorker:
         if self._drain.is_set() or self._intent_stopped():
             return
         self._write_state(WorkerStatus.IDLE, pid)
+        self._idle_mtime = tasks_mtime
+        self._idle_rescan_at = time.monotonic() + self.idle_rescan_seconds
         self._wake.wait(self.control_poll_seconds)
+
+    @property
+    def tasks_mtime(self) -> int | None:
+        """The tasks directory mtime; a new task or worker intent changes it."""
+        try:
+            return self._tasks.tasks_root.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    def is_idle_unchanged(self, tasks_mtime: int | None) -> bool:
+        """Whether the worker went idle and nothing it watches changed since."""
+        return (
+            self._idle_mtime is not None
+            and self._idle_mtime == tasks_mtime
+            and time.monotonic() < self._idle_rescan_at
+        )
 
     def _run_next(self, pid: int) -> bool:
         """Claim and run the next queued task; False when none is queued."""
