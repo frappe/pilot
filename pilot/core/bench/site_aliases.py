@@ -5,11 +5,18 @@ import logging
 import os
 import secrets
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import (
+    OVERWRITE_JOURNAL,
+    exclusive_file_lock,
+    finish_overwrite,
+    overwrite_private_text_locked,
+)
 from pilot.internal.hostnames import normalize_host
 
 if TYPE_CHECKING:
@@ -32,7 +39,7 @@ class SiteAliases:
     def record(self, name: str) -> None:
         """Record the old name of a renamed site."""
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(self.registry_path):
+        with self.registry_lock():
             renamed = self._read()
             renamed[name] = time.time()
             self._write(renamed)
@@ -56,7 +63,7 @@ class SiteAliases:
 
     def retarget(self, current: str, target: str) -> None:
         """Keep older compatibility paths pointing directly to the current directory."""
-        with exclusive_file_lock(self.registry_path):
+        with self.registry_lock():
             for name in self._read():
                 path = self.bench.sites_path / name
                 if not path.is_symlink() or str(path.readlink()) != current:
@@ -71,7 +78,7 @@ class SiteAliases:
     def _remove(self, name: str, *, preserve_hostnames: bool = False) -> bool:
         """Remove an alias unless its rename is pending; return whether it was removed."""
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
-        with exclusive_file_lock(self.registry_path):
+        with self.registry_lock():
             if self._is_pending(name):
                 return False
             if preserve_hostnames and self.bench.site_claiming(name):
@@ -117,6 +124,15 @@ class SiteAliases:
         except FileNotFoundError:
             return {}
 
+    @contextmanager
+    def registry_lock(self) -> Iterator[None]:
+        """Hold the registry lock, and finish a write that a crash cut short."""
+        with exclusive_file_lock(self.registry_path):
+            finish_overwrite(self.registry_path, self.bench.path / OVERWRITE_JOURNAL)
+            yield
+
     def _write(self, renamed: dict[str, float]) -> None:
-        """Callers hold the registry lock."""
-        replace_private_text_locked(self.registry_path, json.dumps(renamed, indent=2))
+        """Callers hold the registry lock. Written in place, so a sandboxed unit's read-only bind stays."""
+        overwrite_private_text_locked(
+            self.registry_path, json.dumps(renamed, indent=2), self.bench.path / OVERWRITE_JOURNAL
+        )

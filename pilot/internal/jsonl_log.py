@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import BinaryIO
 
 from pilot.internal.private_files import PrivateFile
 
@@ -51,15 +52,20 @@ class JsonLines:
 
     def read_tail_text(self, min_lines: int) -> str:
         """The end of the file as text, at least min_lines lines long when the file has them."""
-        size = self.path.stat().st_size
-        read_size = min(self.block_size, size)
         with self.path.open("rb") as handle:
-            while True:
-                handle.seek(size - read_size)
-                chunk = handle.read(read_size)
-                if read_size >= size or chunk.count(b"\n") >= min_lines:
-                    return chunk.decode(errors="replace")
-                read_size = min(read_size * 2, size)
+            return self.read_tail_text_from(handle, min_lines, self.block_size)
+
+    @staticmethod
+    def read_tail_text_from(handle: BinaryIO, min_lines: int, block_size: int = 65536) -> str:
+        """The end of an open binary file as text, at least min_lines lines long when it has them."""
+        size = handle.seek(0, 2)
+        read_size = min(block_size, size)
+        while True:
+            handle.seek(size - read_size)
+            chunk = handle.read(read_size)
+            if read_size >= size or chunk.count(b"\n") >= min_lines:
+                return chunk.decode(errors="replace")
+            read_size = min(read_size * 2, size)
 
     @staticmethod
     def parse(line: bytes | str) -> dict | None:

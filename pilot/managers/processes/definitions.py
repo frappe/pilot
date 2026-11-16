@@ -37,6 +37,8 @@ class ProcessDefinition:
     stop_main_process_only: bool = False  # it stops its own children; a signal to them too kills their jobs
     pre_run: list[str] = field(default_factory=list)
     post_run: list[str] = field(default_factory=list)
+    read_paths: list[str] = field(default_factory=list)  # sandbox: extra paths this unit may read
+    write_paths: list[str] = field(default_factory=list)  # sandbox: extra paths this unit may write
 
     @property
     def argv_with_hooks(self) -> list[str]:
@@ -93,8 +95,6 @@ class ProcessDefinitionBuilder:
             self.redis_definition("redis_cache", "redis_cache.conf"),
             self.redis_definition("redis_queue", "redis_queue.conf"),
         ]
-        if self.bench.config.production.process_manager == "systemd":
-            self.wait_for_database_before_web(defs)
         defs.extend(self.bench.processes.get_app_definitions())
         check_unique_names(defs)
         return defs
@@ -122,19 +122,6 @@ class ProcessDefinitionBuilder:
             self.admin_definition(),
             *worker_defs,
             self.schedule_definition(),
-        ]
-
-    def wait_for_database_before_web(self, defs: list[ProcessDefinition]) -> None:
-        """Make the web process wait for the database."""
-        from pilot.core.server import Server
-
-        web = next(pd for pd in defs if pd.name == "web")
-        web.pre_run = [
-            str(AdminEnvManager(Server().root).python),
-            str(Server().root / "bin" / "pilot"),
-            "-b",
-            str(self.bench.path),
-            "wait-for-database",
         ]
 
     def process_definitions(self) -> list[ProcessDefinition]:

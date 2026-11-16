@@ -63,7 +63,11 @@ server {
     client_max_body_size {{ client_max_body_size }};
 
 {{ site_embed }}
-    location /assets {
+    {# on a sandboxed bench a workload can write below sites/, so a link there must not reach a file it
+       cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
+       outside the bench. #}
+{{ asset_locations }}    location /assets {
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
@@ -72,12 +76,14 @@ server {
     {# frappe's FORCE_DOWNLOAD_EXTENSIONS; inline markup would be stored XSS #}
     location ~* ^/files/.*\.(svg|svgz|html|htm|xhtml|xht|shtml|shtm|mhtml|mht|xml|xsl|xslt|swf)$ {
         root {{ alias.public_root }};
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         add_header Content-Disposition "attachment";
         try_files $uri @app;
     }
 
     location /files/ {
         root {{ alias.public_root }};
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri @app;
     }
 
@@ -299,7 +305,11 @@ server {
     {% if vhost.kind == "site" %}
 {{ site_embed }}
     {# static assets and public files served straight from disk #}
-    location /assets {
+    {# on a sandboxed bench a workload can write below sites/, so a link there must not reach a file it
+       cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
+       outside the bench. #}
+{{ asset_locations }}    location /assets {
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
@@ -308,12 +318,14 @@ server {
     {# frappe's FORCE_DOWNLOAD_EXTENSIONS; inline markup would be stored XSS #}
     location ~* ^/files/.*\.(svg|svgz|html|htm|xhtml|xht|shtml|shtm|mhtml|mht|xml|xsl|xslt|swf)$ {
         root {{ vhost.public_root }};
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         add_header Content-Disposition "attachment";
         try_files $uri @app;
     }
 
     location /files/ {
         root {{ vhost.public_root }};
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri @app;
     }
 

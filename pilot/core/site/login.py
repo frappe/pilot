@@ -49,7 +49,7 @@ class SiteLogin:
             "sys.stdout.write(frappe.session.sid)\n"
         )
         result = subprocess.run(
-            [str(self.site.bench.python), "-c", program, self.site.config.name, user, full_name],
+            [*self.site.bench.python_argv, "-c", program, self.site.config.name, user, full_name],
             capture_output=True,
             text=True,
             timeout=30,

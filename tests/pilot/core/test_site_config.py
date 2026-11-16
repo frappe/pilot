@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -209,6 +210,27 @@ def test_exclude_disabled_keeps_everything_on_a_frappe_without_the_disabled_colu
     state = SiteDatabaseState(tmp_path, "sqlite.localhost")
 
     assert state.exclude_disabled(["frappe", "erpnext"]) == ["frappe", "erpnext"]
+
+
+def test_the_frappe_app_list_fallback_runs_the_bench_python_with_its_safe_argv(tmp_path: Path) -> None:
+    from tests.pilot.commands.test_commands import make_bench
+
+    bench = make_bench(tmp_path)
+    bench.env_path.mkdir(parents=True)
+    (bench.env_path / "pyvenv.cfg").write_text("version_info = 3.14.2\n")
+    site = bench.site("site1")
+    site.path.mkdir(parents=True)
+    (site.path / "site_config.json").write_text("{}")
+    with (
+        patch.object(SiteDatabaseState, "installed_apps", None),
+        patch("subprocess.run") as run,
+    ):
+        run.return_value.returncode = 0
+        run.return_value.stdout = "frappe 16.0.0\n"
+        assert site.installed_apps() == ["frappe"]
+
+    assert run.call_args.args[0][:2] == [str(bench.python), "-P"]
+    assert run.call_args.kwargs["cwd"] == str(bench.sites_path)
 
 
 def _make_wizard_site(bench_root: Path, site_name: str, wizard_apps: dict[str, int], disabled: list[str]) -> None:

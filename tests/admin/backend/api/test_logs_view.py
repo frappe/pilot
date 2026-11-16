@@ -26,9 +26,9 @@ def _client(bench_root: Path, password: str = "secret"):
 
 
 def _make_log(bench_root: Path, name: str, content: str) -> None:
-    logs_dir = bench_root / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    (logs_dir / name).write_text(content)
+    path = bench_root / "logs" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
 
 
 def test_logs_list_and_read(tmp_path: Path) -> None:
@@ -55,6 +55,40 @@ def test_log_content_serves_the_raw_file(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.data == b"hello\n"
     assert "web.log" in response.headers["Content-Disposition"]
+
+
+def test_a_workload_log_is_read_and_downloaded_by_its_folder_path(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_log(bench_root, "workload/frappe.log", "workload line\n")
+    client = _client(bench_root)
+
+    detail = client.get("/api/v1/logs/workload/frappe.log")
+    download = client.get("/api/v1/logs/workload%2Ffrappe.log/content")
+
+    assert detail.get_json()["lines"] == ["workload line"]
+    assert download.data == b"workload line\n"
+    assert 'filename="workload-frappe.log"' in download.headers["Content-Disposition"]
+
+
+def test_log_content_refuses_a_workload_symlink(tmp_path: Path) -> None:
+    from pilot.managers.processes.sandbox import WORKLOAD_LOGS
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    workload_dir = bench_root / "logs" / WORKLOAD_LOGS
+    workload_dir.mkdir(parents=True)
+    (workload_dir / "leak.log").symlink_to(bench_root / "bench.toml")
+
+    response = client.get("/api/v1/logs/workload/leak.log/content")
+
+    assert response.status_code == 422
+    assert b"admin_password" not in response.data
+
+
+def test_log_content_returns_not_found_for_a_missing_log(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.get("/api/v1/logs/missing.log/content").status_code == 404
 
 
 def test_log_events_emits_structured_json_lines(tmp_path: Path) -> None:
@@ -90,7 +124,9 @@ def test_log_events_emits_a_structured_error_for_an_invalid_filename(tmp_path: P
 def test_a_quiet_log_stream_sends_a_heartbeat_comment(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
-    with patch("admin.backend.providers.server.logs.LogProvider.follow_file", return_value=iter(["first line", None])):
+    with patch(
+        "admin.backend.providers.server.logs.LogProvider.follow_file", return_value=iter(["first line", None])
+    ):
         body = client.get("/api/v1/logs/web.log/events").get_data(as_text=True)
 
     assert body == 'data: {"line": "first line"}\n\n: heartbeat\n\n'

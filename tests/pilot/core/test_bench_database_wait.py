@@ -31,3 +31,45 @@ def test_a_development_bench_or_an_existing_server_is_always_ready(
         assert _runtime(tmp_path, production, existing).is_database_ready
 
     is_reachable.assert_not_called()
+
+
+def test_a_restart_brings_nginx_in_line_with_the_sandbox_after_the_units_restart(tmp_path: Path) -> None:
+    """`sandbox` takes effect on `pilot restart`, so nginx must start refusing links in sites/ there too."""
+    from unittest.mock import MagicMock
+
+    from pilot.managers.nginx import NginxManager
+    from pilot.managers.processes.local import ProcessManager
+
+    calls = MagicMock()
+    manager = calls.manager
+    manager.is_configured.return_value = True
+    with (
+        patch.object(ProcessManager, "for_bench", return_value=manager),
+        patch.object(NginxManager, "reload_for_asset_change", calls.nginx),
+    ):
+        _runtime(tmp_path).restart_workload(include_admin=False, on_progress=lambda _message: None)
+
+    order = [name for name, _args, _kwargs in calls.mock_calls]
+    assert order.index("manager.restart") < order.index("nginx")
+
+
+def test_a_restart_finishes_when_nginx_rejects_its_config(tmp_path: Path) -> None:
+    """nginx is shared by every bench, so another bench's broken config must not stop this restart."""
+    from unittest.mock import MagicMock
+
+    from pilot.exceptions import CommandError
+    from pilot.managers.nginx import NginxManager
+    from pilot.managers.processes.local import ProcessManager
+
+    manager = MagicMock()
+    manager.is_configured.return_value = True
+    messages: list[str] = []
+    with (
+        patch.object(ProcessManager, "for_bench", return_value=manager),
+        patch.object(NginxManager, "reload_for_asset_change", side_effect=CommandError("nginx -t failed")),
+    ):
+        _runtime(tmp_path).restart_workload(include_admin=True, on_progress=messages.append)
+
+    manager.restart.assert_called_once()
+    manager.restart_admin.assert_called_once()
+    assert any("nginx did not reload" in message for message in messages)

@@ -90,6 +90,27 @@ jobs:
           test -f benches/ci-bench/sites/site1.localhost/site_config.json
           test -f benches/ci-bench/sites/site2.localhost/site_config.json
 
+      # Ubuntu 24.04 blocks unprivileged user namespaces, which the sandbox needs.
+      - name: Allow user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # Runs on the fresh bench, before the manually started redis, because it sets up its own production
+      # and removes it again. bench.toml is put back afterwards, so later tests do not inherit
+      # `sandbox = true`. A failure is reported at the end, so the other tests still run.
+      - name: Run sandbox tests
+        id: sandbox
+        continue-on-error: true
+        run: |
+          cp benches/ci-bench/bench.toml "$RUNNER_TEMP/bench.toml"
+          pytest tests/integration/test_sandbox.py -v -s
+        env:
+          BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
+          BENCH_E2E_SANDBOX: "1"
+
+      - name: Restore bench.toml after the sandbox tests
+        if: ${{ !cancelled() }}
+        run: cp "$RUNNER_TEMP/bench.toml" benches/ci-bench/bench.toml
+
       - name: Start Redis services
         run: |
           redis-server benches/ci-bench/config/redis_cache.conf --daemonize yes
@@ -142,6 +163,10 @@ jobs:
           # Opt in to the destructive production + self-signed SSL e2e
           # (installs services, rewrites the machine's nginx config).
           BENCH_E2E_PRODUCTION: "1"
+
+      - name: Fail the job if the sandbox tests failed
+        if: ${{ !cancelled() && steps.sandbox.outcome == 'failure' }}
+        run: exit 1
 
       - name: Diagnostics on failure
         if: failure()

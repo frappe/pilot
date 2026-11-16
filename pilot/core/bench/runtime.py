@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -25,28 +24,6 @@ class BenchRuntime:
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
-
-    def wait_for_database(self, timeout_seconds: float = 60) -> None:
-        """Wait until the production database accepts connections; raise on timeout."""
-        from pilot.managers.database import MariaDBManager, PostgresManager
-
-        config = self.bench.config
-        if not config.production.enabled or config.db_type == "sqlite":
-            return
-        manager = (
-            PostgresManager(config.postgres)
-            if config.db_type == "postgres"
-            else MariaDBManager(config.mariadb)
-        )
-        if manager.config.existing:
-            return
-        deadline = time.monotonic() + timeout_seconds
-        while not manager.is_reachable():
-            if time.monotonic() >= deadline:
-                raise BenchError(
-                    "The database did not become ready. Check its service and restart the workload."
-                )
-            time.sleep(0.1)
 
     @property
     def is_database_ready(self) -> bool:
@@ -95,6 +72,7 @@ class BenchRuntime:
         if not self.bench.config.production.enabled:
             raise BenchError(self.dev_restart_message)
 
+        from pilot.managers.nginx import NginxManager
         from pilot.managers.processes.local import ProcessManager
 
         manager = cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
@@ -106,6 +84,11 @@ class BenchRuntime:
         manager.install_config()
         manager.reload_manager_config()
         manager.restart()
+        # nginx refuses links in sites/ only on a sandboxed bench, and `sandbox` takes effect here.
+        try:
+            NginxManager(self.bench).reload_for_asset_change()
+        except CommandError as error:
+            on_progress(f"Warning: the bench restarted, but nginx did not reload: {error}")
         self.bench.site_aliases.release_expired()
         if include_admin:
             manager.restart_admin()

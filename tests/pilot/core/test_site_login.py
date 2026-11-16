@@ -130,7 +130,8 @@ def _sign_in(tmp_path, monkeypatch, user: str, existing_users: str = "") -> tupl
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
     monkeypatch.setenv("FAKE_FRAPPE_LOG", str(log))
     monkeypatch.setenv("FAKE_FRAPPE_USERS", existing_users)
-    bench = SimpleNamespace(python=sys.executable, sites_path=tmp_path)
+    # -P, as Pilot runs it: the stand-in Frappe comes from PYTHONPATH, not from the working directory.
+    bench = SimpleNamespace(python=sys.executable, python_argv=[sys.executable, "-P"], sites_path=tmp_path)
     site = SimpleNamespace(bench=bench, config=SimpleNamespace(name="site.local"))
 
     sid = SiteLogin(site).create_session(user, "Asha Rao")

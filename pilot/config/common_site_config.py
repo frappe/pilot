@@ -6,7 +6,12 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from pilot.exceptions import MalformedSiteConfig
-from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+from pilot.internal.atomic_file import (
+    OVERWRITE_JOURNAL,
+    exclusive_file_lock,
+    finish_overwrite,
+    overwrite_private_text_locked,
+)
 
 
 def read_common_site_config(sites_path: Path) -> dict:
@@ -25,9 +30,13 @@ def read_common_site_config(sites_path: Path) -> dict:
 
 @contextmanager
 def update_common_site_config(sites_path: Path) -> Iterator[dict]:
-    """Read, change and atomically write the file under its lock."""
+    """Read, change and write the file under its lock.
+
+    Written in place, so a sandboxed unit's read-only bind on the file stays."""
     path = sites_path / "common_site_config.json"
+    journal_dir = sites_path.parent / OVERWRITE_JOURNAL
     with exclusive_file_lock(path):
+        finish_overwrite(path, journal_dir)
         config = read_common_site_config(sites_path)
         yield config
-        replace_private_text_locked(path, json.dumps(config, indent=2) + "\n")
+        overwrite_private_text_locked(path, json.dumps(config, indent=2) + "\n", journal_dir)

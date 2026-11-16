@@ -12,8 +12,9 @@ from tests.pilot.commands.test_commands import make_bench
 _SECTION = "[tool.pilot.processes.stalwart]\n"
 
 
-def _app(tmp_path: Path, pyproject: str) -> App:
+def _app(tmp_path: Path, pyproject: str, process_manager: str = "systemd") -> App:
     bench = make_bench(tmp_path)
+    bench.config.production.process_manager = process_manager
     bench.create_directories()
     (bench.apps_path / "mail" / ".git").mkdir(parents=True)
     (bench.apps_path / "mail" / "pyproject.toml").write_text(pyproject)
@@ -74,7 +75,14 @@ def test_frappe_command_runs_through_the_bench_helper_in_sites(tmp_path: Path) -
 
     (definition,) = app.processes.get_definitions()
 
-    assert definition.argv == [*app.bench.frappe_call, "frappe", "flow-server", "serve"]
+    assert definition.argv == [
+        str(app.bench.python),
+        "-m",
+        "frappe.utils.bench_helper",
+        "frappe",
+        "flow-server",
+        "serve",
+    ]
     assert definition.working_dir == app.bench.sites_path
     assert definition.env["MODE"] == "test"
 
@@ -108,3 +116,55 @@ def test_app_without_declarations_has_no_processes(tmp_path: Path, pyproject: st
 def test_malformed_declaration_is_rejected(tmp_path: Path, pyproject: str) -> None:
     with pytest.raises(AppProcessError, match="App 'mail'"):
         _app(tmp_path, pyproject).processes.get_definitions()
+
+
+def test_a_process_declares_sandbox_paths(tmp_path: Path) -> None:
+    app = _app(
+        tmp_path,
+        _SECTION
+        + 'command = ["./stalwart"]\nread_paths = ["/opt/models"]\nwrite_paths = ["/var/lib/stalwart"]\n',
+    )
+
+    (definition,) = app.processes.get_definitions()
+
+    assert definition.read_paths == ["/opt/models"]
+    assert definition.write_paths == ["/var/lib/stalwart"]
+
+
+def test_a_process_cannot_ask_for_ssh_keys(tmp_path: Path) -> None:
+    app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nread_paths = ["~/.ssh"]\n')
+
+    with pytest.raises(AppProcessError, match="must be a directory below one of"):
+        app.processes.get_definitions()
+
+
+def test_a_bench_without_the_sandbox_ignores_process_sandbox_paths(tmp_path: Path) -> None:
+    app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nread_paths = ["~/.ssh"]\n', "supervisor")
+
+    (definition,) = app.processes.get_definitions()
+
+    assert definition.read_paths == definition.write_paths == []
+
+
+def test_the_app_sandbox_table_is_read_through_the_app(tmp_path: Path) -> None:
+    app = _app(tmp_path, '[tool.pilot.sandbox]\nwrite_paths = ["/var/cache/mail"]\n')
+
+    assert app.processes.get_sandbox_paths().write == ("/var/cache/mail",)
+
+    bad = _app(tmp_path / "bad", '[tool.pilot.sandbox]\nread_paths = ["../outside"]\n')
+    with pytest.raises(AppProcessError, match="App 'mail'"):
+        bad.processes.get_sandbox_paths()
+
+
+def test_an_app_declares_a_folder_in_its_bench(tmp_path: Path) -> None:
+    app = _app(tmp_path, '[tool.pilot.sandbox]\nwrite_paths = ["flow-server"]\n')
+
+    assert app.processes.get_sandbox_paths().write == (str(app.bench.path.resolve() / "flow-server"),)
+
+
+def test_a_process_declares_a_folder_in_its_bench(tmp_path: Path) -> None:
+    app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nwrite_paths = ["stalwart-data"]\n')
+
+    (definition,) = app.processes.get_definitions()
+
+    assert definition.write_paths == [str(app.bench.path.resolve() / "stalwart-data")]

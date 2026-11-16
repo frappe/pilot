@@ -26,10 +26,20 @@ _BASE_DATA: dict = {
 }
 
 _BASE_SITE = SiteConfig(name="site1.example.com", apps=["frappe"])
+# A systemd bench with no `sandbox` setting runs in the sandbox.
+_SANDBOXED_DATA: dict = {**_BASE_DATA, "production": {"enabled": True, "process_manager": "systemd"}}
 
 
 def _make_bench(tmp_path: Path, data: dict) -> Bench:
     return Bench(BenchConfig._from_dict(data), tmp_path)
+
+
+def _write_web_unit(bench: Bench, is_sandboxed: bool = True) -> None:
+    """The web unit systemd runs; nginx reads from it whether the workload is sandboxed."""
+    services = bench.config_path / "services"
+    services.mkdir(parents=True, exist_ok=True)
+    sandbox = "PrivateUsers=yes\n" if is_sandboxed else ""
+    (services / f"{bench.config.name}-web.service").write_text(f"[Service]\nExecStart=gunicorn\n{sandbox}")
 
 
 def _renderer(tmp_path: Path, data: dict | None = None, proxy_servers: list[str] | None = None):
@@ -1567,3 +1577,150 @@ def test_only_the_admin_is_kept_out_of_search_engines(tmp_path: Path) -> None:
     assert 'location = /robots.txt {\n        default_type text/plain;\n        return 200 "User-agent: *\\nDisallow: /\\n";' in admin_block
     assert "X-Robots-Tag" not in site_block
     assert "robots.txt" not in site_block
+
+
+def _location_bodies(config: str, opening: str) -> list[str]:
+    """The body of every `location` block whose first line starts with `opening`."""
+    bodies = []
+    start = config.find(opening)
+    while start != -1:
+        depth, end = 0, start
+        for end in range(config.index("{", start), len(config)):
+            depth += {"{": 1, "}": -1}.get(config[end], 0)
+            if depth == 0:
+                break
+        bodies.append(config[start:end])
+        start = config.find(opening, end)
+    return bodies
+
+
+def test_the_locations_that_read_sites_follow_no_symlinks_below_the_bench(tmp_path: Path) -> None:
+    """nginx runs as the bench user, so a link that a workload makes in sites/ could reach any of its files."""
+    renderer = _renderer(tmp_path, _SANDBOXED_DATA)
+    _write_web_unit(renderer.bench)
+    _app_folder(renderer)
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+    rule = f"disable_symlinks on from={renderer.bench.path};"
+
+    for opening in ("location /assets {", "location /files/ {", "location ~* ^/files/"):
+        bodies = _location_bodies(config, opening)
+        assert bodies, opening
+        assert all(rule in body for body in bodies), opening
+    app_assets = _location_bodies(config, "location ^~ /assets/")
+    assert app_assets
+    assert all("disable_symlinks on from=" in body for body in app_assets)
+
+
+def test_a_bench_without_the_sandbox_keeps_its_links(tmp_path: Path) -> None:
+    """Its workload already reads what the bench user can, so a link gives it nothing, and links such as a
+    storage folder under sites/<site>/public/files keep working."""
+    data = {**_BASE_DATA, "production": {"enabled": True, "process_manager": "systemd", "sandbox": False}}
+    renderer = _renderer(tmp_path, data)
+    _app_folder(renderer)
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    assert _location_bodies(config, "location ^~ /assets/frappe/")
+    assert "disable_symlinks" not in config
+
+
+def test_a_bench_whose_units_fell_back_to_no_sandbox_keeps_its_links(tmp_path: Path) -> None:
+    """The host could not start a sandboxed unit, so systemd runs the workload without it."""
+    renderer = _renderer(tmp_path, _SANDBOXED_DATA)
+    _write_web_unit(renderer.bench, is_sandboxed=False)
+
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    assert "disable_symlinks" not in config
+
+
+def test_acme_and_the_embed_still_follow_symlinks(tmp_path: Path) -> None:
+    """Their folders are outside the bench, so a workload cannot plant a link there. A server-wide rule would
+    check the whole path from /, and a webroot behind a link would fail certificate renewal."""
+    renderer = _renderer(tmp_path, _SANDBOXED_DATA)
+    _write_web_unit(renderer.bench)
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    assert "disable_symlinks" in config
+    assert "\n    disable_symlinks" not in config
+    for opening in ("location /.well-known/acme-challenge/ {", "location ^~ /_pilot/embed/"):
+        bodies = _location_bodies(config, opening)
+        assert bodies, opening
+        assert not any("disable_symlinks" in body for body in bodies), opening
+
+
+def _app_folder(renderer, name: str = "frappe") -> Path:
+    public = renderer.bench.path / "apps" / name / name / "public"
+    public.mkdir(parents=True)
+    (public.parent.parent / ".git").mkdir()
+    return public.parent.parent
+
+
+def test_app_assets_are_served_from_their_real_folders(tmp_path: Path) -> None:
+    renderer = _renderer(tmp_path)
+    app = _app_folder(renderer)
+    (app / "node_modules").mkdir()
+    (app / "frappe" / "public" / "node_modules").symlink_to(app / "node_modules")
+    bench_root = renderer.bench.path.resolve()
+
+    assert renderer.get_asset_locations() == [
+        ("/assets/frappe/", bench_root / "apps/frappe/frappe/public", bench_root),
+        ("/assets/frappe/node_modules/", bench_root / "apps/frappe/node_modules", bench_root),
+    ]
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+    assert f"location ^~ /assets/frappe/ {{\n        alias {bench_root}/apps/frappe/frappe/public/;" in config
+
+
+def test_a_link_that_leaves_its_app_is_not_served(tmp_path: Path) -> None:
+    renderer = _renderer(tmp_path)
+    app = _app_folder(renderer)
+    (tmp_path / "secrets").mkdir()
+    (app / "frappe" / "public" / "leak").symlink_to(tmp_path / "secrets")
+    (app / "frappe" / "public" / "file-leak").symlink_to(renderer.bench.path / "bench.toml")
+
+    assert [url for url, _, _ in renderer.get_asset_locations()] == ["/assets/frappe/"]
+
+
+@pytest.mark.parametrize("was_sandboxed, reloads", [(True, 0), (False, 1)])
+def test_nginx_reloads_when_the_sandbox_was_turned_on_or_off(
+    tmp_path: Path, was_sandboxed: bool, reloads: int
+) -> None:
+    """Assets unchanged, but the units were sandboxed or not since nginx last got its config."""
+    manager = NginxManager(_make_bench(tmp_path, _SANDBOXED_DATA))
+    _app_folder(manager._renderer)
+    _write_web_unit(manager.bench, was_sandboxed)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text(manager._renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False))
+    _write_web_unit(manager.bench)
+
+    with patch.object(NginxManager, "reload_for_site_change") as reload:
+        manager.reload_for_asset_change()
+
+    assert reload.call_count == reloads
+
+
+def test_nginx_does_not_reload_for_a_bench_without_sites(tmp_path: Path) -> None:
+    """Asset locations are only in site blocks, so a config without sites never lists them."""
+    manager = NginxManager(_make_bench(tmp_path, _SANDBOXED_DATA))
+    _app_folder(manager._renderer)
+    _write_web_unit(manager.bench)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text(manager._renderer.generate_bench_config([], admin_ssl=False))
+
+    with patch.object(NginxManager, "reload_for_site_change") as reload:
+        manager.reload_for_asset_change()
+
+    reload.assert_not_called()
+
+
+@pytest.mark.parametrize("is_current, reloads", [(True, 0), (False, 1)])
+def test_nginx_reloads_only_when_an_apps_assets_are_missing(tmp_path: Path, is_current: bool, reloads: int) -> None:
+    manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
+    _app_folder(manager._renderer)
+    manager.include_path.parent.mkdir(parents=True)
+    current = manager._renderer.render_asset_locations() if is_current else ""
+    manager.include_path.write_text(f"{current}    location /assets {{")
+
+    with patch.object(NginxManager, "reload_for_site_change") as reload:
+        manager.reload_for_asset_change()
+
+    assert reload.call_count == reloads

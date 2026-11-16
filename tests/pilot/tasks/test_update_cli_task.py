@@ -42,8 +42,8 @@ def test_run_upgrades_then_restarts_every_bench_admin_in_a_new_process(tmp_path:
 
     upgrade.assert_called_once()
     assert [call.args[0][1:] for call in run.call_args_list] == [
-        ["-m", "pilot.updater", str(first)],
-        ["-m", "pilot.updater", str(second)],
+        ["-P", "-m", "pilot.updater", str(first)],
+        ["-P", "-m", "pilot.updater", str(second)],
     ]
 
 

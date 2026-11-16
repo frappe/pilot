@@ -13,6 +13,9 @@ from pathlib import Path
 
 from pilot.internal.private_files import PrivateFile
 
+# Beside the bench folders, so a sandboxed workload cannot plant a journal.
+OVERWRITE_JOURNAL = ".overwrites"
+
 
 def exchange_paths(first: Path, second: Path) -> None:
     """Atomically swap two directory entries without following symbolic links."""
@@ -89,6 +92,44 @@ def replace_private_text_locked(path: Path, content: str) -> None:
         if temporary_path is not None:
             with suppress(OSError):
                 temporary_path.unlink(missing_ok=True)
+
+
+def overwrite_private_text_locked(path: Path, content: str, journal_dir: Path) -> None:
+    """Rewrite ``path`` in place at 0600 while its ``exclusive_file_lock`` is held.
+
+    The inode stays, so a single-file bind on it holds. The new text goes to ``journal_dir`` first, so
+    ``finish_overwrite`` can complete a rewrite that a crash cut short. Keep that folder out of reach of
+    whoever must not change ``path``."""
+    journal = journal_dir / path.name
+    journal_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    replace_private_text_locked(journal, content)
+    _write_in_place(path, content)
+    journal.unlink()
+
+
+def finish_overwrite(path: Path, journal_dir: Path) -> None:
+    """Complete a crash-interrupted ``overwrite_private_text_locked`` while the lock is held."""
+    journal = journal_dir / path.name
+    if journal.is_file():
+        _write_in_place(path, journal.read_text(encoding="utf-8"))
+        journal.unlink()
+
+
+def _write_in_place(path: Path, content: str) -> None:
+    """Write ``path`` over its inode and sync it."""
+    encoded = content.encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags, PrivateFile.mode)
+    try:
+        os.fchmod(descriptor, PrivateFile.mode)
+        padded = encoded.ljust(os.fstat(descriptor).st_size, b" ")
+        written = 0
+        while written < len(padded):
+            written += os.pwrite(descriptor, padded[written:], written)
+        os.ftruncate(descriptor, len(encoded))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _existing_file_metadata(path: Path) -> os.stat_result | None:
