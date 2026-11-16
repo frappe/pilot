@@ -419,6 +419,22 @@ def test_usage_back_under_the_limit_after_an_alert_sends_a_recovery(tmp_path: Pa
     assert payloads[1]["severity"] == "Info"
 
 
+def test_a_retried_alert_repeats_the_readings_it_fired_on(tmp_path: Path) -> None:
+    monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
+    monitor.send_alert_if_required(_system_record(cpu=95.0))
+    _age_alerts(monitor)
+
+    def refuse(endpoint, body):
+        raise urllib.error.URLError("connection refused")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
+        monitor.send_alert_if_required(_system_record(cpu=95.0))
+    with _captured_alerts() as payloads:
+        monitor.send_alert_if_required(_system_record(cpu=10.0))
+
+    assert payloads[0]["message"] == "my-bench: cpu_usage_limit at 95.0%"
+
+
 def test_a_limit_turned_off_during_an_alert_sends_no_recovery(tmp_path: Path) -> None:
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
     monitor.send_alert_if_required(_system_record(cpu=95.0))
@@ -460,7 +476,7 @@ def test_alert_body_matches_centrals_event_schema(tmp_path: Path) -> None:
     bench.config.resource_limits.cpu_usage_limit = 80
     monitor = _make_monitor(bench)
 
-    payload = monitor._alert_payload(["cpu_usage_limit"], _system_record(cpu=95.0))
+    payload = monitor._alert_payload(list(monitor.get_breaches(_system_record(cpu=95.0)).values()))
 
     assert set(payload) == {"event", "title", "category", "severity", "action_route", "message", "context"}
     assert payload["event"] == "resource_limit_breached"

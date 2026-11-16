@@ -453,6 +453,76 @@ def test_an_unsent_site_up_is_retried_on_the_next_tick(tmp_path: Path) -> None:
     assert [body["event"] for body in payloads] == ["site_down", "site_up"]
 
 
+def test_a_retried_site_down_repeats_the_failed_ping_it_fired_on(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    monitor.send_alert_if_required([_ping("a.test", up=False)])
+    _age_alerts(monitor)
+
+    def refuse(endpoint, body):
+        raise OSError("connection refused")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
+        monitor.send_alert_if_required([_ping("a.test", up=False)])
+    payloads = []
+    with patch(
+        "pilot.core.notification.webhooks.send_webhook", _accept(lambda endpoint, body: payloads.append(body))
+    ):
+        monitor.send_alert_if_required([_ping("a.test", up=True)])
+
+    assert [body["event"] for body in payloads] == ["site_down"]
+    assert payloads[0]["message"] == "Health check failed for 60 seconds (HTTP 502)."
+
+
+def test_a_site_that_fails_before_its_site_up_lands_still_gets_one(tmp_path: Path) -> None:
+    """A sink that never heard the recovery still sees the first outage. It must not hear a second
+    site_down, and it must hear site_up once the site is back for good."""
+    monitor = _monitor(tmp_path)
+    payloads = []
+    record = _accept(lambda endpoint, body: payloads.append(body))
+    _fire(monitor, record)
+    monitor.send_alert_if_required([_ping("a.test", up=True)])
+    _age_alerts(monitor)
+
+    def refuse(endpoint, body):
+        raise OSError("connection refused")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
+        monitor.send_alert_if_required([_ping("a.test", up=True)])
+    with patch("pilot.core.notification.webhooks.send_webhook", record):
+        monitor.send_alert_if_required([_ping("a.test", up=False)])
+        monitor.send_alert_if_required([_ping("a.test", up=True)])
+        _age_alerts(monitor)
+        monitor.send_alert_if_required([_ping("a.test", up=True)])
+
+    assert [body["event"] for body in payloads] == ["site_down", "site_up"]
+
+
+def test_a_site_that_fails_after_its_site_up_landed_fires_again(tmp_path: Path) -> None:
+    """The feed heard the recovery but webhooks did not: the feed hears a new outage, webhooks do not."""
+    from pilot.core.notification import NotificationStore
+
+    monitor = _monitor(tmp_path)
+    payloads = []
+    record = _accept(lambda endpoint, body: payloads.append(body))
+    _fire(monitor, record)
+    monitor.send_alert_if_required([_ping("a.test", up=True)])
+    _age_alerts(monitor)
+
+    def refuse(endpoint, body):
+        raise OSError("connection refused")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
+        monitor.send_alert_if_required([_ping("a.test", up=True)])
+    with (
+        patch("pilot.core.notification.webhooks.send_webhook", record),
+        patch.object(NotificationStore, "create", wraps=monitor.bench.notifications.create) as create,
+    ):
+        monitor.send_alert_if_required([_ping("a.test", up=False)])
+
+    assert [body["event"] for body in payloads] == ["site_down"]
+    assert [call.args[0] for call in create.call_args_list] == ["a.test is unreachable"]
+
+
 def test_a_site_in_maintenance_keeps_its_alert_firing(tmp_path: Path) -> None:
     monitor = _monitor(tmp_path)
     payloads = []

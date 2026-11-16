@@ -23,18 +23,22 @@ class AlertLog:
     A condition is `pending` until it holds for the window, then `firing` until it stays clear for the
     window, then `resolved`. A pending condition that clears is dropped, as nothing was sent for it. The
     change to firing and the change to resolved are each recorded in the bench feed once and sent once,
-    retried each tick until they land. A resolved entry leaves the file once it has landed."""
+    retried each tick until they land. A resolved entry leaves the file once it has landed.
+
+    A firing entry keeps the detail of the round it fired in, so a retry repeats what the condition was,
+    not what the latest round saw."""
 
     def __init__(self, path: Path, window_seconds: int) -> None:
         self.path = path
         self.window_seconds = window_seconds
         self.entries = self.read_entries()
 
-    def update(self, active: Iterable[str], clear: Iterable[str]) -> None:
-        """Move each condition on by one round. A condition in neither set keeps its state."""
+    def update(self, active: dict[str, dict], clear: Iterable[str]) -> None:
+        """Move each condition on by one round. `active` maps each condition that holds to its detail
+        this round. A condition in neither `active` nor `clear` keeps its state."""
         now = time.time()
-        for name in active:
-            self.entries[name] = self.get_active_entry(self.entries.get(name), now)
+        for name, detail in active.items():
+            self.entries[name] = self.get_active_entry(self.entries.get(name), detail, now)
         for name in clear:
             if name in self.entries:
                 self.clear_entry(name, now)
@@ -57,13 +61,21 @@ class AlertLog:
             if bench.notifier.send(get_payload(names)):
                 self.mark(names, "sent")
 
-    def get_active_entry(self, entry: dict | None, now: float) -> dict:
-        """The entry for a condition that holds this round. A resolved one that breaks again starts over."""
-        if entry is None or entry["status"] == RESOLVED:
+    def get_details(self, names: list[str]) -> list[dict]:
+        """The detail each condition fired with."""
+        return [self.entries[name]["detail"] for name in names]
+
+    def get_active_entry(self, entry: dict | None, detail: dict, now: float) -> dict:
+        """The entry for a condition that holds this round."""
+        if entry is None:
             entry = {"status": PENDING, "since": now}
+        elif entry["status"] == RESOLVED:
+            # Breaking again before its resolution landed everywhere: a sink that did not hear the
+            # resolution still sees it firing, and a sink that heard it must hear it fire again.
+            entry.update(status=FIRING, sent=not entry["sent"], recorded=not entry["recorded"])
         entry.pop("clear_since", None)
         if entry["status"] == PENDING and now - entry["since"] >= self.window_seconds:
-            entry.update(status=FIRING, sent=False, recorded=False)
+            entry.update(status=FIRING, sent=False, recorded=False, detail=detail)
         return entry
 
     def clear_entry(self, name: str, now: float) -> None:

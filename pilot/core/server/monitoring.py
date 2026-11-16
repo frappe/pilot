@@ -167,14 +167,9 @@ class Monitor:
         """The file with the resource alert state."""
         return self.system_log_path.with_suffix(".alerts")
 
-    def _alert_payload(self, breached: list[str], system_record: dict) -> dict[str, typing.Any]:
+    def _alert_payload(self, breaches: list[dict]) -> dict[str, typing.Any]:
         """Alert body for the webhook, mail, and Central sinks: event, message, context."""
-        limits = self.bench.config.resource_limits
-        readings = self._readings(system_record)
-        crossed = [
-            {"limit": name, "threshold": getattr(limits, name), "reading": readings[name]}
-            for name in breached
-        ]
+        crossed = [{key: breach[key] for key in ("limit", "threshold", "reading")} for breach in breaches]
         summary = ", ".join(f"{item['limit']} at {item['reading']}%" for item in crossed)
         return {
             "event": ALERT_EVENT,
@@ -185,7 +180,7 @@ class Monitor:
             "message": f"{self.bench.config.name}: {summary}",
             "context": {
                 "bench": self.bench.config.name,
-                "time": system_record["time"],
+                "time": max(breach["time"] for breach in breaches),
                 "sustained_seconds": self.alert_window_seconds,
                 "breached_limits": crossed,
             },
@@ -196,11 +191,13 @@ class Monitor:
         usage stays under the limit for the window. A limit turned off drops its alert without a resolution."""
         limits = self.bench.config.resource_limits
         enabled = [name for name in RESOURCE_LIMIT_FIELDS if getattr(limits, name)]
-        breached = self._breached_limits(system_record)
+        breaches = self.get_breaches(system_record)
         alerts = AlertLog(self.alerts_path, self.alert_window_seconds)
         alerts.retain(enabled)
-        alerts.update(active=breached, clear=[name for name in enabled if name not in breached])
-        alerts.deliver(self.bench, FIRING, lambda names: self._alert_payload(names, system_record), grouped=True)
+        alerts.update(active=breaches, clear=[name for name in enabled if name not in breaches])
+        alerts.deliver(
+            self.bench, FIRING, lambda names: self._alert_payload(alerts.get_details(names)), grouped=True
+        )
         alerts.deliver(self.bench, RESOLVED, self.get_recovered_payload, grouped=True)
 
     def get_recovered_payload(self, names: list[str]) -> dict[str, typing.Any]:
@@ -224,15 +221,20 @@ class Monitor:
             "disk_space_limit": system_record["storage"]["disk"]["percent"],
         }
 
-    def _breached_limits(self, system_record: dict) -> list[str]:
-        """The resource limits the readings exceed."""
+    def get_breaches(self, system_record: dict) -> dict[str, dict]:
+        """Each resource limit the readings exceed, with its threshold, reading and time."""
         limits = self.bench.config.resource_limits
-        breached = []
+        breaches = {}
         for name, reading in self._readings(system_record).items():
             limit = getattr(limits, name)
             if limit and reading > limit:
-                breached.append(name)
-        return breached
+                breaches[name] = {
+                    "limit": name,
+                    "threshold": limit,
+                    "reading": reading,
+                    "time": system_record["time"],
+                }
+        return breaches
 
     def collect_system_metrics(self) -> dict:
         """The system metrics record."""

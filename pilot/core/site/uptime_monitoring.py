@@ -108,13 +108,15 @@ class UptimeMonitor:
             tracked = {}
         alerts = AlertLog(self.alerts_path, self.alert_window_seconds)
         alerts.retain(tracked)
-        down = [site for site, result in tracked.items() if not result["up"] and not result.get("maintenance")]
+        down = {
+            site: result for site, result in tracked.items() if not result["up"] and not result.get("maintenance")
+        }
         alerts.update(active=down, clear=[site for site, result in tracked.items() if result["up"]])
-        alerts.deliver(self.bench, FIRING, lambda sites: self.get_down_payload(tracked[sites[0]]))
+        alerts.deliver(self.bench, FIRING, lambda sites: self.get_down_payload(alerts.get_details(sites)[0]))
         alerts.deliver(self.bench, RESOLVED, lambda sites: self.get_recovered_payload(sites[0]))
 
     def get_down_payload(self, result: dict) -> dict:
-        """The site_down alert for one site. Central names the site from the Site reference."""
+        """The site_down alert for the failed ping it fired on. Central names the site from the Site reference."""
         site = result["site"]
         return {
             "event": SITE_DOWN_EVENT,
