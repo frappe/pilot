@@ -10,6 +10,7 @@ class RetryUpdateTask(Task):
     """Re-arm a failed migration and resume its chain from the failed unit."""
 
     command: ClassVar[str] = "retry-update"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 300
 
     operation_id: str

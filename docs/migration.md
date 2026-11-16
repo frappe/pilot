@@ -153,9 +153,9 @@ each, mirroring `backing_up`/`updating`/`migrating` in the forward flow. A
 failure in any of them moves to `revert_failed`; resuming re-enters whichever
 sub-phase has unfinished checkpointed work.
 
-`needs_attention` and `revert_failed` can also move to `dismissed` (see Dismiss below).
+`needs_attention` and `revert_failed` can also move to `dismissed` (see Dismiss below). `backing_up` can move to `stopped` (see Stop below).
 
-`completed`, `reverted`, and `dismissed` are terminal states. They no longer appear as the current unresolved migration.
+`completed`, `reverted`, `dismissed`, and `stopped` are terminal states. They no longer appear as the current unresolved migration.
 
 ## Per-Site Progress
 
@@ -238,7 +238,7 @@ Pilot stops before updating code, records the failed site, and restores every si
 
 Pilot moves the operation to `needs_attention`. Sites remain protected while the user investigates or chooses a recovery action.
 
-A backup, update or migrate task that is cancelled, or whose process dies, has the same result: its failure callback moves the operation to `needs_attention` with the diagnosis "The task stopped before it finished", so the user can retry, restore, or dismiss it. A stopped backup also restores the sites' maintenance settings. The callback does nothing when the task had already queued the next task.
+Update, migrate, and recovery tasks cannot be cancelled once they run; only a queued one can. A backup, update or migrate task that is cancelled, or whose process dies, has the same result: its failure callback moves the operation to `needs_attention` with the diagnosis "The task stopped before it finished", so the user can retry, restore, or dismiss it. A stopped backup also restores the sites' maintenance settings. The callback does nothing when the task had already queued the next task.
 
 Every app is checked out to its target revision first, then validated as a group, before anything is installed or built.
 A failure there means no app has been reinstalled yet, so `RevertAppsTask` only has commits to check back out. See
@@ -307,6 +307,10 @@ Restore skips an app that was removed from the bench after the update and a site
 
 Dismiss closes an operation in `needs_attention` or `revert_failed` that nobody will recover, for example after the user fixed the bench by hand. `DismissMigrationTask` restarts every process on the app code now on disk, as Complete and Restore do, restores each site's maintenance and scheduler settings, deletes the recovery snapshots, records the decision, and moves the operation to `dismissed`. The record stays as history, and new updates are no longer blocked. Dismiss does not change app code or site data. When the restart fails, the operation stays open so the user can dismiss again.
 
+### Stop
+
+Stop ends a migration while it takes backups, before it changes any code or site. It is refused in any other state, and for a site migration whose app code a branch switch already changed (`can_stop` is false). Stop writes a `<operation-id>.stop` marker next to the operation record and cancels the running backup task. The backup task's cancel callback, or the chain when it next calls `enqueue_next`, then restores each site's maintenance settings, deletes the backups taken so far, and moves the operation to `stopped`. If the chain already started the update, stop withdraws the marker and returns `409`.
+
 ## Admin API and UI
 
 The main endpoints are:
@@ -323,6 +327,7 @@ POST /migrations/<operation-id>/actions/retry
 POST /migrations/<operation-id>/actions/restore
 POST /migrations/<operation-id>/actions/bypass-patch
 POST /migrations/<operation-id>/actions/dismiss
+POST /migrations/<operation-id>/actions/stop
 ```
 
 Starting an update or standalone migration returns both an operation identity and a task ID. The Admin UI navigates to the migration detail page because the operation—not the first task—is the long-lived workflow.
@@ -338,7 +343,7 @@ The detail page groups the chain into a Server section and a Sites section, spli
 ```text
 pilot/core/bench/migration/
   operation.py    workflow behavior and durable operation data
-  recovery.py     retry, skip patch, restore, and dismiss actions
+  recovery.py     stop, retry, skip patch, restore, and dismiss actions
   state.py        states, allowed transitions, and next-step selection
   store.py        atomic JSON persistence and operation lookup
   diagnosis.py    migration-output classification

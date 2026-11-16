@@ -175,12 +175,17 @@ class MigrationOperation(MigrationRecovery):
             return
         sites = [self.bench.site(site.name) for site in self.sites]
         needed = sum(
-            site.backups.estimated_database_size for site in sites if not site.migration_backup.is_stored_in_s3
+            site.backups.estimated_database_size
+            for site in sites
+            if not site.migration_backup.is_stored_in_s3
         )
         ensure_free_space(self.bench.sites_path, needed, "the backups this migration takes first")
 
     def enqueue_next(self, handoff_from: str | None = None) -> str | None:
-        """Queue the task the current state asks for, or nothing if the chain pauses."""
+        """Queue the task the current state asks for, or nothing if the chain pauses or was stopped."""
+        if self.is_stop_requested:
+            self.finish_stop()
+            return None
         step = self.state.next_step(self)
         if step is None:
             return None
@@ -338,6 +343,9 @@ class MigrationOperation(MigrationRecovery):
         detail = f": {reason.rstrip('.')}" if reason else ""
         if not self.chain or self.chain[-1]["task_id"] != task_id:
             return
+        if self.is_stop_requested:
+            self.finish_stop()
+            return
         if self.state == "retrying":
             self._enter_needs_attention(self.return_state or "migrating", self.failed_site)
             return
@@ -426,10 +434,10 @@ class MigrationOperation(MigrationRecovery):
                 site_obj.set_maintenance_settings(site.original_config)
 
     def _discard_snapshots(self) -> None:
-        """Discard the migration backups of the sites."""
+        """Discard the migration backups of the sites, partial ones too."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
-            if site.backup_status == "backed_up" and site_obj.exists:
+            if site.backup_status != "pending" and site_obj.exists:
                 site_obj.migration_backup.discard()
 
     def _lift_maintenance(self) -> None:

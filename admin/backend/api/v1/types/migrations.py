@@ -19,6 +19,7 @@ MigrationStateName = Literal[
     "completed",
     "reverted",
     "dismissed",
+    "stopped",
 ]
 
 
@@ -77,7 +78,7 @@ class MigrationDiagnosis(TypedDict):
 
 
 class MigrationDecision(TypedDict):
-    action: Literal["bypass_patch", "dismiss"]
+    action: Literal["bypass_patch", "dismiss", "stop"]
     at: str
     site: NotRequired[str | None]
     patch: NotRequired[str]
@@ -119,6 +120,7 @@ class MigrationSummary(TypedDict):
     revert_checkpoints: dict[str, bool]
     decisions: list[MigrationDecision]
     can_restore: bool
+    can_stop: bool
     task_logs: list[MigrationTaskLog]
     pending_action: MigrationPendingAction | None
 

@@ -10,6 +10,7 @@ class RestartServicesTask(Task):
     """Chain link: restart services to finish a restore, then mark the operation reverted."""
 
     command: ClassVar[str] = "restart-services"
+    is_cancellable_while_running: ClassVar[bool] = False
 
     operation_id: str
 
