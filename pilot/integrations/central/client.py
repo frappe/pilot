@@ -67,19 +67,23 @@ class CentralClient:
         return self.forward("central.api.pilot.storage_regions", "GET")
 
     def notify_central(
-        self, event: str, message: str, context: dict | None = None, reference_name: str | None = None
+        self,
+        event: str,
+        message: str,
+        context: dict | None = None,
+        reference_name: str | None = None,
+        reference_doctype: str | None = None,
     ) -> Any:
         """Report a bench event to Central. Central deduplicates repeats per ``reference_name``."""
-        return self.forward(
-            "central.notification.api.report_pilot_event",
-            "POST",
-            {
-                "event_type": event,
-                "message": message,
-                "context": context or {},
-                "reference_name": reference_name,
-            },
-        )
+        body = {
+            "event_type": event,
+            "message": message,
+            "context": context or {},
+            "reference_name": reference_name,
+        }
+        if reference_doctype:
+            body["reference_doctype"] = reference_doctype
+        return self.forward("central.notification.api.report_pilot_event", "POST", body)
 
     def is_server_access_locked(self) -> bool:
         """Whether Central locks access to this server past its sites, as for an open free trial."""

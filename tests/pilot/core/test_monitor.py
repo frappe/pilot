@@ -12,7 +12,6 @@ from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
 from pilot.core.bench import Bench
 from pilot.core.notification.notifier import Notifier
-from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.notification.webhooks import WEBHOOK_TIMEOUT_SECONDS, WebhookDelivery, send_webhook
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
 from pilot.core.server.monitoring_proc import CPU_STAT_FIELDS
@@ -411,6 +410,9 @@ def test_usage_back_under_the_limit_after_an_alert_sends_a_recovery(tmp_path: Pa
     with _captured_alerts() as payloads:
         monitor.send_alert_if_required(_system_record(cpu=95.0))
         monitor.send_alert_if_required(_system_record(cpu=10.0))
+        assert len(payloads) == 1, "usage must stay under the limit for the window to resolve"
+        _age_alerts(monitor)
+        monitor.send_alert_if_required(_system_record(cpu=10.0))
 
     assert [payload["event"] for payload in payloads] == ["resource_limit_breached", "resource_limit_recovered"]
     assert payloads[1]["context"]["recovered_limits"] == ["cpu_usage_limit"]
@@ -442,10 +444,12 @@ def test_a_corrupt_alerts_file_does_not_stop_the_tick(tmp_path: Path) -> None:
 
 
 def _age_alerts(monitor: Monitor) -> None:
-    """Push every recorded breach back past the sustain window."""
+    """Push every alert past its window, whether it waits to fire or to resolve."""
     state = json.loads(monitor.alerts_path.read_text())
     for entry in state.values():
-        entry["since"] -= SustainedAlerts.window_seconds + 1
+        for field in ("since", "clear_since"):
+            if field in entry:
+                entry[field] -= monitor.alert_window_seconds + 1
     monitor.alerts_path.write_text(json.dumps(state))
 
 
@@ -580,8 +584,7 @@ def test_an_undelivered_alert_is_recorded_locally_once(tmp_path: Path) -> None:
 
 
 def test_a_breach_that_recovers_and_returns_is_recorded_again(tmp_path: Path) -> None:
-    """`recorded` lives with the condition, so a cleared limit that breaks a
-    second time is a new incident and earns a new row."""
+    """A resolved limit that breaks a second time is a new incident and earns new rows."""
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
 
     with _captured_alerts():
@@ -590,12 +593,18 @@ def test_a_breach_that_recovers_and_returns_is_recorded_again(tmp_path: Path) ->
         monitor.send_alert_if_required(_system_record(cpu=95.0))
 
         monitor.send_alert_if_required(_system_record(cpu=10.0))
+        _age_alerts(monitor)
+        monitor.send_alert_if_required(_system_record(cpu=10.0))
 
         monitor.send_alert_if_required(_system_record(cpu=95.0))
         _age_alerts(monitor)
         monitor.send_alert_if_required(_system_record(cpu=95.0))
 
-    assert len(monitor.bench.notifications.list(10)) == 2
+    assert [item.title for item in monitor.bench.notifications.list(10)] == [
+        "Resource limit breached",
+        "Resource use back under the limit",
+        "Resource limit breached",
+    ]
 
 
 def test_a_local_record_that_failed_is_retried_on_the_next_tick(tmp_path: Path) -> None:
@@ -623,8 +632,7 @@ def test_a_local_record_that_failed_is_retried_on_the_next_tick(tmp_path: Path) 
 
 
 def test_a_delivered_alert_whose_local_write_failed_is_still_recorded(tmp_path: Path) -> None:
-    """Delivery retires the condition from `due` for good. The bench's own record
-    is tracked apart from that, so a failed write is still retried afterwards."""
+    """Delivery and the bench's own record are tracked apart, so a failed write is still retried."""
     from pilot.core.notification import NotificationStore
 
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
@@ -637,7 +645,7 @@ def test_a_delivered_alert_whose_local_write_failed_is_still_recorded(tmp_path: 
             monitor.send_alert_if_required(_system_record(cpu=95.0))
 
         assert monitor.bench.notifications.list(10) == []
-        assert json.loads(monitor.alerts_path.read_text())["cpu_usage_limit"]["notified"] is True
+        assert json.loads(monitor.alerts_path.read_text())["cpu_usage_limit"]["sent"] is True
 
         monitor.send_alert_if_required(_system_record(cpu=95.0))
 
@@ -681,12 +689,14 @@ def test_main_pings_sites_on_their_own_thread(monkeypatch: pytest.MonkeyPatch) -
     monitoring.main()
 
     assert all(event.wait(timeout=5) for event in started.values())
-    assert sorted(loops, key=lambda loop: loop[0]) == [
+    *loops, (name, interval, uptime) = sorted(loops, key=lambda loop: loop[0])
+    assert (name, interval) == ("uptime", monitoring.UPTIME_INTERVAL)
+    assert loops == [
         ("MainThread", monitoring.METRICS_INTERVAL, monitoring.collect_metrics),
         ("rollups", monitoring.ROLLUP_INTERVAL, monitoring.update_site_rollups),
         ("telemetry", monitoring.TELEMETRY_INTERVAL, monitoring.send_telemetry),
-        ("uptime", monitoring.UPTIME_INTERVAL, uptime_monitoring.main),
     ]
+    assert isinstance(uptime.__self__, uptime_monitoring.UptimeRunner)
 
 
 def test_site_rollups_update_every_bench_and_survive_one_failure(tmp_path) -> None:

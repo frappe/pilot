@@ -11,8 +11,7 @@ import time
 import typing
 from datetime import UTC, datetime
 
-from pilot.core.notification.events import raise_event, record_alert
-from pilot.core.notification.sustained import SustainedAlerts
+from pilot.core.notification.alert_log import FIRING, RESOLVED, AlertLog
 from pilot.core.server import Server
 from pilot.core.server.monitoring_datum import TelemetryShipper
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
@@ -31,9 +30,13 @@ PLATFORM_EXCEPTIONS = frozenset(
     {"OperationalError", "InterfaceError", "InternalError", "ConnectionError", "TimeoutError"}
 )
 SITE_DOWN_EVENT = "site_down"
+SITE_UP_EVENT = "site_up"
 
 
 class UptimeMonitor:
+    # How long a site must fail, or pass, its ping before its alert fires, or resolves.
+    alert_window_seconds = 60
+
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._configurator = UptimeMonitorConfigurator(bench)
@@ -97,72 +100,60 @@ class UptimeMonitor:
         return results
 
     def send_alert_if_required(self, results: list[dict]) -> None:
-        """A site that has failed its ping for five unbroken minutes is an
-        incident worth waking someone for. One ping can fail for any reason.
-        Sites in maintenance are down on purpose and never alert."""
-        alerting = self.bench.config.resource_limits.site_uptime
-        down = [result["site"] for result in results if not result["up"] and not result.get("maintenance")]
-        down = down if alerting else []
-        alerts = SustainedAlerts(self.alerts_path)
-        due = alerts.due(down)
-        up = {result["site"] for result in results if result["up"]}
-        self.announce_recovered([site for site in alerts.recovered if site in up])
+        """A site that fails its ping for the whole window fires an alert, which resolves once the site
+        answers for the whole window. One ping can fail for any reason. A site in maintenance keeps its
+        state. A site that is gone, or alerting that is off, drops its alert without a resolution."""
+        tracked = {result["site"]: result for result in results}
+        if not self.bench.config.resource_limits.site_uptime:
+            tracked = {}
+        alerts = AlertLog(self.alerts_path, self.alert_window_seconds)
+        alerts.retain(tracked)
+        down = [site for site, result in tracked.items() if not result["up"] and not result.get("maintenance")]
+        alerts.update(active=down, clear=[site for site, result in tracked.items() if result["up"]])
+        alerts.deliver(self.bench, FIRING, lambda sites: self.get_down_payload(tracked[sites[0]]))
+        alerts.deliver(self.bench, RESOLVED, lambda sites: self.get_recovered_payload(sites[0]))
 
-        recorded = [
-            site
-            for site in alerts.unrecorded(alerts.sustained())
-            if record_alert(self.bench, self._alert_payload([site], results))
-        ]
-        if recorded:
-            alerts.mark_recorded(recorded)
-
-        if not due:
-            return
-
-        if self.bench.notifier.send(self._alert_payload(due, results)):
-            alerts.mark_notified(due)
-
-    def announce_recovered(self, sites: list[str]) -> None:
-        """Tell webhooks that a site they heard was down answers again."""
-        for site in sites:
-            raise_event(
-                self.bench,
-                feed=False,
-                event="site_up",
-                title=f"{site} is reachable again",
-                category="Sites",
-                severity="Info",
-                site=site,
-                action_route=f"/sites/{site}",
-            )
-
-    def _alert_payload(self, down: list[str], results: list[dict]) -> dict:
-        """Same event/message/context shape the resource alerts use."""
-        last_seen = {result["site"]: result for result in results}
-        sites = [
-            {
-                "site": site,
-                "status_code": last_seen[site]["status_code"],
-                "response_ms": last_seen[site]["response_ms"],
-                "error": last_seen[site].get("error"),
-            }
-            for site in down
-        ]
-        site = down[0] if len(down) == 1 else None
+    def get_down_payload(self, result: dict) -> dict:
+        """The site_down alert for one site. Central names the site from the Site reference."""
+        site = result["site"]
         return {
             "event": SITE_DOWN_EVENT,
-            "title": f"{site} is unreachable" if site else f"{len(down)} sites are unreachable",
+            "title": f"{site} is unreachable",
             "category": "Sites",
             "severity": "Error",
             "site": site,
-            "action_route": f"/sites/{site}" if site else "/sites",
-            "message": f"{self.bench.config.name}: {', '.join(down)} unreachable",
+            "action_route": f"/sites/{site}",
+            "message": f"Health check failed for {self.alert_window_seconds} seconds ({get_failure_reason(result)}).",
+            "reference_doctype": "Site",
+            "reference_name": site,
             "context": {
                 "bench": self.bench.config.name,
                 "time": datetime.now(UTC).isoformat(),
-                "sustained_seconds": SustainedAlerts.window_seconds,
-                "sites": sites,
+                "sustained_seconds": self.alert_window_seconds,
+                "sites": [
+                    {
+                        "site": site,
+                        "status_code": result["status_code"],
+                        "response_ms": result["response_ms"],
+                        "error": result.get("error"),
+                    }
+                ],
             },
+        }
+
+    def get_recovered_payload(self, site: str) -> dict:
+        """The site_up event that resolves a site_down alert."""
+        return {
+            "event": SITE_UP_EVENT,
+            "title": f"{site} is reachable again",
+            "category": "Sites",
+            "severity": "Info",
+            "site": site,
+            "action_route": f"/sites/{site}",
+            "message": f"Health check passed for {self.alert_window_seconds} seconds.",
+            "reference_doctype": "Site",
+            "reference_name": site,
+            "context": {"bench": self.bench.config.name, "time": datetime.now(UTC).isoformat(), "site": site},
         }
 
     @staticmethod
@@ -188,6 +179,13 @@ class UptimeMonitor:
         if error:
             result["error"] = error
         return result
+
+
+def get_failure_reason(result: dict) -> str:
+    """Why a ping failed, in a few words: the HTTP status, or the error when there was no answer."""
+    if result["status_code"]:
+        return f"HTTP {result['status_code']}"
+    return result.get("error") or "no answer"
 
 
 def get_ping_fault(status: int, body: bytes) -> str:
@@ -219,18 +217,32 @@ def _production_uptime_monitors() -> list[UptimeMonitor]:
     ]
 
 
-def main() -> None:
-    """Ping the sites of every production bench, and send the count of sites in each state to Datum."""
-    monitors = _production_uptime_monitors()
-    results = [result for monitor in monitors for result in monitor.collect()]
-    if not monitors:
-        return
+class UptimeRunner:
+    """Pings the sites of every production bench each round. Datum gets the count of sites in each
+    state at most once a minute, though rounds run more often."""
 
-    shipper = TelemetryShipper(monitors[0].bench.config.telemetry)
-    shipper.add_sites(results)
-    shipper.send()
+    telemetry_interval_seconds = 60.0
+
+    def __init__(self) -> None:
+        self.telemetry_sent_at: float | None = None
+
+    def run(self) -> None:
+        """Run one round."""
+        monitors = _production_uptime_monitors()
+        results = [result for monitor in monitors for result in monitor.collect()]
+        if monitors and self.is_telemetry_due:
+            self.telemetry_sent_at = time.monotonic()
+            shipper = TelemetryShipper(monitors[0].bench.config.telemetry)
+            shipper.add_sites(results)
+            shipper.send()
+
+    @property
+    def is_telemetry_due(self) -> bool:
+        """Whether a minute has passed since the last send."""
+        if self.telemetry_sent_at is None:
+            return True
+        return time.monotonic() - self.telemetry_sent_at >= self.telemetry_interval_seconds
 
 
 if __name__ == "__main__":
-    main()
-
+    UptimeRunner().run()

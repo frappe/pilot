@@ -4,7 +4,7 @@ from pathlib import Path
 
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
-# Sites are pinged once a minute; a 2-minute floor keeps every bar holding at least one check.
+# Sites are pinged every 15 seconds; a 2-minute floor keeps every bar holding several checks.
 
 
 class SiteUptimeProvider(WindowedLogProvider):
