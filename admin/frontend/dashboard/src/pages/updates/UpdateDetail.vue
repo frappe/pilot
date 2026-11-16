@@ -32,6 +32,7 @@ const error = ref('')
 const confirmSkip = ref(false)
 const confirmRestore = ref(false)
 const confirmDismiss = ref(false)
+const confirmStop = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const title = computed(() => opTitle(op.value))
@@ -183,6 +184,12 @@ const doDismiss = () => {
   return runAction(() => updatesApi.dismiss(props.operationId))
 }
 
+const doStop = () => {
+  confirmStop.value = false
+
+  return runAction(() => updatesApi.stop(props.operationId))
+}
+
 const doSkip = () => {
   confirmSkip.value = false
 
@@ -224,6 +231,16 @@ onUnmounted(() => clearTimeout(timer))
       </Teleport>
 
       <Teleport defer to="#header-actions">
+        <Button
+          v-if="op.can_stop"
+          theme="red"
+          icon-left="lucide-square"
+          :loading="acting"
+          @click="confirmStop = true"
+        >
+          Stop update
+        </Button>
+
         <Button
           :variant="isConsoleOpen ? 'subtle' : 'ghost'"
           icon-left="lucide-square-terminal"
@@ -426,6 +443,13 @@ onUnmounted(() => clearTimeout(timer))
         title="Dismiss this update?"
         message="Pilot restarts services and deletes the backup. Sites stay as they are now."
         :actions="[{ label: 'Dismiss', variant: 'solid', theme: 'red', onClick: doDismiss }]"
+      />
+
+      <Dialog
+        v-model="confirmStop"
+        title="Stop this update?"
+        message="No app or site changed yet. Pilot stops the backup, deletes the backups of this update and takes the sites out of maintenance mode."
+        :actions="[{ label: 'Stop update', variant: 'solid', theme: 'red', onClick: doStop }]"
       />
     </template>
   </div>

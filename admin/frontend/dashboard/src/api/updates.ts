@@ -23,12 +23,15 @@ export const updatesApi = {
   dismiss: (id: string): Promise<MigrationAccepted> =>
     unwrap(request.post(`migrations/${id}/actions/dismiss`).json()),
 
+  stop: (id: string): Promise<MigrationAccepted> =>
+    request.post(`migrations/${id}/actions/stop`).json(),
+
   bypassPatch: (id: string, patch: string): Promise<MigrationAccepted> =>
     unwrap(request.post(`migrations/${id}/actions/bypass-patch`, { json: { patch } }).json()),
 }
 
 export const isResolved = (operation: Operation) => {
-  return !operation || ['completed', 'reverted', 'dismissed'].includes(operation.state)
+  return !operation || ['completed', 'reverted', 'dismissed', 'stopped'].includes(operation.state)
 }
 
 export const needsAttention = (operation: Operation): boolean => {

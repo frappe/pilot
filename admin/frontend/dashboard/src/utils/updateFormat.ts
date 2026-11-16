@@ -51,7 +51,7 @@ const FILTER_STATES: Record<string, (string | undefined)[]> = {
   active: ACTIVE_STATES,
   attention: ATTENTION_STATES,
   completed: ['completed'],
-  closed: ['reverted', 'dismissed'],
+  closed: ['reverted', 'dismissed', 'stopped'],
 }
 
 // One-word labels: five of them have to fit a 375px phone without scrolling.
@@ -111,6 +111,7 @@ const ACTION_LABEL: Record<string, string> = {
   restore: 'Restore',
   bypass_patch: 'Skip patch',
   dismiss: 'Dismiss',
+  stop: 'Stop',
 }
 
 export const pendingActionLabel = (
@@ -125,6 +126,7 @@ const STATE_TONE: Record<string, StateTone> = {
   completed: 'green',
   reverted: 'blue',
   dismissed: 'gray',
+  stopped: 'gray',
   needs_attention: 'red',
   revert_failed: 'red',
   preparing: 'amber',
@@ -141,6 +143,7 @@ const STATE_LABEL: Record<string, string> = {
   completed: 'Completed',
   reverted: 'Reverted',
   dismissed: 'Dismissed',
+  stopped: 'Stopped',
   needs_attention: 'Needs attention',
   revert_failed: 'Restore failed',
   preparing: 'Preparing',

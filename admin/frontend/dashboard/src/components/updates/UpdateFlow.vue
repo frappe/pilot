@@ -16,7 +16,7 @@ import type {
 } from '@/types/migrations'
 import { fmtDuration } from '@/utils/taskFormat'
 
-type Status = 'done' | 'running' | 'failed' | 'waiting' | 'skipped' | 'unknown'
+type Status = 'done' | 'running' | 'failed' | 'stopped' | 'waiting' | 'skipped' | 'unknown'
 type Child = { id: string; label: string; status: Status; taskId: string | null; time: string }
 type Revision = { from: string; to: string; url: string | null }
 type Row = Child & { children: Child[]; revision?: Revision }
@@ -41,6 +41,7 @@ const expanded = ref(new Set<string>())
 const mark: Record<Status, string> = {
   done: 'lucide-circle-check text-ink-green-6',
   failed: 'lucide-circle-x text-ink-red-6',
+  stopped: 'lucide-circle-x text-ink-gray-5',
   running: '',
   waiting: 'lucide-circle-dashed text-ink-gray-4',
   skipped: 'lucide-circle-dashed text-ink-gray-4',
@@ -60,6 +61,7 @@ const stageIcon: Record<string, Component | string> = {
 const tileTone: Record<Status, string> = {
   done: 'bg-surface-gray-1 border-outline-gray-1.5 text-ink-gray-6',
   failed: 'bg-surface-red-1 border-outline-red-3 text-ink-red-6',
+  stopped: 'bg-surface-gray-1 border-outline-gray-4 text-ink-gray-6',
   running: 'bg-surface-gray-1 border-outline-gray-1.5 text-ink-gray-7',
   waiting: 'border-dashed border-outline-gray-4 text-ink-gray-5',
   skipped: 'border-dashed border-outline-gray-4 text-ink-gray-5',
@@ -126,7 +128,7 @@ const isRestoring = computed(
 )
 
 const idle = computed<Status>(() =>
-  isRestoring.value || props.op.state === 'dismissed' ? 'skipped' : 'waiting',
+  isRestoring.value || ['dismissed', 'stopped'].includes(props.op.state) ? 'skipped' : 'waiting',
 )
 
 const isIdle = (status: Status) => status === 'waiting' || status === 'skipped'
@@ -143,6 +145,7 @@ const fromLog = (taskId: string) => {
 
 const aggregate = (statuses: Status[]): Status => {
   if (statuses.includes('failed')) return 'failed'
+  if (statuses.includes('stopped')) return 'stopped'
   if (statuses.includes('running')) return 'running'
   if (statuses.every(isIdle)) return idle.value
 
@@ -288,7 +291,10 @@ const runStages = computed(() => {
         'backup',
         'Back up',
         'migration-backup',
-        (site) => backupStatus[site.backup_status],
+        (site) =>
+          props.op.state === 'stopped' && site.backup_status === 'backing_up'
+            ? 'stopped'
+            : backupStatus[site.backup_status],
       ),
     )
   }
@@ -429,7 +435,9 @@ const outcome = (stage: Stage) => {
 
   if (stage.status === 'done') return `${subject} ${pastTense[stage.key]}`
   if (stage.status === 'running') return `${finished} of ${subject} ${pastTense[stage.key]}`
-  if (stage.status === 'failed') return `${finished} of ${subject} ${pastTense[stage.key]}, then stopped`
+  if (stage.status === 'failed' || stage.status === 'stopped') {
+    return `${finished} of ${subject} ${pastTense[stage.key]}, then stopped`
+  }
 
   return subject
 }

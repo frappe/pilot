@@ -121,6 +121,7 @@ test('matchesUpdateFilter groups the states behind each tab', () => {
   assert.equal(matchesUpdateFilter({ state: 'completed' }, 'completed'), true)
   assert.equal(matchesUpdateFilter({ state: 'reverted' }, 'closed'), true)
   assert.equal(matchesUpdateFilter({ state: 'dismissed' }, 'closed'), true)
+  assert.equal(matchesUpdateFilter({ state: 'stopped' }, 'closed'), true)
 })
 
 test('matchesUpdateFilter survives an unknown filter or a stateless operation', () => {
@@ -136,6 +137,7 @@ test('every operation state belongs to exactly one tab', () => {
     'completed',
     'reverted',
     'dismissed',
+    'stopped',
     'needs_attention',
     'revert_failed',
     'preparing',
