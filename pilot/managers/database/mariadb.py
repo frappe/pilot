@@ -166,10 +166,13 @@ class MariaDBManager(UserOwnedDBManager):
         if HostPlatform().is_macos:
             return self._provision_macos()
 
-        if not self.is_provisioned():
-            sizing = self._write_config()
-            self._initialize_data_dir()
-            self._install_unit(sizing)
+        # Benches initialised in parallel share this server; one of them creates the data directory.
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(self.config_dir / "provision"):
+            if not self.is_provisioned():
+                sizing = self._write_config()
+                self._initialize_data_dir()
+                self._install_unit(sizing)
         self.install_sizing_unit()
         self.enable_and_start()
         self._wait_until_reachable()
