@@ -1,4 +1,4 @@
-# App update failing on many servers
+# App update failing widely
 
 The update to one release of one app repository failed on 3 or more servers in the region in 6 hours. The alert key is `<repository>@<version>`, such as `frappe/erpnext@v16.2.0`. Pilot tells the owner of each server, and the server keeps its old version or waits for a person in the Pilot Admin UI.
 
