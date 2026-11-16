@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import time
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
@@ -144,6 +145,14 @@ def delete_session():
     return response
 
 
+MINIMUM_FREE_BYTES = 10 * 1024 * 1024
+
+
+def _is_storage_full(bench) -> bool:
+    """Whether the disk holding the bench has no room left to write."""
+    return shutil.disk_usage(bench.path.parent).free < MINIMUM_FREE_BYTES
+
+
 def _validate_login(data: dict, bench):
     """Return (error_response_or_None, redeemed_link_claims_or_None)."""
     sid = data.get("sid")
@@ -152,6 +161,13 @@ def _validate_login(data: dict, bench):
         jti = payload.get("jti") if payload else None
         expires = payload.get("exp") if payload else None
         used_logins = current_app.extensions["used_logins"]
+        if payload is None and _is_storage_full(bench):
+            return error_response(
+                "storage_full",
+                "The server storage is full, so the sign-in link could not be checked. "
+                "Free up space or upgrade the storage.",
+                507,
+            ), None
         if (
             payload is None
             or not jti
