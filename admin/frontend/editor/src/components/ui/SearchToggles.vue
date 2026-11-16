@@ -3,7 +3,7 @@
     <button
       v-for="option in OPTIONS"
       :key="option.id"
-      class="flex h-6 w-6 items-center justify-center rounded font-mono text-xs font-semibold"
+      class="flex h-6 w-6 items-center justify-center rounded-4 font-mono text-xs-semibold"
       :class="
         modelValue[option.id]
           ? 'bg-surface-gray-4 text-ink-gray-9'

@@ -46,7 +46,7 @@
             <MatchLine :text="match.text" :path="group.file" :start="match.start" :end="match.end" />
           </div>
         </div>
-        <div v-if="!flat.length" class="ed-empty m-auto" :class="{ 'text-ink-red-4': error }">
+        <div v-if="!flat.length" class="ed-empty m-auto" :class="{ 'text-ink-red-7': error }">
           {{ loading ? 'Searching…' : error || (query ? 'No matches' : 'Type to search') }}
         </div>
         <div v-else-if="limit < flat.length" class="ed-empty">

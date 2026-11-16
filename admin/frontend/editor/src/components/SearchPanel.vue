@@ -15,7 +15,7 @@
       </button>
       <div class="min-w-0 flex-1 space-y-1">
         <div
-          class="flex h-9 items-center rounded-md border border-outline-gray-2 bg-surface-gray-2 pr-1 focus-within:border-outline-gray-3 sm:h-8"
+          class="flex h-9 items-center rounded-5 border border-outline-gray-2 bg-surface-gray-2 pr-1 focus-within:border-outline-gray-3 sm:h-8"
         >
           <input
             ref="queryInput"
@@ -30,7 +30,7 @@
         </div>
         <div
           v-show="showReplace"
-          class="flex h-9 items-center rounded-md border border-outline-gray-2 bg-surface-gray-2 pr-1 focus-within:border-outline-gray-3 sm:h-8"
+          class="flex h-9 items-center rounded-5 border border-outline-gray-2 bg-surface-gray-2 pr-1 focus-within:border-outline-gray-3 sm:h-8"
         >
           <input
             v-model="replace"
@@ -52,7 +52,7 @@
 
     <div class="flex h-7 shrink-0 items-center px-3 text-xs text-ink-gray-5">
       <span v-if="loading">Searching…</span>
-      <span v-else-if="error" class="truncate text-ink-red-4" :title="error">{{ error }}</span>
+      <span v-else-if="error" class="truncate text-ink-red-7" :title="error">{{ error }}</span>
       <span v-else-if="results.length">{{ summary }}</span>
     </div>
 
@@ -96,7 +96,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
-import { confirmDialog } from 'frappe-ui'
+import { dialog } from 'frappe-ui'
 import { searchApi } from '@/api/search'
 import FileIcon from '@/components/FileIcon.vue'
 import PanelHeader from '@/components/ui/PanelHeader.vue'
@@ -230,11 +230,11 @@ async function run() {
 
 function replaceAll() {
   if (!query.value || !results.value.length) return
-  confirmDialog({
+  dialog.confirm({
     title: 'Replace all',
     message: `Replace ${totalMatches.value} occurrence(s) across ${results.value.length} file(s)?`,
-    onConfirm: async ({ hideDialog }) => {
-      hideDialog()
+    confirmLabel: 'Replace all',
+    onConfirm: async () => {
       const files = results.value.map((f) => f.path)
       await searchApi.replace({ query: query.value, replace: replace.value, ...opts.value, files })
       for (const path of files) {

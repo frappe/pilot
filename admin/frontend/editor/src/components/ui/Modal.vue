@@ -2,7 +2,7 @@
   <div class="fixed inset-0 z-50 flex items-stretch justify-center sm:items-start sm:pt-[9vh]" @click="emit('close')">
     <div class="fixed inset-0 bg-black/25"></div>
     <div
-      class="relative z-10 flex flex-col overflow-hidden bg-surface-white shadow-2xl max-sm:h-full max-sm:w-full sm:rounded-xl sm:border sm:border-outline-gray-2"
+      class="relative z-10 flex flex-col overflow-hidden bg-surface-base shadow-2xl max-sm:h-full max-sm:w-full sm:rounded-7 sm:border sm:border-outline-gray-2"
       :class="sizeClass"
       @click.stop
     >

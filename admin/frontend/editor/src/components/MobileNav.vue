@@ -26,7 +26,7 @@
           >
             <span class="lucide-minus h-4 w-4 text-current"></span>
           </button>
-          <span class="w-7 text-center text-sm font-semibold tabular-nums text-ink-gray-8">{{ fontSize }}</span>
+          <span class="w-7 text-center text-sm-semibold tabular-nums text-ink-gray-8">{{ fontSize }}</span>
           <button
             class="flex h-8 w-8 items-center justify-center rounded-full text-ink-gray-6 hover:bg-surface-gray-2"
             aria-label="Increase font size"
@@ -64,7 +64,7 @@
         <span :class="it.icon" class="h-5 w-5 text-current"></span>
         <span
           v-if="it.id === 'git' && gitCount"
-          class="fab-solid absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-2xs font-semibold ring-2 ring-panel"
+          class="fab-solid absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-2xs-semibold ring-2 ring-panel"
         >
           {{ gitCount }}
         </span>

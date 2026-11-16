@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full flex-col bg-surface-white sm:flex-row">
+  <div class="flex h-full flex-col bg-surface-base sm:flex-row">
     <!-- files + metadata; on mobile this is the first page, hidden once a file opens -->
     <div
       v-show="!isMobile || !selectedPath"
@@ -28,7 +28,7 @@
               <span class="flex items-center gap-1">
                 <span class="lucide-clock h-3.5 w-3.5"></span>{{ relTime(info.time) }}
               </span>
-              <button class="flex items-center gap-1 rounded hover:text-ink-gray-8" :title="info.sha" @click="copySha">
+              <button class="flex items-center gap-1 rounded-4 hover:text-ink-gray-8" :title="info.sha" @click="copySha">
                 <span class="lucide-copy h-3.5 w-3.5"></span>{{ copied ? 'Copied' : info.short }}
               </button>
             </div>
@@ -50,7 +50,7 @@
               <FileIcon :name="baseName(f.path)" class="ed-lane" />
               <span class="ed-name">{{ baseName(f.path) }}</span>
               <span class="ed-path">{{ dirName(f.path) }}</span>
-              <span class="ed-lane ml-auto text-xs font-semibold" :class="statusColor(f.code)">
+              <span class="ed-lane ml-auto text-xs-semibold" :class="statusColor(f.code)">
                 {{ letter(f.code) }}
               </span>
             </div>
@@ -133,7 +133,7 @@ function letter(code) {
   return code.includes('?') ? 'U' : code[0]
 }
 function statusColor(code) {
-  return { U: 'text-ink-green-3', A: 'text-ink-green-3', D: 'text-ink-red-4' }[letter(code)] || 'text-ink-amber-3'
+  return { U: 'text-ink-green-5', A: 'text-ink-green-5', D: 'text-ink-red-7' }[letter(code)] || 'text-ink-amber-5'
 }
 
 function selectFile(path) {

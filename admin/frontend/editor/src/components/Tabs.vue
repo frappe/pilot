@@ -25,14 +25,14 @@
         @touchend="onTouchEnd"
       >
         <FileIcon :name="t.name" class="ed-lane" />
-        <span class="truncate" :class="{ 'text-ink-amber-3': t.dirty, italic: t.preview }">{{ t.name }}</span>
+        <span class="truncate" :class="{ 'text-ink-amber-5': t.dirty, italic: t.preview }">{{ t.name }}</span>
         <span
-          class="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-gray-4 sm:h-4 sm:w-4"
+          class="flex h-6 w-6 items-center justify-center rounded-4 hover:bg-surface-gray-4 sm:h-4 sm:w-4"
           @click.stop="close(t)"
         >
           <span
             v-if="t.dirty"
-            class="h-2 w-2 rounded-full bg-ink-amber-3 group-hover:hidden"
+            class="h-2 w-2 rounded-full bg-surface-amber-7 group-hover:hidden"
             title="Unsaved changes"
           ></span>
           <span
@@ -46,30 +46,30 @@
     <div class="flex shrink-0 items-center gap-1 border-l border-outline-gray-1 px-2">
       <button
         v-if="store.active?.dirty"
-        class="rounded-md px-2 py-1 text-xs font-medium text-ink-amber-3 sm:hidden"
+        class="rounded-5 px-2 py-1 text-xs-medium text-ink-amber-5 sm:hidden"
         @click="store.save(store.active.path)"
       >
         Save
       </button>
       <span
         v-if="dirtyCount && !store.autosave"
-        class="hidden items-center gap-1 text-xs text-ink-amber-3 sm:flex"
+        class="hidden items-center gap-1 text-xs text-ink-amber-5 sm:flex"
         :title="`${dirtyCount} unsaved file(s)`"
       >
-        <span class="h-2 w-2 rounded-full bg-ink-amber-3"></span>
+        <span class="h-2 w-2 rounded-full bg-surface-amber-7"></span>
         {{ dirtyCount }} unsaved
       </span>
       <button
-        class="rounded-md px-1.5 py-1 text-xs"
-        :class="store.autosave ? 'text-ink-green-3' : 'text-ink-gray-5 hover:text-ink-gray-8'"
+        class="rounded-5 px-1.5 py-1 text-xs"
+        :class="store.autosave ? 'text-ink-green-5' : 'text-ink-gray-5 hover:text-ink-gray-8'"
         :title="store.autosave ? 'Auto-save on' : 'Auto-save off'"
         @click="store.toggleAutosave()"
       >
         Auto-save
       </button>
       <button
-        class="rounded-md px-1.5 py-1 text-xs"
-        :class="store.blame ? 'text-ink-green-3' : 'text-ink-gray-5 hover:text-ink-gray-8'"
+        class="rounded-5 px-1.5 py-1 text-xs"
+        :class="store.blame ? 'text-ink-green-5' : 'text-ink-gray-5 hover:text-ink-gray-8'"
         :title="store.blame ? 'Blame on' : 'Blame off'"
         @click="store.toggleBlame()"
       >
@@ -81,7 +81,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { confirmDialog } from 'frappe-ui'
+import { dialog } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useContextMenu } from '@/composables/useContextMenu'
@@ -106,13 +106,11 @@ function close(t) {
     store.close(t.path)
     return
   }
-  confirmDialog({
+  dialog.danger({
     title: 'Discard changes',
     message: `Discard unsaved changes to ${t.name}?`,
-    onConfirm: ({ hideDialog }) => {
-      hideDialog()
-      store.close(t.path)
-    },
+    confirmLabel: 'Discard',
+    onConfirm: () => store.close(t.path),
   })
 }
 

@@ -33,7 +33,7 @@
     >
       <span
         v-if="active"
-        class="absolute inset-y-1 right-0 w-0.5 rounded-full bg-surface-gray-7"
+        class="absolute inset-y-1 right-0 w-0.5 rounded-full bg-surface-gray-10"
       ></span>
       <span
         v-if="isDir"
@@ -43,7 +43,7 @@
       <span v-else class="ed-lane"></span>
       <FileIcon :name="entry.name" :dir="isDir" :open="isDir && node.expanded" class="ed-lane" />
       <span class="ed-name" :class="statusColor">{{ entry.name }}</span>
-      <span class="ed-lane ml-auto text-xs font-semibold" :class="statusColor">{{ status }}</span>
+      <span class="ed-lane ml-auto text-xs-semibold" :class="statusColor">{{ status }}</span>
     </div>
 
     <div v-if="isDir && node.expanded" class="ml-[15px] border-l border-outline-gray-1">
@@ -105,9 +105,9 @@ const status = computed(() => {
 const statusColor = computed(() => {
   const s = status.value
   if (!s) return ''
-  if (s === 'U' || s === 'A') return 'text-ink-green-3'
-  if (s === 'D') return 'text-ink-red-4'
-  return 'text-ink-amber-3'
+  if (s === 'U' || s === 'A') return 'text-ink-green-5'
+  if (s === 'D') return 'text-ink-red-7'
+  return 'text-ink-amber-5'
 })
 
 async function onClick() {

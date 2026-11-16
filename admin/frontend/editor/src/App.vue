@@ -2,6 +2,7 @@
   <FrappeUIProvider>
     <div
       class="flex h-full flex-col-reverse overflow-hidden bg-surface-gray-1 font-sans text-ink-gray-8 antialiased sm:flex-row"
+      :style="{ '--editor-font-size': `${store.fontSize}px` }"
       @keydown.ctrl.s.prevent="saveActive"
       @keydown.meta.s.prevent="saveActive"
     >
@@ -45,14 +46,13 @@
       <ConflictDialog />
       <PromptDialog />
       <ContextMenu />
-      <Dialogs />
     </div>
   </FrappeUIProvider>
 </template>
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
-import { FrappeUIProvider, Dialogs } from 'frappe-ui'
+import { FrappeUIProvider } from 'frappe-ui'
 import ActivityBar from '@/components/ActivityBar.vue'
 import MobileNav from '@/components/MobileNav.vue'
 import ExplorerPanel from '@/components/ExplorerPanel.vue'

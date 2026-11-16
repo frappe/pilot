@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full flex-col bg-surface-white">
+  <div class="flex h-full flex-col bg-surface-base">
     <div class="flex h-11 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-3 sm:h-9">
       <FileIcon :name="baseName(path)" class="ed-lane" />
       <span class="ed-name font-medium text-ink-gray-8">{{ baseName(path) }}</span>

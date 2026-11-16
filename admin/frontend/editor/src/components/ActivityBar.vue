@@ -5,7 +5,7 @@
     <button
       v-for="it in items"
       :key="it.id"
-      class="relative flex h-9 w-9 items-center justify-center rounded-md"
+      class="relative flex h-9 w-9 items-center justify-center rounded-5"
       :class="{
         'text-ink-gray-9': active === it.id,
         'text-ink-gray-5 hover:text-ink-gray-8': active !== it.id,
@@ -15,12 +15,12 @@
     >
       <span
         v-if="active === it.id"
-        class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-full bg-surface-gray-7"
+        class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-full bg-surface-gray-10"
       ></span>
       <span :class="it.icon" class="h-[18px] w-[18px] text-current"></span>
       <span
         v-if="it.id === 'git' && gitCount"
-        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-gray-7 px-1 text-2xs font-medium text-ink-white"
+        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-gray-10 px-1 text-2xs-medium text-ink-base"
       >
         {{ gitCount }}
       </span>

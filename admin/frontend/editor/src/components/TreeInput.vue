@@ -11,7 +11,7 @@
       v-model="val"
       spellcheck="false"
       autocomplete="off"
-      class="min-w-0 flex-1 rounded border border-outline-gray-3 bg-surface-white px-1 py-0.5 text-sm text-ink-gray-8 outline-none focus:border-outline-gray-4"
+      class="min-w-0 flex-1 rounded-4 border border-outline-gray-3 bg-surface-base px-1 py-0.5 text-sm text-ink-gray-8 outline-none focus:border-outline-gray-4"
       @keydown.enter.prevent="commit"
       @keydown.esc.prevent="$emit('cancel')"
       @blur="commit"

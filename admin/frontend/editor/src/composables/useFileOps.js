@@ -1,4 +1,4 @@
-import { confirmDialog } from 'frappe-ui'
+import { dialog } from 'frappe-ui'
 import { filesApi } from '@/api/files'
 import { useTreeStore, parentOf } from '@/stores/tree'
 import { useEditorStore } from '@/stores/editor'
@@ -20,11 +20,10 @@ export function useFileOps() {
     tree.startRename(path)
   }
   function remove(path, isDir) {
-    confirmDialog({
+    dialog.danger({
       title: 'Delete',
       message: `Delete ${baseName(path)}?`,
-      onConfirm: async ({ hideDialog }) => {
-        hideDialog()
+      onConfirm: async () => {
         await filesApi.del(path)
         if (isDir) editor.closeUnder(path)
         else editor.close(path)

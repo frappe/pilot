@@ -2,7 +2,7 @@
   <div class="flex h-full flex-col">
     <PanelHeader title="Source Control" @close="emit('close')">
       <template v-if="git.repo" #context>
-        <Dropdown :options="branchMenu" placement="bottom-end">
+        <Dropdown :options="branchMenu" align="end">
           <template #default="{ open }">
             <Button
               class="min-w-0"
@@ -88,7 +88,7 @@
                   @click.stop="action.run(file.path)"
                 />
               </div>
-              <span class="ed-lane text-xs font-semibold" :class="statusColor(file.code)">
+              <span class="ed-lane text-xs-semibold" :class="statusColor(file.code)">
                 {{ letter(file.code) }}
               </span>
             </div>
@@ -138,7 +138,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Button, Dropdown, Textarea, confirmDialog, toast } from 'frappe-ui'
+import { Button, Dropdown, Textarea, dialog, toast } from 'frappe-ui'
 import FileIcon from '@/components/FileIcon.vue'
 import PanelHeader from '@/components/ui/PanelHeader.vue'
 import { gitApi } from '@/api/git'
@@ -254,9 +254,13 @@ const branchTitle = computed(() =>
 )
 
 const branchMenu = computed(() => [
-  { group: 'Branches', items: branchItems.value },
-  { group: '', items: [{ label: 'Create new branch…', icon: 'lucide-plus', onClick: createBranch }] },
-  { group: 'Remote', items: remoteOptions.value },
+  { group: 'Branches', options: branchItems.value },
+  {
+    group: 'Create',
+    hideLabel: true,
+    options: [{ label: 'Create new branch…', icon: 'lucide-plus', onClick: createBranch }],
+  },
+  { group: 'Remote', options: remoteOptions.value },
 ])
 
 const branchItems = computed(() =>
@@ -272,7 +276,7 @@ function letter(code) {
   return code.includes('?') ? 'U' : code[0]
 }
 function statusColor(code) {
-  return { U: 'text-ink-green-3', A: 'text-ink-green-3', D: 'text-ink-red-4' }[letter(code)] || 'text-ink-amber-3'
+  return { U: 'text-ink-green-5', A: 'text-ink-green-5', D: 'text-ink-red-7' }[letter(code)] || 'text-ink-amber-5'
 }
 
 async function loadBranches() {
@@ -304,11 +308,11 @@ async function unstage(path) {
   await git.unstage(path)
 }
 function discard(path) {
-  confirmDialog({
+  dialog.danger({
     title: 'Discard changes',
     message: `Discard changes to ${baseName(path)}?`,
-    onConfirm: async ({ hideDialog }) => {
-      hideDialog()
+    confirmLabel: 'Discard',
+    onConfirm: async () => {
       const r = await git.discard(path)
       if (r?.ok === false) toast.error(r.message || 'Discard failed')
       else if (editor.diff?.path === path) editor.closeDiff()
@@ -370,11 +374,11 @@ async function push() {
     pushing.value = false
   }
   if (r?.ok !== false) return
-  confirmDialog({
+  dialog.danger({
     title: 'Force push',
     message: `${r.message} Force push?`,
-    onConfirm: async ({ hideDialog }) => {
-      hideDialog()
+    confirmLabel: 'Force push',
+    onConfirm: async () => {
       pushing.value = true
       try {
         const fr = await git.push(true)
