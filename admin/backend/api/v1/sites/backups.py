@@ -36,9 +36,7 @@ def backup_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = BackupSiteTask.queue(
-            Bench(bench_root), site=name, with_files=True, resource_key=f"site:{name.lower()}"
-        )
+        task_id = BackupSiteTask.queue(Bench(bench_root), site=name, with_files=True)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)

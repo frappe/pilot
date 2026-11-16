@@ -25,7 +25,6 @@ from pilot.tasks.set_max_database_connections import SetMaxDatabaseConnectionsTa
 from pilot.tasks.set_performance_schema import SetPerformanceSchemaTask
 
 database_bp = Blueprint("database", __name__)
-_DATABASE_RESOURCE_KEY = "database-server"
 
 
 def _quick_actions() -> DatabaseQuickActions:
@@ -51,7 +50,6 @@ def _queue_configuration_change(
             variable=change["name"],
             value_json=json.dumps(change["value"], separators=(",", ":")),
             idempotency_key=idempotency_key,
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     if action == "performance_schema":
         enabled = change["value"]
@@ -61,7 +59,6 @@ def _queue_configuration_change(
             bench,
             state="enabled" if enabled else "disabled",
             idempotency_key=idempotency_key,
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     if action == "innodb_buffer_pool_size":
         size_mb = change["value"]
@@ -71,7 +68,6 @@ def _queue_configuration_change(
             bench,
             size_mb=size_mb,
             idempotency_key=idempotency_key,
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     if action == "max_connections":
         max_connections = change["value"]
@@ -81,7 +77,6 @@ def _queue_configuration_change(
             bench,
             max_connections=max_connections,
             idempotency_key=idempotency_key,
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     raise ValueError(f"Unknown database configuration action '{action}'.")
 
@@ -247,7 +242,7 @@ def restart_database():
     try:
         _quick_actions().require_restart()
         bench = ApiRequest.get_bench()
-        return ApiRequest.queue_task(RestartDatabaseTask, bench, resource_key=_DATABASE_RESOURCE_KEY)
+        return ApiRequest.queue_task(RestartDatabaseTask, bench)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -279,7 +274,6 @@ def set_performance_schema():
             SetPerformanceSchemaTask,
             bench,
             state="enabled" if enabled else "disabled",
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
@@ -311,9 +305,7 @@ def set_innodb_buffer_pool_size():
                 409,
             )
         bench = ApiRequest.get_bench()
-        return ApiRequest.queue_task(
-            SetInnoDBBufferPoolSizeTask, bench, size_mb=size_mb, resource_key=_DATABASE_RESOURCE_KEY
-        )
+        return ApiRequest.queue_task(SetInnoDBBufferPoolSizeTask, bench, size_mb=size_mb)
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
     except ValueError as exc:
@@ -352,7 +344,6 @@ def set_max_connections():
             SetMaxDatabaseConnectionsTask,
             bench,
             max_connections=max_connections,
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)
@@ -382,7 +373,6 @@ def set_memory_share():
             SetMariaDBMemoryShareTask,
             bench,
             memory_share=float(memory_share),
-            resource_key=_DATABASE_RESOURCE_KEY,
         )
     except (DatabaseError, TaskConflictError) as exc:
         return error_response("database_action_unavailable", str(exc), 409)

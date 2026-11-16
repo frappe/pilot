@@ -18,7 +18,7 @@ class Command:
     exit raises CommandError with the last useful line of output, secrets redacted."""
 
     # Task runners set these; a child command must see them to report back to its task.
-    inherited_env_keys = ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
+    inherited_env_keys = ("BENCH_TASK_LAUNCH_ID", "BENCH_TASK_CALLBACK", "PILOT_NONINTERACTIVE_PRIVILEGES")
 
     def __init__(
         self,

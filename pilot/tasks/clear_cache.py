@@ -11,6 +11,11 @@ class ClearCacheTask(Task):
 
     site: str
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active."""
+        return [self.get_site_resource_key(self.site)]
+
     def run(self) -> None:
         """Clear the site cache."""
         self.clear_cache()

@@ -35,6 +35,12 @@ class RestoreSiteTask(Task):
     frappe_cloud_secret_urls: Annotated[dict[str, str] | None, Arg(cli=False)] = None
     frappe_cloud_token: Annotated[str, Arg(cli=False)] = ""
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """Holds the restored site and the site it restores from."""
+        sites = sorted({self.site, *([self.source_site] if self.source_site else [])})
+        return [self.get_site_resource_key(site) for site in sites]
+
     def run(self) -> None:
         """Fetch the backup and restore it into the site."""
         if self.upload_dir and Path(self.upload_dir).resolve().parent != self.bench.uploads_path.resolve():

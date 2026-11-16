@@ -65,9 +65,7 @@ def refresh_storage(name: str):
         return site_not_found()
     try:
         task_id = RefreshStorageUsageTask.queue(
-            Bench(bench_root),
-            idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key="site-storage",
+            Bench(bench_root), idempotency_key=ApiRequest.get_idempotency_key()
         )
     except Exception as error:
         return task_failure(error)

@@ -308,6 +308,48 @@ def test_enqueue_after_idle_scan_is_woken_without_lost_work(
     assert store.read_status(task_id) == TaskStatus.SUCCESS
 
 
+def counting_idle_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[TaskWorker, list[int]]:
+    worker = TaskWorker(tmp_path)
+    scans: list[int] = []
+    reconcile = worker._processes.reconcile
+    monkeypatch.setattr(worker._wake, "wait", lambda timeout=None: False)
+    monkeypatch.setattr(worker._processes, "reconcile", lambda: scans.append(1) or reconcile())
+    for _ in range(3):
+        worker._work_once(1)
+    return worker, scans
+
+
+def test_idle_worker_skips_scans_until_the_tasks_directory_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker, scans = counting_idle_worker(tmp_path, monkeypatch)
+    idle_scans = len(scans)
+
+    worker._work_once(1)
+    assert len(scans) == idle_scans
+
+    threading.Event().wait(0.05)
+    (tmp_path / "tasks" / "20260715-120000-111111").mkdir()
+    worker._work_once(1)
+    assert len(scans) == idle_scans + 1
+
+    worker.wake()
+    worker._work_once(1)
+    assert len(scans) == idle_scans + 2
+
+
+def test_idle_worker_rescans_after_the_rescan_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker, scans = counting_idle_worker(tmp_path, monkeypatch)
+    idle_scans = len(scans)
+    worker._idle_rescan_at = 0.0
+
+    worker._work_once(1)
+
+    assert len(scans) == idle_scans + 1
+
+
 def wait_for_status(store: WorkerStore, expected: WorkerStatus) -> None:
     for _ in range(100):
         state = store.read_state()

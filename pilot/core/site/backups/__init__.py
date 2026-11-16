@@ -288,7 +288,6 @@ class SiteBackups:
                 site=self.site.config.name,
                 automatic=True,
                 idempotency_key=f"scheduled-backup:{sha256(slot.encode()).hexdigest()}",
-                resource_key=f"site:{self.site.config.name.lower()}",
             )
         except TaskConflictError:
             print(f"Skipped scheduled backup: {self.site.config.name} has an active site task.")

@@ -299,6 +299,23 @@ def test_active_resource_can_be_handed_to_successor(tmp_path: Path) -> None:
     ]
 
 
+def test_idempotent_submission_accepts_a_resource_handoff(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), resource_key="site:example.test")
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.RUNNING)
+
+    creation = store.create_idempotent_queued(
+        {**metadata(), "task_id": "20260715-120001-bbccdd"},
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+        resource_key="site:example.test",
+        resource_handoff_from=TASK_ID,
+    )
+
+    assert creation.created
+
+
 def test_resource_handoff_does_not_ignore_another_owner(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     store.create_queued(metadata(), resource_key="site:example.test")
@@ -454,6 +471,24 @@ def test_retention_keeps_terminal_task_with_live_process_record(tmp_path: Path) 
 
     assert deleted == [removable]
     assert store.task_dir(protected).exists()
+
+
+def test_retention_purges_only_matching_commands(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    listed = "20260715-120000-000000"
+    polls = [f"20260715-12000{index}-aaaaaa" for index in range(1, 4)]
+    for index, (task_id, command) in enumerate([(listed, "build"), *((poll, "poll") for poll in polls)]):
+        task_dir = store.task_dir(task_id)
+        task_dir.mkdir(parents=True, exist_ok=True)
+        finished_at = f"2026-07-15T12:00:0{index}+00:00"
+        record = {**metadata(), "task_id": task_id, "command": command, "finished_at": finished_at}
+        (task_dir / "meta.json").write_text(json.dumps(record))
+        (task_dir / "status").write_text("success")
+
+    deleted = store.purge_terminal(1, matches=lambda command: command == "poll")
+
+    assert deleted == polls[:2]
+    assert store.task_dir(listed).exists()
 
 
 # --- hostname claims are host-wide -------------------------------------------

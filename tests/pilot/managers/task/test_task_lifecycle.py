@@ -15,6 +15,8 @@ import pilot.internal.tasks.store as task_store_module
 import pilot.internal.tasks.wrapper as wrapper_module
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 from pilot.internal.tasks.callbacks import BoundedCallback, CallbackOperations
+from pilot.internal.tasks.models import TaskStatus
+from pilot.internal.tasks.process import TaskProcess
 from pilot.internal.tasks.wrapper import callback_handler, run_with_syslog_output
 from pilot.managers.task.reader import TaskReader
 from pilot.tasks import TaskRunner
@@ -159,7 +161,7 @@ def test_run_reuses_active_task_for_same_idempotency_key(
     assert "idempotency_digest" in metadata_text
 
 
-def test_submit_reports_new_and_replayed_tasks(
+def test_run_replays_an_active_idempotent_task(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -168,15 +170,14 @@ def test_submit_reports_new_and_replayed_tasks(
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
 
-    first = runner.submit("build", {}, idempotency_key="client-request-key")
-    replay = runner.submit("build", {}, idempotency_key="client-request-key")
+    first = runner.run("build", {}, idempotency_key="client-request-key")
+    replay = runner.run("build", {}, idempotency_key="client-request-key")
 
-    assert first.task_id == replay.task_id == TASK_ID
-    assert first.created is True
-    assert replay.created is False
+    assert first == replay == TASK_ID
+    assert [path.name for path in (tmp_path / "tasks").iterdir() if path.is_dir()] == [TASK_ID]
 
 
-def test_submit_returns_published_task_when_housekeeping_fails(
+def test_run_returns_published_task_when_housekeeping_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -186,7 +187,7 @@ def test_submit_returns_published_task_when_housekeeping_fails(
         housekeeping.append(("wake", bench_root))
         raise RuntimeError("wake failed")
 
-    def fail_purge(_store, limit: int) -> None:
+    def fail_purge(_store, limit: int, _matches) -> None:
         housekeeping.append(("purge", limit))
         raise OSError("purge failed")
 
@@ -194,14 +195,11 @@ def test_submit_returns_published_task_when_housekeeping_fails(
     monkeypatch.setattr(task_runner_module.task_workers, "wake", fail_wake)
     monkeypatch.setattr(task_store_module.TaskStore, "purge_terminal", fail_purge)
 
-    submission = TaskRunner(tmp_path).submit("build", {})
-
-    assert submission.task_id == TASK_ID
-    assert submission.created is True
+    assert TaskRunner(tmp_path).run("build", {}) == TASK_ID
     assert (tmp_path / "tasks" / TASK_ID / "meta.json").exists()
     assert housekeeping == [
         ("wake", tmp_path),
-        ("purge", task_runner_module.TASK_RETENTION_LIMIT),
+        ("purge", task_runner_module.UNLISTED_TASK_RETENTION_LIMIT),
     ]
 
 
@@ -310,7 +308,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
 
-    first = runner.submit(
+    first = runner.run(
         "new-site-from-backup",
         {
             "name": "example.test",
@@ -319,7 +317,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
         },
         idempotency_key="restore-request",
     )
-    replay = runner.submit(
+    replay = runner.run(
         "new-site-from-backup",
         {
             "name": "example.test",
@@ -329,9 +327,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
         idempotency_key="restore-request",
     )
 
-    assert first.created is True
-    assert replay.created is False
-    assert replay.task_id == first.task_id
+    assert replay == first
 
 
 def test_restore_idempotency_rejects_different_upload_contents(
@@ -423,6 +419,30 @@ def test_kill_cancels_queued_task_without_pid(tmp_path: Path) -> None:
     TaskRunner(tmp_path).kill(TASK_ID)
 
     assert (task_dir / "status").read_text() == "killed"
+
+
+def test_kill_stops_a_queued_task_that_starts_during_the_kill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("queued")
+    original_transition = task_store_module.TaskStore.transition
+
+    def start_first(store, task_id, expected, target, updates=None):
+        if expected == TaskStatus.QUEUED:
+            original_transition(store, task_id, TaskStatus.QUEUED, TaskStatus.RUNNING)
+            return False
+        return original_transition(store, task_id, expected, target, updates)
+
+    cancelled = []
+    monkeypatch.setattr(task_store_module.TaskStore, "transition", start_first)
+    monkeypatch.setattr(TaskProcess, "cancel", lambda _process, task_id: cancelled.append(task_id))
+
+    TaskRunner(tmp_path).kill(TASK_ID)
+
+    assert cancelled == [TASK_ID]
 
 
 def test_kill_rejects_missing_task(tmp_path: Path) -> None:

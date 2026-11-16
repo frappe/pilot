@@ -48,7 +48,6 @@ def enable_tls(name: str):
             site=name,
             email=email,
             idempotency_key=ApiRequest.get_idempotency_key(),
-            resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return task_failure(error)

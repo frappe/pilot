@@ -11,6 +11,11 @@ class BuildTask(Task):
     app: str | None = None
     site: str = ""
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """Built assets are shared by every site, as an update's are."""
+        return [self.get_site_resource_key(self.site), "bench:update"] if self.site else ["bench:update"]
+
     def run(self) -> None:
         """Build the assets."""
         self.build()

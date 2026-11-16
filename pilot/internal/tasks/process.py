@@ -272,7 +272,7 @@ class TaskProcess:
             return
         if record is not None and self._stop_interrupted_processes(record) == ProcessOwnership.UNKNOWN:
             return
-        self._store.transition(
+        failed = self._store.transition(
             task_id,
             TaskStatus.RUNNING,
             TaskStatus.FAILED,
@@ -282,6 +282,10 @@ class TaskProcess:
             },
         )
         self._store.remove_private_files(task_id, "process.json", "secrets.json")
+        if failed:
+            from pilot.core.notification.events import task_failed
+
+            task_failed(self._store.bench_root, self._store.read_metadata(task_id))
         self._deadlines.pop(task_id, None)
         self._expired.discard(task_id)
 
@@ -299,22 +303,24 @@ class TaskProcess:
         if self._wait_for_process_to_stop(record, grace_seconds):
             return
 
-        outcome = self._signal(record, signal.SIGKILL)
-        if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-            self._clear_process(record.task_id)
-            return
+        outcome = self._signal(record, signal.SIGKILL, exclude_pids=self.get_cancel_exempt_pids(record))
         if outcome == ProcessOwnership.UNKNOWN:
             return
 
         self._wait_for_process_to_stop(record, max(CANCEL_GRACE_SECONDS, grace_seconds))
+
+    def get_cancel_exempt_pids(self, record: TaskProcessRecord) -> set[int]:
+        """The wrapper and its callback once the callback runs; a cancel must let them finish."""
+        callback_pids = self._inspector.get_callback_pids(self._inspector.owned_pids(record.identity))
+        return callback_pids | {record.identity.pid} if callback_pids else set()
 
     def _wait_for_process_to_stop(
         self,
         record: TaskProcessRecord,
         timeout_seconds: float,
     ) -> bool:
-        """True once nothing the task launched is left running. A descendant that
-        ignores SIGTERM outlives the leader, and it still has to be killed."""
+        """True once nothing the task launched is left running, other than its callback.
+        A descendant that ignores SIGTERM outlives the leader, and it still has to be killed."""
         deadline = time.monotonic() + max(0, timeout_seconds)
         cleared = False
         # UNKNOWN is not an exit: /proc reads fail briefly while a process dies.
@@ -325,6 +331,9 @@ class TaskProcess:
                     self._clear_process(record.task_id)
                     cleared = True
                 if not self._inspector.owned_pids(record.identity):
+                    return True
+            elif exempt := self.get_cancel_exempt_pids(record):
+                if not self._inspector.owned_pids(record.identity) - exempt:
                     return True
             time.sleep(0.05)
         return False

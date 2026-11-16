@@ -12,6 +12,7 @@ from typing import Protocol
 from pilot.managers.platform import HostPlatform
 
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
+CALLBACK_ENV_ENTRY = "BENCH_TASK_CALLBACK=1"
 
 
 class ProcessOwnership(StrEnum):
@@ -108,8 +109,8 @@ class _ProcessBackend(Protocol):
         """A value that changes on every boot, so a stored identity from before a reboot is stale."""
         pass
 
-    def has_launch_id(self, pid: int, launch_id: str) -> bool:
-        """Whether the process environment carries this launch id."""
+    def has_environment_entry(self, pid: int, entry: str) -> bool:
+        """Whether the process environment carries this KEY=value entry."""
         pass
 
     def argv_hash(self, argv: list[str]) -> str:
@@ -151,11 +152,10 @@ class _ProcSysBackend:
         """The kernel boot id from /proc."""
         return self.boot_id_path.read_text(encoding="utf-8").strip()
 
-    def has_launch_id(self, pid: int, launch_id: str) -> bool:
-        """Whether /proc/<pid>/environ holds this launch id."""
-        expected = f"{_LAUNCH_ID_ENV}={launch_id}".encode()
+    def has_environment_entry(self, pid: int, entry: str) -> bool:
+        """Whether /proc/<pid>/environ holds this KEY=value entry."""
         environment = (self.proc_root / str(pid) / "environ").read_bytes().split(b"\0")
-        return expected in environment
+        return entry.encode() in environment
 
     def argv_hash(self, argv: list[str]) -> str:
         """SHA-256 of the NUL-separated command line, as /proc/<pid>/cmdline stores it."""
@@ -207,13 +207,13 @@ class _DarwinPsBackend:
         """The kernel boot time from sysctl, which serves as the boot id on macOS."""
         return self._run(["sysctl", "-n", "kern.boottime"])
 
-    def has_launch_id(self, pid: int, launch_id: str) -> bool:
-        """Whether `ps -E` shows this launch id in the process environment."""
+    def has_environment_entry(self, pid: int, entry: str) -> bool:
+        """Whether `ps -E` shows this KEY=value entry in the process environment."""
         try:
             environment = self._run(["ps", "-E", "-ww", "-p", str(pid), "-o", "command="])
         except (subprocess.CalledProcessError, OSError):
             return False
-        return f"{_LAUNCH_ID_ENV}={launch_id}" in environment
+        return entry in environment
 
     def argv_hash(self, argv: list[str]) -> str:
         """SHA-256 of the command line without the executable, as ps shows it."""
@@ -373,6 +373,17 @@ class ProcessInspector:
                 continue
         return owned
 
+    def get_callback_pids(self, pids: set[int]) -> set[int]:
+        """The pids that run a task callback or were started by one."""
+        callback_pids = set()
+        for pid in pids:
+            try:
+                if self._backend.has_environment_entry(pid, CALLBACK_ENV_ENTRY):
+                    callback_pids.add(pid)
+            except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+                continue
+        return callback_pids
+
     def get_pid_matching(self, markers: list[str], hint_pid: int | None = None) -> int | None:
         """Live pid whose command line contains every marker."""
         if hint_pid is not None and self._command_matches(hint_pid, markers):
@@ -489,7 +500,7 @@ class ProcessInspector:
 
     def _has_launch_id(self, pid: int, launch_id: str) -> bool:
         """Whether the backend sees this launch id in the process."""
-        return self._backend.has_launch_id(pid, launch_id)
+        return self._backend.has_environment_entry(pid, f"{_LAUNCH_ID_ENV}={launch_id}")
 
     def _argv_hash(self, argv: list[str]) -> str:
         """The backend's hash of a command line."""

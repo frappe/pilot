@@ -20,8 +20,6 @@ task_id = GetAndInstallAppTask.queue(
 )
 ```
 
-Use `queue_submission()` when the caller needs to know whether an idempotent submission created a new task.
-
 ## Task Shape
 
 ```python
@@ -42,17 +40,17 @@ class ExampleTask(Task):
         self.bench.site(self.site).migrate()
 
     @on_success
-    def refresh_site(self) -> dict:
-        return {"site": self.site}
+    def reload_workers(self) -> dict:
+        return {"web_only": True}
 
     @on_failure
-    def reload_task_list(self) -> dict:
-        return {}
+    def disable_site_ssl(self) -> dict:
+        return {"site": self.site}
 ```
 
 `command` is the stable task name stored in task records. Constructor fields are validated before submission.
 
-Class flags tune runtime behavior: `audit_on_queue`, `is_cancellable_while_running`, and `is_listed`. Set `is_listed = False` on frequent polling tasks to keep them out of task listings (`TaskReader.list_tasks` and `GET /api/v1/tasks`, which honors a positive integer `limit` parameter, default 50); unlisted tasks stay readable by task id.
+Class flags tune runtime behavior: `audit_on_queue`, `is_cancellable_while_running`, and `is_listed`. Set `is_listed = False` on frequent polling tasks to keep them out of task listings (`TaskReader.list_tasks` and `GET /api/v1/tasks`, which honors a positive integer `limit` parameter, default 50); unlisted tasks stay readable by task id. Pilot keeps every finished listed task; it keeps only the newest 100 finished unlisted tasks.
 
 ## Deadlines and recovery
 
@@ -143,7 +141,7 @@ Call `self.step_failed()` only when a task handles an error internally and still
 
 ## Callbacks
 
-`@on_success`, `@on_failure`, and `@on_cancel` take no arguments. The decorated method returns callback args, and the method name becomes the operation with underscores converted to hyphens.
+`@on_success`, `@on_failure`, and `@on_cancel` take no arguments. The decorated method returns callback args, and the method name becomes the operation with underscores converted to hyphens. The operation must exist in `CallbackOperations.operations` (`pilot/internal/tasks/callbacks.py`); an unknown operation fails at queue time with `ValueError`.
 
 Return `None` to skip a callback for that task instance.
 
@@ -151,7 +149,11 @@ Explicit callbacks passed to `queue()` override callbacks declared on the task.
 
 ## Idempotency
 
-Use `idempotency_key` when duplicate submissions should return the same task. Use `resource_key` when only one active task should own a resource.
+Use `idempotency_key` when duplicate submissions should return the same task.
+
+## Resource keys
+
+A task declares the resources it holds while queued or running in its `resource_keys` property. `Task.queue()` refuses the task with `TaskConflictError` while another active task holds one of them. Build site and hostname keys with `get_site_resource_key()` and `get_host_resource_key()`; set `static_resource_keys` for fixed keys such as `"database-server"`. Pass `resource_key=` to `queue()` only to replace the task's own keys, as a migration chain does with its operation's keys.
 
 Required submit-only args can be named in `required_submit_args` when the runner needs a value that is not a dataclass constructor field.
 
@@ -198,18 +200,18 @@ For example, an admin API route:
 task_id = WizardSetupTask.queue(bench)
 ```
 
-`Task.queue()` in `pilot/tasks/base.py:65-81` does almost nothing itself — it forwards to `bench.tasks`, which is a `pilot.tasks.base.TaskRunner` (the facade), which forwards again to the real engine:
+`Task.queue()` in `pilot/tasks/base.py` builds the task to read its callbacks and resource keys, then forwards to `bench.tasks`, which is a `pilot.tasks.base.TaskRunner` (the facade), which forwards again to the real engine:
 
 ```python
 # pilot/tasks/base.py
 @classmethod
 def queue(cls, bench, callbacks=None, idempotency_key=None, resource_key=None, **args) -> str:
-    callbacks = cls._queue_callbacks(bench, args, callbacks)
+    task = cls.get_queued_task(bench, args)
     return bench.tasks.run_task(
         cls,
-        callbacks=callbacks,
+        callbacks=task.get_callbacks(callbacks),
         idempotency_key=idempotency_key,
-        resource_key=resource_key,
+        resource_key=task.resource_keys if resource_key is None else resource_key,
         **args,
     )
 ```
@@ -221,7 +223,7 @@ Two facades deep, no real work yet — just arg-filtering. The real engine is `p
 `pilot/internal/tasks/runner.py` + `payload.py`:
 
 ```python
-# internal/tasks/runner.py TaskRunner.submit()
+# internal/tasks/runner.py TaskRunner.run()
 payload = self._payloads.build(command, args, callbacks)
 self._store.create_queued(payload.metadata, payload.private_files, resource_key=resource_key)
 ```

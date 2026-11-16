@@ -88,14 +88,6 @@ def site_name_failure(message: str):
     return error_response("invalid_site_name", message, 422)
 
 
-def host_resource_key(host: str) -> str:
-    """Return the host-wide task resource key for a hostname."""
-    from pilot.internal.hostnames import normalize_host
-    from pilot.internal.tasks.store import HOST_RESOURCE_PREFIX
-
-    return f"{HOST_RESOURCE_PREFIX}{normalize_host(host)}"
-
-
 def new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before its task starts."""
     from pilot.config import BenchConfig

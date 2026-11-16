@@ -13,6 +13,11 @@ class ReinstallSiteTask(Task):
     site: str
     admin_password: Annotated[str, Arg(cli=False)]
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active."""
+        return [self.get_site_resource_key(self.site)]
+
     def run(self) -> None:
         """Reinstall the site."""
         self.reinstall()
