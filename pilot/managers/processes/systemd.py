@@ -81,6 +81,13 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         )
 
     @property
+    def is_sandboxed(self) -> bool:
+        """Whether the written web unit runs in the sandbox. `write_config` falls back to no sandbox on a
+        host that cannot start one, so the unit, not the setting, says how the workload runs."""
+        web_unit = self.systemd_conf_dir / self._unit_name("web")
+        return web_unit.is_file() and "\nPrivateUsers=yes\n" in web_unit.read_text()
+
+    @property
     def database_service(self) -> str:
         """The managed database unit the web process needs, or empty when the database is external."""
         database = self.bench.config.db_type

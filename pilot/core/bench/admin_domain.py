@@ -9,7 +9,13 @@ from urllib.parse import urlsplit
 
 from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
-from pilot.internal.atomic_file import exclusive_file_lock, overwrite_private_text_locked
+from pilot.internal.atomic_file import (
+    OVERWRITE_JOURNAL,
+    exclusive_file_lock,
+    finish_overwrite,
+    overwrite_private_text_locked,
+    replace_private_text_locked,
+)
 from pilot.internal.hostnames import matches_wildcard, normalize_host
 
 if TYPE_CHECKING:
@@ -178,7 +184,11 @@ class AdminDomainChange:
         """Point a site's Pilot endpoint at the new Admin URL, leaving loopback endpoints alone."""
         if not config_path.is_file() or config_path.is_symlink():
             return
+        journal_dir = self.bench.path / OVERWRITE_JOURNAL
+        is_common = config_path.name == "common_site_config.json"
         with exclusive_file_lock(config_path):
+            if is_common:
+                finish_overwrite(config_path, journal_dir)
             config = json.loads(config_path.read_text())
             is_loopback = urlsplit(str(config.get("pilot_endpoint", ""))).hostname == "127.0.0.1"
             urls = {
@@ -191,7 +201,12 @@ class AdminDomainChange:
             if not changes:
                 return
             config.update(changes)
-            overwrite_private_text_locked(config_path, json.dumps(config, indent=indent))
+            text = json.dumps(config, indent=indent)
+            # Only the common config is a single-file bind in the sandbox; a rename would detach it.
+            if is_common:
+                overwrite_private_text_locked(config_path, text, journal_dir)
+            else:
+                replace_private_text_locked(config_path, text)
 
     def _retarget_hostname_aliases(self) -> None:
         """Move Central hostname aliases from the old admin domain to the new one."""

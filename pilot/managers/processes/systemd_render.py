@@ -14,8 +14,6 @@ from pilot.managers.processes.sandbox import (
     WORKLOAD_LOGS,
 )
 
-_SAFE_ARGUMENT = re.compile(r"[\w@%+=:,./-]+", re.ASCII)
-
 # NoNewPrivileges keeps sudo out; the mount directives need PrivateUsers in a --user unit.
 _SANDBOX_DIRECTIVES = [
     "NoNewPrivileges=yes",

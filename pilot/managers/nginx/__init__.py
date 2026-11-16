@@ -227,7 +227,11 @@ class NginxConfigRenderer:
     def is_refusing_symlinks(self) -> bool:
         """Only a sandboxed workload gains from a link in sites/: one without the sandbox already reads
         everything the bench user can. So a bench without it keeps links, such as a storage folder."""
-        return self.bench.config.production.is_sandboxed
+        from pilot.managers.processes.systemd import SystemdProcessManager
+
+        if self.bench.config.production.process_manager != "systemd":
+            return False
+        return SystemdProcessManager(self.bench).is_sandboxed
 
     def render_asset_locations(self) -> str:
         rule = "        disable_symlinks on from={unchecked};\n" if self.is_refusing_symlinks else ""
@@ -512,8 +516,11 @@ class NginxManager:
 
     def reload_for_asset_change(self) -> None:
         """Write the config again when an app's assets are not in it, such as after an install or an update,
-        or when the sandbox was turned on or off since nginx last got it."""
+        or when the sandbox was turned on or off since nginx last got it. Asset locations are only in site
+        blocks, so a config without them has nothing to update."""
         current = self.include_path.read_text() if self.include_path.is_file() else ""
+        if "location /assets" not in current:
+            return
         is_stale = self._renderer.render_asset_locations() not in current
         if is_stale or ("disable_symlinks" in current) != self._renderer.is_refusing_symlinks:
             self.reload_for_site_change()

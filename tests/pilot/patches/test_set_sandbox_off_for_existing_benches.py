@@ -80,3 +80,13 @@ def test_the_patch_runs_once_per_bench(tmp_path: Path) -> None:
     run(tmp_path)
 
     assert _sandbox(path) is None
+
+
+def test_a_new_bench_keeps_the_sandbox_default(tmp_path: Path) -> None:
+    from pilot.core.bench import Bench
+
+    bench = Bench.create_at(tmp_path / "fresh", "fresh", process_manager="systemd")
+
+    run(tmp_path)
+
+    assert _sandbox(bench.path / "bench.toml") is None

@@ -34,6 +34,14 @@ def _make_bench(tmp_path: Path, data: dict) -> Bench:
     return Bench(BenchConfig._from_dict(data), tmp_path)
 
 
+def _write_web_unit(bench: Bench, is_sandboxed: bool = True) -> None:
+    """The web unit systemd runs; nginx reads from it whether the workload is sandboxed."""
+    services = bench.config_path / "services"
+    services.mkdir(parents=True, exist_ok=True)
+    sandbox = "PrivateUsers=yes\n" if is_sandboxed else ""
+    (services / f"{bench.config.name}-web.service").write_text(f"[Service]\nExecStart=gunicorn\n{sandbox}")
+
+
 def _renderer(tmp_path: Path, data: dict | None = None, proxy_servers: list[str] | None = None):
     """Build a renderer without contacting the provider."""
     renderer = NginxConfigRenderer(_make_bench(tmp_path, data or _BASE_DATA))
@@ -1589,6 +1597,7 @@ def _location_bodies(config: str, opening: str) -> list[str]:
 def test_the_locations_that_read_sites_follow_no_symlinks_below_the_bench(tmp_path: Path) -> None:
     """nginx runs as the bench user, so a link that a workload makes in sites/ could reach any of its files."""
     renderer = _renderer(tmp_path, _SANDBOXED_DATA)
+    _write_web_unit(renderer.bench)
     _app_folder(renderer)
     config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
     rule = f"disable_symlinks on from={renderer.bench.path};"
@@ -1614,10 +1623,21 @@ def test_a_bench_without_the_sandbox_keeps_its_links(tmp_path: Path) -> None:
     assert "disable_symlinks" not in config
 
 
+def test_a_bench_whose_units_fell_back_to_no_sandbox_keeps_its_links(tmp_path: Path) -> None:
+    """The host could not start a sandboxed unit, so systemd runs the workload without it."""
+    renderer = _renderer(tmp_path, _SANDBOXED_DATA)
+    _write_web_unit(renderer.bench, is_sandboxed=False)
+
+    config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+
+    assert "disable_symlinks" not in config
+
+
 def test_acme_and_the_embed_still_follow_symlinks(tmp_path: Path) -> None:
     """Their folders are outside the bench, so a workload cannot plant a link there. A server-wide rule would
     check the whole path from /, and a webroot behind a link would fail certificate renewal."""
     renderer = _renderer(tmp_path, _SANDBOXED_DATA)
+    _write_web_unit(renderer.bench)
     config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
 
     assert "disable_symlinks" in config
@@ -1664,13 +1684,13 @@ def test_a_link_that_leaves_its_app_is_not_served(tmp_path: Path) -> None:
 def test_nginx_reloads_when_the_sandbox_was_turned_on_or_off(
     tmp_path: Path, was_sandboxed: bool, reloads: int
 ) -> None:
-    """Assets unchanged, but the sandbox setting changed since nginx last got its config."""
-    bench_dir = tmp_path / "bench"
-    old = NginxManager(_make_bench(bench_dir, _SANDBOXED_DATA if was_sandboxed else _BASE_DATA))
-    _app_folder(old._renderer)
-    old.include_path.parent.mkdir(parents=True)
-    old.include_path.write_text(old._renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False))
-    manager = NginxManager(_make_bench(bench_dir, _SANDBOXED_DATA))
+    """Assets unchanged, but the units were sandboxed or not since nginx last got its config."""
+    manager = NginxManager(_make_bench(tmp_path, _SANDBOXED_DATA))
+    _app_folder(manager._renderer)
+    _write_web_unit(manager.bench, was_sandboxed)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text(manager._renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False))
+    _write_web_unit(manager.bench)
 
     with patch.object(NginxManager, "reload_for_site_change") as reload:
         manager.reload_for_asset_change()
@@ -1678,12 +1698,27 @@ def test_nginx_reloads_when_the_sandbox_was_turned_on_or_off(
     assert reload.call_count == reloads
 
 
+def test_nginx_does_not_reload_for_a_bench_without_sites(tmp_path: Path) -> None:
+    """Asset locations are only in site blocks, so a config without sites never lists them."""
+    manager = NginxManager(_make_bench(tmp_path, _SANDBOXED_DATA))
+    _app_folder(manager._renderer)
+    _write_web_unit(manager.bench)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text(manager._renderer.generate_bench_config([], admin_ssl=False))
+
+    with patch.object(NginxManager, "reload_for_site_change") as reload:
+        manager.reload_for_asset_change()
+
+    reload.assert_not_called()
+
+
 @pytest.mark.parametrize("is_current, reloads", [(True, 0), (False, 1)])
 def test_nginx_reloads_only_when_an_apps_assets_are_missing(tmp_path: Path, is_current: bool, reloads: int) -> None:
     manager = NginxManager(_make_bench(tmp_path, _BASE_DATA))
     _app_folder(manager._renderer)
     manager.include_path.parent.mkdir(parents=True)
-    manager.include_path.write_text(manager._renderer.render_asset_locations() if is_current else "server {}")
+    current = manager._renderer.render_asset_locations() if is_current else ""
+    manager.include_path.write_text(f"{current}    location /assets {{")
 
     with patch.object(NginxManager, "reload_for_site_change") as reload:
         manager.reload_for_asset_change()

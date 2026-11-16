@@ -84,8 +84,11 @@ class AppProcesses:
         if stop_timeout is not None and not (type(stop_timeout) is int and stop_timeout >= 0):
             raise self._error(f"process '{name}' stop_timeout must be a non-negative integer.")
 
-        paths = SandboxPaths.from_declaration(
-            declaration, f"process '{name}'", self._error, self.app.bench.path
+        # Only a sandboxed bench uses these paths, so only there can a bad one stop the process.
+        paths = (
+            SandboxPaths.from_declaration(declaration, f"process '{name}'", self._error, self.app.bench.path)
+            if self.app.bench.config.production.is_sandboxed
+            else SandboxPaths()
         )
         full_name = f"{self.app.config.name}-{name}"
         return ProcessDefinition(

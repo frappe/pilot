@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -83,9 +83,12 @@ class BenchRuntime:
         # Links app units added since the last setup, and unlinks removed ones.
         manager.install_config()
         manager.reload_manager_config()
-        # nginx refuses links in sites/ only on a sandboxed bench, and `sandbox` takes effect here.
-        NginxManager(self.bench).reload_for_asset_change()
         manager.restart()
+        # nginx refuses links in sites/ only on a sandboxed bench, and `sandbox` takes effect here.
+        try:
+            NginxManager(self.bench).reload_for_asset_change()
+        except CommandError as error:
+            on_progress(f"Warning: the bench restarted, but nginx did not reload: {error}")
         self.bench.site_aliases.release_expired()
         if include_admin:
             manager.restart_admin()

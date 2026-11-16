@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pilot.config.common_site_config import update_common_site_config
 from pilot.exceptions import BenchError
+from pilot.internal.atomic_file import OVERWRITE_JOURNAL
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -105,7 +106,7 @@ class BenchInitializer:
         """Create the bench directories that do not exist yet."""
         self._created_directories = [
             name
-            for name in ("apps", "sites", "logs", "config", "pids", "env", "admin")
+            for name in ("apps", "sites", "logs", "config", "pids", "env", "admin", OVERWRITE_JOURNAL)
             if not (self.bench.path / name).exists() and not (self.bench.path / name).is_symlink()
         ]
         self._rollback_actions.append(("bench directories", self._remove_bench_dirs))
@@ -163,7 +164,11 @@ class BenchInitializer:
 
         from pilot.internal.host_resources import LocalPort
 
-        db = self.bench.config.mariadb if self.bench.config.db_type == "mariadb" else self.bench.config.postgres
+        db = (
+            self.bench.config.mariadb
+            if self.bench.config.db_type == "mariadb"
+            else self.bench.config.postgres
+        )
         if db.existing or db.root_password:
             return
         db.port = LocalPort(db.port).get_first_free()

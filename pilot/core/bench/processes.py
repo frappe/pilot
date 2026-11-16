@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import shlex
 from dataclasses import dataclass
 from itertools import chain
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from pilot.core.app.processes import AppProcessError
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessManager
 
@@ -143,7 +144,10 @@ class BenchProcesses:
         manager.install_config()
         manager.reload_manager_config()
         manager.apply_unit_action("start" if is_running else "stop", UnitGroup.WORKLOAD)
-        NginxManager(self.bench).reload_for_asset_change()
+        try:
+            NginxManager(self.bench).reload_for_asset_change()
+        except CommandError as error:
+            logging.warning("Bench '%s' processes are applied, but nginx did not reload: %s", self.bench.config.name, error)
 
     def restart(self, names: list[str]) -> list[str]:
         """Restart the named processes. An app name stands for every process of that app that runs."""

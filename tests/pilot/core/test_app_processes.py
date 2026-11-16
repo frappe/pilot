@@ -12,8 +12,9 @@ from tests.pilot.commands.test_commands import make_bench
 _SECTION = "[tool.pilot.processes.stalwart]\n"
 
 
-def _app(tmp_path: Path, pyproject: str) -> App:
+def _app(tmp_path: Path, pyproject: str, process_manager: str = "systemd") -> App:
     bench = make_bench(tmp_path)
+    bench.config.production.process_manager = process_manager
     bench.create_directories()
     (bench.apps_path / "mail" / ".git").mkdir(parents=True)
     (bench.apps_path / "mail" / "pyproject.toml").write_text(pyproject)
@@ -127,6 +128,14 @@ def test_a_process_cannot_ask_for_ssh_keys(tmp_path: Path) -> None:
 
     with pytest.raises(AppProcessError, match="must be a directory below one of"):
         app.processes.get_definitions()
+
+
+def test_a_bench_without_the_sandbox_ignores_process_sandbox_paths(tmp_path: Path) -> None:
+    app = _app(tmp_path, _SECTION + 'command = ["./stalwart"]\nread_paths = ["~/.ssh"]\n', "supervisor")
+
+    (definition,) = app.processes.get_definitions()
+
+    assert definition.read_paths == definition.write_paths == []
 
 
 def test_the_app_sandbox_table_is_read_through_the_app(tmp_path: Path) -> None:
