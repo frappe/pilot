@@ -202,3 +202,25 @@ def test_task_retry_secret_policy_is_public() -> None:
     assert task_has_secrets("anything", {"s3_access_key": "[redacted]"}) is True
     assert task_has_secrets("migrate", {"site": "s.localhost"}) is False
     assert task_has_secrets("migrate") is False
+
+
+def test_task_callbacks_do_not_read_task_properties(tmp_path) -> None:
+    from dataclasses import dataclass
+
+    from pilot.tasks.callbacks import task_callbacks_for
+
+    @dataclass(kw_only=True)
+    class ProbeTask(tasks.Task):
+        command = "probe"
+
+        @property
+        def expensive(self) -> str:
+            raise AssertionError("callback discovery read a property")
+
+        @tasks.on_success
+        def reload_workers(self) -> dict:
+            return {}
+
+    task = ProbeTask(bench=None, bench_root=tmp_path)
+
+    assert task_callbacks_for(task) == {"on_success": {"operation": "reload-workers", "args": {}}}
