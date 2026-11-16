@@ -125,3 +125,40 @@ def test_update_validates_the_new_revision_against_every_check(tmp_path: Path) -
         BenchUpdater(bench).update_apps(None, lambda message: None, pins=_pins("myapp"))
 
     mock_validate.assert_called_once()
+
+
+def test_update_apps_reports_each_app_through_validation(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    _write_app(bench, "myapp")
+    _write_app(bench, "otherapp")
+    events: list[tuple[str, str]] = []
+
+    with patch.object(App, "update"):
+        BenchUpdater(bench).update_apps(
+            None,
+            lambda message: None,
+            pins=_pins("myapp"),
+            on_app=lambda name, status: events.append((name, status)),
+        )
+
+    assert ("myapp", "running") in events
+    assert ("myapp", "success") in events
+    assert ("otherapp", "skipped") in events
+
+
+def test_update_apps_reports_the_app_that_failed_validation(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    _write_app(bench, "myapp", fixture='[{"doctype":\n')
+    events: list[tuple[str, str]] = []
+
+    with patch.object(App, "update"), pytest.raises(AppValidationError):
+        BenchUpdater(bench).update_apps(
+            None,
+            lambda message: None,
+            pins=_pins("myapp"),
+            on_app=lambda name, status: events.append((name, status)),
+        )
+
+    assert events[-1] == ("myapp", "failed")

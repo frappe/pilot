@@ -1,31 +1,20 @@
 <script setup lang="ts">
-import { Badge, Button, Dialog, ErrorMessage, Skeleton, Spinner, Tooltip } from 'frappe-ui'
+import { Alert, Badge, Button, Dialog, ErrorMessage, Skeleton, Spinner, Tooltip } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { isActive, isResolved, needsAttention, updatesApi } from '@/api/updates'
 import AppIcon from '@/components/apps/AppIcon.vue'
+import FloatingConsole from '@/components/updates/FloatingConsole.vue'
 import LogView from '@/components/logs/LogView.vue'
-import JobRow from '@/components/updates/JobRow.vue'
-import UpdateSection from '@/components/updates/UpdateSection.vue'
+import UpdateFlow from '@/components/updates/UpdateFlow.vue'
 import UpdateStateBadge from '@/components/updates/UpdateStateBadge.vue'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
+import type { MigrationAccepted, MigrationSummary } from '@/types/migrations'
 import { processLine } from '@/utils/ansi'
-import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
-import {
-  opTitle,
-  patchSkipped,
-  pendingActionLabel,
-  siteStatus,
-  skippedPatches,
-} from '@/utils/updateFormat'
-import type {
-  MigrationAccepted,
-  MigrationApp,
-  MigrationSite,
-  MigrationSummary,
-} from '@/types/migrations'
 import { errorMessage } from '@/utils/error'
+import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
+import { opTitle, patchSkipped, pendingActionLabel, skippedPatches } from '@/utils/updateFormat'
 
 interface Props {
   operationId: string
@@ -52,41 +41,84 @@ const pendingLabel = computed(() => pendingActionLabel(pending.value))
 const patchAlreadySkipped = computed(() => patchSkipped(op.value))
 const skipped = computed(() => skippedPatches(op.value))
 
+const lastFinished = (operation: MigrationSummary) =>
+  Math.max(0, ...(operation.chain || []).map((link) => (link.finished_at ? Date.parse(link.finished_at) : 0)))
+
 const durationSeconds = computed(() => {
-  if (!op.value?.started_at) return null
-  // Paused on a failure, waiting for the user: the clock is not running.
-  if (!isResolved(op.value) && !isActive(op.value)) return null
-  const end = op.value.finished_at ? new Date(op.value.finished_at).getTime() : Date.now()
-  return Math.max(0, (end - new Date(op.value.started_at).getTime()) / 1000)
+  const operation = op.value
+
+  if (!operation?.started_at) return null
+
+  const isPaused = !isResolved(operation) && !isActive(operation)
+  const end = operation.finished_at
+    ? Date.parse(operation.finished_at)
+    : isPaused
+      ? lastFinished(operation)
+      : Date.now()
+
+  if (!end) return null
+
+  return Math.max(0, (end - Date.parse(operation.started_at)) / 1000)
 })
 
-// Bench-wide chain tasks (update, revert apps, restart); site-bound ones live in the site tree.
-const serverJobs = computed(() => (op.value?.task_logs || []).filter((log) => !log.site))
+const alertTitle = computed(() => {
+  if (op.value?.state === 'revert_failed') return 'Restore failed'
 
-const alertTitle = computed(() =>
-  op.value?.state === 'revert_failed' ? 'Restore failed' : 'This update needs attention',
+  const phase = op.value?.diagnosis?.phase
+
+  if (phase === 'backing_up') return 'Backup failed'
+  if (phase === 'update') return 'Updating apps failed'
+  if (phase === 'migrate' && op.value?.failed_site)
+    return `Migration failed on ${op.value.failed_site}`
+
+  return 'This update needs attention'
+})
+
+const showsFailure = computed(
+  () =>
+    isAttention.value ||
+    (['reverted', 'dismissed'].includes(op.value?.state || '') && !!op.value?.diagnosis),
 )
-const alertDescription = computed(() => {
-  const diagnosis = op.value?.diagnosis
-  const patch = patchAlreadySkipped.value ? 'Patch skipped' : diagnosis?.patch && `Failing patch: ${diagnosis.patch}`
-  return [diagnosis?.message, patch].filter(Boolean).join(' · ')
-})
 
 const showOutput = ref(false)
 const outputLines = computed(() =>
   (op.value?.diagnosis?.output_excerpt || '').split('\n').map(processLine),
 )
 
-const sitesCount = computed(() => {
-  const sites = op.value?.sites || []
-  if (sites.length > 1 && !isResolved(op.value)) {
-    const migrated = sites.filter((site) =>
-      ['success', 'recovered'].includes(site.migration_status),
-    ).length
-    return `${migrated}/${sites.length}`
-  }
-  return `${sites.length}`
+const { titleMap } = useAppRegistry()
+const showAllApps = ref(false)
+const isConsoleOpen = ref(false)
+
+const shownApps = computed(() => {
+  const apps = op.value?.apps || []
+
+  return showAllApps.value ? apps : apps.slice(0, 8)
 })
+
+const facts = computed(() => {
+  const sites = op.value?.sites || []
+
+  return [
+    { label: 'Started', icon: 'lucide-calendar', value: startedAt.value, note: '' },
+    {
+      label: 'Duration',
+      icon: 'lucide-timer',
+      value: duration.value || '-',
+      note: '',
+    },
+    { label: 'Sites', icon: 'lucide-globe', value: String(sites.length), note: '' },
+    {
+      label: 'Backups',
+      icon: 'lucide-database-backup',
+      value: op.value?.safeguards_disabled ? 'Off' : `${backupsTaken.value} of ${sites.length}`,
+      note: '',
+    },
+  ]
+})
+
+const backupsTaken = computed(
+  () => (op.value?.sites || []).filter((site) => site.backup_status === 'backed_up').length,
+)
 
 const startedAt = computed(() => (op.value?.started_at ? fmtDateTime(op.value.started_at) : ''))
 
@@ -95,24 +127,10 @@ const duration = computed(() => fmtDuration(durationSeconds.value))
 const openTaskLog = (log: { id: string }) =>
   router.push({ name: 'TaskDetail', params: { taskId: log.id } })
 
-const expandedSites = ref(new Set<string>())
-
-const toggleSiteJobs = (siteName: string) => {
-  if (!siteJobs(siteName).length) return
-  const expanded = new Set(expandedSites.value)
-  if (!expanded.delete(siteName)) expanded.add(siteName)
-  expandedSites.value = expanded
-}
-
-const siteJobs = (siteName: string) => {
-  return (op.value?.task_logs || []).filter((log) => log.site === siteName)
-}
-
 const load = async () => {
   try {
     op.value = await updatesApi.detail(props.operationId)
     error.value = ''
-    applyOpenDefaults()
     setBreadcrumbs([{ label: 'Updates', route: { name: 'Updates' } }, { label: title.value }])
   } catch (caught) {
     error.value = errorMessage(caught, 'Could not load this update.')
@@ -123,6 +141,7 @@ const load = async () => {
 
 const refresh = async () => {
   refreshing.value = true
+
   try {
     await load()
   } finally {
@@ -132,6 +151,7 @@ const refresh = async () => {
 
 const schedule = () => {
   clearTimeout(timer)
+
   if (op.value && !isResolved(op.value) && (!isAttention.value || pending.value)) {
     timer = setTimeout(load, 3000)
   }
@@ -139,6 +159,7 @@ const schedule = () => {
 
 const runAction = async (action: () => Promise<MigrationAccepted>) => {
   acting.value = true
+
   try {
     op.value = (await action()).operation || op.value
     await load()
@@ -152,59 +173,30 @@ const runAction = async (action: () => Promise<MigrationAccepted>) => {
 const doRetry = () => runAction(() => updatesApi.retry(props.operationId))
 const doRestore = () => {
   confirmRestore.value = false
+
   return runAction(() => updatesApi.restore(props.operationId))
 }
+
 const doDismiss = () => {
   confirmDismiss.value = false
+
   return runAction(() => updatesApi.dismiss(props.operationId))
 }
+
 const doSkip = () => {
   confirmSkip.value = false
+
   const patch = op.value?.diagnosis?.patch
+
   if (!patch) return
 
   return runAction(() => updatesApi.bypassPatch(props.operationId, patch))
 }
 
-const shortSha = (sha: string | null | undefined) => sha?.slice(0, 7) || '—'
-
-// Green sha = the checkout happened; gray = still just the plan.
-const revisionHint = (app: MigrationApp) => {
-  const target = shortSha(app.updated_sha || app.target_sha)
-  return app.updated_sha ? `Updated to ${target}` : `Will update to ${target}`
-}
-
-const anythingFailed = computed(
-  () =>
-    (op.value?.sites || []).some((site) => siteStatus(site).value === 'failed') ||
-    serverJobs.value.some((job) => job.status === 'failed'),
-)
-
-// A settled run starts collapsed; anything unresolved or failed starts open.
-const sitesOpen = ref(true)
-const appsOpen = ref(true)
-const serverOpen = ref(true)
-let openDefaultsSet = false
-
-const applyOpenDefaults = () => {
-  if (openDefaultsSet || !op.value) return
-  openDefaultsSet = true
-  const settled = isResolved(op.value) && !anythingFailed.value
-  serverOpen.value = !settled
-  sitesOpen.value = !settled
-  appsOpen.value = !settled
-}
-
-const siteCaption = (site: MigrationSite) => {
-  const status = siteStatus(site)
-  if (status.value === 'pending') return ''
-  if (status.value === 'success') return 'Migrated'
-  return status.label
-}
-
 onMounted(async () => {
   useAppRegistry().load()
   loading.value = true
+
   try {
     await load()
   } finally {
@@ -215,31 +207,15 @@ onUnmounted(() => clearTimeout(timer))
 </script>
 
 <template>
-  <div class="p-3 md:p-4 mx-auto max-w-3xl">
-    <div v-if="loading && !op" class="px-2">
-      <div class="flex justify-between items-center py-2">
-        <Skeleton class="rounded-4 w-44 h-4" />
-        <Skeleton class="rounded-4 w-24 h-4" />
+  <div>
+    <template v-if="loading && !op">
+      <div class="flex flex-col gap-8 mx-auto p-3 md:p-4 md:pt-8 max-w-[1000px]">
+        <Skeleton class="rounded-5 h-[68px]" />
+        <Skeleton v-for="index in 4" :key="index" class="rounded-5 h-16" />
       </div>
+    </template>
 
-      <div class="mt-6 p-1 border border-outline-gray-2 rounded-6">
-        <div class="flex justify-between items-center px-2.5 py-2">
-          <Skeleton class="rounded-4 w-24 h-4" />
-          <Skeleton class="rounded-4 w-12 h-3" />
-        </div>
-
-        <div
-          v-for="index in 3"
-          :key="index"
-          class="px-2.5 py-2"
-          :style="{ opacity: 1 - index * 0.25 }"
-        >
-          <Skeleton class="rounded-4 w-48 h-4" />
-        </div>
-      </div>
-    </div>
-
-    <ErrorMessage v-else-if="error && !op" class="mt-4" :message="error" />
+    <ErrorMessage v-else-if="error && !op" class="m-4" :message="error" />
 
     <template v-else-if="op">
       <Teleport defer to="#header-badge">
@@ -249,6 +225,14 @@ onUnmounted(() => clearTimeout(timer))
 
       <Teleport defer to="#header-actions">
         <Button
+          :variant="isConsoleOpen ? 'subtle' : 'ghost'"
+          icon-left="lucide-square-terminal"
+          @click="isConsoleOpen = !isConsoleOpen"
+        >
+          Console
+        </Button>
+
+        <Button
           icon="lucide-refresh-cw"
           label="Refresh"
           tooltip="Refresh"
@@ -257,198 +241,171 @@ onUnmounted(() => clearTimeout(timer))
         />
       </Teleport>
 
-      <div class="flex items-center gap-3 mt-5 px-2 text-sm">
-        <span v-if="startedAt" class="flex items-center gap-1.5 text-ink-gray-7">
-          <span class="size-3.5 lucide-clock" />
-          {{ startedAt }}
-        </span>
-
-        <span v-if="duration" class="flex items-center gap-1.5 ml-auto text-ink-gray-5">
-          <span class="size-3.5 lucide-timer" />
-          <span class="tabular-nums">{{ duration }}</span>
-        </span>
-      </div>
-
-      <ErrorMessage v-if="error" class="mt-4" :message="error" />
-
-      <!-- Unresolved failure -->
-      <section v-if="isAttention" class="mt-4 rounded-6 border border-outline-gray-2 p-1">
-        <div class="px-2.5 py-2">
-          <div class="flex items-center gap-2">
-            <span class="size-4 shrink-0 text-ink-red-5 lucide-alert-triangle" />
-            <h2 class="font-medium text-ink-gray-8">{{ alertTitle }}</h2>
-          </div>
-          <p class="mt-1 text-ink-gray-6">{{ alertDescription }}</p>
-
-          <div class="mt-3 flex flex-wrap gap-2">
-            <Button
-              v-if="pending"
-              variant="ghost"
-              icon-right="lucide-square-terminal"
-              @click="openTaskLog({ id: pending.task_id })"
-            >
-              <template #prefix><Spinner size="sm" /></template>
-              {{ pendingLabel }}
-            </Button>
-            <template v-else>
-              <Button v-if="op.state === 'needs_attention'" :loading="acting" @click="doRetry">
-                Retry
-              </Button>
-              <Button
-                v-if="op.state === 'needs_attention' && op.diagnosis?.patch && !patchAlreadySkipped"
-                :loading="acting"
-                @click="confirmSkip = true"
-              >
-                Skip patch
-              </Button>
-              <Button v-if="op.can_restore" :loading="acting" @click="confirmRestore = true">
-                Restore backup
-              </Button>
-              <Button :loading="acting" @click="confirmDismiss = true">Dismiss</Button>
-            </template>
-          </div>
-        </div>
-
-        <div v-if="op.diagnosis?.output_excerpt" class="border-t border-outline-gray-1 px-1 pt-1">
-          <Button variant="ghost" @click="showOutput = !showOutput">
-            {{ showOutput ? 'Hide error output' : 'Show error output' }}
-            <template #suffix>
-              <span
-                class="size-4 transition-transform lucide-chevron-down"
-                :class="showOutput ? 'rotate-180' : ''"
-              />
-            </template>
-          </Button>
-
-          <LogView v-if="showOutput" class="mt-1 mb-1" :lines="outputLines" wrap />
-        </div>
-      </section>
-
-      <!-- Run order: apps update first, then sites migrate. -->
-      <div v-if="op.sites?.length || op.apps?.length || serverJobs.length" class="mt-3 space-y-2">
-        <UpdateSection
-          v-if="op.apps?.length"
-          v-model:open="appsOpen"
-          icon="lucide-box"
-          title="Target apps"
-          :count="op.apps.length"
+      <div class="space-y-8 mx-auto p-3 md:p-4 md:pt-8 pb-10 md:pb-10 max-w-[1000px]">
+        <dl
+          class="flex flex-wrap items-stretch gap-y-3 px-5 py-3.5 border border-outline-gray-1.5 rounded-5 divide-x divide-outline-gray-1.5"
         >
           <div
-            v-for="app in op.apps"
-            :key="app.name"
-            class="flex items-center justify-between gap-4 px-2.5 py-2"
+            v-for="fact in facts"
+            :key="fact.label"
+            class="flex flex-col grow gap-1.5 px-5 first:pl-0"
           >
-            <div class="flex items-center gap-2 min-w-0 flex-1">
-              <AppIcon :name="app.name" class="!rounded-1 size-5" initial-class="text-xs" />
-              <p class="min-w-0 truncate">
-                {{ app.name }}
-              </p>
-            </div>
-
-            <Tooltip :text="revisionHint(app)">
-              <component
-                :is="app.compare_url ? 'a' : 'div'"
-                :href="app.compare_url || undefined"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex shrink-0 items-center gap-2 font-mono text-xs text-ink-gray-6"
-                :class="app.compare_url ? 'hover:text-ink-gray-8' : ''"
-              >
-                <span>{{ shortSha(app.sha) }}</span>
-                <span class="lucide-arrow-right size-3.5 text-ink-gray-4" aria-hidden="true" />
-                <span :class="app.updated_sha ? 'text-ink-green-6' : 'text-ink-gray-5'">
-                  {{ shortSha(app.updated_sha || app.target_sha) }}
-                </span>
-
-                <span
-                  v-if="app.compare_url"
-                  class="lucide-external-link size-3.5 text-ink-gray-4"
-                  aria-hidden="true"
-                />
-              </component>
-            </Tooltip>
+            <dt class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
+              <span class="size-3.5 text-ink-gray-4 shrink-0" :class="fact.icon" aria-hidden="true" />
+              {{ fact.label }}
+            </dt>
+            <dd class="tabular-nums text-ink-gray-8 text-base-medium">{{ fact.value }}</dd>
           </div>
-        </UpdateSection>
 
-        <!-- Bench-wide jobs, run before any site is touched. -->
-        <UpdateSection
-          v-if="serverJobs.length"
-          v-model:open="serverOpen"
-          icon="lucide-server"
-          title="Server"
-          :count="serverJobs.length"
-        >
-          <JobRow v-for="job in serverJobs" :key="job.id" :job="job" @click="openTaskLog(job)" />
-        </UpdateSection>
+          <div v-if="op.apps.length" class="flex flex-col grow gap-1.5 px-5 first:pl-0">
+            <dt class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
+              <span class="size-3.5 text-ink-gray-4 lucide-package shrink-0" aria-hidden="true" />
+              Apps
+            </dt>
+            <dd class="flex flex-wrap items-center gap-1 h-4">
+              <Tooltip v-for="app in shownApps" :key="app.name" :text="titleMap[app.name] || app.name">
+                <AppIcon :name="app.name" :label="titleMap[app.name] || app.name" shape="circle" size="xs" />
+              </Tooltip>
 
-        <UpdateSection
-          v-if="op.sites?.length"
-          v-model:open="sitesOpen"
-          icon="lucide-globe"
-          title="Sites"
-          :count="sitesCount"
-        >
-          <div v-for="site in op.sites" :key="site.name">
-            <div
-              class="flex items-center gap-2 px-2.5 py-2 rounded-4 transition-colors"
-              :class="siteJobs(site.name).length ? 'cursor-pointer hover:bg-surface-gray-1' : ''"
-              @click="toggleSiteJobs(site.name)"
-            >
-              <span
-                class="size-4 text-ink-gray-5 transition-transform shrink-0 lucide-chevron-right"
-                :class="[
-                  siteJobs(site.name).length ? '' : 'invisible',
-                  expandedSites.has(site.name) ? 'rotate-90' : '',
-                ]"
+              <Button
+                v-if="op.apps.length > 8"
+                size="xs"
+                variant="ghost"
+                :label="showAllApps ? 'Show less' : `${op.apps.length - 8} more`"
+                @click="showAllApps = !showAllApps"
               />
-              <p class="flex-1 min-w-0 truncate">
-                {{ site.name }}
-              </p>
-
-              <span
-                v-if="siteCaption(site)"
-                class="flex items-center gap-1.5 text-sm shrink-0"
-                :class="siteStatus(site).value === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5'"
-              >
-                <Spinner v-if="siteStatus(site).busy" size="sm" class="text-ink-amber-6" />
-                {{ siteCaption(site) }}
-              </span>
-            </div>
-
-            <div
-              v-if="expandedSites.has(site.name)"
-              class="mb-1 ml-4 pl-3 border-l border-outline-gray-2"
-            >
-              <JobRow
-                v-for="job in siteJobs(site.name)"
-                :key="job.id"
-                :job="job"
-                @click="openTaskLog(job)"
-              />
-            </div>
+            </dd>
           </div>
-        </UpdateSection>
+        </dl>
+
+        <ErrorMessage v-if="error" :message="error" />
+
+        <FloatingConsole
+          v-if="isConsoleOpen"
+          :site="op.failed_site || op.sites[0]?.name || ''"
+          :sites="op.sites.map((site) => site.name)"
+          @close="isConsoleOpen = false"
+        />
+
+        <section>
+          <h2 class="mb-4 text-ink-gray-8 text-base-medium">Stages</h2>
+
+          <UpdateFlow :op="op">
+            <template #failure>
+            <Alert
+              v-if="showsFailure"
+              class="mt-4 first:mt-0"
+              theme="red"
+              :title="alertTitle"
+              :dismissible="isAttention && !pending"
+              @dismiss="confirmDismiss = true"
+            >
+              <template #description>
+                <p v-if="op.diagnosis?.message">{{ op.diagnosis.message }}</p>
+
+                <p v-if="op.diagnosis?.patch" class="mt-1 font-mono text-xs">
+                  {{ op.diagnosis.patch }}{{ patchAlreadySkipped ? ' · skipped' : '' }}
+                </p>
+
+                <template v-if="op.diagnosis?.output_excerpt">
+                  <Button
+                    class="-ml-2 mt-2"
+                    size="sm"
+                    variant="ghost"
+                    :icon-right="showOutput ? 'lucide-chevron-up' : 'lucide-chevron-down'"
+                    @click="showOutput = !showOutput"
+                  >
+                    {{ showOutput ? 'Hide error output' : 'Show error output' }}
+                  </Button>
+
+                  <LogView v-if="showOutput" class="bg-transparent mt-2 border border-outline-gray-2" :lines="outputLines" wrap dense />
+                </template>
+              </template>
+
+              <template v-if="isAttention" #actions>
+                <div class="flex items-center gap-2">
+                  <Button
+                    v-if="pending"
+                    size="xs"
+                    variant="subtle"
+                    icon-right="lucide-square-terminal"
+                    @click="openTaskLog({ id: pending.task_id })"
+                  >
+                    <template #prefix><Spinner size="xs" /></template>
+                    {{ pendingLabel }}
+                  </Button>
+
+                  <template v-else>
+                    <Button
+                      v-if="op.state === 'needs_attention'"
+                      size="xs"
+                      variant="solid"
+                      icon-left="lucide-rotate-ccw"
+                      :loading="acting"
+                      @click="doRetry"
+                    >
+                      Retry
+                    </Button>
+
+                    <Button
+                      v-if="op.state === 'needs_attention' && op.diagnosis?.patch && !patchAlreadySkipped"
+                      size="xs"
+                      variant="subtle"
+                      icon-left="lucide-skip-forward"
+                      :loading="acting"
+                      @click="confirmSkip = true"
+                    >
+                      Skip patch
+                    </Button>
+
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      icon-left="lucide-square-terminal"
+                      @click="isConsoleOpen = true"
+                    >
+                      Open console
+                    </Button>
+
+                    <Button
+                      v-if="op.can_restore"
+                      size="xs"
+                      variant="subtle"
+                      icon-left="lucide-history"
+                      :loading="acting"
+                      @click="confirmRestore = true"
+                    >
+                      Restore backup
+                    </Button>
+                  </template>
+                </div>
+              </template>
+            </Alert>
+            </template>
+          </UpdateFlow>
+        </section>
+
+        <section v-if="skipped.length">
+          <h2 class="flex items-center gap-2 mb-4 text-ink-gray-8 text-base-medium">
+            Skipped patches
+            <span class="tabular-nums text-ink-gray-5 text-sm">{{ skipped.length }}</span>
+          </h2>
+
+          <ul class="border border-outline-gray-2 rounded-5 divide-y divide-outline-gray-1">
+            <li
+              v-for="(decision, index) in skipped"
+              :key="index"
+              class="flex items-center gap-3 px-4 h-11 text-sm"
+            >
+              <code class="flex-1 min-w-0 font-mono text-ink-gray-7 text-xs truncate">
+                {{ decision.patch }}
+              </code>
+
+              <span class="text-ink-gray-5">{{ decision.site }}</span>
+            </li>
+          </ul>
+        </section>
       </div>
-
-      <UpdateSection
-        v-if="skipped.length"
-        class="mt-2"
-        icon="lucide-skip-forward"
-        title="Skipped patches"
-        :count="skipped.length"
-      >
-        <div
-          v-for="(decision, index) in skipped"
-          :key="index"
-          class="px-2.5 py-2 text-sm text-ink-gray-7"
-        >
-          <code class="rounded-4 bg-surface-gray-2 px-1 font-mono text-xs"
-            >{{ decision.patch }}</code
-          >
-          on
-          <span class="font-medium text-ink-gray-8">{{ decision.site }}</span>
-        </div>
-      </UpdateSection>
 
       <Dialog
         v-model="confirmSkip"
