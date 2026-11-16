@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from pilot.core.database import Database, make_site_database
+from pilot.core.database import Database, bench_query, make_site_database
+from pilot.exceptions import DatabaseError
 
 
 class SiteDatabaseState:
@@ -138,6 +140,35 @@ class SiteDatabaseState:
             database = make_site_database(
                 self.bench_root, self.site_name, connect_timeout=self.connect_timeout
             )
-            return database.execute(build_query(database)).rows
+            query = build_query(database)
+            if database.has_driver:
+                return database.execute(query).rows
         except Exception:
             return None
+        return self.get_rows_from_bench_env(database, query)
+
+    def get_rows_from_bench_env(self, database: Database, query: str) -> list[list] | None:
+        """Run the query with the bench's Python: the CLI is stdlib-only, Frappe ships the driver."""
+        from pilot.core.bench import Bench
+
+        python = Bench(self.bench_root).python
+        if not python.exists():
+            raise DatabaseError(f"Cannot query {self.site_name}: the bench has no Python env at {python}.")
+        request = {"settings": database.connection_settings, "query": query}
+        try:
+            result = subprocess.run(
+                [str(python), "-I", str(bench_query.__file__)],
+                input=json.dumps(request),
+                capture_output=True,
+                text=True,
+                timeout=self.connect_timeout * 6,
+            )
+        except subprocess.TimeoutExpired:
+            return None
+        if result.returncode == bench_query.MISSING_DRIVER:
+            raise DatabaseError(
+                f"Cannot query {self.site_name}: the bench env has no database driver ({result.stderr})."
+            )
+        if result.returncode != 0:
+            return None
+        return json.loads(result.stdout)
