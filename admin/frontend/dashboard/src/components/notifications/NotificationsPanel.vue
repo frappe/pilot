@@ -162,7 +162,13 @@ onUnmounted(() => clearInterval(badgeTimer))
         <Select side="bottom" v-model="category" class="ml-auto" :options="categories" />
       </div>
 
-      <Alert v-if="error" class="border border-outline-gray-2" theme="red" title="Couldn't load notifications" :dismissible="false">
+      <Alert
+        v-if="error"
+        class="border border-outline-gray-2"
+        theme="red"
+        title="Couldn't load notifications"
+        :dismissible="false"
+      >
         <template #description>{{ error }}</template>
       </Alert>
 
@@ -188,7 +194,7 @@ onUnmounted(() => clearInterval(badgeTimer))
 
           <span class="flex-1 min-w-0">
             <span class="flex items-start gap-2">
-              <span class="flex-1 min-w-0 font-medium">
+              <span class="flex-1 min-w-0 font-medium [overflow-wrap:anywhere]">
                 {{ item.title }}
               </span>
 
@@ -197,7 +203,10 @@ onUnmounted(() => clearInterval(badgeTimer))
               </span>
             </span>
 
-            <span v-if="item.message" class="block mt-0.5 text-ink-gray-6 text-p-sm">
+            <span
+              v-if="item.message"
+              class="block mt-0.5 text-ink-gray-6 text-p-sm [overflow-wrap:anywhere]"
+            >
               {{ item.message }}
             </span>
           </span>
