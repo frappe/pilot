@@ -60,7 +60,7 @@ jobs:
         env:
           SHA: ${{ steps.version.outputs.sha }}
         run: |
-          conclusion=$(gh run list --workflow unit-tests.yml --commit "$SHA" --event push \
+          conclusion=$(gh run list --workflow unit-tests.yml --commit "$SHA" --branch master --event push \
             --limit 1 --json conclusion --jq '.[0].conclusion // ""')
           if [ "$conclusion" != "success" ]; then
             echo "Unit Tests on $SHA is '${conclusion:-missing or still running}'. Not releasing." >&2
