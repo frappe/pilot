@@ -4,8 +4,6 @@ from pathlib import Path
 
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
-# Sites are pinged every 15 seconds; a 2-minute floor keeps every bar holding several checks.
-
 
 class SiteUptimeProvider(WindowedLogProvider):
     """Aggregates one site's slice of the shared per-bench uptime.json.log
@@ -21,6 +19,7 @@ class SiteUptimeProvider(WindowedLogProvider):
         self._bench_root = bench_root
         self._log_path = bench_root / "logs" / "uptime.json.log"
         self._site_name = site_name
+        # Sites are pinged every 15 seconds; a 2-minute floor keeps every bar holding several checks.
         self.bucket_seconds = max(120, self.window_seconds // 45)
 
     def get_uptime(self) -> dict:

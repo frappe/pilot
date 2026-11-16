@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import typing
 from collections.abc import Callable, Iterable
@@ -72,7 +73,7 @@ class AlertLog:
         elif entry["status"] == RESOLVED:
             # Breaking again before its resolution landed everywhere: a sink that did not hear the
             # resolution still sees it firing, and a sink that heard it must hear it fire again.
-            entry.update(status=FIRING, sent=not entry["sent"], recorded=not entry["recorded"])
+            entry.update(status=FIRING, sent=not entry["sent"], recorded=not entry["recorded"], detail=detail)
         entry.pop("clear_since", None)
         if entry["status"] == PENDING and now - entry["since"] >= self.window_seconds:
             entry.update(status=FIRING, sent=False, recorded=False, detail=detail)
@@ -111,12 +112,16 @@ class AlertLog:
         return [[name] for name in names]
 
     def read_entries(self) -> dict[str, dict]:
-        """The stored entries. A corrupt file, or an entry in an older format, starts its window over."""
+        """The stored entries. An entry in an older format starts its window over. A damaged file is logged
+        and starts every window over, as stopping the monitor would stop every alert."""
         try:
             entries = json.loads(self.path.read_text())
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError:
             return {}
+        except ValueError:
+            entries = None
         if not isinstance(entries, dict):
+            logging.warning("Alert log %s is damaged; starting it over.", self.path)
             return {}
         return {
             name: entry

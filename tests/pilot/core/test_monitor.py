@@ -449,12 +449,16 @@ def test_a_limit_turned_off_during_an_alert_sends_no_recovery(tmp_path: Path) ->
     assert payloads == []
 
 
-def test_a_corrupt_alerts_file_does_not_stop_the_tick(tmp_path: Path) -> None:
+def test_a_corrupt_alerts_file_is_logged_and_does_not_stop_the_tick(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     monitor = _alerting_monitor(tmp_path, cpu_usage_limit=80)
     monitor.alerts_path.write_text("not json")
 
     with _captured_alerts():
         monitor.send_alert_if_required(_system_record(cpu=95.0))
+
+    assert "is damaged" in caplog.text
 
     assert list(json.loads(monitor.alerts_path.read_text())) == ["cpu_usage_limit"]
 

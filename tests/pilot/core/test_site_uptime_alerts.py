@@ -523,6 +523,23 @@ def test_a_site_that_fails_after_its_site_up_landed_fires_again(tmp_path: Path) 
     assert [call.args[0] for call in create.call_args_list] == ["a.test is unreachable"]
 
 
+def test_a_reopened_alert_reports_the_new_failure(tmp_path: Path) -> None:
+    monitor = _monitor(tmp_path)
+    _fire(monitor, _accept(lambda endpoint, body: None))
+    monitor.send_alert_if_required([_ping("a.test", up=True)])
+    _age_alerts(monitor)
+
+    def refuse(endpoint, body):
+        raise OSError("connection refused")
+
+    with patch("pilot.core.notification.webhooks.send_webhook", refuse):
+        monitor.send_alert_if_required([_ping("a.test", up=True)])
+        monitor.send_alert_if_required([{**_ping("a.test", up=False), "status_code": 503}])
+
+    newest = monitor.bench.notifications.list(1)[0]
+    assert newest.message == "Health check failed for 60 seconds (HTTP 503)."
+
+
 def test_a_site_in_maintenance_keeps_its_alert_firing(tmp_path: Path) -> None:
     monitor = _monitor(tmp_path)
     payloads = []
