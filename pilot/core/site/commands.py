@@ -175,7 +175,7 @@ class SiteCommands:
 
         from pilot.managers.database import MariaDBManager
 
-        socket_path = MariaDBManager(self.site.bench.config.mariadb)._detect_socket()
+        socket_path = MariaDBManager(self.site.bench.config.mariadb).client_socket
         return self.mariadb_db_args(socket_path)
 
     def mariadb_db_args(self, socket_path: str) -> list[str]:

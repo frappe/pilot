@@ -1063,7 +1063,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
     bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
     captured = _capture_site_cmd(monkeypatch)
     statements = _capture_admin_sql(monkeypatch)
-    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: "")
+    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager.client_socket", property(lambda self: ""))
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 

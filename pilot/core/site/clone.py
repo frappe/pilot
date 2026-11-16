@@ -177,8 +177,11 @@ class SiteClone:
         }
         if original.get("encryption_key"):
             config["encryption_key"] = original["encryption_key"]
-        if engine == "mariadb" and settings.socket_path:
-            config["db_socket"] = settings.socket_path
+        if engine == "mariadb":
+            from pilot.managers.database import MariaDBManager
+
+            if socket := MariaDBManager(settings).client_socket:
+                config["db_socket"] = socket
         return config
 
     def copy_files(self, site) -> None:
