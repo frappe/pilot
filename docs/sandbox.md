@@ -25,7 +25,7 @@ The systemd directives behind each row are in [Production](production.md#sandbox
 
 On a sandboxed bench, Frappe's own log files, such as `frappe.log`, `database.log` and `scheduler.log`, are in `logs/workload/` on disk. The unit output (`web.log`, `admin.log`) and the audit log stay in `logs/`. If `logs/workload` is a link, Pilot refuses to write the units and says so. A bench without the sandbox is unchanged.
 
-The Admin log viewer lists the files in `logs/` and in `logs/workload/`. When both have a file with the same name, it shows the one in `logs/`. It opens each file once, without following a link, and reads only regular files. It does not list a symlink or a named pipe, and it cannot read or download one.
+The Admin log viewer lists the files in `logs/` by name and the files in `logs/workload/` as `workload/<name>`. Both show when they have the same name: CLI and Admin runs write Frappe's logs to `logs/`, and the sandboxed workload writes them to `logs/workload/`. It opens each file once, without following a link, and reads only regular files. It does not list a symlink or a named pipe, and it cannot read or download one.
 
 nginx runs outside the sandbox as the bench user and serves `sites/` from disk, so a link that a workload makes there could reach a file the workload cannot read. For that reason nginx follows no symlinks below a sandboxed bench. A bench without the sandbox keeps its links, because its workload can already read those files. See [Nginx And TLS](production.md#nginx-and-tls).
 
@@ -86,7 +86,7 @@ The sandbox does not separate one bench from another. All benches run as one use
 
 The sandbox does not protect you from an app that you install. An app chooses its own `read_paths` and `write_paths`, and the ones under `[tool.pilot.sandbox]` apply to every workload unit of the bench. Pilot checks that a path is below an allowed root, but it cannot know what the path is for. So an app can ask for the data of another program that the host user can read, such as `~/.local/share/containers`. App code also runs without the sandbox during `get-app`, `install-app`, `migrate` and asset builds. Install only apps that you trust.
 
-A link that was planted in the real `logs/` before the bench got the sandbox stays until someone removes it. Old Frappe log files in the real `logs/` of a bench that turned the sandbox on later hide the newer ones of the same name in `logs/workload/`, in the log viewer, until someone removes or rotates them.
+A link that was planted in the real `logs/` before the bench got the sandbox stays until someone removes it.
 
 File permissions still apply in the sandbox, so a process never gets more than the host user has.
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import errno
 import io
 import os
@@ -49,8 +48,9 @@ class LogProvider:
         if not self.logs_dir.exists():
             return []
 
-        paths = [*(self.logs_dir / WORKLOAD_LOGS).glob("*.log"), *self.logs_dir.glob("*.log")]
-        infos = [self.get_info(name) for name in sorted({path.name for path in paths})]
+        names = [path.name for path in self.logs_dir.glob("*.log")]
+        names += [f"{WORKLOAD_LOGS}/{path.name}" for path in (self.logs_dir / WORKLOAD_LOGS).glob("*.log")]
+        infos = [self.get_info(name) for name in sorted(names)]
         return [info for info in infos if info is not None]
 
     def get_info(self, filename: str) -> LogFileInfo | None:
@@ -72,15 +72,14 @@ class LogProvider:
             )
 
     def open_file(self, filename: str) -> BinaryIO:
-        """Open a log file from logs/, else from the workload's logs/workload/.
+        """Open `<name>` from logs/, or `workload/<name>` from the workload's logs/workload/.
         Links, pipes and anything else that is not a regular file raise ValueError."""
-        if "/" in filename or "\\" in filename:
+        folder, name = self.logs_dir, filename
+        if filename.startswith(f"{WORKLOAD_LOGS}/"):
+            folder, name = self.logs_dir / WORKLOAD_LOGS, filename.removeprefix(f"{WORKLOAD_LOGS}/")
+        if "/" in name or "\\" in name:
             raise ValueError(f"Invalid filename: {filename!r}")
-
-        for folder in (self.logs_dir, self.logs_dir / WORKLOAD_LOGS):
-            with contextlib.suppress(FileNotFoundError):
-                return self._open_regular_file(folder / filename)
-        raise FileNotFoundError(f"Log file not found: {filename}")
+        return self._open_regular_file(folder / name)
 
     def tail_file(self, filename: str, lines: int = 200) -> list[str]:
         """The last lines of a log file."""
@@ -96,7 +95,7 @@ class LogProvider:
         yielded = 0
         last_write = time.monotonic()
 
-        with io.TextIOWrapper(self.open_or_create_file(filename), errors="replace") as file_handle:
+        with io.TextIOWrapper(self.open_file(filename), errors="replace") as file_handle:
             file_handle.seek(0, 2)  # seek to end
             while yielded < 5000 and not should_stop():
                 line = file_handle.readline()
@@ -109,15 +108,6 @@ class LogProvider:
                     last_write = time.monotonic()
                 else:
                     time.sleep(0.2)
-
-    def open_or_create_file(self, filename: str) -> BinaryIO:
-        """Open a log file, first creating it in logs/ when neither folder has it."""
-        try:
-            return self.open_file(filename)
-        except FileNotFoundError:
-            with contextlib.suppress(FileExistsError):
-                (self.logs_dir / filename).touch(exist_ok=False)
-            return self.open_file(filename)
 
     @staticmethod
     def has_recent_errors(handle: BinaryIO) -> bool:

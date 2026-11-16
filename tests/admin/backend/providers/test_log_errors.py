@@ -39,18 +39,35 @@ def test_lists_and_tails_a_workload_log(tmp_path: Path) -> None:
 
     listed = provider.get_all()
 
-    assert [info.filename for info in listed] == ["frappe.log", "web.log"]
-    assert listed[0].line_count == 2
-    assert provider.tail_file("frappe.log") == ["one", "two"]
+    assert [info.filename for info in listed] == ["web.log", "workload/frappe.log"]
+    assert listed[1].line_count == 2
+    assert provider.tail_file("workload/frappe.log") == ["one", "two"]
 
 
-def test_pilot_log_wins_over_a_workload_log_with_the_same_name(tmp_path: Path) -> None:
-    _write_log(tmp_path, "admin.log", "pilot\n")
-    _write_log(tmp_path, f"{WORKLOAD_LOGS}/admin.log", "workload\n")
+def test_logs_with_the_same_name_in_both_folders_are_both_listed(tmp_path: Path) -> None:
+    """The CLI writes Frappe's logs to logs/ and the sandboxed workload to logs/workload/."""
+    _write_log(tmp_path, "frappe.log", "cli\n")
+    _write_log(tmp_path, f"{WORKLOAD_LOGS}/frappe.log", "workload\n")
     provider = LogProvider(tmp_path)
 
-    assert [info.filename for info in provider.get_all()] == ["admin.log"]
-    assert provider.tail_file("admin.log") == ["pilot"]
+    assert [info.filename for info in provider.get_all()] == ["frappe.log", "workload/frappe.log"]
+    assert provider.tail_file("frappe.log") == ["cli"]
+    assert provider.tail_file("workload/frappe.log") == ["workload"]
+
+
+def test_a_workload_name_cannot_leave_the_workload_folder(tmp_path: Path) -> None:
+    _write_log(tmp_path, "web.log", "web\n")
+
+    with pytest.raises(ValueError):
+        LogProvider(tmp_path).open_file("workload/../web.log")
+
+
+def test_following_a_missing_log_creates_no_file(tmp_path: Path) -> None:
+    (tmp_path / "logs" / WORKLOAD_LOGS).mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        next(LogProvider(tmp_path).follow_file("frappe.log"))
+    assert not (tmp_path / "logs" / "frappe.log").exists()
 
 
 def test_refuses_a_workload_symlink_that_points_outside(tmp_path: Path) -> None:
@@ -64,7 +81,7 @@ def test_refuses_a_workload_symlink_that_points_outside(tmp_path: Path) -> None:
 
     assert provider.get_all() == []
     with pytest.raises(ValueError):
-        provider.tail_file("leak.log")
+        provider.tail_file("workload/leak.log")
 
 
 def test_refuses_a_workload_symlink_to_another_workload_log(tmp_path: Path) -> None:
@@ -73,10 +90,10 @@ def test_refuses_a_workload_symlink_to_another_workload_log(tmp_path: Path) -> N
     provider = LogProvider(tmp_path)
 
     with pytest.raises(ValueError):
-        provider.open_file("alias.log")
+        provider.open_file("workload/alias.log")
     with pytest.raises(ValueError):
-        provider.tail_file("alias.log")
-    assert [info.filename for info in provider.get_all()] == ["frappe.log"]
+        provider.tail_file("workload/alias.log")
+    assert [info.filename for info in provider.get_all()] == ["workload/frappe.log"]
 
 
 def test_a_workload_log_swapped_for_a_symlink_after_listing_is_refused(tmp_path: Path) -> None:
@@ -85,14 +102,14 @@ def test_a_workload_log_swapped_for_a_symlink_after_listing_is_refused(tmp_path:
     secret.write_text("PRIVATE KEY\n")
     _write_log(bench_root, f"{WORKLOAD_LOGS}/leak.log", "harmless\n")
     provider = LogProvider(bench_root)
-    assert [info.filename for info in provider.get_all()] == ["leak.log"]
+    assert [info.filename for info in provider.get_all()] == ["workload/leak.log"]
 
     leak = bench_root / "logs" / WORKLOAD_LOGS / "leak.log"
     leak.unlink()
     leak.symlink_to(secret)
 
     with pytest.raises(ValueError) as raised:
-        provider.tail_file("leak.log")
+        provider.tail_file("workload/leak.log")
     assert "PRIVATE KEY" not in str(raised.value)
     assert provider.get_all() == []
 
@@ -104,7 +121,7 @@ def test_refuses_a_named_pipe_without_blocking(tmp_path: Path) -> None:
     provider = LogProvider(tmp_path)
 
     with pytest.raises(ValueError):
-        provider.open_file("pipe.log")
+        provider.open_file("workload/pipe.log")
     assert [info.filename for info in provider.get_all()] == ["web.log"]
 
 
