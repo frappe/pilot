@@ -45,7 +45,6 @@ def test_task_submission_callback_types_are_public_on_tasks_package() -> None:
 
 def test_task_runner_types_are_public_on_tasks_package() -> None:
     assert tasks.TaskRunner.__module__ == "pilot.tasks.base"
-    assert tasks.TaskSubmission.__module__ == "pilot.tasks.base"
 
 
 def make_bench(tmp_path):

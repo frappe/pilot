@@ -6,7 +6,6 @@ import importlib
 import logging
 import pkgutil
 import secrets
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,12 +27,6 @@ TASK_RETENTION_LIMIT = 100
 def generate_task_id() -> str:
     """A new task id: the local time and a random suffix."""
     return datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-
-
-@dataclass(frozen=True)
-class SubmissionResult:
-    task_id: str
-    created: bool
 
 
 class TaskRunner:
@@ -64,26 +57,7 @@ class TaskRunner:
         resource_key: str | list[str] | None = None,
         resource_handoff_from: str | None = None,
     ) -> str:
-        """Submit the task and return its id."""
-        return self.submit(
-            command,
-            args,
-            callbacks=callbacks,
-            idempotency_key=idempotency_key,
-            resource_key=resource_key,
-            resource_handoff_from=resource_handoff_from,
-        ).task_id
-
-    def submit(
-        self,
-        command: str,
-        args: dict,
-        callbacks: TaskCallbacks | None = None,
-        idempotency_key: str | None = None,
-        resource_key: str | list[str] | None = None,
-        resource_handoff_from: str | None = None,
-    ) -> SubmissionResult:
-        """Queue the task, reusing an active task with the same idempotency key."""
+        """Queue the task and return its id, reusing an active task with the same idempotency key."""
         payload = self._payloads.build(command, args, callbacks)
         if idempotency_key is None:
             self._store.create_queued(
@@ -92,22 +66,19 @@ class TaskRunner:
                 resource_key=resource_key,
                 resource_handoff_from=resource_handoff_from,
             )
-            submission = SubmissionResult(payload.task_id, True)
         else:
-            idempotency_digest = self._idempotency_digest(idempotency_key)
             creation = self._store.create_idempotent_queued(
                 payload.metadata,
                 payload.private_files,
-                idempotency_digest,
+                self._idempotency_digest(idempotency_key),
                 payload.request_fingerprint,
                 resource_key=resource_key,
                 resource_handoff_from=resource_handoff_from,
             )
             if not creation.created:
-                return SubmissionResult(creation.task_id, False)
-            submission = SubmissionResult(creation.task_id, True)
+                return creation.task_id
         self._run_post_submission_housekeeping()
-        return submission
+        return payload.task_id
 
     def find_idempotent_task(self, command: str, args: dict, key: str | None) -> str | None:
         """The active task queued with this idempotency key, if any."""

@@ -20,8 +20,6 @@ task_id = GetAndInstallAppTask.queue(
 )
 ```
 
-Use `queue_submission()` when the caller needs to know whether an idempotent submission created a new task.
-
 ## Task Shape
 
 ```python
@@ -221,7 +219,7 @@ Two facades deep, no real work yet — just arg-filtering. The real engine is `p
 `pilot/internal/tasks/runner.py` + `payload.py`:
 
 ```python
-# internal/tasks/runner.py TaskRunner.submit()
+# internal/tasks/runner.py TaskRunner.run()
 payload = self._payloads.build(command, args, callbacks)
 self._store.create_queued(payload.metadata, payload.private_files, resource_key=resource_key)
 ```

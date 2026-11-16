@@ -16,12 +16,6 @@ if TYPE_CHECKING:
     from pilot.tasks.callbacks import TaskCallbacks
 
 
-@dataclass(frozen=True)
-class TaskSubmission:
-    task_id: str
-    created: bool
-
-
 class _TaskStep:
     def __init__(self, task, key: str) -> None:
         self.task = task
@@ -129,27 +123,6 @@ class Task:
         if "site" in safe:
             fields["site"] = safe["site"]
         bench.audit_action("task", fields)
-
-    @classmethod
-    def queue_submission(
-        cls,
-        bench: "Bench",
-        callbacks: "TaskCallbacks | None" = None,
-        idempotency_key: str | None = None,
-        resource_key: str | list[str] | None = None,
-        resource_handoff_from: str | None = None,
-        **args,
-    ) -> TaskSubmission:
-        """Queue the task and return the submission."""
-        callbacks = cls._queue_callbacks(bench, args, callbacks)
-        return bench.tasks.submit_task(
-            cls,
-            callbacks=callbacks,
-            idempotency_key=idempotency_key,
-            resource_key=resource_key,
-            resource_handoff_from=resource_handoff_from,
-            **args,
-        )
 
     @classmethod
     def _queue_callbacks(
@@ -265,25 +238,6 @@ class TaskRunner:
             resource_handoff_from=resource_handoff_from,
         )
 
-    def submit_task(
-        self,
-        task_type: type[Task],
-        callbacks: "TaskCallbacks | None" = None,
-        idempotency_key: str | None = None,
-        resource_key: str | list[str] | None = None,
-        resource_handoff_from: str | None = None,
-        **args,
-    ) -> TaskSubmission:
-        """Queue a task and return the submission."""
-        return self.submit(
-            task_type.command,
-            self._task_args(task_type, args),
-            callbacks=callbacks,
-            idempotency_key=idempotency_key,
-            resource_key=resource_key,
-            resource_handoff_from=resource_handoff_from,
-        )
-
     def run(
         self,
         command: str,
@@ -302,26 +256,6 @@ class TaskRunner:
             resource_key=resource_key,
             resource_handoff_from=resource_handoff_from,
         )
-
-    def submit(
-        self,
-        command: str,
-        args: dict,
-        callbacks: "TaskCallbacks | None" = None,
-        idempotency_key: str | None = None,
-        resource_key: str | list[str] | None = None,
-        resource_handoff_from: str | None = None,
-    ) -> TaskSubmission:
-        """Queue a command and return the submission."""
-        result = self.__engine.submit(
-            command,
-            args,
-            callbacks=callbacks,
-            idempotency_key=idempotency_key,
-            resource_key=resource_key,
-            resource_handoff_from=resource_handoff_from,
-        )
-        return TaskSubmission(result.task_id, result.created)
 
     def find_idempotent_task(self, command: str, args: dict, key: str | None) -> str | None:
         """The task queued earlier with this idempotency key, if any."""
@@ -346,4 +280,4 @@ class TaskRunner:
         return {key: value for key, value in args.items() if value is not None}
 
 
-__all__ = ["Arg", "Task", "TaskRunner", "TaskSubmission", "step"]
+__all__ = ["Arg", "Task", "TaskRunner", "step"]

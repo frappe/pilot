@@ -161,7 +161,7 @@ def test_run_reuses_active_task_for_same_idempotency_key(
     assert "idempotency_digest" in metadata_text
 
 
-def test_submit_reports_new_and_replayed_tasks(
+def test_run_replays_an_active_idempotent_task(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -170,15 +170,14 @@ def test_submit_reports_new_and_replayed_tasks(
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
 
-    first = runner.submit("build", {}, idempotency_key="client-request-key")
-    replay = runner.submit("build", {}, idempotency_key="client-request-key")
+    first = runner.run("build", {}, idempotency_key="client-request-key")
+    replay = runner.run("build", {}, idempotency_key="client-request-key")
 
-    assert first.task_id == replay.task_id == TASK_ID
-    assert first.created is True
-    assert replay.created is False
+    assert first == replay == TASK_ID
+    assert [path.name for path in (tmp_path / "tasks").iterdir() if path.is_dir()] == [TASK_ID]
 
 
-def test_submit_returns_published_task_when_housekeeping_fails(
+def test_run_returns_published_task_when_housekeeping_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -196,10 +195,7 @@ def test_submit_returns_published_task_when_housekeeping_fails(
     monkeypatch.setattr(task_runner_module.task_workers, "wake", fail_wake)
     monkeypatch.setattr(task_store_module.TaskStore, "purge_terminal", fail_purge)
 
-    submission = TaskRunner(tmp_path).submit("build", {})
-
-    assert submission.task_id == TASK_ID
-    assert submission.created is True
+    assert TaskRunner(tmp_path).run("build", {}) == TASK_ID
     assert (tmp_path / "tasks" / TASK_ID / "meta.json").exists()
     assert housekeeping == [
         ("wake", tmp_path),
@@ -312,7 +308,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
     monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
 
-    first = runner.submit(
+    first = runner.run(
         "new-site-from-backup",
         {
             "name": "example.test",
@@ -321,7 +317,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
         },
         idempotency_key="restore-request",
     )
-    replay = runner.submit(
+    replay = runner.run(
         "new-site-from-backup",
         {
             "name": "example.test",
@@ -331,9 +327,7 @@ def test_restore_idempotency_fingerprints_upload_contents(
         idempotency_key="restore-request",
     )
 
-    assert first.created is True
-    assert replay.created is False
-    assert replay.task_id == first.task_id
+    assert replay == first
 
 
 def test_restore_idempotency_rejects_different_upload_contents(
