@@ -170,6 +170,23 @@ def test_notify_central_sends_the_event_as_centrals_event_type() -> None:
     }
 
 
+def test_notify_central_names_the_reference_doctype_when_given() -> None:
+    _stage_credentials("https://central.test", "tok-9")
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["body"] = json.loads(request.data.decode())
+        return _FakeResponse({"message": {"created": True}})
+
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        CentralClient().notify_central(
+            "site_unavailable", "Health check failed", reference_name="a.test", reference_doctype="Site"
+        )
+
+    assert captured["body"]["reference_doctype"] == "Site"
+    assert captured["body"]["reference_name"] == "a.test"
+
+
 def test_a_non_json_response_is_wrapped() -> None:
     _stage_credentials("https://central.test", "tok")
 

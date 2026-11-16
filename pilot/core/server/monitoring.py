@@ -12,9 +12,9 @@ from pathlib import Path
 
 import psutil
 
+from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
 from pilot.core.bench.telemetry import DatumCredential
-from pilot.core.notification.events import raise_event, record_alert
-from pilot.core.notification.sustained import SustainedAlerts
+from pilot.core.notification.alert_log import FIRING, RESOLVED, AlertLog
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import SEND_INTERVAL, TelemetryShipper
@@ -22,6 +22,7 @@ from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
 from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
+from pilot.internal.jsonl_log import utc_now
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -30,7 +31,7 @@ if typing.TYPE_CHECKING:
 CPU_SAMPLE_INTERVAL = 1.0
 # Seconds from the end of one tick to the start of the next.
 METRICS_INTERVAL = 10.0
-UPTIME_INTERVAL = 60.0
+UPTIME_INTERVAL = 15.0
 ROLLUP_INTERVAL = 60.0
 TELEMETRY_INTERVAL = SEND_INTERVAL.total_seconds()
 
@@ -53,6 +54,9 @@ class Monitor:
         "Innodb_row_lock_waits",
         "Threads_connected",
     )
+    # Short CPU and memory spikes are normal, so a breach must last this long to fire, and the
+    # usage must stay under the limit this long to resolve.
+    alert_window_seconds = 300
 
     def __init__(self, bench: "Bench"):
         self.bench = bench
@@ -163,14 +167,9 @@ class Monitor:
         """The file with the resource alert state."""
         return self.system_log_path.with_suffix(".alerts")
 
-    def _alert_payload(self, breached: list[str], system_record: dict) -> dict[str, typing.Any]:
+    def _alert_payload(self, breaches: list[dict]) -> dict[str, typing.Any]:
         """Alert body for the webhook, mail, and Central sinks: event, message, context."""
-        limits = self.bench.config.resource_limits
-        readings = self._readings(system_record)
-        crossed = [
-            {"limit": name, "threshold": getattr(limits, name), "reading": readings[name]}
-            for name in breached
-        ]
+        crossed = [{key: breach[key] for key in ("limit", "threshold", "reading")} for breach in breaches]
         summary = ", ".join(f"{item['limit']} at {item['reading']}%" for item in crossed)
         return {
             "event": ALERT_EVENT,
@@ -181,47 +180,37 @@ class Monitor:
             "message": f"{self.bench.config.name}: {summary}",
             "context": {
                 "bench": self.bench.config.name,
-                "time": system_record["time"],
-                "sustained_seconds": SustainedAlerts.window_seconds,
+                "time": max(breach["time"] for breach in breaches),
+                "sustained_seconds": self.alert_window_seconds,
                 "breached_limits": crossed,
             },
         }
 
     def send_alert_if_required(self, system_record: dict) -> None:
-        """Send system alerts if required based on the breach limits set"""
-        alerts = SustainedAlerts(self.alerts_path)
-        due = alerts.due(self._breached_limits(system_record))
+        """A breach that holds for the window fires one alert for all limits it crossed, which resolves once
+        usage stays under the limit for the window. A limit turned off drops its alert without a resolution."""
         limits = self.bench.config.resource_limits
-        self.announce_recovered([name for name in alerts.recovered if getattr(limits, name, 0)])
-
-        # Recording runs off `sustained`, not `due`: a sink accepting the alert retires
-        # the condition from `due` for good, and must not retire an incident the bench
-        # never managed to write down. Once written it is not written again.
-        unrecorded = alerts.unrecorded(alerts.sustained())
-        if unrecorded and record_alert(self.bench, self._alert_payload(unrecorded, system_record)):
-            alerts.mark_recorded(unrecorded)
-
-        if not due:
-            return
-
-        if self.bench.notifier.send(self._alert_payload(due, system_record)):
-            alerts.mark_notified(due)
-
-    def announce_recovered(self, names: list[str]) -> None:
-        """Tell webhooks that resource use they heard about is back under its limit."""
-        if not names:
-            return
-        raise_event(
-            self.bench,
-            feed=False,
-            event="resource_limit_recovered",
-            title="Resource use back under the limit",
-            category="Server",
-            severity="Info",
-            message=f"{self.bench.config.name}: {', '.join(names)} back under the limit",
-            action_route="/insights/analytics",
-            context={"recovered_limits": names},
+        enabled = [name for name in RESOURCE_LIMIT_FIELDS if getattr(limits, name)]
+        breaches = self.get_breaches(system_record)
+        alerts = AlertLog(self.alerts_path, self.alert_window_seconds)
+        alerts.retain(enabled)
+        alerts.update(active=breaches, clear=[name for name in enabled if name not in breaches])
+        alerts.deliver(
+            self.bench, FIRING, lambda names: self._alert_payload(alerts.get_details(names)), grouped=True
         )
+        alerts.deliver(self.bench, RESOLVED, self.get_recovered_payload, grouped=True)
+
+    def get_recovered_payload(self, names: list[str]) -> dict[str, typing.Any]:
+        """The event that resolves a resource alert."""
+        return {
+            "event": "resource_limit_recovered",
+            "title": "Resource use back under the limit",
+            "category": "Server",
+            "severity": "Info",
+            "action_route": "/insights/analytics",
+            "message": f"{self.bench.config.name}: {', '.join(names)} back under the limit",
+            "context": {"bench": self.bench.config.name, "time": utc_now(), "recovered_limits": names},
+        }
 
     @staticmethod
     def _readings(system_record: dict) -> dict[str, float]:
@@ -232,15 +221,20 @@ class Monitor:
             "disk_space_limit": system_record["storage"]["disk"]["percent"],
         }
 
-    def _breached_limits(self, system_record: dict) -> list[str]:
-        """The resource limits the readings exceed."""
+    def get_breaches(self, system_record: dict) -> dict[str, dict]:
+        """Each resource limit the readings exceed, with its threshold, reading and time."""
         limits = self.bench.config.resource_limits
-        breached = []
+        breaches = {}
         for name, reading in self._readings(system_record).items():
             limit = getattr(limits, name)
             if limit and reading > limit:
-                breached.append(name)
-        return breached
+                breaches[name] = {
+                    "limit": name,
+                    "threshold": limit,
+                    "reading": reading,
+                    "time": system_record["time"],
+                }
+        return breaches
 
     def collect_system_metrics(self) -> dict:
         """The system metrics record."""
@@ -490,7 +484,7 @@ def update_site_rollups() -> None:
 def main() -> None:
     """Uptime pings and telemetry get their own threads, so a slow metrics tick cannot delay them."""
     threading.Thread(
-        target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.main), name="uptime", daemon=True
+        target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.UptimeRunner().run), name="uptime", daemon=True
     ).start()
     threading.Thread(
         target=run_every, args=(ROLLUP_INTERVAL, update_site_rollups), name="rollups", daemon=True

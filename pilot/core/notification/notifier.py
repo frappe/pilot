@@ -23,6 +23,7 @@ class Notifier:
         {
             "resource_limit_breached",
             "site_down",
+            "site_up",
             "backups_failing",
             "certificate_expiry",
             "certificate_failed",
@@ -32,6 +33,7 @@ class Notifier:
     central_event_types: typing.ClassVar[dict[str, str]] = {
         "resource_limit_breached": "resource_limit_breached",
         "site_down": "site_unavailable",
+        "site_up": "site_recovered",
         "backups_failing": "backup_failure",
         "certificate_expiry": "certificate_expiry",
         "certificate_failed": "certificate_failed",
@@ -74,7 +76,8 @@ class Notifier:
         return True
 
     def send_to_central(self, payload: dict[str, typing.Any]) -> bool:
-        """Report the alert to Central, when the bench is managed and Central knows the event."""
+        """Report the alert to Central, when the bench is managed and Central knows the event.
+        The alert is about the bench unless the payload names its own reference, such as a Site."""
         event_type = self.get_central_event_type(payload)
         if not self.bench.config.central.enabled or event_type is None:
             return False
@@ -83,7 +86,8 @@ class Notifier:
                 event=event_type,
                 message=payload["message"],
                 context=payload.get("context"),
-                reference_name=self.bench.config.name,
+                reference_doctype=payload.get("reference_doctype"),
+                reference_name=payload.get("reference_name") or self.bench.config.name,
             )
         except CentralClientError:
             return False

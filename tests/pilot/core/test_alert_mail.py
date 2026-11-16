@@ -389,7 +389,36 @@ def test_alerts_reach_central_when_it_is_managed(tmp_path: Path) -> None:
         assert Notifier(bench).send({"event": "resource_limit_breached", "message": "high", "context": {}}) is True
 
     client.return_value.notify_central.assert_called_once_with(
-        event="resource_limit_breached", message="high", context={}, reference_name=bench.config.name
+        event="resource_limit_breached",
+        message="high",
+        context={},
+        reference_doctype=None,
+        reference_name=bench.config.name,
+    )
+
+
+def test_a_site_alert_reaches_central_about_the_site(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    bench = _bench(tmp_path, MailConfig())
+    bench.config.central.enabled = True
+    payload = {
+        "event": "site_up",
+        "message": "Health check passed for 60 seconds.",
+        "reference_doctype": "Site",
+        "reference_name": "a.test",
+        "context": {},
+    }
+
+    with patch.object(notifier, "CentralClient") as client:
+        assert Notifier(bench).send(payload) is True
+
+    client.return_value.notify_central.assert_called_once_with(
+        event="site_recovered",
+        message="Health check passed for 60 seconds.",
+        context={},
+        reference_doctype="Site",
+        reference_name="a.test",
     )
 
 
