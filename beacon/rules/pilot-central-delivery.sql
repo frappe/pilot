@@ -1,5 +1,5 @@
 -- title: Pilot cannot send alerts to Central
--- severity: High
+-- severity: Medium
 -- resource_type: Virtual Machine
 -- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-central-delivery.md
 -- interval: 60
