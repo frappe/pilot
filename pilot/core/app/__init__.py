@@ -316,6 +316,15 @@ class App:
         self._install_into_environment()
         self._register()
 
+    def ensure_bench_initialized(self) -> None:
+        """Refuse an install before cloning when the bench has no environment yet."""
+        if not self.bench.is_initialized:
+            bench = self.bench.config.name
+            raise BenchError(
+                f"Bench '{bench}' is not initialised, so '{self.config.name}' cannot be installed. "
+                f"Run 'pilot -b {bench} init' first."
+            )
+
     def ensure_not_linked(self) -> None:
         """Refuse git work in, and moves of, a checkout symlinked into apps/, even
         when this App was made without its bench.toml entry."""
@@ -449,6 +458,7 @@ class App:
             return self._skip_already_installed(on_progress, install_dependencies, skip_assets)
 
         name = self.config.name
+        self.ensure_bench_initialized()
         self.ensure_not_linked()
         existing_clone = self.existing_clone_path
         self.is_staged = not self.is_marketplace

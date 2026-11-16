@@ -5,10 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from pilot.commands.apps.download import GetAppCommand
 from pilot.core.app import App
+from pilot.core.bench import Bench
 from pilot.integrations.marketplace import Marketplace, Resolver
 from tests.pilot.commands.test_commands import make_bench
+
+
+@pytest.fixture(autouse=True)
+def initialised_bench(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These benches have no environment; App.install refuses an uninitialised bench."""
+    monkeypatch.setattr(Bench, "is_initialized", property(lambda self: True))
 
 
 def make_resolver(name: str, deps: dict[str, str] | None = None) -> Resolver:

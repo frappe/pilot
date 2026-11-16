@@ -11,8 +11,15 @@ import pytest
 from pilot.config import AppConfig
 from pilot.core.app import App
 from pilot.core.app.repository import AppRepository
+from pilot.core.bench import Bench
 from pilot.exceptions import AppValidationError, BenchError
 from tests.pilot.commands.test_commands import make_bench
+
+
+@pytest.fixture(autouse=True)
+def initialised_bench(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These benches have no environment; App.install refuses an uninitialised bench."""
+    monkeypatch.setattr(Bench, "is_initialized", property(lambda self: True))
 
 
 def _write_app_tree(path: Path, module: str) -> None:
@@ -240,3 +247,14 @@ def test_install_refuses_a_symlinked_checkout_and_leaves_it_alone(tmp_path: Path
     popen.assert_not_called()
     assert (bench.apps_path / "myapp").resolve() == checkout
     assert not (bench.staging_path / "myapp").exists()
+
+
+def test_install_refuses_an_uninitialised_bench_before_cloning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Bench, "is_initialized", property(lambda self: False))
+    bench = make_bench(tmp_path)
+    app = _make_app(bench, "helpdesk")
+
+    with patch.object(AppRepository, "clone") as clone, pytest.raises(BenchError, match="not initialised"):
+        app.install()
+
+    clone.assert_not_called()
