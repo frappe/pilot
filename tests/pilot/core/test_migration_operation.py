@@ -1712,3 +1712,26 @@ def test_a_failed_start_deletes_the_record_so_it_cannot_own_the_sites(tmp_path: 
 
     assert store.get_all() == []
     site.set_maintenance_settings.assert_called_with({"maintenance_mode": 0, "pause_scheduler": 0})
+
+
+def test_a_branch_switch_backup_failure_keeps_the_sites_in_maintenance(tmp_path: Path) -> None:
+    """The switched code already runs; reopening the sites would serve it on an unmigrated schema."""
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    site = mock_bench.site.return_value
+    site.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+    site.migration_backup.create.side_effect = RuntimeError("dump failed")
+
+    from pilot.core.bench.migration.operation import AppRevision
+    from pilot.core.bench.migration.store import MigrationStore
+
+    switched = AppRevision(name="crm", sha="1111111", updated_sha="2222222", branch="main")
+    operation = MigrationStore(mock_bench).create_site_migrate("crm.local", switched_app=switched)
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="task-101"):
+        operation.begin()
+    with pytest.raises(RuntimeError, match="dump failed"):
+        operation.back_up_site("crm.local")
+
+    assert operation.state == "needs_attention"
+    site.set_maintenance_settings.assert_not_called()
+    mock_bench.reload_workers.assert_not_called()
