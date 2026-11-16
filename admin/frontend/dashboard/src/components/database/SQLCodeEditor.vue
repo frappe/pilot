@@ -19,7 +19,12 @@ import {
 import { Compartment, Prec } from '@codemirror/state'
 import { syntaxHighlighting } from '@codemirror/language'
 
-import { codeEditorHighlightStyle, codeEditorTheme } from '@/components/common/codeEditorTheme'
+import {
+  browserFind,
+  codeEditorHighlightStyle,
+  codeEditorTheme,
+  consoleEditorTheme,
+} from '@/components/common/codeEditorTheme'
 import { fillLinesOnResize } from '@/components/common/fillLinesOnResize'
 import type { TableColumn, TableSchema } from '@/types/database'
 
@@ -104,6 +109,7 @@ const runKeymap = Prec.highest(
 )
 
 const extensions = [
+  consoleEditorTheme,
   codeEditorTheme,
   fillLinesOnResize,
   Prec.highest(syntaxHighlighting(codeEditorHighlightStyle)),
@@ -122,6 +128,7 @@ const extensions = [
   }),
   sqlCompartment.of(sql({ dialect: cmDialect.value, upperCaseKeywords: true })),
   runKeymap,
+  browserFind,
 ]
 
 defineExpose({ getQueryToRun })

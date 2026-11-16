@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-
 import {
   Alert,
   Button,
@@ -13,13 +10,15 @@ import {
   TabButtons,
   TextInput,
 } from 'frappe-ui'
-import { apiErrorMessage } from '@/api/client'
+import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { appsApi } from '@/api/apps'
+import { apiErrorMessage } from '@/api/client'
 import { gitApi } from '@/api/git'
+import type { BranchCommit, GitConnection, GitRepository } from '@/types/git'
 import { branchComboboxOptions } from '@/utils/branchComboboxOptions'
-import { openTaskDetailPage } from '@/utils/taskRoute'
-import type { GitConnection, GitRepository } from '@/types/git'
 import { errorMessage } from '@/utils/error'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 interface Props {
   // When set, the fetched app is also installed on this site.
@@ -73,6 +72,7 @@ const goToGithubSettings = () => {
 
 const resolving = ref(false)
 const foundName = ref('')
+const commit = ref<BranchCommit | null>(null)
 const canSubmit = computed(() =>
   Boolean(repo.value.trim() && branch.value.trim() && foundName.value && !resolving.value),
 )
@@ -97,6 +97,7 @@ watch(repo, (value) => {
   fetched.value = false
   branches.value = []
   foundName.value = ''
+  commit.value = null
   if (tab.value !== 'public') return
   clearTimeout(repoDebounce)
   if (!REPO_PATTERN.test(value.trim().replace(/\/+$/, ''))) return
@@ -111,6 +112,7 @@ const reset = () => {
   fetched.value = false
   branches.value = []
   foundName.value = ''
+  commit.value = null
   error.value = ''
   if (tab.value === 'private' && !gitStatus.value) loadGitStatus()
 }
@@ -161,11 +163,14 @@ watch(branch, () => {
 const resolveApp = async () => {
   resolving.value = true
   foundName.value = ''
+  commit.value = null
   error.value = ''
   try {
     const d = await gitApi.resolve(normalizedRepo.value, branch.value.trim())
-    if (d.name) foundName.value = d.name
-    else error.value = apiErrorMessage(d, 'Could not find a Frappe app in this repository.')
+    if (d.name) {
+      foundName.value = d.name
+      commit.value = d.commit
+    } else error.value = apiErrorMessage(d, 'Could not find a Frappe app in this repository.')
   } catch (e) {
     error.value = errorMessage(e, 'Could not find a Frappe app in this repository.')
   } finally {
@@ -197,12 +202,7 @@ const submit = async () => {
 
 <template>
   <Dialog v-model="open" title="Import app from GitHub" size="md">
-    <TabButtons
-      v-model="tab"
-      :options="tabOptions"
-      size="md"
-      class="mb-4"
-    />
+    <TabButtons v-model="tab" :options="tabOptions" size="md" class="mb-4" />
 
     <div v-if="tab === 'public'" class="flex items-end gap-2">
       <TextInput
@@ -274,21 +274,24 @@ const submit = async () => {
 
     <ErrorMessage v-if="error" :message="error" class="mt-1.5" />
 
-    <p
-      v-else
-      class="flex items-center gap-1.5 mt-1.5 h-5 text-sm"
-      :class="foundName ? 'text-ink-green-7' : 'text-ink-gray-5'"
-    >
-      <Spinner v-if="fetching || resolving" />
-      <span v-else-if="foundName" class="size-3.5 shrink-0 lucide-check" />
+    <div v-else class="flex items-start gap-1.5 mt-2 min-h-5">
+      <Spinner v-if="fetching || resolving" class="mt-0.5" />
+      <span v-else-if="foundName" class="mt-0.5 size-3.5 shrink-0 text-ink-green-7 lucide-check" />
 
-      <template v-if="fetching">Loading branches…</template>
-      <template v-else-if="resolving">Checking repository…</template>
-      <template v-else-if="foundName"
-        >Found {{ foundName }}
-        <template v-if="siteName">, will be installed on {{ siteName }}</template></template
-      >
-    </p>
+      <p v-if="fetching" class="text-p-sm text-ink-gray-5">Loading branches…</p>
+      <p v-else-if="resolving" class="text-p-sm text-ink-gray-5">Checking repository…</p>
+      <div v-else-if="foundName" class="min-w-0 text-p-sm">
+        <p class="text-ink-green-7">
+          Found {{ foundName }}
+          <template v-if="siteName">, will be installed on {{ siteName }}</template>
+        </p>
+
+        <p v-if="commit" class="text-ink-gray-5">
+          <span class="font-mono text-ink-gray-7">{{ commit.sha.slice(0, 7) }}</span>
+          {{ commit.message }}
+        </p>
+      </div>
+    </div>
 
     <template #actions>
       <div class="flex justify-end gap-2">

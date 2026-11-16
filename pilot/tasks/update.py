@@ -10,6 +10,7 @@ class UpdateTask(Task):
     """Chain link: update/reinstall/rebuild apps, then queue the first site migration."""
 
     command: ClassVar[str] = "update"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 86400
 
     operation_id: str

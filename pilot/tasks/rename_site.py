@@ -18,6 +18,16 @@ class RenameSiteTask(Task):
     keep_old_hostname: bool = True
     make_primary: bool = False
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """Holds both hostnames until the old provider route is retained or released."""
+        return [
+            self.get_site_resource_key(self.site),
+            self.get_site_resource_key(self.new_name),
+            self.get_host_resource_key(self.site),
+            self.get_host_resource_key(self.new_name),
+        ]
+
     def run(self) -> None:
         """Rename the site."""
         self.require_production_privileges()

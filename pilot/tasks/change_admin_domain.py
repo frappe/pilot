@@ -15,6 +15,13 @@ class ChangeAdminDomainTask(Task):
     domain: str
     tls: bool | None = None
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """Holds both hostnames until the old provider route is released."""
+        current = self.bench.config.admin.domain
+        hosts = [self.domain, *([current] if current else [])]
+        return ["admin-domain", *(self.get_host_resource_key(host) for host in hosts)]
+
     def run(self) -> None:
         """Move the Admin to a new domain."""
         self.require_production_privileges()

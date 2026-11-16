@@ -13,6 +13,11 @@ class SetupLetsEncryptTask(Task):
     site: str = ""
     email: str = ""
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active."""
+        return [self.get_site_resource_key(self.site)] if self.site else []
+
     def run(self) -> None:
         """Issue the certificates."""
         self.setup_letsencrypt()

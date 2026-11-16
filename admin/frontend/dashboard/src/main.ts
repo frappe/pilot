@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { FrappeUI } from 'frappe-ui'
 
 import 'frappe-ui/style.css'
-import '@/index.css'
+import '@/css/index.css'
 import App from '@/App.vue'
 import { router } from '@/router.ts'
 
@@ -11,6 +11,7 @@ import { router } from '@/router.ts'
 window.addEventListener('vite:preloadError', () => window.location.reload())
 
 const app = createApp(App)
+
 app.use(router)
 app.use(FrappeUI)
 

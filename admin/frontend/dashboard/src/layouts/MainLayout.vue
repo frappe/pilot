@@ -40,6 +40,7 @@ const cloneBench = (name: string) => {
   cloneBenchSource.value = name
   showCloneBench.value = true
 }
+
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 
 useSearchShortcut()
@@ -76,6 +77,7 @@ watch(
 
 const breadcrumbs = computed(() => {
   const all = items.value || breadcrumbsFromRouteMeta(route.meta)
+
   return isMobile.value ? all.slice(-1) : all
 })
 
@@ -89,7 +91,7 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
 <template>
   <MobileShell v-if="isMobile">
     <header
-      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 md:px-4"
+      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b border-outline-gray-1.5 bg-surface-base px-3 md:px-4"
     >
       <div class="flex items-center justify-between">
         <div v-if="route.name == 'Home'" class="flex items-center gap-2">
@@ -107,6 +109,7 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
         </button>
 
         <div id="header-badge" class="flex items-center pl-1" />
+
         <div id="header-actions" class="flex items-center gap-2 ml-auto">
           <UpdateStatusButton v-if="route.meta.showUpdateStatus" />
         </div>
@@ -125,8 +128,10 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
           route="/home"
           :active="route.name == 'Home'"
         />
+
         <MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
         <NotificationsPanel mobile />
+
         <MobileNavItem
           label="Settings"
           icon="lucide-settings"
@@ -147,11 +152,12 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
     </template>
 
     <header
-      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 md:px-4"
+      class="sticky top-0 z-20 flex min-h-12 flex-col justify-center border-b border-outline-gray-1.5 bg-surface-base px-3 md:px-4"
     >
       <div class="flex flex-1 items-center gap-1">
         <Breadcrumbs :items="breadcrumbs" />
         <div id="header-badge" class="flex items-center" />
+
         <div id="header-actions" class="flex items-center gap-2 ml-auto">
           <UpdateStatusButton v-if="route.meta.showUpdateStatus" />
         </div>
@@ -169,7 +175,9 @@ const breadcrumbsFromRouteMeta = ({ title = '' }) => {
       @new-bench="showNewBench = true"
       @clone-bench="cloneBench"
     />
+
     <NewBenchDialog v-model="showNewBench" />
+
     <CloneDialog
       v-model="showCloneBench"
       kind="bench"

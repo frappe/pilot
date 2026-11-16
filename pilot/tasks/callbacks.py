@@ -35,11 +35,10 @@ def on_cancel(func):
 def task_callbacks_for(task) -> TaskCallbacks:
     """The callbacks the task's decorated methods declare."""
     callbacks: TaskCallbacks = {}
-    for method_name in dir(task):
-        method = getattr(task, method_name)
-        specs = getattr(method, "_task_callbacks", ())
+    for method_name in dir(type(task)):
+        specs = getattr(getattr(type(task), method_name), "_task_callbacks", ())
         for trigger, operation in specs:
-            args = method()
+            args = getattr(task, method_name)()
             if args is None:
                 continue
             if trigger in callbacks:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from hashlib import sha256
@@ -66,6 +66,7 @@ class TaskStore:
         idempotency_digest: str,
         request_fingerprint: str,
         resource_key: str | list[str] | None = None,
+        resource_handoff_from: str | None = None,
     ) -> TaskCreation:
         """Create a queued task, or return the active task already queued with this idempotency key."""
         keys = self._normalize_keys(resource_key)
@@ -82,7 +83,7 @@ class TaskStore:
                     raise TaskConflictError("Idempotency key is already in use for another active task")
                 return TaskCreation(existing, self.task_dir(existing), False)
 
-            self._reject_active_resource_locked(keys)
+            self._reject_active_resource_locked(keys, resource_handoff_from)
             self._reject_host_resources_elsewhere(keys)
             stored_metadata = dict(metadata)
             stored_metadata["idempotency_digest"] = idempotency_digest
@@ -230,12 +231,14 @@ class TaskStore:
         with self.locked():
             self._files.remove_files(task_id, names)
 
-    def purge_terminal(self, limit: int) -> list[str]:
-        """Delete the oldest finished tasks beyond the newest `limit`; return their ids."""
+    def purge_terminal(self, limit: int, matches: Callable[[str], bool] = lambda command: True) -> list[str]:
+        """Delete the oldest finished tasks whose command matches, beyond the newest `limit`; return their ids."""
         if limit < 0:
             raise ValueError("Task retention limit must not be negative")
         with self.locked():
-            terminal = self._terminal_tasks_locked()
+            terminal = [
+                (key, task_id) for key, task_id, command in self._terminal_tasks_locked() if matches(command)
+            ]
             to_delete = terminal[: max(0, len(terminal) - limit)]
             for _, task_id in to_delete:
                 shutil.rmtree(self.task_dir(task_id))
@@ -408,8 +411,8 @@ class TaskStore:
             stored_metadata["resource_keys"] = list(keys)
         return stored_metadata
 
-    def _terminal_tasks_locked(self) -> list[tuple[tuple[float, str], str]]:
-        """Finished tasks sorted oldest first, with their sort keys."""
+    def _terminal_tasks_locked(self) -> list[tuple[tuple[float, str], str, str]]:
+        """Finished tasks sorted oldest first, with their sort keys and commands."""
         terminal = []
         for task_dir in self._files.task_dirs():
             task_id = task_dir.name
@@ -419,7 +422,9 @@ class TaskStore:
                 if self._files.has_cleanup_pending(task_dir):
                     continue
                 metadata = self.read_metadata(task_id)
-                terminal.append((self._files.completion_key(metadata, task_id), task_id))
+                terminal.append(
+                    (self._files.completion_key(metadata, task_id), task_id, str(metadata.get("command", "")))
+                )
             except (OSError, ValueError, TaskNotFoundError):
                 continue
         terminal.sort()

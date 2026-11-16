@@ -13,6 +13,11 @@ class CloneBenchTask(Task):
     branch: str = "default"
     app_branches: dict[str, str] = field(default_factory=dict)
 
+    @property
+    def resource_keys(self) -> list[str]:
+        """The resources this task holds while active."""
+        return [f"bench:{self.source_bench}", f"bench:{self.name}"]
+
     @step("clone", lambda self: f"Clone {self.source_bench} into {self.name}")
     def run(self) -> None:
         """Clone the source bench."""

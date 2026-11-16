@@ -8,10 +8,10 @@ from pilot.commands import Arg, Command
 
 @dataclass(kw_only=True)
 class SetupTelemetryCommand(Command):
-    """Write this bench's Datum credential and install the log shipper."""
+    """Write this bench's Datum credential."""
 
     name: ClassVar[str] = "telemetry"
-    help: ClassVar[str] = "Write the metrics credential to common_config.toml and install Fluent Bit."
+    help: ClassVar[str] = "Write the Datum credential to common_config.toml."
     group: ClassVar[str] = "setup"
 
     endpoint: Annotated[
@@ -29,12 +29,8 @@ class SetupTelemetryCommand(Command):
     ] = None
 
     def run(self) -> None:
-        """Metrics and logs share one credential, so both are configured here.
-
-        Only logs need installing: the monitor builds its shipper from this same config on
-        every tick, so writing it is all metrics take."""
+        """The monitor reads this config on every tick, so writing it is all telemetry takes."""
         from pilot.core.bench.telemetry import apply_credential
-        from pilot.managers.fluentbit import LogsConfigurator
 
         apply_credential(
             self.bench, endpoint=self.endpoint, token=self.token, on_progress=self.report
@@ -48,15 +44,7 @@ class SetupTelemetryCommand(Command):
             )
             return
 
-        if not telemetry.is_shipping_metrics:
-            self.report("Metrics are off.")
+        if telemetry.is_enabled:
+            self.report(f"Telemetry will be sent to {telemetry.endpoint}.")
         else:
-            self.report(f"Metrics will ship to {telemetry.endpoint}.")
-        if not telemetry.is_shipping_logs:
-            self.report("Logs are off. Set [telemetry] logs_enabled to ship them.")
-            return
-
-        configurator = LogsConfigurator(self.bench)
-        configurator.setup()
-        configurator.install(telemetry)
-        self.report("Fluent Bit installed. Logs will ship to " + telemetry.endpoint)
+            self.report("Telemetry is off. Set [telemetry] enabled to send it.")

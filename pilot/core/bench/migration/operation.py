@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
+from pilot.config.monitor import get_update_log
 from pilot.core.app import RevisionPin
 from pilot.core.bench.migration.recovery import MigrationRecovery
 from pilot.core.bench.migration.state import (
@@ -56,6 +59,8 @@ class AppRevision:
     target_kind: Literal["tag", "commit"] = "commit"  # how to check target_sha out
     branch: str = ""  # branch to return to on revert, set when a branch switch changed it
     has_migrate_changes: bool = True
+    validate_status: str = "pending"  # pending | running | success | failed | skipped
+    update_status: str = "pending"  # pending | running | success | failed | skipped
 
     @property
     def compare_url(self) -> str | None:
@@ -170,16 +175,22 @@ class MigrationOperation(MigrationRecovery):
             return
         sites = [self.bench.site(site.name) for site in self.sites]
         needed = sum(
-            site.backups.estimated_database_size for site in sites if not site.migration_backup.is_stored_in_s3
+            site.backups.estimated_database_size
+            for site in sites
+            if not site.migration_backup.is_stored_in_s3
         )
         ensure_free_space(self.bench.sites_path, needed, "the backups this migration takes first")
 
     def enqueue_next(self, handoff_from: str | None = None) -> str | None:
-        """Queue the task the current state asks for, or nothing if the chain pauses."""
+        """Queue the task the current state asks for, or nothing if the chain pauses or was stopped."""
+        if self.is_stop_requested:
+            self.finish_stop()
+            return None
         step = self.state.next_step(self)
         if step is None:
             return None
         command, args = step
+        self._stamp_finished(handoff_from)
         task_id = _load_task(command).queue(
             self.bench,
             operation_id=self.id,
@@ -233,13 +244,18 @@ class MigrationOperation(MigrationRecovery):
         backup phase may have taken a while, and code may have moved upstream
         since the user chose these targets.
         """
-        on_step("update", "Updating apps")
+        on_step("validate", "Validating apps")
         filter_set = set(self.apps_filter) if self.apps_filter else None
         self.wait_for_background_jobs("updating", [site.name for site in self.sites], on_progress)
+        for revision in self.apps:
+            revision.validate_status = revision.update_status = "pending"
         try:
-            self.bench._update_apps(filter_set, on_progress, self.revision_pins)
-            self.bench._reinstall_apps(filter_set, on_progress)
-            self.bench._rebuild_assets(filter_set, on_progress)
+            self.bench._update_apps(
+                filter_set, on_progress, self.revision_pins, partial(self.track_app, "validate")
+            )
+            on_step("update", "Updating apps")
+            self.bench._reinstall_apps(filter_set, on_progress, partial(self.track_app, "update"))
+            self.bench._rebuild_assets(filter_set, on_progress, partial(self.track_app, "update"))
             for revision in self.apps:
                 revision.updated_sha = self.bench.app(revision.name).installed_hash
         except Exception as error:
@@ -258,6 +274,14 @@ class MigrationOperation(MigrationRecovery):
         self._transition("migrating")
         if self.next_migrate_site() is None:
             self.complete(on_step)
+
+    def track_app(self, step: str, name: str, status: str) -> None:
+        """Record one app's progress through the validate or update step."""
+        revision = next((app for app in self.apps if app.name == name), None)
+        if revision is None:
+            return
+        setattr(revision, f"{step}_status", status)
+        self._save()
 
     def migrate_site(
         self, name: str, on_step: OnStep = _NO_STEP, on_progress: OnProgress = _NO_PROGRESS
@@ -318,6 +342,9 @@ class MigrationOperation(MigrationRecovery):
         """Pause an interrupted chain step unless its successor has already taken over."""
         detail = f": {reason.rstrip('.')}" if reason else ""
         if not self.chain or self.chain[-1]["task_id"] != task_id:
+            return
+        if self.is_stop_requested:
+            self.finish_stop()
             return
         if self.state == "retrying":
             self._enter_needs_attention(self.return_state or "migrating", self.failed_site)
@@ -407,10 +434,10 @@ class MigrationOperation(MigrationRecovery):
                 site_obj.set_maintenance_settings(site.original_config)
 
     def _discard_snapshots(self) -> None:
-        """Discard the migration backups of the sites."""
+        """Discard the migration backups of the sites, partial ones too."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
-            if site.backup_status == "backed_up" and site_obj.exists:
+            if site.backup_status != "pending" and site_obj.exists:
                 site_obj.migration_backup.discard()
 
     def _lift_maintenance(self) -> None:
@@ -473,7 +500,44 @@ class MigrationOperation(MigrationRecovery):
             self.started_at = utc_now()
         if self.state.is_terminal:
             self.finished_at = utc_now()
+        if self.state.is_terminal or self.state.is_failure:
+            self._stamp_finished(self.chain[-1]["task_id"] if self.chain else None)
         self._save()
+        if self.state.is_terminal or self.state.name == "needs_attention":
+            self._record_update_result()
+
+    def _record_update_result(self) -> None:
+        """Write one record for each app when the update fails or ends. The monitor sends them to Datum,
+        so Beacon sees one app version that fails on many servers."""
+        result = {"time": utc_now(), "status": self.state.name}
+        if self.state.name == "needs_attention":
+            diagnosis = self.diagnosis or {}
+            result.update(
+                status="failed",
+                phase=diagnosis.get("phase", ""),
+                site=self.failed_site or "",
+                message=diagnosis.get("message", ""),
+                output_excerpt=diagnosis.get("output_excerpt", "")[-4000:],
+            )
+        log = get_update_log()
+        with contextlib.suppress(OSError):
+            for app in self.apps:
+                target = app.target_sha or ""
+                log.append(
+                    {
+                        **result,
+                        "app": app.name,
+                        "repository_url": app.repository_url,
+                        "from_version": app.sha[:12],
+                        "to_version": target if app.target_kind == "tag" else target[:12],
+                    }
+                )
+
+    def _stamp_finished(self, task_id: str | None) -> None:
+        """Record when a chain task finished, once."""
+        entry = next((entry for entry in self.chain if entry["task_id"] == task_id), None)
+        if entry is not None and "started_at" in entry:
+            entry.setdefault("finished_at", utc_now())
 
     def _save(self) -> None:
         """Save the operation."""

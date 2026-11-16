@@ -20,7 +20,6 @@ from admin.backend.api.responses import (
 )
 from admin.backend.draining import is_draining
 from pilot.exceptions import (
-    TaskConflictError,
     TaskNotCancellableError,
     TaskNotFoundError,
     TaskNotRunningError,
@@ -66,39 +65,10 @@ def list_tasks():
             422,
         )
     try:
-        tasks = reader.list_tasks(limit=limit)
+        tasks = reader.list_tasks(limit=limit, status=wanted_status)
     except Exception:
         return error_response("task_list_unavailable", "Could not read tasks.", 500)
-    if wanted_status is not None:
-        tasks = [task for task in tasks if task.status == wanted_status]
     return jsonify([task.as_dict() for task in tasks])
-
-
-@tasks_bp.post("")
-def create_task():
-    """Queue a task."""
-    data = ApiRequest.get_json_body()
-    command = data.get("command")
-    if not isinstance(command, str) or not command.strip():
-        return error_response(
-            "invalid_task",
-            "The command field must be a non-empty string.",
-            422,
-        )
-    args = {key: value for key, value in data.items() if key != "command"}
-    try:
-        task_id = TaskRunner(ApiRequest.get_bench_root()).run(
-            command.strip(),
-            args,
-            idempotency_key=ApiRequest.get_idempotency_key(),
-        )
-        return accepted_task_response(ApiRequest.get_bench_root(), task_id)
-    except TaskConflictError as error:
-        return error_response("task_conflict", str(error), 409)
-    except ValueError as error:
-        return error_response("invalid_task", str(error), 422)
-    except Exception:
-        return error_response("task_creation_failed", "Could not create task.", 500)
 
 
 @tasks_bp.get("/<task_id>")

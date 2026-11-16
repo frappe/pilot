@@ -76,10 +76,13 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
         )
 
     requested_branch = branch.strip()
-    if requested_branch and not provider.has_branch(
-        "/".join(parse_github_owner_repo(repo_url)), requested_branch
-    ):
-        raise BranchNotFoundError(f"'{requested_branch}' is not a branch of this repository.")
+    commit = None
+    if requested_branch:
+        commit = provider.get_branch_commit(
+            "/".join(parse_github_owner_repo(repo_url)), requested_branch
+        )
+        if commit is None:
+            raise BranchNotFoundError(f"'{requested_branch}' is not a branch of this repository.")
 
     ref = requested_branch or "HEAD"
     content = provider.fetch_raw_file(repo_url, "pyproject.toml", ref)
@@ -103,7 +106,7 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
             f"'{name}' doesn't look like a Frappe app (no {name}/hooks.py found)."
         ) from exc
 
-    return {"name": name, "description": description}
+    return {"name": name, "description": description, "commit": commit}
 
 
 def token_for(bench_root: Path, repo_url: str) -> str:

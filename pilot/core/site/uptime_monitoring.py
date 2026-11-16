@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pilot.core.notification.events import raise_event, record_alert
 from pilot.core.notification.sustained import SustainedAlerts
 from pilot.core.server import Server
+from pilot.core.server.monitoring_datum import TelemetryShipper
 from pilot.core.site.uptime_monitoring_config import UptimeMonitorConfigurator
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.task import TaskReader
@@ -23,6 +24,12 @@ if typing.TYPE_CHECKING:
 
 PING_TIMEOUT = 5.0
 PING_PATH = "/api/method/ping"
+# Enough for the JSON error body of Frappe, which names the exception.
+MAX_ERROR_BODY = 65536
+# Exceptions that come from the database, Redis or the network, not from app code.
+PLATFORM_EXCEPTIONS = frozenset(
+    {"OperationalError", "InterfaceError", "InternalError", "ConnectionError", "TimeoutError"}
+)
 SITE_DOWN_EVENT = "site_down"
 
 
@@ -54,11 +61,19 @@ class UptimeMonitor:
                 PING_PATH,
                 headers={"User-Agent": "pilot-uptime-monitor", "X-Frappe-Site-Name": site_name},
             )
-            status = connection.getresponse().status
-            return self._result(site_name, start, up=status == 200, status_code=status)
+            response = connection.getresponse()
+            if response.status == 200:
+                return self._result(site_name, start, up=True, status_code=200)
+            fault = get_ping_fault(response.status, response.read(MAX_ERROR_BODY))
+            return self._result(site_name, start, up=False, status_code=response.status, fault=fault)
         except (http.client.HTTPException, OSError) as error:
             return self._result(
-                site_name, start, up=False, status_code=None, error=str(error) or type(error).__name__
+                site_name,
+                start,
+                up=False,
+                status_code=None,
+                fault="platform",
+                error=str(error) or type(error).__name__,
             )
         finally:
             connection.close()
@@ -68,8 +83,8 @@ class UptimeMonitor:
         """The file with the uptime alert state."""
         return self._configurator.log_path.with_suffix(".alerts")
 
-    def collect(self) -> None:
-        """Ping every site on this bench once and append results to its uptime log."""
+    def collect(self) -> list[dict]:
+        """Ping every site on this bench once, append the results to its uptime log, and return them."""
         results = [self.ping_site(site_name) for site_name in self.get_sites()]
         maintenance_sites = self.get_maintenance_sites()
         for result in results:
@@ -79,6 +94,7 @@ class UptimeMonitor:
             for result in results:
                 log_file.write(json.dumps(result) + "\n")
         self.send_alert_if_required(results)
+        return results
 
     def send_alert_if_required(self, results: list[dict]) -> None:
         """A site that has failed its ping for five unbroken minutes is an
@@ -151,9 +167,14 @@ class UptimeMonitor:
 
     @staticmethod
     def _result(
-        site_name: str, start: float, up: bool, status_code: int | None, error: str | None = None
+        site_name: str,
+        start: float,
+        up: bool,
+        status_code: int | None,
+        fault: str | None = None,
+        error: str | None = None,
     ) -> dict:
-        """One ping result record."""
+        """One ping result record. A failed ping has the fault: `app` or `platform`."""
         result = {
             "time": datetime.now(UTC).isoformat(),
             "site": site_name,
@@ -161,10 +182,31 @@ class UptimeMonitor:
             "status_code": status_code,
             "response_ms": int((time.monotonic() - start) * 1000),
         }
+        if fault:
+            result["fault"] = fault
         # A failure with no HTTP status (refused connection, timeout) keeps its reason.
         if error:
             result["error"] = error
         return result
+
+
+def get_ping_fault(status: int, body: bytes) -> str:
+    """Whether a failed ping is the fault of app code or of the platform.
+
+    Request hooks of installed apps run on the ping. A 4xx other than 404 comes from such a hook. A 500
+    whose JSON body names an exception that is not in PLATFORM_EXCEPTIONS comes from app code. Every other
+    answer is the platform's fault: 404 (the site is missing), a redirect, a 5xx without an exception name,
+    or a database, Redis or network error."""
+    if 400 <= status < 500 and status != 404:
+        return "app"
+    if status != 500:
+        return "platform"
+    try:
+        exception = json.loads(body).get("exc_type")
+    except (ValueError, AttributeError):
+        return "platform"
+    is_app_exception = isinstance(exception, str) and exception not in PLATFORM_EXCEPTIONS
+    return "app" if is_app_exception else "platform"
 
 
 def _production_uptime_monitors() -> list[UptimeMonitor]:
@@ -178,10 +220,17 @@ def _production_uptime_monitors() -> list[UptimeMonitor]:
 
 
 def main() -> None:
-    """Ping the sites of every production bench."""
-    for monitor in _production_uptime_monitors():
-        monitor.collect()
+    """Ping the sites of every production bench, and send the count of sites in each state to Datum."""
+    monitors = _production_uptime_monitors()
+    results = [result for monitor in monitors for result in monitor.collect()]
+    if not monitors:
+        return
+
+    shipper = TelemetryShipper(monitors[0].bench.config.telemetry)
+    shipper.add_sites(results)
+    shipper.send()
 
 
 if __name__ == "__main__":
     main()
+

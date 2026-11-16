@@ -14,12 +14,11 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
     replace_private_text_locked,
 )
+from pilot.internal.jsonl_log import utc_now
 from pilot.internal.private_files import PrivateDirectory
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
-
-
 
 
 class MigrationStore:
@@ -30,9 +29,7 @@ class MigrationStore:
     def create_update(self, apps_filter: set[str] | None = None) -> MigrationOperation:
         """Sites are backed up and migrated only when some app's change needs a migrate. Linked
         checkouts get no saved revision: Pilot never moves their code, so a revert leaves them alone."""
-        selected = [
-            app for app in self.bench.apps() if apps_filter is None or app.config.name in apps_filter
-        ]
+        selected = [app for app in self.bench.apps() if apps_filter is None or app.config.name in apps_filter]
         apps = [self._revision(app) for app in selected if not app.is_linked]
         is_migrating = any(revision.has_migrate_changes for revision in apps)
         sites = self.sites_for_apps({app.config.name for app in selected}) if is_migrating else []
@@ -97,15 +94,19 @@ class MigrationStore:
     def get_for_chain_task(
         self, operation_id: str, task_id: str, command: str, args: dict
     ) -> MigrationOperation:
-        """Wait for registration to avoid overwriting the chain entry.
+        """Wait for registration to avoid overwriting the chain entry, then record when the task started.
         Recover the entry if the queuing task stopped before registering it."""
         deadline = time.monotonic() + 30
         while True:
             operation = self.get(operation_id)
-            if not task_id or any(entry["task_id"] == task_id for entry in operation.chain):
+            if not task_id:
                 return operation
-            if time.monotonic() >= deadline:
-                operation.chain.append({"command": command, "task_id": task_id, **args})
+            entry = next((entry for entry in operation.chain if entry["task_id"] == task_id), None)
+            if entry is None and time.monotonic() >= deadline:
+                entry = {"command": command, "task_id": task_id, **args}
+                operation.chain.append(entry)
+            if entry is not None:
+                entry.setdefault("started_at", utc_now())
                 self.save(operation)
                 return operation
             time.sleep(0.2)
@@ -113,6 +114,20 @@ class MigrationStore:
     def delete(self, operation_id: str) -> None:
         """Delete a saved operation."""
         (self.root / f"{operation_id}.json").unlink(missing_ok=True)
+        self.withdraw_stop(operation_id)
+
+    def request_stop(self, operation_id: str) -> None:
+        """Mark the operation for a stop. A marker file, so a chain task saving its own copy cannot erase it."""
+        PrivateDirectory(self.root).create(parents=True)
+        atomic_write_private_text(self.root / f"{operation_id}.stop", datetime.now(UTC).isoformat())
+
+    def withdraw_stop(self, operation_id: str) -> None:
+        """Remove the stop mark."""
+        (self.root / f"{operation_id}.stop").unlink(missing_ok=True)
+
+    def is_stop_requested(self, operation_id: str) -> bool:
+        """Whether a stop was requested for the operation."""
+        return (self.root / f"{operation_id}.stop").exists()
 
     def get(self, operation_id: str) -> MigrationOperation:
         """The saved operation; raise when it does not exist or cannot be read."""

@@ -48,12 +48,6 @@ def test_rename_queues_the_task_with_both_names(tmp_path: Path) -> None:
     assert kwargs["site"] == "old.localhost"
     assert kwargs["new_name"] == "new.localhost"
     assert kwargs["make_primary"] is False
-    assert set(kwargs["resource_key"]) == {
-        "site:old.localhost",
-        "site:new.localhost",
-        "host:old.localhost",
-        "host:new.localhost",
-    }
 
 
 def test_rename_can_make_the_new_name_primary(tmp_path: Path) -> None:
@@ -128,9 +122,6 @@ def test_admin_domain_change_queues_the_task(tmp_path: Path) -> None:
     kwargs = queue.call_args.kwargs
     assert kwargs["domain"] == "admin.example.com"  # normalized
     assert kwargs["tls"] is None
-    # The admin key keeps two moves apart; the host key is the one a rename or a
-    # new site claiming the same hostname would also take.
-    assert kwargs["resource_key"] == ["admin-domain", "host:admin.example.com"]
 
 
 def test_admin_domain_change_passes_tls_through(tmp_path: Path) -> None:
@@ -140,22 +131,6 @@ def test_admin_domain_change_passes_tls_through(tmp_path: Path) -> None:
         client.post("/api/v1/settings/admin-domain", json={"domain": "admin.example.com", "tls": True})
 
     assert queue.call_args.kwargs["tls"] is True
-
-
-def test_admin_domain_change_locks_the_previous_hostname(tmp_path: Path) -> None:
-    bench_root = tmp_path / "bench"
-    client = _client(bench_root)
-    with BenchConfig.open(bench_root) as config:
-        config.admin.domain = "old-admin.example.com"
-
-    with patch("pilot.tasks.change_admin_domain.ChangeAdminDomainTask.queue", return_value="task-4") as queue:
-        client.post("/api/v1/settings/admin-domain", json={"domain": "new-admin.example.com"})
-
-    assert set(queue.call_args.kwargs["resource_key"]) == {
-        "admin-domain",
-        "host:old-admin.example.com",
-        "host:new-admin.example.com",
-    }
 
 
 def test_admin_domain_rejects_a_bad_hostname(tmp_path: Path) -> None:
@@ -174,21 +149,6 @@ def test_admin_domain_rejects_a_non_boolean_tls(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 422
-
-
-def test_a_rename_and_an_admin_move_to_one_hostname_share_a_resource(tmp_path: Path) -> None:
-    """Keyed in different namespaces, both could be queued at once, each having
-    validated against a state the other was about to change."""
-    bench_root = tmp_path / "bench"
-    client = _client(bench_root)
-    _make_site(bench_root, "old.localhost")
-
-    with patch("pilot.tasks.rename_site.RenameSiteTask.queue", return_value="t1") as rename:
-        client.post("/api/v1/sites/old.localhost/actions/rename", json={"new_name": "shared.example.com"})
-    with patch("pilot.tasks.change_admin_domain.ChangeAdminDomainTask.queue", return_value="t2") as move:
-        client.post("/api/v1/settings/admin-domain", json={"domain": "shared.example.com"})
-
-    assert set(rename.call_args.kwargs["resource_key"]) & set(move.call_args.kwargs["resource_key"])
 
 
 def test_a_hostname_conflict_on_an_admin_move_is_a_conflict_not_a_server_error(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@ import subprocess
 import sys
 from unittest.mock import patch
 
+import pytest
+
 import pilot.managers.task as task_manager
 import pilot.managers.task.models as task_models
 import pilot.tasks as tasks
@@ -43,17 +45,15 @@ def test_task_submission_callback_types_are_public_on_tasks_package() -> None:
 
 def test_task_runner_types_are_public_on_tasks_package() -> None:
     assert tasks.TaskRunner.__module__ == "pilot.tasks.base"
-    assert tasks.TaskSubmission.__module__ == "pilot.tasks.base"
 
 
-def test_task_class_queue_adds_declared_callbacks(tmp_path) -> None:
+def make_bench(tmp_path):
     from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
     from pilot.core.bench import Bench
-    from pilot.tasks.new_site import NewSiteTask
 
     bench_root = tmp_path / "bench"
     bench_root.mkdir()
-    bench = Bench(
+    return Bench(
         BenchConfig(
             name="bench",
             python_version="3.14",
@@ -64,6 +64,13 @@ def test_task_class_queue_adds_declared_callbacks(tmp_path) -> None:
         bench_root,
     )
 
+
+def test_task_class_queue_adds_declared_callbacks(tmp_path) -> None:
+    from pilot.tasks.new_site import NewSiteTask
+
+    bench = make_bench(tmp_path)
+    bench_root = bench.path
+
     with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=False):
         task_id = NewSiteTask.queue(bench, name="s.localhost", admin_password="secret")
 
@@ -73,6 +80,13 @@ def test_task_class_queue_adds_declared_callbacks(tmp_path) -> None:
         "args": {"site": "s.localhost"},
     }
     assert callbacks["on_cancel"] == callbacks["on_failure"]
+
+
+def test_task_class_queue_rejects_a_missing_argument(tmp_path) -> None:
+    from pilot.tasks.new_site import NewSiteTask
+
+    with pytest.raises(ValueError, match="requires arg 'name'"):
+        NewSiteTask.queue(make_bench(tmp_path), admin_password="secret")
 
 
 def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
@@ -188,3 +202,25 @@ def test_task_retry_secret_policy_is_public() -> None:
     assert task_has_secrets("anything", {"s3_access_key": "[redacted]"}) is True
     assert task_has_secrets("migrate", {"site": "s.localhost"}) is False
     assert task_has_secrets("migrate") is False
+
+
+def test_task_callbacks_do_not_read_task_properties(tmp_path) -> None:
+    from dataclasses import dataclass
+
+    from pilot.tasks.callbacks import task_callbacks_for
+
+    @dataclass(kw_only=True)
+    class ProbeTask(tasks.Task):
+        command = "probe"
+
+        @property
+        def expensive(self) -> str:
+            raise AssertionError("callback discovery read a property")
+
+        @tasks.on_success
+        def reload_workers(self) -> dict:
+            return {}
+
+    task = ProbeTask(bench=None, bench_root=tmp_path)
+
+    assert task_callbacks_for(task) == {"on_success": {"operation": "reload-workers", "args": {}}}

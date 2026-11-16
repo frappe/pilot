@@ -178,7 +178,6 @@ def test_database_configuration_queues_typed_guarded_task(tmp_path: Path) -> Non
         "variable": "connect_timeout",
         "value_json": "20",
         "idempotency_key": "connect-timeout-20",
-        "resource_key": "database-server",
     }
 
 
@@ -254,7 +253,6 @@ def test_database_configuration_routes_guarded_variables_to_specialized_tasks(
     assert queue.call_args.kwargs == {
         **task_argument,
         "idempotency_key": "config-guarded-variable",
-        "resource_key": "database-server",
     }
 
 
@@ -363,7 +361,6 @@ def test_restart_database_queues_guarded_non_cancellable_task(tmp_path: Path) ->
     actions.require_restart.assert_called_once()
     assert queue.call_args.kwargs == {
         "idempotency_key": "restart-once",
-        "resource_key": "database-server",
     }
 
 
@@ -420,7 +417,6 @@ def test_performance_schema_queues_guarded_task(tmp_path: Path) -> None:
     assert queue.call_args.kwargs == {
         "state": "enabled",
         "idempotency_key": "performance-on",
-        "resource_key": "database-server",
     }
 
 
@@ -490,7 +486,6 @@ def test_innodb_buffer_pool_size_queues_guarded_task(tmp_path: Path) -> None:
     assert queue.call_args.kwargs == {
         "size_mb": 256,
         "idempotency_key": "pool-256",
-        "resource_key": "database-server",
     }
 
 
@@ -520,7 +515,6 @@ def test_max_connections_queues_guarded_task(tmp_path: Path) -> None:
     assert queue.call_args.kwargs == {
         "max_connections": 40,
         "idempotency_key": "connections-40",
-        "resource_key": "database-server",
     }
 
 
@@ -896,7 +890,9 @@ def test_a_performance_section_returns_the_provider_payload(tmp_path: Path) -> N
     }
     patcher, provider = _patched_provider(**{"get_redundant_indexes.return_value": section})
     with patcher:
-        response = client.get("/api/v1/database/performance-report?report_type=redundant_indexes&site=shop.local")
+        response = client.get(
+            "/api/v1/database/performance-report?report_type=redundant_indexes&site=shop.local"
+        )
 
     assert response.status_code == 200
     assert response.get_json() == section
@@ -962,7 +958,9 @@ def test_memory_share_queues_guarded_task(tmp_path: Path) -> None:
     actions = Mock()
     with (
         patch("admin.backend.api.v1.databases._quick_actions", return_value=actions),
-        patch("admin.backend.api.v1.databases.SetMariaDBMemoryShareTask.queue", return_value="task-5") as queue,
+        patch(
+            "admin.backend.api.v1.databases.SetMariaDBMemoryShareTask.queue", return_value="task-5"
+        ) as queue,
         patch("admin.backend.api.requests.accepted_task_response", return_value=({"task_id": "task-5"}, 202)),
     ):
         response = client.post("/api/v1/database/quick-actions/memory-share", json={"memory_share": 0.6})
@@ -970,7 +968,6 @@ def test_memory_share_queues_guarded_task(tmp_path: Path) -> None:
     assert response.status_code == 202
     actions.require_memory_share.assert_called_once_with(0.6)
     assert queue.call_args.kwargs["memory_share"] == 0.6
-    assert queue.call_args.kwargs["resource_key"] == "database-server"
 
 
 @pytest.mark.parametrize("payload", [{}, {"memory_share": "0.6"}, {"memory_share": True}])

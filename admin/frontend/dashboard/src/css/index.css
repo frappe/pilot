@@ -1,3 +1,6 @@
+@import './status-ring.css';
+@import './step-thread.css';
+
 :root {
   /* Strong UI easing curves (built-in CSS easings are too weak) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -7,7 +10,7 @@
 }
 
 [data-theme='dark'] {
-  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 30%, transparent);
+  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 35%, transparent);
 }
 
 body {

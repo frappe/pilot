@@ -10,6 +10,7 @@ class RevertAppsTask(Task):
     """Chain link: roll app revisions back and rebuild, then queue the next revert step."""
 
     command: ClassVar[str] = "revert-apps"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 86400
 
     operation_id: str

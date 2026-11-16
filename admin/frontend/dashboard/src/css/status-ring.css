@@ -1,0 +1,34 @@
+@property --status-ring-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.status-ring::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--status-ring-angle),
+    var(--status-ring-color, var(--ink-gray-7)) 0deg 90deg,
+    color-mix(in srgb, var(--status-ring-color, var(--ink-gray-7)) 15%, transparent) 90deg 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: status-ring-spin 1.1s linear infinite;
+}
+
+@keyframes status-ring-spin {
+  to {
+    --status-ring-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-ring::before {
+    animation: none;
+  }
+}

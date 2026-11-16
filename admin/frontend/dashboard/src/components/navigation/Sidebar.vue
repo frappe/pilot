@@ -50,7 +50,7 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
   <Sidebar
     v-model:collapsed="isSidebarCollapsed"
     :collapsible="!isMobile"
-    class="group border-r"
+    class="group border-r border-outline-gray-1.5"
     :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''"
   >
     <SidebarHeader

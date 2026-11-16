@@ -143,7 +143,11 @@ def test_repository_resolutions_returns_the_resolved_app(tmp_path: Path) -> None
         patch("admin.backend.api.v1.git.provider_for_repo", return_value=Mock()),
         patch(
             "admin.backend.api.v1.git.resolve_app_name_from_repo",
-            return_value={"name": "suite", "description": "A suite app"},
+            return_value={
+                "name": "suite",
+                "description": "A suite app",
+                "commit": {"sha": "abc1234def", "message": "fix: thing"},
+            },
         ),
     ):
         response = client.post(
@@ -153,7 +157,11 @@ def test_repository_resolutions_returns_the_resolved_app(tmp_path: Path) -> None
 
     body = response.get_json()
     assert response.status_code == 200
-    assert body == {"name": "suite", "description": "A suite app"}
+    assert body == {
+        "name": "suite",
+        "description": "A suite app",
+        "commit": {"sha": "abc1234def", "message": "fix: thing"},
+    }
     assert "ok" not in body
 
 

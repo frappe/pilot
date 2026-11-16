@@ -11,6 +11,7 @@ class RefreshStorageUsageTask(Task):
     """Re-measures every site on the bench: they share one report."""
 
     command: ClassVar[str] = "refresh-storage-usage"
+    static_resource_keys: ClassVar[tuple[str, ...]] = ("site-storage",)
     timeout_seconds: ClassVar[int] = 300
 
     @step("measure", "Measuring every site's files and database")

@@ -44,6 +44,12 @@ class GitBranches(TypedDict):
     default_branch: str
 
 
+class BranchCommit(TypedDict):
+    sha: str
+    message: str
+
+
 class ResolvedApp(TypedDict):
     name: str
     description: str
+    commit: BranchCommit | None

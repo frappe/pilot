@@ -10,6 +10,7 @@ class RevertMigrationTask(Task):
     """Re-arm a failed migration for restore and queue the first revert-chain task."""
 
     command: ClassVar[str] = "revert-migration"
+    is_cancellable_while_running: ClassVar[bool] = False
     timeout_seconds: ClassVar[int] = 300
 
     operation_id: str

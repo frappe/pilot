@@ -7,7 +7,7 @@ from flask import Flask
 
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
-from pilot.exceptions import TaskConflictError, TaskNotFoundError
+from pilot.exceptions import TaskNotFoundError
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStore
 from pilot.managers.task.models import TaskStatus
@@ -31,6 +31,7 @@ def create_task(
     status: TaskStatus = TaskStatus.QUEUED,
     args: dict | None = None,
     command: str = "build",
+    queued_at: str = "2026-07-15T12:00:00+00:00",
 ) -> None:
     store = TaskStore(bench_root)
     store.create_queued(
@@ -39,7 +40,7 @@ def create_task(
             "command": command,
             "args": args or {"app": "frappe"},
             "command_argv": ["bench", "build", "--app", "frappe"],
-            "queued_at": "2026-07-15T12:00:00+00:00",
+            "queued_at": queued_at,
             "started_at": None,
             "finished_at": None,
             "exit_code": None,
@@ -61,62 +62,10 @@ def create_task(
         )
 
 
-def test_submit_returns_queued_task_and_location(tmp_path: Path) -> None:
-    def submit(*args, **kwargs):
-        create_task(tmp_path)
-        return TASK_ID
+def test_tasks_cannot_be_submitted_directly(tmp_path: Path) -> None:
+    response = client(tmp_path).post("/api/v1/tasks", json={"command": "build"})
 
-    with patch("admin.backend.api.v1.tasks.TaskRunner.run", side_effect=submit) as run:
-        response = client(tmp_path).post(
-            "/api/v1/tasks",
-            json={"command": "build", "app": "frappe"},
-            headers={"Idempotency-Key": "client-request-key"},
-        )
-
-    assert response.status_code == 202
-    assert response.headers["Location"] == f"/api/v1/tasks/{TASK_ID}"
-    assert response.get_json()["task_id"] == TASK_ID
-    assert response.get_json()["status"] == "queued"
-    run.assert_called_once_with(
-        "build",
-        {"app": "frappe"},
-        idempotency_key="client-request-key",
-    )
-
-
-def test_submit_returns_conflict_for_incompatible_idempotency_key(
-    tmp_path: Path,
-) -> None:
-    with patch(
-        "admin.backend.api.v1.tasks.TaskRunner.run",
-        side_effect=TaskConflictError("Idempotency key conflict"),
-    ):
-        response = client(tmp_path).post(
-            "/api/v1/tasks",
-            json={"command": "build"},
-            headers={"Idempotency-Key": "client-request-key"},
-        )
-
-    assert response.status_code == 409
-    assert response.get_json()["error"]["message"] == "Idempotency key conflict"
-
-
-def test_submit_rejects_malformed_json(tmp_path: Path) -> None:
-    response = client(tmp_path).post(
-        "/api/v1/tasks",
-        data="not-json",
-        content_type="application/json",
-    )
-
-    assert response.status_code == 400
-    assert response.get_json()["error"]["code"] == "malformed_request"
-
-
-def test_submit_rejects_invalid_command_field(tmp_path: Path) -> None:
-    response = client(tmp_path).post("/api/v1/tasks", json={"command": ""})
-
-    assert response.status_code == 422
-    assert response.get_json()["error"]["code"] == "invalid_task"
+    assert response.status_code == 405
 
 
 def test_list_rejects_unknown_status_filter(tmp_path: Path) -> None:
@@ -134,6 +83,17 @@ def test_list_honors_the_limit_parameter(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert len(response.get_json()) == 1
+
+
+def test_list_filters_by_status_before_the_limit(tmp_path: Path) -> None:
+    create_task(tmp_path)
+    create_task(
+        tmp_path, task_id=RETRY_TASK_ID, status=TaskStatus.SUCCESS, queued_at="2026-07-15T12:01:00+00:00"
+    )
+
+    response = client(tmp_path).get("/api/v1/tasks?status=queued&limit=1")
+
+    assert [task["task_id"] for task in response.get_json()] == [TASK_ID]
 
 
 def test_list_rejects_an_invalid_limit(tmp_path: Path) -> None:

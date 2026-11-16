@@ -766,20 +766,31 @@ class Bench:
         apps_filter: set | None,
         on_progress: Callable[[str], None],
         pins: dict[str, RevisionPin] | None = None,
+        on_app: Callable[[str, str], None] = lambda name, status: None,
     ) -> None:
         """Update the apps, optionally to pinned revisions."""
         from pilot.core.bench.update import BenchUpdater
 
-        BenchUpdater(self).update_apps(apps_filter, on_progress, pins)
+        BenchUpdater(self).update_apps(apps_filter, on_progress, pins, on_app)
 
-    def _reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+    def _reinstall_apps(
+        self,
+        apps_filter: set | None,
+        on_progress: Callable[[str], None],
+        on_app: Callable[[str, str], None] = lambda name, status: None,
+    ) -> None:
         """Reinstall the apps into the environment."""
         from pilot.core.bench.update import BenchUpdater
 
-        BenchUpdater(self).reinstall_apps(apps_filter, on_progress)
+        BenchUpdater(self).reinstall_apps(apps_filter, on_progress, on_app)
 
-    def _rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+    def _rebuild_assets(
+        self,
+        apps_filter: set | None,
+        on_progress: Callable[[str], None],
+        on_app: Callable[[str, str], None] = lambda name, status: None,
+    ) -> None:
         """Rebuild the assets of the apps."""
         from pilot.core.bench.update import BenchUpdater
 
-        BenchUpdater(self).rebuild_assets(apps_filter, on_progress)
+        BenchUpdater(self).rebuild_assets(apps_filter, on_progress, on_app)

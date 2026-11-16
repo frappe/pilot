@@ -7,6 +7,7 @@ from pilot.tasks import Task, on_cancel, on_failure, step
 @dataclass(kw_only=True)
 class CompleteMigrationTask(Task):
     command: ClassVar[str] = "complete-migration"
+    is_cancellable_while_running: ClassVar[bool] = False
 
     operation_id: str
 

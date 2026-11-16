@@ -8,6 +8,13 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
+OnApp = Callable[[str, str], None]
+
+
+def _no_app(name: str, status: str) -> None:
+    """Ignore per-app progress."""
+
+
 class BenchUpdater:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -17,6 +24,7 @@ class BenchUpdater:
         apps_filter: set | None,
         on_progress: Callable[[str], None],
         pins: dict[str, RevisionPin] | None = None,
+        on_app: OnApp = _no_app,
     ) -> None:
         """Update each app to its pin, or resolve marketplace/branch targets live when `pins` is None (direct CLI update)."""
         import sys
@@ -32,16 +40,20 @@ class BenchUpdater:
                 continue
             if app.is_linked:
                 on_progress(f"{app.config.name} is a linked checkout, skipping.")
+                on_app(app.config.name, "skipped")
                 continue
             pin = pins.get(app.config.name) or (marketplace_pin(app) if live_lookup else None)
             if pin is None and not self._follows_its_branch(app, live_lookup):
                 on_progress(f"{app.config.name} is at the newest advertised release, skipping.")
+                on_app(app.config.name, "skipped")
                 continue
             on_progress(f"Updating {app.config.name}...")
+            on_app(app.config.name, "running")
             try:
                 app.update(pin=pin)
             except CommandError as error:
                 print(f"  Error updating {app.config.name}: {error}", file=sys.stderr)
+                on_app(app.config.name, "failed")
                 raise MigrateError(f"Failed to update {app.config.name}") from error
             updated.append(app)
 
@@ -50,14 +62,21 @@ class BenchUpdater:
         # installed or built yet, and reverting is a checkout.
         for app in updated:
             on_progress(f"Validating {app.config.name}...")
-            app.validate()
+            try:
+                app.validate()
+            except Exception:
+                on_app(app.config.name, "failed")
+                raise
+            on_app(app.config.name, "success")
 
     @staticmethod
     def _follows_its_branch(app: "App", live_lookup: bool) -> bool:
         """Whether the app follows its branch head instead of a fixed revision."""
         return live_lookup and not app.is_marketplace
 
-    def reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+    def reinstall_apps(
+        self, apps_filter: set | None, on_progress: Callable[[str], None], on_app: OnApp = _no_app
+    ) -> None:
         """Reinstall the apps into the environment."""
         from pilot.exceptions import CommandError, MigrateError
         from pilot.managers.environment import PythonEnvManager
@@ -67,12 +86,16 @@ class BenchUpdater:
             if apps_filter is not None and app.config.name not in apps_filter:
                 continue
             on_progress(f"Reinstalling {app.config.name}...")
+            on_app(app.config.name, "running")
             try:
                 python_env.install_app(app)
             except CommandError as error:
+                on_app(app.config.name, "failed")
                 raise MigrateError(f"Failed to install app {app.config.name}: {error}") from error
 
-    def rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
+    def rebuild_assets(
+        self, apps_filter: set | None, on_progress: Callable[[str], None], on_app: OnApp = _no_app
+    ) -> None:
         """Rebuild the assets of the apps."""
         from pilot.managers.environment import PythonEnvManager
 
@@ -81,7 +104,12 @@ class BenchUpdater:
             if apps_filter is not None and app.config.name not in apps_filter:
                 continue
             on_progress(f"Updating assets for {app.config.name}...")
-            python_env.build_assets_for_app(app)
+            try:
+                python_env.build_assets_for_app(app)
+            except Exception:
+                on_app(app.config.name, "failed")
+                raise
+            on_app(app.config.name, "success")
 
 
 def marketplace_pin(app: "App") -> "RevisionPin | None":

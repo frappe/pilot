@@ -1299,9 +1299,9 @@ def test_a_chain_task_records_itself_when_its_queuer_stopped_first(tmp_path: Pat
     ):
         store.get_for_chain_task(operation.id, "task-501", "migrate", {"site": "site1.localhost"})
 
-    assert store.get(operation.id).chain == [
-        {"command": "migrate", "task_id": "task-501", "site": "site1.localhost"}
-    ]
+    [entry] = store.get(operation.id).chain
+    assert entry.pop("started_at")
+    assert entry == {"command": "migrate", "task_id": "task-501", "site": "site1.localhost"}
 
 
 @pytest.mark.parametrize("suffix", ["", "."])
@@ -1392,8 +1392,10 @@ def test_a_refused_migration_leaves_no_site_in_maintenance(tmp_path: Path, monke
     operation = _operation_with_backups(tmp_path, {"a.localhost": 600})
     monkeypatch.setattr(MigrationOperation, "ensure_disk_space", _ensure_disk_space)
 
-    with _free_disk(100), patch.object(MigrationOperation, "_prepare_sites") as prepare, pytest.raises(
-        InsufficientDiskSpaceError
+    with (
+        _free_disk(100),
+        patch.object(MigrationOperation, "_prepare_sites") as prepare,
+        pytest.raises(InsufficientDiskSpaceError),
     ):
         operation.begin()
 
@@ -1488,3 +1490,174 @@ def test_revert_apps_skips_an_app_removed_after_the_update(tmp_path: Path) -> No
     operation.bench.app.assert_called_once_with("frappe")
     assert any("Skipping removed_app" in message for message in progress)
     assert operation.revert_checkpoints["apps"] is True
+
+
+def test_update_apps_records_each_app_through_validate_and_update(tmp_path: Path) -> None:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+
+    def validate(apps_filter, on_progress, pins, on_app):
+        on_app("frappe", "success")
+
+    def build(apps_filter, on_progress, on_app):
+        on_app("frappe", "success")
+
+    mock_bench.app.return_value.installed_hash = "2222222"
+    mock_bench._update_apps.side_effect = validate
+    mock_bench._rebuild_assets.side_effect = build
+    store = MigrationStore(mock_bench)
+    operation = store._create("update", apps=[AppRevision("frappe", "1111111")], apps_filter=None, sites=[])
+    operation.state = get_state("updating")
+    steps: list[str] = []
+
+    operation.update_apps(on_step=lambda key, label: steps.append(key))
+
+    saved = store.get(operation.id).apps[0]
+    assert (saved.validate_status, saved.update_status) == ("success", "success")
+    assert steps[:2] == ["validate", "update"]
+
+
+def test_a_failed_chain_task_gets_its_finish_time(tmp_path: Path) -> None:
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    mock_bench._rebuild_assets.side_effect = MigrateError("yarn build failed")
+    store = MigrationStore(mock_bench)
+    operation = store._create("update", apps=[AppRevision("frappe", "1111111")], apps_filter=None, sites=[])
+    operation.state = get_state("updating")
+    operation.chain = [
+        {"command": "update", "task_id": "task-301", "started_at": "2026-01-01T00:00:00+00:00"}
+    ]
+
+    with pytest.raises(MigrateError):
+        operation.update_apps()
+
+    assert operation.chain[0]["finished_at"]
+    assert operation.apps[0].update_status == "pending"
+
+
+def test_a_failed_update_records_each_app_for_datum(tmp_path: Path) -> None:
+    """The monitor sends these records, so Beacon sees one app version that fails on many servers."""
+    from pilot.config.monitor import get_update_log
+    from pilot.core.bench.migration.store import MigrationStore
+
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    operation = MigrationStore(mock_bench)._create(
+        "update",
+        apps=[
+            AppRevision(
+                "erpnext",
+                "a1b2c3d4e5f6a7b8",
+                "https://github.com/frappe/erpnext",
+                target_sha="v15.40.0",
+                target_kind="tag",
+            )
+        ],
+        apps_filter=None,
+        sites=[],
+    )
+    operation.state = get_state("migrating")
+    operation.diagnosis = {"phase": "migrating", "message": "Patch failed", "output_excerpt": "Traceback"}
+
+    operation._enter_needs_attention("migrating", "a.example.com")
+
+    [record] = get_update_log().read_newest_first()
+    assert {
+        key: record[key]
+        for key in ("app", "from_version", "to_version", "status", "phase", "site", "message")
+    } == {
+        "app": "erpnext",
+        "from_version": "a1b2c3d4e5f6",
+        "to_version": "v15.40.0",
+        "status": "failed",
+        "phase": "migrating",
+        "site": "a.example.com",
+        "message": "Patch failed",
+    }
+
+
+def backing_up_operation(tmp_path: Path):
+    from pilot.core.bench.migration.store import MigrationStore
+
+    bench = MagicMock()
+    bench.path = tmp_path
+    bench.site.return_value.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+    operation = MigrationStore(bench)._create(
+        "update", apps=[AppRevision("frappe", "abc")], apps_filter=None, sites=["one.local", "two.local"]
+    )
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="backup-1"):
+        operation.begin()
+    return operation
+
+
+def test_stop_cancels_the_backup_and_its_callback_ends_the_migration(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+
+    operation.stop()
+
+    operation.bench.tasks.kill.assert_called_once_with("backup-1")
+    stopped = operation.store.get(operation.id)
+    stopped.fail_stopped_step("backup-1", "backing_up", "one.local")
+    assert stopped.state == "stopped"
+    assert stopped.decisions[-1]["action"] == "stop"
+    operation.bench.site.return_value.set_maintenance_settings.assert_called_with(
+        {"maintenance_mode": 0, "pause_scheduler": 0}
+    )
+
+
+def test_a_stopped_chain_queues_no_next_task(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+    operation.store.request_stop(operation.id)
+
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue") as queue:
+        operation.back_up_site("one.local")
+        assert operation.enqueue_next() is None
+
+    queue.assert_not_called()
+    assert operation.state == "stopped"
+    operation.bench.site.return_value.migration_backup.discard.assert_called()
+
+
+def test_stop_is_refused_once_the_update_has_started(tmp_path: Path) -> None:
+    from pilot.exceptions import TaskNotCancellableError
+
+    operation = backing_up_operation(tmp_path)
+    operation.bench.tasks.kill.side_effect = TaskNotCancellableError("running")
+
+    with pytest.raises(MigrationStateError, match="update has started"):
+        operation.stop()
+
+    assert not operation.is_stop_requested
+
+
+def test_stop_cancels_the_task_the_chain_queued_meanwhile(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+    latest = operation.store.get(operation.id)
+    latest.chain.append({"command": "migration-backup", "task_id": "backup-2", "site": "two.local"})
+    latest._save()
+
+    operation.stop()
+
+    assert [call.args[0] for call in operation.bench.tasks.kill.call_args_list] == ["backup-1", "backup-2"]
+
+
+@pytest.mark.parametrize("state", ["updating", "migrating", "needs_attention"])
+def test_stop_is_allowed_only_while_backing_up(tmp_path: Path, state: str) -> None:
+    operation = backing_up_operation(tmp_path)
+    operation.state = get_state(state)
+
+    with pytest.raises(MigrationStateError, match="only while it takes backups"):
+        operation.stop()
+
+    assert not operation.is_stop_requested
+
+
+def test_a_migration_that_already_switched_app_code_cannot_stop(tmp_path: Path) -> None:
+    operation = backing_up_operation(tmp_path)
+    operation.apps_updated = True
+
+    assert not operation.can_stop
