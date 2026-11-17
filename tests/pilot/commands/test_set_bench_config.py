@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from pilot.commands.bench.set_bench_config import SetBenchConfigCommand
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, ConfigError
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -68,3 +68,25 @@ def test_set_bench_config_rebuilds_runtime_configs_once_initialized(tmp_path: Pa
 
     assert _read(bench)["bench"]["enable_code_editor"] is False
     assert (bench.path / "sites" / "common_site_config.json").exists()
+
+
+def test_set_bench_config_sets_and_unsets_the_sandbox(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+
+    _run(bench, "production_sandbox", "true")
+    assert _read(bench)["production"]["sandbox"] is True
+
+    _run(bench, "production_sandbox", "false")
+    assert _read(bench)["production"]["sandbox"] is False
+
+    _run(bench, "production_sandbox", "default")
+    assert "sandbox" not in _read(bench)["production"]
+
+
+def test_set_bench_config_rejects_a_sandbox_value_that_is_not_a_bool(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+
+    with pytest.raises(ConfigError, match="production_sandbox must be true, false or default"):
+        _run(bench, "production_sandbox", "yes")
+
+    assert "sandbox" not in _read(bench).get("production", {})
