@@ -34,6 +34,7 @@ SITE_PROVISIONING_ARGS = {
 class TaskStep(TypedDict):
     key: str
     label: str
+    icon: str | None
     status: Literal["running", "done", "failed"]
     started_at: float
 
