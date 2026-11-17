@@ -3,6 +3,7 @@
 -- severity: Medium
 -- resource_type: Virtual Machine
 -- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-central-delivery.md
+-- charts: pilot-central-calls
 -- interval: 60
 -- pending_for: 300
 -- resolve_after: 900
