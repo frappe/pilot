@@ -2,7 +2,7 @@
 -- resource_type: Virtual Machine
 -- requires_metric: pilot_info
 -- section: Central
--- unit: 
+-- unit:
 -- style: Bar
 -- is_key_chart: 0
 -- sort_order: 10
