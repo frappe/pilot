@@ -100,13 +100,20 @@ class TelemetryShipper:
         """Add the number of sites whose newest backup of the last day succeeded or failed, over every bench.
 
         Pilot tells the owner of one site whose backups keep failing. Beacon reads the count, so it sees
-        when backups fail on many servers at once, such as when object storage refuses uploads."""
+        when backups fail on many servers at once, such as when object storage refuses uploads.
+        `site_backup_failed` names each failed site, so the responder does not search for them."""
         if not self.is_enabled:
             return
-        newest = Counter(runs[0][1]["status"] for history in histories for runs in history.values() if runs)
+        newest = {
+            site: runs[0][1]["status"] for history in histories for site, runs in history.items() if runs
+        }
+        counts = Counter(newest.values())
         batch = Batch("pilot")
         for status in BACKUP_STATUSES:
-            batch.gauge("site_backups", newest[status], status=status)
+            batch.gauge("site_backups", counts[status], status=status)
+        for site, status in newest.items():
+            if status == "failed":
+                batch.gauge("site_backup_failed", 1, site=site)
         self.batches.append(batch)
 
     def send(self) -> int:

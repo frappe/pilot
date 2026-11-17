@@ -307,6 +307,7 @@ Each 5 minutes, the telemetry thread of the monitor sends:
 | `system_filesystem_size_bytes`, `system_filesystem_available_bytes` | The size and the free space of each disk, with `mountpoint`, `device` and `type`. |
 | `pilot_central_requests_last_5_minutes{method, result}` | The calls to Central in the last 5 minutes. `result` is `ok` or `failed`. |
 | `pilot_site_backups{status}` | The number of sites whose newest backup of the last day has `status` `success` or `failed`, over every bench. Beacon sees backups that fail on many servers at once. |
+| `pilot_site_backup_failed{site}` | 1 for each site whose newest backup of the last day failed. Beacon names these sites in an incident. |
 
 It also sends one log line for each app of each finished or failed update, with product `pilot`, service `update` and source `event`. The attributes are `app`, `repository` (such as `frappe/erpnext`), `from_version`, `to_version`, `status`, `phase` and `site`. A failed line has level `error` and the end of the output in the message. Pilot keeps the time of the newest accepted line in `system/logs/updates.sent`, and sends the next lines again until Datum accepts them. On the first run it starts from now.
 

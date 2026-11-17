@@ -250,3 +250,6 @@ def test_backups_count_the_newest_run_of_each_site() -> None:
 
     assert samples[("pilot_site_backups", "status=failed")] == 2
     assert samples[("pilot_site_backups", "status=success")] == 1
+    assert samples[("pilot_site_backup_failed", "site=a.local")] == 1
+    assert samples[("pilot_site_backup_failed", "site=c.local")] == 1
+    assert ("pilot_site_backup_failed", "site=b.local") not in samples
