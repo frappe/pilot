@@ -611,6 +611,33 @@ EOF
     fi
 }
 
+# Ubuntu 24.04+ blocks unprivileged user namespaces through AppArmor, so systemd
+# cannot start a sandboxed workload unit (PrivateUsers=) and Pilot falls back to
+# no sandbox. This profile lets systemd-executor, which sets up a unit's
+# namespaces before it starts the unit, create them.
+install_systemd_executor_userns_profile() {
+    apparmor_dir="${APPARMOR_DIR:-/etc/apparmor.d}"
+    executor="${SYSTEMD_EXECUTOR:-/usr/lib/systemd/systemd-executor}"
+    restrict="${USERNS_RESTRICT_SYSCTL:-/proc/sys/kernel/apparmor_restrict_unprivileged_userns}"
+    [ -d "$apparmor_dir" ] && [ -x "$executor" ] && [ "$(cat "$restrict" 2>/dev/null)" = 1 ] || return 0
+    echo "Allowing systemd to create the user namespaces of sandboxed bench units..."
+    cat > "$apparmor_dir/pilot-systemd-executor" <<EOF
+# Managed by Pilot install.sh: lets systemd start sandboxed (PrivateUsers=) units.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile pilot-systemd-executor $executor flags=(unconfined) {
+  userns,
+
+  include if exists <local/pilot-systemd-executor>
+}
+EOF
+    chmod 644 "$apparmor_dir/pilot-systemd-executor"
+    if command -v apparmor_parser >/dev/null 2>&1; then
+        apparmor_parser -r "$apparmor_dir/pilot-systemd-executor"
+    fi
+}
+
 # `command -v` returns the bare name for shell builtins like `test`, but a
 # sudoers Cmnd must be a fully-qualified path or visudo rejects the whole file.
 # Mirror the runtime's shutil.which by taking only an absolute PATH match.
@@ -744,6 +771,7 @@ prepare_host() {
     set_nginx_worker_user "$BENCH_USER"
     install_logrotate "$BENCH_USER"
     install_mariadb_apparmor_override "$BENCH_USER"
+    install_systemd_executor_userns_profile
     install_sudoers_grants "$BENCH_USER"
     install_build_swap_helper "$BENCH_USER"
 

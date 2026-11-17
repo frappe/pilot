@@ -669,3 +669,34 @@ install_mariadb_apparmor_override frappe
     assert override.count("# BEGIN Pilot for 'frappe'") == 1
     assert override.count("owner /home/frappe/pilot/databases/mariadb/** rwk,") == 1
     assert "owner /home/erp/pilot/databases/mariadb/** rwk," in override
+
+
+@pytest.mark.parametrize(("restricted", "has_executor", "is_installed"), [("1", True, True), ("0", True, False), ("1", False, False)])
+def test_systemd_executor_may_create_sandbox_namespaces_where_ubuntu_blocks_them(
+    restricted: str, has_executor: bool, is_installed: bool, tmp_path: Path
+) -> None:
+    """Without it the sandbox trial fails with exit 226 on Ubuntu 24.04+, and benches run unsandboxed."""
+    apparmor = tmp_path / "apparmor.d"
+    apparmor.mkdir()
+    sysctl = tmp_path / "restrict"
+    sysctl.write_text(f"{restricted}\n")
+    executor = tmp_path / "systemd-executor"
+    if has_executor:
+        executor.write_text("")
+        executor.chmod(0o755)
+    result = run_installer_functions(
+        f"""
+apparmor_parser() {{ echo "reloaded $*"; }}
+APPARMOR_DIR={apparmor} SYSTEMD_EXECUTOR={executor} USERNS_RESTRICT_SYSCTL={sysctl}
+install_systemd_executor_userns_profile
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    profile = apparmor / "pilot-systemd-executor"
+    assert profile.exists() is is_installed
+    if is_installed:
+        assert f"profile pilot-systemd-executor {executor} flags=(unconfined) {{" in profile.read_text()
+        assert "  userns," in profile.read_text()
+        assert f"reloaded -r {profile}" in result.stdout
