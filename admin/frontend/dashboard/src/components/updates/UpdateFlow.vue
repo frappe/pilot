@@ -583,7 +583,7 @@ watch(
               <div class="space-y-2 bg-surface-gray-0 mt-4 px-4 py-1.5 border border-outline-gray-1.5 rounded-5">
                 <section v-for="panel in stage.panels" :key="panel.key">
                   <h3 v-if="panel.title" class="flex items-baseline gap-2 pt-1.5 h-7 text-ink-gray-5 text-sm">
-                    <span class="text-ink-gray-7 text-sm-medium">{{ panel.title }}</span>
+                    <span class="text-ink-gray-7 text-base-medium">{{ panel.title }}</span>
                     {{ matrixLine(panel) }}
                   </h3>
 
@@ -594,7 +594,7 @@ watch(
                 @update:opened="expanded = toggled(expanded, row.id)"
               >
                 <template #header="{ opened, toggle }">
-                  <div class="flex items-center gap-2 h-8 text-sm">
+                  <div class="flex items-center gap-2 h-8 text-base">
                     <Spinner v-if="row.status === 'running'" class="size-3.5 text-ink-amber-6 shrink-0" />
                     <span v-else class="size-3.5 shrink-0" :class="mark[row.status]" />
                     <span class="min-w-12 truncate" :class="rowInk(row.status)">{{ row.label }}</span>
@@ -644,7 +644,7 @@ watch(
                   <li
                     v-for="child in row.children"
                     :key="child.id"
-                    class="flex items-center gap-2 h-7 text-sm"
+                    class="flex items-center gap-2 h-7 text-base"
                   >
                     <Spinner v-if="child.status === 'running'" class="size-3 text-ink-amber-6 shrink-0" />
                     <span v-else class="size-3 shrink-0" :class="mark[child.status]" />

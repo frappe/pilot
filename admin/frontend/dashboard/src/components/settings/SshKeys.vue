@@ -107,7 +107,7 @@ onMounted(load)
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-5">
+  <div v-else class="space-y-6">
     <div class="flex justify-between items-center gap-3">
       <div class="flex flex-col gap-1">
         <p class="text-base-medium text-ink-gray-8">Authorized keys</p>

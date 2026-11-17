@@ -160,7 +160,7 @@ const treeNodes = computed(() => reactive([
         />
 
         <span
-          class="text-sm truncate"
+          class="text-base truncate"
           :class="nodeView(rawNode).muted ? 'text-ink-gray-5' : 'text-ink-gray-7'"
         >
           {{ nodeView(rawNode).label }}
@@ -171,7 +171,7 @@ const treeNodes = computed(() => reactive([
           :class="{ 'rotate-180': !expanded }" />
 
         <span
-          class="ml-auto text-sm tabular-nums shrink-0"
+          class="ml-auto text-base tabular-nums shrink-0"
           :class="nodeView(rawNode).muted ? 'text-ink-gray-6' : 'text-ink-gray-8'"
         >
           {{ formatBytes(nodeView(rawNode).bytes) }}

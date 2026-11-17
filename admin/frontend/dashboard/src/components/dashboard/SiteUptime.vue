@@ -93,7 +93,7 @@ onMounted(load)
       class="flex flex-col flex-1 justify-center items-center gap-1 py-10 text-center"
     >
       <span class="size-6 text-ink-gray-3 lucide-server-off" />
-      <p class="text-sm-medium text-ink-gray-7">Uptime monitoring is production-only</p>
+      <p class="text-base-medium text-ink-gray-7">Uptime monitoring is production-only</p>
       <p class="max-w-xs text-ink-gray-5 text-p-xs">
         This bench isn't in production, so its sites are never pinged. Deploy to production to start
         tracking uptime.
@@ -105,7 +105,7 @@ onMounted(load)
       class="flex flex-col flex-1 justify-center items-center gap-1 py-10 text-center"
     >
       <span class="size-6 text-ink-gray-3 lucide-activity" />
-      <p class="text-sm-medium text-ink-gray-7">No uptime data yet</p>
+      <p class="text-base-medium text-ink-gray-7">No uptime data yet</p>
     </div>
 
     <div v-else class="flex flex-col flex-1 justify-center gap-2 py-6">

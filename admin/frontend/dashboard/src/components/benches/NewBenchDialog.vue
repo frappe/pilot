@@ -243,7 +243,7 @@ const createBench = async () => {
     :title="provisioning ? 'Setting Up Bench' : 'New Bench'"
     :showCloseButton="true"
   >
-    <div class="flex flex-col gap-5">
+    <div class="flex flex-col gap-6">
       <!-- Provisioning: the bench exists; wait until its wizard answers. -->
       <div v-if="provisioning" class="flex flex-col items-center gap-5 py-8 text-center">
         <LoadingIndicator class="w-10 h-10 text-ink-gray-5" />
@@ -271,13 +271,13 @@ const createBench = async () => {
       <!-- Dev bench: guide to the CLI rather than auto-provisioning a
            managed bench the host probably can't run. -->
       <div v-else-if="isProduction === false" class="flex flex-col gap-3">
-        <p class="text-ink-gray-7 text-p-sm">
+        <p class="text-ink-gray-7 text-p-base">
           This bench is running in development mode, so new benches can be created from the command
           line :
         </p>
 
         <pre
-          class="bg-surface-gray-2 px-3 py-2.5 rounded-6 text-ink-gray-8 text-sm select-all"
+          class="bg-surface-gray-2 px-3 py-2.5 rounded-6 text-ink-gray-8 text-base select-all"
         >pilot new my-bench</pre>
       </div>
 
@@ -304,7 +304,7 @@ const createBench = async () => {
                 : 'border-outline-gray-2 hover:bg-surface-alpha-gray-1'"
               @click="processManager = opt.value"
             >
-              <span class="block font-medium text-sm">{{ opt.label }}</span>
+              <span class="block text-base-medium">{{ opt.label }}</span>
               <span class="block text-ink-gray-5 text-xs">{{ opt.hint }}</span>
             </button>
           </div>

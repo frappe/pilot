@@ -112,11 +112,11 @@ const purge = async () => {
     <p v-if="loading" class="text-ink-gray-6 text-sm">Loading binary logs…</p>
 
     <template v-else-if="!loadError">
-      <p v-if="!canPurge" class="text-ink-gray-7 text-p-sm">
+      <p v-if="!canPurge" class="text-ink-gray-7 text-p-base">
         There's only one binary log file right now, so there's nothing to purge yet.
       </p>
 
-      <p v-else class="text-ink-gray-7 text-p-sm">
+      <p v-else class="text-ink-gray-7 text-p-base">
         All binary logs except the most recent are deleted, freeing about
         {{ formatBytes(freedBytes) }}. The most recent log is kept so replication and point-in-time
         recovery keep working.

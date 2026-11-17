@@ -97,7 +97,7 @@ const confirmAdd = async () => {
 <template>
   <Dialog v-model="show" title="Use your own domain" size="2xl">
     <template v-if="step === 'input'">
-      <p class="text-ink-gray-7 text-p-sm">
+      <p class="text-ink-gray-7 text-p-base">
         To add a custom domain, you must already own it. If you don't have one, buy it and come back
         here.
       </p>
@@ -109,7 +109,7 @@ const confirmAdd = async () => {
         @keydown.enter="continueAdd"
       >
         <template #label>
-          <span class="text-sm">Domain</span>
+          <span class="text-base">Domain</span>
         </template>
       </TextInput>
 
@@ -122,7 +122,7 @@ const confirmAdd = async () => {
         @keydown.enter="continueAdd"
       >
         <template #label>
-          <span class="text-sm">Let's Encrypt email</span>
+          <span class="text-base">Let's Encrypt email</span>
         </template>
       </TextInput>
       <p v-if="emailRequired" class="mt-1.5 text-ink-gray-5 text-p-xs">
@@ -145,7 +145,7 @@ const confirmAdd = async () => {
 
     <template v-else>
       <template v-if="dnsRecordGroups.length">
-        <p class="text-ink-gray-7 text-p-sm">
+        <p class="text-ink-gray-7 text-p-base">
           <template v-if="dnsRecordGroups.length > 1">
             Add <span class="font-medium text-ink-gray-8">either one</span> of these records at your
             domain provider.
@@ -155,7 +155,7 @@ const confirmAdd = async () => {
         </p>
 
         <div v-for="(group, i) in dnsRecordGroups" :key="group.type" class="mt-3">
-          <p class="font-medium text-ink-gray-7 text-sm">
+          <p class="text-ink-gray-7 text-base-medium">
             {{ dnsRecordGroups.length > 1 ? `Option ${i + 1}: ${group.type} record` : `${group.type} record` }}
           </p>
 

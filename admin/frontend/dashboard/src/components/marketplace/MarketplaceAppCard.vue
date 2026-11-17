@@ -82,8 +82,8 @@ const incompatibleReason = computed(
     </div>
 
     <Dialog v-model="showIncompatible" title="Incompatible app" size="sm">
-      <p class="text-ink-gray-7 text-p-sm">{{ incompatibleReason }}</p>
-      <div class="flex flex-col gap-1.5 mt-3 text-sm">
+      <p class="text-ink-gray-7 text-p-base">{{ incompatibleReason }}</p>
+      <div class="flex flex-col gap-1.5 mt-3 text-base">
         <div class="flex justify-between">
           <span class="text-ink-gray-5">Current version</span>
           <span class="font-medium text-ink-gray-8">{{ app.frappe_version || 'Unknown' }}</span>

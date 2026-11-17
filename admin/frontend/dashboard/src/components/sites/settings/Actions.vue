@@ -170,7 +170,7 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
 
   <!-- Let's Encrypt email dialog -->
   <Dialog v-model="showSslEmail" title="Enable SSL" size="md">
-    <p class="text-ink-gray-7 text-p-sm">
+    <p class="text-ink-gray-7 text-p-base">
       A Let's Encrypt email is required to issue and renew certificates.
     </p>
 
@@ -182,7 +182,7 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
       @keydown.enter="enableSsl(sslEmail)"
     >
       <template #label>
-        <span class="text-sm">Let's Encrypt email</span>
+        <span class="text-base">Let's Encrypt email</span>
       </template>
     </TextInput>
 

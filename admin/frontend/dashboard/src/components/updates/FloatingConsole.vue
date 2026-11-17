@@ -71,7 +71,7 @@ const grab = (event: PointerEvent) => {
         @click="isSmall = false"
       >
         <span class="size-4 text-ink-gray-5 lucide-square-terminal" aria-hidden="true" />
-        <span class="text-ink-gray-8 text-sm-medium">Console</span>
+        <span class="text-ink-gray-8 text-base-medium">Console</span>
         <span class="text-ink-gray-5 text-sm">{{ consoleSite }}</span>
       </button>
     </Transition>

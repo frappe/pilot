@@ -495,7 +495,7 @@ onMounted(load)
           :key="stat.key"
           class="flex flex-col gap-3 dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent p-4 rounded-6"
         >
-          <header class="flex justify-between items-center gap-2 h-5 text-sm">
+          <header class="flex justify-between items-center gap-2 h-5 text-base">
             <h4 class="flex items-center gap-2 min-w-0 text-ink-gray-8">
               <span class="size-4 text-ink-gray-4 shrink-0" :class="stat.icon" aria-hidden="true" />
 
@@ -743,7 +743,7 @@ onMounted(load)
   </Dialog>
 
   <Dialog v-model="confirmationOpen" :title="confirmationTitle" size="sm">
-    <p v-if="confirmation?.message" class="text-ink-gray-7 text-p-sm">
+    <p v-if="confirmation?.message" class="text-ink-gray-7 text-p-base">
       {{ confirmation.message }}
     </p>
 

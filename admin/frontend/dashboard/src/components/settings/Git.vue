@@ -328,7 +328,7 @@ onMounted(async () => {
   </div>
 
   <Dialog v-model="showDisconnect" title="Disconnect GitHub" size="sm">
-    <p class="text-ink-gray-7 text-p-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Pilot loses access to your GitHub repositories. Private apps can't be installed until you
       connect again.
     </p>

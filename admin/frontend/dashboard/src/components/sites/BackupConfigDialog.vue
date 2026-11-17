@@ -159,7 +159,7 @@ defineExpose({ open })
 
 <template>
   <Dialog v-model="show" title="Configure automated backups">
-    <div class="space-y-5">
+    <div class="space-y-6">
       <Checkbox v-model="isEnabled" label="Enable automated backups" />
 
       <fieldset

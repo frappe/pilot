@@ -107,7 +107,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <LoadingText v-if="loading" class="p-3 md:p-4 justify-center py-12" />
+  <LoadingText v-if="loading" class="px-3 md:px-4 py-12 justify-center" />
 
   <ErrorMessage v-else-if="error" class="px-3 md:px-4 py-12" :message="error" />
 
@@ -154,7 +154,7 @@ onMounted(() => {
         />
       </RouterLink>
 
-      <div class="flex items-center gap-3 text-sm shrink-0">
+      <div class="flex items-center gap-3 text-base shrink-0">
         <span v-if="queuePosition" class="flex items-center gap-1.5 ">
           <span class="size-3.5 lucide-list-ordered" />
           {{ queuePosition }}

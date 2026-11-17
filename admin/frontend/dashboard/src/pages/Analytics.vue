@@ -718,8 +718,8 @@ onUnmounted(() => clearTimeout(statsTimer))
           class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t first:border-t-0 sm:border-t-0 border-outline-gray-2"
         >
           <div class="flex justify-between items-baseline gap-2 mb-2">
-            <span class="text-ink-gray-6 text-sm">{{ meter.label }}</span>
-            <span class="text-ink-gray-6 text-sm shrink-0">{{ meter.value }}</span>
+            <span class="text-ink-gray-6 text-base">{{ meter.label }}</span>
+            <span class="text-ink-gray-6 text-base shrink-0">{{ meter.value }}</span>
           </div>
 
           <div class="bg-surface-gray-2 rounded-full h-1 overflow-hidden">

@@ -219,7 +219,7 @@ const confirmDrop = async () => {
     <div>
       <TextInput v-model="newName" placeholder="prod.example.com" class="w-full">
         <template #label>
-          <span class="text-sm">New name</span>
+          <span class="text-base">New name</span>
         </template>
       </TextInput>
       <Checkbox
@@ -248,7 +248,7 @@ const confirmDrop = async () => {
     <template #after-warning>
       <TextInput v-model="confirmName" :placeholder="siteName" class="w-full">
         <template #label>
-          <span class="text-sm">Type the site name to confirm</span>
+          <span class="text-base">Type the site name to confirm</span>
         </template>
       </TextInput>
     </template>
@@ -272,7 +272,7 @@ const confirmDrop = async () => {
     <template #after-warning>
       <TextInput v-model="confirmName" :placeholder="siteName" class="w-full">
         <template #label>
-          <span class="text-sm">Type the site name to confirm</span>
+          <span class="text-base">Type the site name to confirm</span>
         </template>
       </TextInput>
       <Checkbox v-model="takeBackup" label="Take a backup before dropping" />

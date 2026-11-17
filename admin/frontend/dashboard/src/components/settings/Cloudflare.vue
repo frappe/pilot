@@ -106,7 +106,7 @@ onMounted(async () => {
       <div
         v-for="item in status.domains"
         :key="item.domain"
-        class="flex justify-between items-center text-p-sm"
+        class="flex justify-between items-center text-p-base"
       >
         <span class="font-mono text-xs text-ink-gray-7">{{ item.domain }}</span>
         <Badge
