@@ -1,12 +1,87 @@
+<script setup lang="ts">
+import { dialog } from 'frappe-ui'
+import { computed, ref } from 'vue'
+
+import FileIcon from '@/components/FileIcon.vue'
+import { useContextMenu } from '@/composables/useContextMenu'
+import { type Tab, useEditorStore } from '@/stores/editor'
+
+const emit = defineEmits<{ 'focus-files': [] }>()
+
+const store = useEditorStore()
+const { open } = useContextMenu()
+const longPressTimer = ref<ReturnType<typeof setTimeout>>()
+
+let longPressTriggered = false
+
+const dirtyCount = computed(() => store.tabs.filter((t) => t.dirty).length)
+
+const onWheel = (e: WheelEvent) => {
+  if (e.deltaY === 0) return
+
+  ;(e.currentTarget as HTMLElement).scrollLeft += e.deltaY
+  e.preventDefault()
+}
+
+const close = (t: Tab) => {
+  if (!t.dirty) {
+    store.close(t.path)
+
+    return
+  }
+
+  dialog.danger({
+    title: 'Discard changes',
+    message: `Discard unsaved changes to ${t.name}?`,
+    confirmLabel: 'Discard',
+    onConfirm: () => store.close(t.path),
+  })
+}
+
+const tabMenu = (e: MouseEvent | Touch, t: Tab) =>
+  open(e, [
+    { label: 'Close', icon: 'lucide-x', action: () => close(t) },
+    {
+      label: 'Close Others',
+      icon: 'lucide-chevrons-left',
+      action: () => store.closeOthers(t.path),
+    },
+    { label: 'Close Saved', icon: 'lucide-check', action: () => store.closeSaved() },
+    { label: 'Close All', icon: 'lucide-x-square', action: () => store.closeAll() },
+  ])
+
+const onTouchStart = (e: TouchEvent, t: Tab) => {
+  clearTimeout(longPressTimer.value)
+  longPressTriggered = false
+  longPressTimer.value = setTimeout(() => {
+    longPressTriggered = true
+    tabMenu(e.touches[0] || e, t)
+  }, 500)
+}
+
+const onTouchMove = () => clearTimeout(longPressTimer.value)
+
+const onTouchEnd = () => clearTimeout(longPressTimer.value)
+
+const onTabClick = (t: Tab) => {
+  if (longPressTriggered) {
+    longPressTriggered = false
+
+    return
+  }
+
+  store.closeDiff()
+  store.activePath = t.path
+  emit('focus-files')
+}
+</script>
+
 <template>
   <div
     v-if="store.tabs.length"
     class="bg-chrome flex h-10 shrink-0 items-stretch border-b border-outline-gray-1 sm:h-9"
   >
-    <div
-      class="flex min-w-0 flex-1 items-stretch overflow-x-auto no-scrollbar"
-      @wheel="onWheel"
-    >
+    <div class="flex min-w-0 flex-1 items-stretch overflow-x-auto no-scrollbar" @wheel="onWheel">
       <div
         v-for="t in store.tabs"
         :key="t.path"
@@ -25,7 +100,9 @@
         @touchend="onTouchEnd"
       >
         <FileIcon :name="t.name" class="ed-lane" />
-        <span class="truncate" :class="{ 'text-ink-amber-5': t.dirty, italic: t.preview }">{{ t.name }}</span>
+        <span class="truncate" :class="{ 'text-ink-amber-5': t.dirty, italic: t.preview }"
+          >{{ t.name }}</span
+        >
         <span
           class="flex h-6 w-6 items-center justify-center rounded-4 hover:bg-surface-gray-4 sm:h-4 sm:w-4"
           @click.stop="close(t)"
@@ -57,7 +134,8 @@
         :title="`${dirtyCount} unsaved file(s)`"
       >
         <span class="h-2 w-2 rounded-full bg-surface-amber-7"></span>
-        {{ dirtyCount }} unsaved
+        {{ dirtyCount }}
+        unsaved
       </span>
       <button
         class="rounded-5 px-1.5 py-1 text-xs"
@@ -78,72 +156,3 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { computed, ref } from 'vue'
-import { dialog } from 'frappe-ui'
-import FileIcon from '@/components/FileIcon.vue'
-import { useEditorStore } from '@/stores/editor'
-import { useContextMenu } from '@/composables/useContextMenu'
-
-const emit = defineEmits(['focus-files'])
-
-const store = useEditorStore()
-const { open } = useContextMenu()
-const longPressTimer = ref(null)
-let longPressTriggered = false
-
-const dirtyCount = computed(() => store.tabs.filter((t) => t.dirty).length)
-
-function onWheel(e) {
-  if (e.deltaY === 0) return
-  e.currentTarget.scrollLeft += e.deltaY
-  e.preventDefault()
-}
-
-function close(t) {
-  if (!t.dirty) {
-    store.close(t.path)
-    return
-  }
-  dialog.danger({
-    title: 'Discard changes',
-    message: `Discard unsaved changes to ${t.name}?`,
-    confirmLabel: 'Discard',
-    onConfirm: () => store.close(t.path),
-  })
-}
-
-function tabMenu(e, t) {
-  open(e, [
-    { label: 'Close', icon: 'lucide-x', action: () => close(t) },
-    { label: 'Close Others', icon: 'lucide-chevrons-left', action: () => store.closeOthers(t.path) },
-    { label: 'Close Saved', icon: 'lucide-check', action: () => store.closeSaved() },
-    { label: 'Close All', icon: 'lucide-x-square', action: () => store.closeAll() },
-  ])
-}
-
-function onTouchStart(e, t) {
-  clearTimeout(longPressTimer.value)
-  longPressTriggered = false
-  longPressTimer.value = setTimeout(() => {
-    longPressTriggered = true
-    tabMenu(e.touches[0] || e, t)
-  }, 500)
-}
-function onTouchMove() {
-  clearTimeout(longPressTimer.value)
-}
-function onTouchEnd() {
-  clearTimeout(longPressTimer.value)
-}
-function onTabClick(t) {
-  if (longPressTriggered) {
-    longPressTriggered = false
-    return
-  }
-  store.closeDiff()
-  store.activePath = t.path
-  emit('focus-files')
-}
-</script>

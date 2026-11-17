@@ -1,3 +1,15 @@
+<script setup lang="ts">
+withDefaults(defineProps<{ active?: string; gitCount?: number }>(), { gitCount: 0 })
+
+defineEmits<{ select: [id: string] }>()
+
+const items = [
+  { id: 'files', icon: 'lucide-file', title: 'Explorer', label: 'Files' },
+  { id: 'search', icon: 'lucide-search', title: 'Search', label: 'Search' },
+  { id: 'git', icon: 'lucide-git-branch', title: 'Source Control', label: 'Git' },
+]
+</script>
+
 <template>
   <div
     class="bg-chrome hidden shrink-0 flex-col items-center gap-1 border-r border-outline-gray-1 py-2 sm:flex sm:w-11"
@@ -27,14 +39,3 @@
     </button>
   </div>
 </template>
-
-<script setup>
-defineProps({ active: String, gitCount: { type: Number, default: 0 } })
-defineEmits(['select'])
-
-const items = [
-  { id: 'files', icon: 'lucide-file', title: 'Explorer', label: 'Files' },
-  { id: 'search', icon: 'lucide-search', title: 'Search', label: 'Search' },
-  { id: 'git', icon: 'lucide-git-branch', title: 'Source Control', label: 'Git' },
-]
-</script>

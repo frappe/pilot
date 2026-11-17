@@ -1,3 +1,9 @@
+<script setup lang="ts">
+defineProps<{ title: string }>()
+
+const emit = defineEmits<{ close: [] }>()
+</script>
+
 <template>
   <div
     class="group flex h-11 shrink-0 items-center gap-1 border-b border-outline-gray-1 px-3 sm:h-9 sm:border-b-0"
@@ -21,8 +27,3 @@
     </button>
   </div>
 </template>
-
-<script setup>
-defineProps({ title: { type: String, required: true } })
-const emit = defineEmits(['close'])
-</script>

@@ -30,7 +30,7 @@ interface Cursor {
   col: number
 }
 
-interface Snapshot {
+export interface Snapshot {
   tabs: string[]
   active: string | null
   cursors?: Record<string, Cursor>
@@ -266,7 +266,7 @@ export const useEditorStore = defineStore('editor', {
         blame: this.blame,
       }
     },
-    async restore(snap: Snapshot | null) {
+    async restore(snap: Partial<Snapshot> | null) {
       if (!snap || !Array.isArray(snap.tabs) || !snap.tabs.length) return
       if (typeof snap.autosave === 'boolean') this.autosave = snap.autosave
       if (typeof snap.blame === 'boolean') this.blame = snap.blame

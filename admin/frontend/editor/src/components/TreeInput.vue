@@ -1,3 +1,41 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+
+import FileIcon from '@/components/FileIcon.vue'
+
+const props = withDefaults(defineProps<{ type?: string; initial?: string }>(), {
+  type: 'file',
+  initial: '',
+})
+
+const emit = defineEmits<{ commit: [name: string]; cancel: [] }>()
+
+const val = ref(props.initial)
+const el = ref<HTMLInputElement>()
+
+let done = false
+
+const commit = () => {
+  if (done) return
+
+  done = true
+
+  const v = val.value.trim()
+
+  if (v && v !== props.initial) emit('commit', v)
+  else emit('cancel')
+}
+
+onMounted(() => {
+  el.value?.focus()
+
+  const dot = props.initial.lastIndexOf('.')
+
+  if (props.initial && dot > 0) el.value?.setSelectionRange(0, dot)
+  else el.value?.select()
+})
+</script>
+
 <template>
   <div class="ed-row cursor-default hover:bg-transparent">
     <span class="ed-lane" />
@@ -18,33 +56,3 @@
     />
   </div>
 </template>
-
-<script setup>
-import { ref, onMounted } from 'vue'
-import FileIcon from '@/components/FileIcon.vue'
-
-const props = defineProps({
-  type: { type: String, default: 'file' },
-  initial: { type: String, default: '' },
-})
-const emit = defineEmits(['commit', 'cancel'])
-
-const val = ref(props.initial)
-const el = ref(null)
-let done = false
-
-function commit() {
-  if (done) return
-  done = true
-  const v = val.value.trim()
-  if (v && v !== props.initial) emit('commit', v)
-  else emit('cancel')
-}
-
-onMounted(() => {
-  el.value?.focus()
-  const dot = props.initial.lastIndexOf('.')
-  if (props.initial && dot > 0) el.value?.setSelectionRange(0, dot)
-  else el.value?.select()
-})
-</script>

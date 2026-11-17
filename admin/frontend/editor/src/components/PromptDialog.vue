@@ -1,3 +1,10 @@
+<script setup lang="ts">
+import { Dialog, FormControl } from 'frappe-ui'
+import { usePrompt } from '@/composables/usePrompt'
+
+const { state, submit, cancel } = usePrompt()
+</script>
+
 <template>
   <Dialog
     :open="state.visible"
@@ -6,7 +13,7 @@
       { label: 'Cancel', onClick: cancel },
       { label: 'OK', variant: 'solid', onClick: submit },
     ]"
-    @update:open="(v) => !v && cancel()"
+    @update:open="(v: boolean) => !v && cancel()"
   >
     <FormControl
       type="text"
@@ -17,10 +24,3 @@
     />
   </Dialog>
 </template>
-
-<script setup>
-import { Dialog, FormControl } from 'frappe-ui'
-import { usePrompt } from '@/composables/usePrompt'
-
-const { state, submit, cancel } = usePrompt()
-</script>

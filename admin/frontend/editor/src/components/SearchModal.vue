@@ -1,3 +1,194 @@
+<script setup lang="ts">
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+
+import { filesApi } from '@/api/files'
+import { type SearchMatch, type SearchOptions, type SearchResult, searchApi } from '@/api/search'
+import FileIcon from '@/components/FileIcon.vue'
+import MatchLine from '@/components/ui/MatchLine.vue'
+import Modal from '@/components/ui/Modal.vue'
+import SearchToggles from '@/components/ui/SearchToggles.vue'
+import { useMobile } from '@/composables/useMobile'
+import { useSearchModal } from '@/composables/useSearchModal'
+import { useEditorStore } from '@/stores/editor'
+import { baseName, dirName } from '@/utils'
+
+const CodePreview = defineAsyncComponent(() => import('@/components/ui/CodePreview.vue'))
+
+const editor = useEditorStore()
+const { state, close } = useSearchModal()
+const { isMobile } = useMobile()
+
+const page = 80
+
+const query = ref('')
+const loading = ref(false)
+const results = ref<SearchResult[]>([])
+const error = ref('')
+const sel = ref(0)
+const input = ref<HTMLInputElement>()
+const listBox = ref<HTMLElement>()
+const opts = ref<SearchOptions>({ case: false, word: false, regex: false })
+const fileCache = new Map<string, string>()
+const previewContent = ref('')
+const previewLoading = ref(false)
+
+const flat = computed(() =>
+  results.value.flatMap((g) => g.matches.map((m) => ({ file: g.file, ...m }))),
+)
+
+const current = computed(() => flat.value[sel.value] || null)
+
+const countLabel = computed(() =>
+  flat.value.length ? `${sel.value + 1}/${flat.value.length}` : '',
+)
+
+const limit = ref(page)
+
+const limitedResults = computed(() => {
+  const out: { file: string; matches: SearchMatch[]; base: number; count: number }[] = []
+
+  let n = 0
+
+  for (const g of results.value) {
+    if (n >= limit.value) break
+
+    const take = g.matches.slice(0, limit.value - n)
+
+    out.push({ file: g.file, matches: take, base: n, count: g.matches.length })
+    n += take.length
+  }
+
+  return out
+})
+
+const onListScroll = () => {
+  const el = listBox.value
+
+  if (!el) return
+
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240 && limit.value < flat.value.length) {
+    limit.value += page
+  }
+}
+
+let timer: ReturnType<typeof setTimeout> | undefined
+
+const run = async () => {
+  clearTimeout(timer)
+
+  const q = query.value
+
+  if (!q) {
+    results.value = []
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+
+  try {
+    results.value = await searchApi.find(q, opts.value)
+  } catch (e) {
+    results.value = []
+    error.value = (e as Error).message || 'Search failed.'
+  }
+
+  sel.value = 0
+  limit.value = page
+
+  if (listBox.value) listBox.value.scrollTop = 0
+
+  loading.value = false
+}
+
+watch(query, () => {
+  clearTimeout(timer)
+  timer = setTimeout(run, 250)
+})
+
+const move = (d: number) => {
+  if (!flat.value.length) return
+
+  sel.value = (sel.value + d + flat.value.length) % flat.value.length
+
+  if (sel.value >= limit.value) limit.value = sel.value + page
+
+  nextTick(() => {
+    listBox.value?.querySelector(`[data-i="${sel.value}"]`)?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+const choose = () => {
+  const c = current.value
+
+  if (!c) return
+
+  close()
+  editor.closeDiff()
+  editor.open(c.file, { line: c.line, col: (c.start || 0) + 1, preview: true }).catch(() => {})
+}
+
+const onResultClick = (i: number) => {
+  sel.value = i
+
+  if (isMobile.value) choose()
+}
+
+const loadPreview = async () => {
+  const c = current.value
+
+  if (!c) {
+    previewContent.value = ''
+    return
+  }
+
+  let content = fileCache.get(c.file)
+
+  if (content == null) {
+    previewLoading.value = true
+
+    try {
+      content = (await filesApi.read(c.file)).content || ''
+    } catch {
+      content = ''
+    }
+
+    fileCache.set(c.file, content)
+    previewLoading.value = false
+    // Selection may have moved on while we were fetching.
+    if (current.value !== c) return
+  }
+
+  previewContent.value = content
+}
+
+// Load the preview on demand, debounced so fast arrowing stays snappy.
+let previewTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(current, () => {
+  clearTimeout(previewTimer)
+  previewTimer = setTimeout(loadPreview, 90)
+})
+
+watch(
+  () => state.visible,
+  (visible) => {
+    if (!visible) return
+
+    fileCache.clear()
+    query.value = state.initial || ''
+    sel.value = 0
+    nextTick(() => {
+      input.value?.focus()
+      input.value?.select()
+    })
+
+    if (query.value) run()
+    else results.value = []
+  },
+)
+</script>
+
 <template>
   <Modal v-if="state.visible" size-class="sm:h-[78vh] sm:w-[1100px] sm:max-w-[94vw]" @close="close">
     <template #input>
@@ -43,7 +234,12 @@
             @dblclick="choose()"
           >
             <span class="ed-lineno">{{ match.line }}</span>
-            <MatchLine :text="match.text" :path="group.file" :start="match.start" :end="match.end" />
+            <MatchLine
+              :text="match.text"
+              :path="group.file"
+              :start="match.start"
+              :end="match.end"
+            />
           </div>
         </div>
         <div v-if="!flat.length" class="ed-empty m-auto" :class="{ 'text-ink-red-7': error }">
@@ -82,159 +278,3 @@
     </div>
   </Modal>
 </template>
-
-<script setup>
-import { ref, computed, watch, nextTick, defineAsyncComponent } from 'vue'
-import FileIcon from '@/components/FileIcon.vue'
-import Modal from '@/components/ui/Modal.vue'
-import SearchToggles from '@/components/ui/SearchToggles.vue'
-import MatchLine from '@/components/ui/MatchLine.vue'
-import { filesApi } from '@/api/files'
-import { searchApi } from '@/api/search'
-import { useEditorStore } from '@/stores/editor'
-import { useSearchModal } from '@/composables/useSearchModal'
-import { useMobile } from '@/composables/useMobile'
-import { baseName, dirName } from '@/utils'
-
-const CodePreview = defineAsyncComponent(() => import('@/components/ui/CodePreview.vue'))
-
-const editor = useEditorStore()
-const { state, close } = useSearchModal()
-const { isMobile } = useMobile()
-
-const PAGE = 80
-
-const query = ref('')
-const loading = ref(false)
-const results = ref([])
-const error = ref('')
-const sel = ref(0)
-const input = ref(null)
-const listBox = ref(null)
-const opts = ref({ case: false, word: false, regex: false })
-const fileCache = new Map()
-const previewContent = ref('')
-const previewLoading = ref(false)
-
-const flat = computed(() => {
-  const arr = []
-  results.value.forEach((g) => g.matches.forEach((m) => arr.push({ file: g.file, ...m })))
-  return arr
-})
-const current = computed(() => flat.value[sel.value] || null)
-const countLabel = computed(() => (flat.value.length ? `${sel.value + 1}/${flat.value.length}` : ''))
-
-const limit = ref(PAGE)
-const limitedResults = computed(() => {
-  const out = []
-  let n = 0
-  for (const g of results.value) {
-    if (n >= limit.value) break
-    const take = g.matches.slice(0, limit.value - n)
-    out.push({ file: g.file, matches: take, base: n, count: g.matches.length })
-    n += take.length
-  }
-  return out
-})
-function onListScroll() {
-  const el = listBox.value
-  if (!el) return
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240 && limit.value < flat.value.length) {
-    limit.value += PAGE
-  }
-}
-
-let timer
-watch(query, () => {
-  clearTimeout(timer)
-  timer = setTimeout(run, 250)
-})
-
-async function run() {
-  clearTimeout(timer)
-  const q = query.value
-  if (!q) {
-    results.value = []
-    return
-  }
-  loading.value = true
-  error.value = ''
-  try {
-    results.value = await searchApi.find(q, opts.value)
-  } catch (e) {
-    results.value = []
-    error.value = e.message || 'Search failed.'
-  }
-  sel.value = 0
-  limit.value = PAGE
-  if (listBox.value) listBox.value.scrollTop = 0
-  loading.value = false
-}
-
-function move(d) {
-  if (!flat.value.length) return
-  sel.value = (sel.value + d + flat.value.length) % flat.value.length
-  if (sel.value >= limit.value) limit.value = sel.value + PAGE
-  nextTick(() => {
-    listBox.value?.querySelector(`[data-i="${sel.value}"]`)?.scrollIntoView({ block: 'nearest' })
-  })
-}
-
-function onResultClick(i) {
-  sel.value = i
-  if (isMobile.value) choose()
-}
-
-function choose() {
-  const c = current.value
-  if (!c) return
-  close()
-  editor.closeDiff()
-  editor.open(c.file, { line: c.line, col: (c.start || 0) + 1, preview: true }).catch(() => {})
-}
-
-async function loadPreview() {
-  const c = current.value
-  if (!c) {
-    previewContent.value = ''
-    return
-  }
-  let content = fileCache.get(c.file)
-  if (content == null) {
-    previewLoading.value = true
-    try {
-      content = (await filesApi.read(c.file)).content || ''
-    } catch {
-      content = ''
-    }
-    fileCache.set(c.file, content)
-    previewLoading.value = false
-    // Selection may have moved on while we were fetching.
-    if (current.value !== c) return
-  }
-  previewContent.value = content
-}
-
-// Load the preview on demand, debounced so fast arrowing stays snappy.
-let previewTimer
-watch(current, () => {
-  clearTimeout(previewTimer)
-  previewTimer = setTimeout(loadPreview, 90)
-})
-
-watch(
-  () => state.visible,
-  (visible) => {
-    if (!visible) return
-    fileCache.clear()
-    query.value = state.initial || ''
-    sel.value = 0
-    nextTick(() => {
-      input.value?.focus()
-      input.value?.select()
-    })
-    if (query.value) run()
-    else results.value = []
-  },
-)
-</script>

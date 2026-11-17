@@ -15,7 +15,7 @@
     "noFallthroughCasesInSwitch": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "unplugin-icons/types/vue"],
     "paths": {
       "@/*": ["./src/*"]
     }

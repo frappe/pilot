@@ -1,3 +1,166 @@
+<script setup lang="ts">
+import { Spinner, toast } from 'frappe-ui'
+import { computed, ref } from 'vue'
+
+import FileIcon from '@/components/FileIcon.vue'
+import TreeInput from '@/components/TreeInput.vue'
+import { useContextMenu } from '@/composables/useContextMenu'
+import { useFileOps } from '@/composables/useFileOps'
+import { useEditorStore } from '@/stores/editor'
+import { useGitStore } from '@/stores/git'
+import { useTreeStore } from '@/stores/tree'
+
+interface Entry {
+  name: string
+  path: string
+  type: string
+  ignored?: boolean
+}
+
+const props = defineProps<{ entry: Entry }>()
+
+const tree = useTreeStore()
+const editor = useEditorStore()
+const git = useGitStore()
+const { open } = useContextMenu()
+const ops = useFileOps()
+
+const dragOver = ref(false)
+const longPressTimer = ref<ReturnType<typeof setTimeout>>()
+
+let longPressTriggered = false
+
+const isDir = computed(() => props.entry.type === 'dir')
+const node = computed(() => tree.node(props.entry.path))
+const active = computed(() => !isDir.value && editor.activePath === props.entry.path)
+const focused = computed(() => tree.focusPath === props.entry.path)
+const editing = computed(() => tree.editing === props.entry.path)
+const draftHere = computed(() => tree.draft?.parent === props.entry.path)
+
+const status = computed(() => {
+  if (isDir.value) {
+    const pfx = `${props.entry.path}/`
+
+    return Object.keys(git.files).some((p) => p.startsWith(pfx)) ? '•' : ''
+  }
+
+  const c = git.statusFor(props.entry.path)
+
+  if (!c) return ''
+
+  if (c.includes('?')) return 'U'
+
+  return c[0]
+})
+
+const statusColor = computed(() => {
+  const s = status.value
+
+  if (!s) return ''
+
+  if (s === 'U' || s === 'A') return 'text-ink-green-5'
+
+  if (s === 'D') return 'text-ink-red-7'
+
+  return 'text-ink-amber-5'
+})
+
+const openFile = async (preview: boolean) => {
+  try {
+    editor.closeDiff()
+    await editor.open(props.entry.path, { preview })
+  } catch (e) {
+    toast.error((e as Error).message)
+  }
+}
+
+const onClick = async () => {
+  if (longPressTriggered) {
+    longPressTriggered = false
+    return
+  }
+
+  tree.focusPath = props.entry.path
+
+  if (isDir.value) tree.toggle(props.entry.path)
+  else openFile(true)
+}
+
+const onDblClick = () => {
+  if (!isDir.value) openFile(false)
+}
+
+const onContext = (e: MouseEvent | Touch) => {
+  clearTimeout(longPressTimer.value)
+
+  const p = props.entry.path
+  const baseItems = [
+    { label: 'Rename', icon: 'lucide-pencil', action: () => ops.rename(p) },
+    {
+      label: 'Delete',
+      icon: 'lucide-trash-2',
+      danger: true,
+      action: () => ops.remove(p, isDir.value),
+    },
+  ]
+  const items = isDir.value
+    ? [
+        { label: 'New File', icon: 'lucide-file-plus', action: () => ops.newFile(p) },
+        { label: 'New Folder', icon: 'lucide-folder-plus', action: () => ops.newFolder(p) },
+        ...baseItems,
+      ]
+    : baseItems
+
+  open(e, items)
+}
+
+const onTouchStart = (e: TouchEvent) => {
+  clearTimeout(longPressTimer.value)
+  longPressTriggered = false
+  longPressTimer.value = setTimeout(() => {
+    longPressTriggered = true
+    onContext(e.touches[0] || e)
+  }, 500)
+}
+
+const onTouchMove = () => clearTimeout(longPressTimer.value)
+
+const onTouchEnd = () => clearTimeout(longPressTimer.value)
+
+const onDragStart = (e: DragEvent) => {
+  tree.dragPath = props.entry.path
+
+  if (!e.dataTransfer) return
+
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', props.entry.path)
+}
+
+const onDragOver = (e: DragEvent) => {
+  if (!isDir.value || !tree.dragPath || tree.dragPath === props.entry.path) return
+
+  e.preventDefault()
+
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+
+  dragOver.value = true
+}
+
+const onDrop = (e: DragEvent) => {
+  dragOver.value = false
+
+  if (!isDir.value || !tree.dragPath) return
+
+  e.preventDefault()
+  e.stopPropagation()
+
+  const from = tree.dragPath
+
+  tree.dragPath = null
+  tree.move(from, props.entry.path).catch((err: Error) => toast.error(err.message))
+}
+</script>
+
 <template>
   <div>
     <TreeInput
@@ -49,140 +212,15 @@
     <div v-if="isDir && node.expanded" class="ml-[15px] border-l border-outline-gray-1">
       <TreeInput
         v-if="draftHere"
-        :type="tree.draft.type"
+        :type="tree.draft?.type"
         @commit="tree.commitDraft"
         @cancel="tree.cancelDraft"
       />
       <div v-if="node.loading" class="ed-row cursor-default gap-2 text-xs hover:bg-transparent">
-        <Spinner class="h-3 w-3" /> Loading…
+        <Spinner class="h-3 w-3" />
+        Loading…
       </div>
       <TreeNode v-for="c in node.children" :key="c.path" :entry="c" />
     </div>
   </div>
 </template>
-
-<script setup>
-import { computed, ref } from 'vue'
-import { Spinner, toast } from 'frappe-ui'
-import FileIcon from '@/components/FileIcon.vue'
-import TreeInput from '@/components/TreeInput.vue'
-import { useTreeStore } from '@/stores/tree'
-import { useEditorStore } from '@/stores/editor'
-import { useGitStore } from '@/stores/git'
-import { useContextMenu } from '@/composables/useContextMenu'
-import { useFileOps } from '@/composables/useFileOps'
-
-const props = defineProps({ entry: { type: Object, required: true } })
-
-const tree = useTreeStore()
-const editor = useEditorStore()
-const git = useGitStore()
-const { open } = useContextMenu()
-const ops = useFileOps()
-
-const dragOver = ref(false)
-const longPressTimer = ref(null)
-let longPressTriggered = false
-
-const isDir = computed(() => props.entry.type === 'dir')
-const node = computed(() => tree.node(props.entry.path))
-const active = computed(() => !isDir.value && editor.activePath === props.entry.path)
-const focused = computed(() => tree.focusPath === props.entry.path)
-const editing = computed(() => tree.editing === props.entry.path)
-const draftHere = computed(() => tree.draft?.parent === props.entry.path)
-
-const status = computed(() => {
-  if (isDir.value) {
-    const pfx = props.entry.path + '/'
-    return Object.keys(git.files).some((p) => p.startsWith(pfx)) ? '•' : ''
-  }
-  const c = git.statusFor(props.entry.path)
-  if (!c) return ''
-  if (c.includes('?')) return 'U'
-  return c[0]
-})
-
-const statusColor = computed(() => {
-  const s = status.value
-  if (!s) return ''
-  if (s === 'U' || s === 'A') return 'text-ink-green-5'
-  if (s === 'D') return 'text-ink-red-7'
-  return 'text-ink-amber-5'
-})
-
-async function onClick() {
-  if (longPressTriggered) {
-    longPressTriggered = false
-    return
-  }
-  tree.focusPath = props.entry.path
-  if (isDir.value) tree.toggle(props.entry.path)
-  else openFile(true)
-}
-
-function onDblClick() {
-  if (!isDir.value) openFile(false)
-}
-
-async function openFile(preview) {
-  try {
-    editor.closeDiff()
-    await editor.open(props.entry.path, { preview })
-  } catch (e) {
-    toast.error(e.message)
-  }
-}
-
-function onTouchStart(e) {
-  clearTimeout(longPressTimer.value)
-  longPressTriggered = false
-  longPressTimer.value = setTimeout(() => {
-    longPressTriggered = true
-    onContext(e.touches[0] || e)
-  }, 500)
-}
-function onTouchMove() {
-  clearTimeout(longPressTimer.value)
-}
-function onTouchEnd() {
-  clearTimeout(longPressTimer.value)
-}
-
-function onDragStart(e) {
-  tree.dragPath = props.entry.path
-  e.dataTransfer.effectAllowed = 'move'
-  e.dataTransfer.setData('text/plain', props.entry.path)
-}
-function onDragOver(e) {
-  if (!isDir.value || !tree.dragPath || tree.dragPath === props.entry.path) return
-  e.preventDefault()
-  e.dataTransfer.dropEffect = 'move'
-  dragOver.value = true
-}
-function onDrop(e) {
-  dragOver.value = false
-  if (!isDir.value || !tree.dragPath) return
-  e.preventDefault()
-  e.stopPropagation()
-  const from = tree.dragPath
-  tree.dragPath = null
-  tree.move(from, props.entry.path).catch((err) => toast.error(err.message))
-}
-
-function onContext(e) {
-  clearTimeout(longPressTimer.value)
-  const p = props.entry.path
-  const baseItems = [
-    { label: 'Rename', icon: 'lucide-pencil', action: () => ops.rename(p) },
-    { label: 'Delete', icon: 'lucide-trash-2', danger: true, action: () => ops.remove(p, isDir.value) },
-  ]
-  const items = isDir.value
-    ? [
-        { label: 'New File', icon: 'lucide-file-plus', action: () => ops.newFile(p) },
-        { label: 'New Folder', icon: 'lucide-folder-plus', action: () => ops.newFolder(p) },
-        ...baseItems,
-      ]
-    : baseItems
-  open(e, items)
-}
-</script>

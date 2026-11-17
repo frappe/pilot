@@ -1,14 +1,20 @@
+<script setup lang="ts">
+import { useContextMenu } from '@/composables/useContextMenu'
+
+const { state, close } = useContextMenu()
+
+const run = (item: (typeof state.items)[number]) => {
+  close()
+  item.action()
+}
+</script>
+
 <template>
-  <div
-    v-if="state.visible"
-    class="fixed inset-0 z-40"
-    @click="close"
-    @contextmenu.prevent="close"
-  >
+  <div v-if="state.visible" class="fixed inset-0 z-40" @click="close" @contextmenu.prevent="close">
     <!-- desktop floating menu -->
     <div
       class="absolute z-50 hidden min-w-40 rounded-6 border border-outline-gray-2 bg-surface-base py-1 shadow-xl sm:block"
-      :style="{ left: state.x + 'px', top: state.y + 'px' }"
+      :style="{ left: `${state.x}px`, top: `${state.y}px` }"
     >
       <button
         v-for="(it, i) in state.items"
@@ -47,13 +53,3 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { useContextMenu } from '@/composables/useContextMenu'
-
-const { state, close } = useContextMenu()
-function run(it) {
-  close()
-  it.action()
-}
-</script>

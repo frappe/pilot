@@ -1,3 +1,156 @@
+<script setup lang="ts">
+import { FrappeUIProvider } from 'frappe-ui'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+import { sessionApi } from '@/api/session'
+import ActivityBar from '@/components/ActivityBar.vue'
+import ConflictDialog from '@/components/ConflictDialog.vue'
+import ContextMenu from '@/components/ContextMenu.vue'
+import ExplorerPanel from '@/components/ExplorerPanel.vue'
+import GitPanel from '@/components/GitPanel.vue'
+import MobileNav from '@/components/MobileNav.vue'
+import PromptDialog from '@/components/PromptDialog.vue'
+import QuickOpen from '@/components/QuickOpen.vue'
+import SearchModal from '@/components/SearchModal.vue'
+import SearchPanel from '@/components/SearchPanel.vue'
+import Tabs from '@/components/Tabs.vue'
+import { useMobile } from '@/composables/useMobile'
+import { useQuickOpen } from '@/composables/useQuickOpen'
+import { useSearchModal } from '@/composables/useSearchModal'
+import { useEditorStore } from '@/stores/editor'
+import { useGitStore } from '@/stores/git'
+
+type Panel = 'files' | 'search' | 'git' | ''
+
+const EditorPane = defineAsyncComponent(() => import('@/components/EditorPane.vue'))
+const GitDiffView = defineAsyncComponent(() => import('@/components/GitDiffView.vue'))
+const CommitView = defineAsyncComponent(() => import('@/components/CommitView.vue'))
+
+const panels: Panel[] = ['files', 'search', 'git', '']
+
+const store = useEditorStore()
+const git = useGitStore()
+const { openQuick } = useQuickOpen()
+const { openSearchModal } = useSearchModal()
+const { isMobile } = useMobile()
+const panel = ref<Panel>('files')
+
+const isPanel = (id: string | null): id is Panel => panels.includes(id as Panel)
+
+const select = (id: string) => {
+  if (!isPanel(id)) return
+
+  panel.value = panel.value === id ? '' : id
+
+  if (panel.value === 'files') {
+    if (store.diff) store.closeDiff()
+    if (store.commit) store.closeCommit()
+  }
+}
+
+// Mobile FAB: open the chosen panel and dismiss any open diff/commit overlay.
+const openPanel = (id: string) => {
+  if (isPanel(id)) panel.value = id
+
+  if (store.diff) store.closeDiff()
+  if (store.commit) store.closeCommit()
+}
+
+const saveActive = () => {
+  if (store.active?.dirty) store.save(store.active.path)
+}
+
+const onKey = (e: KeyboardEvent) => {
+  const mod = e.ctrlKey || e.metaKey
+
+  if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault()
+    openSearchModal()
+  } else if (mod && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+    e.preventDefault()
+    openQuick()
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+let savePending = false
+
+const saveSession = () => {
+  savePending = true
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    sessionApi.put(store.snapshot())
+    savePending = false
+  }, 1000)
+}
+
+// The debounced timer never fires once the page starts unloading, so write the
+// snapshot synchronously (keepalive) on hide/unload instead.
+const flushSession = () => {
+  if (!savePending) return
+
+  clearTimeout(saveTimer)
+  sessionApi.put(store.snapshot())
+  savePending = false
+}
+
+const onHidden = () => {
+  if (document.hidden) flushSession()
+}
+
+watch(
+  () => [store.tabs.map((t) => t.path), store.activePath],
+  () => saveSession(),
+  { deep: false },
+)
+
+watch(
+  () => store.openTick,
+  () => {
+    if (isMobile.value && panel.value) panel.value = ''
+  },
+)
+
+watch(
+  () => store.activePath,
+  (path) => {
+    if (isMobile.value && !path && !store.diff && !store.commit) panel.value = 'files'
+  },
+)
+
+onMounted(async () => {
+  git.refresh()
+
+  const params = new URLSearchParams(location.search)
+  const p = params.get('panel')
+  const open = params.get('open')
+  const diff = params.get('diff')
+
+  if (isPanel(p)) panel.value = p
+
+  if (open) {
+    store.open(open).catch(() => {})
+  } else {
+    try {
+      await store.restore(await sessionApi.get())
+    } catch {}
+  }
+
+  if (diff) store.openDiff(diff)
+
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('pagehide', flushSession)
+  document.addEventListener('visibilitychange', onHidden)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('pagehide', flushSession)
+  document.removeEventListener('visibilitychange', onHidden)
+  flushSession()
+})
+</script>
+
 <template>
   <FrappeUIProvider>
     <div
@@ -49,140 +202,3 @@
     </div>
   </FrappeUIProvider>
 </template>
-
-<script setup>
-import { ref, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
-import { FrappeUIProvider } from 'frappe-ui'
-import ActivityBar from '@/components/ActivityBar.vue'
-import MobileNav from '@/components/MobileNav.vue'
-import ExplorerPanel from '@/components/ExplorerPanel.vue'
-import SearchPanel from '@/components/SearchPanel.vue'
-import GitPanel from '@/components/GitPanel.vue'
-import Tabs from '@/components/Tabs.vue'
-import QuickOpen from '@/components/QuickOpen.vue'
-import SearchModal from '@/components/SearchModal.vue'
-import ConflictDialog from '@/components/ConflictDialog.vue'
-import PromptDialog from '@/components/PromptDialog.vue'
-import ContextMenu from '@/components/ContextMenu.vue'
-import { sessionApi } from '@/api/session'
-import { useEditorStore } from '@/stores/editor'
-import { useGitStore } from '@/stores/git'
-import { useTreeStore } from '@/stores/tree'
-import { useQuickOpen } from '@/composables/useQuickOpen'
-import { useSearchModal } from '@/composables/useSearchModal'
-import { useMobile } from '@/composables/useMobile'
-
-const EditorPane = defineAsyncComponent(() => import('@/components/EditorPane.vue'))
-const GitDiffView = defineAsyncComponent(() => import('@/components/GitDiffView.vue'))
-const CommitView = defineAsyncComponent(() => import('@/components/CommitView.vue'))
-
-const store = useEditorStore()
-const git = useGitStore()
-const tree = useTreeStore()
-const { openQuick } = useQuickOpen()
-const { openSearchModal } = useSearchModal()
-const { isMobile } = useMobile()
-const panel = ref('files')
-
-function select(id) {
-  panel.value = panel.value === id ? '' : id
-  if (panel.value === 'files') {
-    if (store.diff) store.closeDiff()
-    if (store.commit) store.closeCommit()
-  }
-}
-
-// Mobile FAB: open the chosen panel and dismiss any open diff/commit overlay.
-function openPanel(id) {
-  panel.value = id
-  if (store.diff) store.closeDiff()
-  if (store.commit) store.closeCommit()
-}
-
-function saveActive() {
-  if (store.active?.dirty) store.save(store.active.path)
-}
-
-function onKey(e) {
-  const mod = e.ctrlKey || e.metaKey
-  if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
-    e.preventDefault()
-    openSearchModal()
-  } else if (mod && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
-    e.preventDefault()
-    openQuick()
-  }
-}
-
-let saveTimer = null
-let savePending = false
-function saveSession() {
-  savePending = true
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    sessionApi.put(store.snapshot())
-    savePending = false
-  }, 1000)
-}
-// The debounced timer never fires once the page starts unloading, so write the
-// snapshot synchronously (keepalive) on hide/unload instead.
-function flushSession() {
-  if (!savePending) return
-  clearTimeout(saveTimer)
-  sessionApi.put(store.snapshot())
-  savePending = false
-}
-function onHidden() {
-  if (document.hidden) flushSession()
-}
-
-watch(
-  () => [store.tabs.map((t) => t.path), store.activePath],
-  () => saveSession(),
-  { deep: false },
-)
-
-watch(
-  () => store.openTick,
-  () => {
-    if (isMobile.value && panel.value) panel.value = ''
-  },
-)
-
-watch(
-  () => store.activePath,
-  (path) => {
-    if (isMobile.value && !path && !store.diff && !store.commit) panel.value = 'files'
-  },
-)
-
-onMounted(async () => {
-  git.refresh()
-  const params = new URLSearchParams(location.search)
-  const p = params.get('panel')
-  if (['files', 'search', 'git', ''].includes(p)) panel.value = p
-  const open = params.get('open')
-  const diff = params.get('diff')
-
-  if (open) {
-    store.open(open).catch(() => {})
-  } else {
-    try {
-      await store.restore(await sessionApi.get())
-    } catch {}
-  }
-  if (diff) store.openDiff(diff)
-
-  window.addEventListener('keydown', onKey)
-
-  window.addEventListener('pagehide', flushSession)
-  document.addEventListener('visibilitychange', onHidden)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey)
-  window.removeEventListener('pagehide', flushSession)
-  document.removeEventListener('visibilitychange', onHidden)
-  flushSession()
-})
-</script>

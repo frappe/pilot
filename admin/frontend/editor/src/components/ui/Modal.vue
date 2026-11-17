@@ -1,12 +1,23 @@
+<script setup lang="ts">
+defineProps<{ sizeClass?: string }>()
+
+const emit = defineEmits<{ close: [] }>()
+</script>
+
 <template>
-  <div class="fixed inset-0 z-50 flex items-stretch justify-center sm:items-start sm:pt-[9vh]" @click="emit('close')">
+  <div
+    class="fixed inset-0 z-50 flex items-stretch justify-center sm:items-start sm:pt-[9vh]"
+    @click="emit('close')"
+  >
     <div class="fixed inset-0 bg-black/25"></div>
     <div
       class="relative z-10 flex flex-col overflow-hidden bg-surface-base shadow-2xl max-sm:h-full max-sm:w-full sm:rounded-7 sm:border sm:border-outline-gray-2"
       :class="sizeClass"
       @click.stop
     >
-      <div class="flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-3 sm:h-10">
+      <div
+        class="flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-3 sm:h-10"
+      >
         <span class="lucide-search h-4 w-4 shrink-0 text-ink-gray-4"></span>
         <slot name="input" />
         <slot name="actions" />
@@ -18,8 +29,3 @@
     </div>
   </div>
 </template>
-
-<script setup>
-defineProps({ sizeClass: { type: String, default: '' } })
-const emit = defineEmits(['close'])
-</script>

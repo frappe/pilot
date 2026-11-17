@@ -1,6 +1,6 @@
 import frappeUIPreset from 'frappe-ui/tailwind'
+import type { Config } from 'tailwindcss'
 
-/** @type {import('tailwindcss').Config} */
 export default {
   presets: [frappeUIPreset],
   content: [
@@ -17,4 +17,4 @@ export default {
     },
   },
   plugins: [],
-}
+} satisfies Config
