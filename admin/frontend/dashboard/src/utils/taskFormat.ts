@@ -283,3 +283,34 @@ export const taskDuration = (task: TaskLike) => {
 export const taskLastRun = (task: TaskLike & Pick<TaskPayload, 'queued_at'>) => {
   return relativeTime(task.status === 'queued' ? task.queued_at : task.started_at || task.queued_at)
 }
+
+const INPUT_FIELDS: Record<string, { label: string; icon: string }> = {
+  app: { label: 'App', icon: 'lucide-package' },
+  marketplace_app: { label: 'App', icon: 'lucide-package' },
+  branch: { label: 'Branch', icon: 'lucide-git-branch' },
+}
+
+const APP_NAME_COMMANDS = ['switch-branch', 'remove-app']
+
+export const taskInputs = (task: ScopedTask) => {
+  const args = task.args || {}
+  const inputs = Object.entries(INPUT_FIELDS)
+    .filter(([key]) => typeof args[key] === 'string' && args[key])
+    .map(([key, field]) => ({ ...field, value: String(args[key]) }))
+
+  if (APP_NAME_COMMANDS.includes(task.command) && typeof args.name === 'string') {
+    inputs.unshift({ ...INPUT_FIELDS.app, value: args.name })
+  }
+
+  if (Array.isArray(args.sites) && args.sites.length) {
+    const count = args.sites.length
+
+    inputs.push({
+      label: count === 1 ? 'Site' : 'Sites',
+      icon: 'lucide-globe',
+      value: count === 1 ? String(args.sites[0]) : `${count} sites`,
+    })
+  }
+
+  return inputs
+}

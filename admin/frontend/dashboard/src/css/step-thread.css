@@ -5,5 +5,15 @@
   bottom: 6px;
   left: 17.5px;
   width: 1px;
-  background: var(--step-thread-color, var(--outline-gray-2));
+  background: var(--step-thread-color, var(--outline-gray-1));
+}
+
+.step-thread-compact:not(:last-child)::before {
+  top: 26px;
+  bottom: 2px;
+  left: 7.5px;
+}
+
+.step-thread-open:not(:last-child)::before {
+  background: repeating-linear-gradient(to bottom, var(--outline-gray-3) 0 1px, transparent 1px 6px);
 }

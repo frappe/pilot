@@ -31,8 +31,8 @@ class _TaskStep:
         self.task.mark_step_failed(self.key)
 
 
-def step(key: str, label: str | Callable[[Any], str] = ""):
-    """Wrap a task method in a UI step."""
+def step(key: str, label: str | Callable[[Any], str] = "", icon: str = ""):
+    """Wrap a task method in a UI step, with an optional icon class for the dashboard."""
 
     def decorator(func):
         """Wrap the method in a step."""
@@ -41,7 +41,7 @@ def step(key: str, label: str | Callable[[Any], str] = ""):
         def wrapper(self, *args, **kwargs):
             """Run the method inside its step."""
             resolved_label = label(self) if callable(label) else label
-            with self.step(key, resolved_label):
+            with self.step(key, resolved_label, icon):
                 return func(self, *args, **kwargs)
 
         return wrapper
@@ -174,10 +174,11 @@ class Task:
         self._current_step: str | None = None
         self._failed_steps: set[str] = set()
 
-    def step(self, key: str, label: str = "") -> AbstractContextManager[None]:
+    def step(self, key: str, label: str = "", icon: str = "") -> AbstractContextManager[None]:
         """Mark a step as started and its end on exit."""
         self._current_step = key
-        print(f"STEP {key},{time.time():.3f} {label}", flush=True)
+        marker = f"{key},{time.time():.3f}" + (f",{icon}" if icon else "")
+        print(f"STEP {marker} {label}", flush=True)
         return _TaskStep(self, key)
 
     def step_failed(self) -> None:

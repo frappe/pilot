@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { type RouteLocationRaw, RouterLink, useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
 
 import TaskDebugDialog from '@/components/tasks/TaskDebugDialog.vue'
@@ -12,6 +12,7 @@ import { tasksApi } from '@/api/tasks'
 import { settingsApi } from '@/api/settings'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useTaskDetail } from '@/composables/tasks/useTaskDetail'
+import { useTaskSteps } from '@/composables/tasks/useTaskSteps'
 import type { StatusEvent } from '@/types/tasks'
 import { errorMessage } from '@/utils/error'
 
@@ -23,6 +24,7 @@ import {
   isTaskCancellable,
   redirectRouteOnSuccess,
   statusConfig,
+  taskInputs,
   taskScope,
 } from '@/utils/taskFormat'
 
@@ -56,17 +58,68 @@ const loadAiStatus = async () => {
 }
 
 const scope = computed(() => (task.value ? taskScope(task.value) : null))
-const scopeIcon = computed(() => (scope.value?.route ? 'lucide-globe' : 'lucide-server'))
 
-const queuePosition = computed(() =>
-  task.value?.status === 'queued' && task.value.queue_position
-    ? `#${task.value.queue_position} in queue`
-    : '',
-)
+interface Fact {
+  label: string
+  icon: string
+  value: string
+  route?: RouteLocationRaw
+}
 
-const startedAt = computed(() => (task.value?.started_at ? fmtDateTime(task.value.started_at) : ''))
+const { stepSections } = useTaskSteps(rawLines, ref(false), task)
 
-const duration = computed(() => fmtDuration(task.value?.duration_seconds))
+const waited = computed(() => {
+  if (!task.value?.started_at) return ''
+
+  const seconds = (Date.parse(task.value.started_at) - Date.parse(task.value.queued_at)) / 1000
+
+  return fmtDuration(Math.max(seconds, 0), { precise: true })
+})
+
+const siteFact = computed<Fact[]>(() => {
+  if (!scope.value?.route) return []
+
+  const { label, route } = scope.value
+
+  return [{ label: 'Site', icon: 'lucide-globe', value: label, route }]
+})
+
+const timeFacts = computed<Fact[]>(() => {
+  if (!task.value) return []
+
+  const { status, queue_position, started_at, duration_seconds } = task.value
+  const started = { label: 'Started', icon: 'lucide-calendar', value: fmtDateTime(started_at) }
+
+  if (status === 'queued' && queue_position) {
+    return [started, { label: 'Queue', icon: 'lucide-list-ordered', value: `#${queue_position}` }]
+  }
+
+  const duration = fmtDuration(duration_seconds) || '-'
+
+  return [started, { label: 'Duration', icon: 'lucide-timer', value: duration }]
+})
+
+const facts = computed<Fact[]>(() => {
+  if (!task.value) return []
+
+  const base = [...siteFact.value, ...taskInputs(task.value), ...timeFacts.value]
+  const stepCount = isTaskActive(task.value) ? 0 : stepSections.value.length
+  const steps = { label: 'Steps', icon: 'lucide-list-checks', value: String(stepCount) }
+  const extras: Fact[] = [
+    ...(stepCount ? [steps] : []),
+    { label: 'Waited', icon: 'lucide-hourglass', value: waited.value || '-' },
+  ]
+
+  return [...base, ...extras.slice(0, Math.max(0, 4 - base.length))]
+})
+
+const failureMessage = computed(() => {
+  if (!task.value?.failure) return ''
+
+  const errorLine = [...rawLines.value].reverse().find((line) => line.startsWith('Error: '))
+
+  return errorLine?.slice('Error: '.length) || task.value.failure.message
+})
 
 const updateStatus = (event: StatusEvent) => {
   if (!task.value) return
@@ -111,7 +164,7 @@ onMounted(() => {
 
   <ErrorMessage v-else-if="error" class="px-3 md:px-4 py-12" :message="error" />
 
-  <div v-else-if="task" class="p-3 md:p-4 mx-auto max-w-3xl">
+  <div v-else-if="task" class="mx-auto p-3 md:p-4 xl:pt-8 pb-10 md:pb-10 max-w-[1000px]">
     <Teleport defer to="#header-badge">
       <Badge :label="statusConfig(task).label" :theme="statusConfig(task).theme" />
     </Teleport>
@@ -141,42 +194,32 @@ onMounted(() => {
 
     <TaskDebugDialog v-model="showDebug" :task-id="taskId" />
 
-    <div class="flex justify-between items-center gap-4 lg:mt-5 px-2 min-w-0">
-      <RouterLink
-        :to="scope?.route || ''"
-        class="group flex items-center gap-2 min-w-0 text-lg-medium text-ink-gray-9 no-underline"
+    <dl
+      class="lg:flex gap-x-4 lg:gap-x-10 gap-y-2 grid grid-cols-2 sm:grid-cols-3 p-3 lg:px-4 lg:py-3.5 border border-outline-gray-1.5 rounded-5"
+    >
+      <div
+        v-for="fact in facts"
+        :key="fact.label"
+        class="flex flex-col grow gap-1 lg:gap-1.5 min-w-0"
       >
-        <span class="size-4 text-ink-gray-5 shrink-0" :class="scopeIcon" />
-        <span class="truncate">{{ scope?.label }}</span>
-        <span
-          v-if="scope?.route"
-          class="opacity-0 group-hover:opacity-100 size-4 text-ink-gray-5 transition-opacity shrink-0 lucide-arrow-up-right"
-        />
-      </RouterLink>
+        <dt class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
+          <span class="size-3.5 text-ink-gray-4" :class="fact.icon" />
+          {{ fact.label }}
+        </dt>
 
-      <div class="flex items-center gap-3 text-base shrink-0">
-        <span v-if="queuePosition" class="flex items-center gap-1.5 ">
-          <span class="size-3.5 lucide-list-ordered" />
-          {{ queuePosition }}
-        </span>
-
-        <span v-if="startedAt" class="flex items-center gap-1.5 text-ink-gray-7">
-          <span class="size-3.5 lucide-clock" />
-          {{ startedAt }}
-        </span>
-
-        <span v-if="duration" class="flex items-center gap-1.5 text-ink-gray-5">
-          <span class="size-3.5 lucide-timer" />
-          <span class="tabular-nums">{{ duration }}</span>
-        </span>
+        <dd class="text-sm-medium text-ink-gray-8 truncate">
+          <RouterLink v-if="fact.route" :to="fact.route" class="hover:text-ink-gray-9">
+            {{ fact.value }}
+          </RouterLink>
+          <template v-else>{{ fact.value }}</template>
+        </dd>
       </div>
-    </div>
+    </dl>
 
-    <ErrorMessage v-if="actionError" :message="actionError" class="mt-3" />
-    <ErrorMessage v-if="task.failure" :message="task.failure.message" class="mt-3" />
+    <ErrorMessage v-if="actionError" :message="actionError" class="mt-4" />
 
     <!-- Steps -->
-    <div class="mt-3">
+    <div class="mt-4">
       <TaskStream
         v-if="isTaskActive(task)"
         :url="tasksApi.streamUrl(taskId)"
@@ -185,10 +228,21 @@ onMounted(() => {
         @status="updateStatus"
         @done="handleDone"
       >
-        <TaskSteps :raw-lines="streamedLines" :streaming="streaming" :task-status="task.status" />
+        <TaskSteps
+          :raw-lines="streamedLines"
+          :streaming="streaming"
+          :task-status="task.status"
+          :empty-text="task.status === 'queued' ? 'Waiting for this task to start…' : 'No output yet…'"
+        />
       </TaskStream>
 
-      <TaskSteps v-else :raw-lines="rawLines" :task-status="task.status" />
+      <TaskSteps
+        v-else
+        :raw-lines="rawLines"
+        :task-status="task.status"
+        :finished-at="task.finished_at"
+        :failure="failureMessage"
+      />
     </div>
   </div>
 </template>

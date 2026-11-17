@@ -36,7 +36,7 @@ class SetPerformanceSchemaTask(Task):
             restart_executor=self.restart,
         )
 
-    @step("restart", "Restarting MariaDB")
+    @step("restart", "Restarting MariaDB", icon="lucide-refresh-cw")
     def restart(self, callback: Callable[[], None]) -> None:
         """Run the restart in a step."""
         callback()
