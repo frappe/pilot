@@ -14,6 +14,7 @@ class SiteApp(TypedDict):
     install_unfinished: bool
     has_local_changes: NotRequired[bool]
     is_marketplace: NotRequired[bool]
+    follow_branch: NotRequired[bool]
     missing: NotRequired[bool]
 
 

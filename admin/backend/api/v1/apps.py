@@ -206,6 +206,25 @@ def switch_branch(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
+@apps_bp.post("/<name>/actions/follow-branch")
+def follow_branch(name: str):
+    """Pick branch tip or marketplace release updates, then queue an update check."""
+    bench_root = ApiRequest.get_bench_root()
+    if validate_app_name(name) or not (bench_root / "apps" / name).is_dir():
+        return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
+    enabled = ApiRequest.get_json_body().get("follow_branch")
+    if not isinstance(enabled, bool):
+        return error_response("invalid_follow_branch", "follow_branch must be true or false.", 422)
+
+    try:
+        Bench(bench_root).app(name).set_follow_branch(enabled)
+    except Exception:
+        return error_response(
+            "follow_branch_failed", "Could not change where the app gets updates from.", 500
+        )
+    return fetch_updates()
+
+
 @apps_bp.post("/fetch")
 def fetch_updates():
     """Queue a check for app updates."""
