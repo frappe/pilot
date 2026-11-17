@@ -87,6 +87,7 @@ def site_apps(name: str):
                 "has_local_changes": info.has_local_changes,
                 # Registry links and metadata describe the listed repository, not a fork of it.
                 "is_marketplace": app.is_marketplace,
+                "follow_branch": app.config.follow_branch,
             }
         except (BenchError, OSError, ValueError, subprocess.SubprocessError) as error:
             # An unreadable app keeps its row, with its name only.

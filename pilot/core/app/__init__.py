@@ -576,14 +576,28 @@ class App:
         if not BenchConfig.toml_path(self.bench.path).exists():
             return
         with BenchConfig.open(self.bench.path, mode="raw") as raw:
-            apps = raw.setdefault("apps", [])
-            entry = next((a for a in apps if a.get("name") == self.config.name), None)
-            if entry is None:
-                apps.append(
-                    {"name": self.config.name, "repo": self.config.repo, "branch": self.config.branch}
-                )
+            self.get_toml_entry(raw)["branch"] = self.config.branch
+
+    def set_follow_branch(self, enabled: bool) -> None:
+        """Update this app to its branch tip instead of marketplace releases."""
+        from pilot.config import BenchConfig
+
+        with BenchConfig.open(self.bench.path, mode="raw") as raw:
+            entry = self.get_toml_entry(raw)
+            if enabled:
+                entry["follow_branch"] = True
             else:
-                entry["branch"] = self.config.branch
+                entry.pop("follow_branch", None)
+        self.config.follow_branch = enabled
+
+    def get_toml_entry(self, raw: dict) -> dict:
+        """This app's [[apps]] table in raw bench.toml data, added when missing."""
+        apps = raw.setdefault("apps", [])
+        entry = next((a for a in apps if a.get("name") == self.config.name), None)
+        if entry is None:
+            entry = {"name": self.config.name, "repo": self.config.repo, "branch": self.config.branch}
+            apps.append(entry)
+        return entry
 
     def _build_assets_via_env_manager(self) -> None:
         """Build the app's assets."""

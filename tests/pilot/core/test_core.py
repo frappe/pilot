@@ -1296,3 +1296,18 @@ def test_follow_branch_is_kept_in_bench_toml(tmp_path: Path) -> None:
     reread = BenchConfig.read(tmp_path).get_app_by_name("myapp")
 
     assert reread.follow_branch is True
+
+
+def test_set_follow_branch_turns_the_flag_on_and_off_in_bench_toml(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="develop"), bench)
+
+    app.set_follow_branch(True)
+    added = BenchConfig.read(tmp_path).get_app_by_name("myapp")
+    app.set_follow_branch(False)
+    removed = BenchConfig.read(tmp_path).get_app_by_name("myapp")
+
+    assert (added.branch, added.follow_branch) == ("develop", True)
+    assert removed.follow_branch is False
+    assert app.config.follow_branch is False
