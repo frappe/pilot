@@ -127,12 +127,16 @@ class SiteBackups:
 
     def get_files_index(self) -> dict[str, list[dict]]:
         """The site's File rows, storage v1 and v2, split by privacy. Frappe builds the index."""
+        from pilot.exceptions import BenchError
         from pilot.internal.command import run_command
 
         argv = [*self.site.bench.frappe_call, "frappe", "--site", self.site.config.name, "execute"]
         result = run_command([*argv, FILES_INDEX_METHOD], cwd=self.site.bench.sites_path, timeout=300)
+        lines = result.stdout.strip().splitlines()
+        if not lines:
+            raise BenchError(f"Frappe returned no File index for {self.site.config.name}.")
         # `execute` prints the return value last; Frappe may print warnings before it.
-        return json.loads(result.stdout.strip().splitlines()[-1])
+        return json.loads(lines[-1])
 
     def _publish(self, staged: list[Path]) -> list[Path]:
         """Move a run in under the backups lock, so retention sees all of it or none of it."""
