@@ -1,5 +1,5 @@
--- title: Pilot stopped reporting
--- description: Pilot stopped sending telemetry. The Sites SLI has no data for this server.
+-- title: Pilot stopped sending metrics
+-- description: Pilot or one of its threads stopped. The Sites SLI has no data for this server.
 -- severity: Medium
 -- resource_type: Virtual Machine
 -- interval: 60

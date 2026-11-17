@@ -1,5 +1,5 @@
 -- title: Pilot cannot send alerts to Central
--- description: Pilot cannot deliver alerts to Central, so customers do not hear about failures.
+-- description: Pilot cannot reach Central, so customers do not hear about failures on this server.
 -- severity: Medium
 -- resource_type: Virtual Machine
 -- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-central-delivery.md

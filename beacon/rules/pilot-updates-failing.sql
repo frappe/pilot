@@ -1,4 +1,4 @@
--- title: App update failing widely
+-- title: App update failing on many servers
 -- description: The same app release failed to update on 3 or more servers. The release is likely broken.
 -- severity: Low
 -- resource_type: Region

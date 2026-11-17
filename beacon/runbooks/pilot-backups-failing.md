@@ -1,4 +1,4 @@
-# Many site backups failing
+# Backups failing on many servers
 
 On 5 or more servers in the region, and on 10% of the servers that take backups, the newest backup of half or more of the sites failed (Medium). On half of the servers it pages (High). One server or one site alone is the problem of its owner, and Pilot already tells them.
 
