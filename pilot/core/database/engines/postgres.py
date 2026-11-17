@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import time
 
 from pilot.core.database.base import (
@@ -37,6 +38,24 @@ class PostgreSQL(Database):
         self._password = password
         self._database = database
         self._connect_timeout = connect_timeout
+
+    @property
+    def has_driver(self) -> bool:
+        """Whether this Python can import psycopg2."""
+        return importlib.util.find_spec("psycopg2") is not None
+
+    @property
+    def connection_settings(self) -> dict:
+        """How to connect, for a query run by another interpreter."""
+        return {
+            "engine": "postgres",
+            "host": self._host,
+            "port": self._port,
+            "user": self._user,
+            "password": self._password,
+            "database": self._database,
+            "connect_timeout": self._connect_timeout,
+        }
 
     def _connect(self):
         """Every connection is bound to one database, so a server-wide instance

@@ -16,6 +16,8 @@ class _FakeDatabase:
     def __init__(self, rows: list[list]) -> None:
         self._rows = rows
 
+    has_driver = True
+
     def quote_identifier(self, name: str) -> str:
         return f'"{name}"'
 

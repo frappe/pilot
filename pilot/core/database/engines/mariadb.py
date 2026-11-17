@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import time
 from datetime import UTC, datetime
@@ -55,6 +56,25 @@ class MariaDB(Database):
         self._database = database
         self._socket = socket
         self._connect_timeout = connect_timeout
+
+    @property
+    def has_driver(self) -> bool:
+        """Whether this Python can import PyMySQL."""
+        return importlib.util.find_spec("pymysql") is not None
+
+    @property
+    def connection_settings(self) -> dict:
+        """How to connect, for a query run by another interpreter."""
+        return {
+            "engine": "mariadb",
+            "host": self._host,
+            "port": self._port,
+            "user": self._user,
+            "password": self._password,
+            "database": self._database,
+            "socket": self._socket,
+            "connect_timeout": self._connect_timeout,
+        }
 
     def _connect(self):
         """A new connection."""
