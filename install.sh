@@ -577,6 +577,40 @@ EOF
     chmod 644 /etc/logrotate.d/pilot
 }
 
+# The distro mariadbd AppArmor profile (Ubuntu 26.04) denies ~/pilot; it includes
+# local/mariadbd, where this keeps one block per bench user. An empty profile
+# (MariaDB's own repo) or no AppArmor skips it.
+install_mariadb_apparmor_override() {
+    home="$(bench_home "$1")"
+    apparmor_dir="${APPARMOR_DIR:-/etc/apparmor.d}"
+    profile="$apparmor_dir/mariadbd"
+    [ -n "$home" ] && [ -f "$profile" ] || return 0
+    grep -q '^[[:space:]]*profile[[:space:]]' "$profile" || return 0
+    echo "Allowing mariadbd to use Pilot's MariaDB directories for '$1'..."
+    override="$apparmor_dir/local/mariadbd"
+    begin="# BEGIN Pilot for '$1'"
+    end="# END Pilot for '$1'"
+    mkdir -p "$apparmor_dir/local"
+    touch "$override"
+    {
+        awk -v begin="$begin" -v end="$end" '$0 == begin { skip = 1 } !skip { print } $0 == end { skip = 0 }' "$override"
+        cat <<EOF
+$begin
+owner $home/pilot/databases/ r,
+owner $home/pilot/databases/mariadb/ r,
+owner $home/pilot/databases/mariadb/** rwk,
+owner $home/pilot/system/logs/ r,
+owner $home/pilot/system/logs/** rw,
+$end
+EOF
+    } > "$override.pilot"
+    mv "$override.pilot" "$override"
+    chmod 644 "$override"
+    if command -v apparmor_parser >/dev/null 2>&1; then
+        apparmor_parser -r "$profile"
+    fi
+}
+
 # `command -v` returns the bare name for shell builtins like `test`, but a
 # sudoers Cmnd must be a fully-qualified path or visudo rejects the whole file.
 # Mirror the runtime's shutil.which by taking only an absolute PATH match.
@@ -709,6 +743,7 @@ prepare_host() {
     install_nginx_include "$BENCH_USER"
     set_nginx_worker_user "$BENCH_USER"
     install_logrotate "$BENCH_USER"
+    install_mariadb_apparmor_override "$BENCH_USER"
     install_sudoers_grants "$BENCH_USER"
     install_build_swap_helper "$BENCH_USER"
 

@@ -610,3 +610,62 @@ echo continued
     assert "could not install the build swap helper" in result.stderr
     assert result.stdout.strip().endswith("continued")
     assert not (tmp_path / "pilot-build-swap").exists()
+
+
+@pytest.mark.parametrize(
+    ("profile", "is_overridden"),
+    [
+        ("profile mariadbd /usr/sbin/mariadbd {\n  include if exists <local/mariadbd>\n}\n", True),
+        # MariaDB's own repo ships the profile as comments only, so it confines nothing.
+        ("# This file is intentionally empty to disable apparmor by default\n", False),
+        (None, False),
+    ],
+)
+def test_distro_mariadbd_profile_gets_pilot_s_directories(profile: str | None, is_overridden: bool, tmp_path: Path) -> None:
+    """Ubuntu 26.04's enforced mariadbd profile blocks Pilot's my.cnf under ~/pilot (#844)."""
+    apparmor = tmp_path / "apparmor.d"
+    apparmor.mkdir()
+    if profile is not None:
+        (apparmor / "mariadbd").write_text(profile)
+    result = run_installer_functions(
+        f"""
+bench_home() {{ echo /home/frappe; }}
+apparmor_parser() {{ echo "reloaded $*"; }}
+APPARMOR_DIR={apparmor}
+install_mariadb_apparmor_override frappe
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    override = apparmor / "local" / "mariadbd"
+    assert override.exists() is is_overridden
+    if is_overridden:
+        assert "owner /home/frappe/pilot/databases/mariadb/** rwk," in override.read_text()
+        assert f"reloaded -r {apparmor}/mariadbd" in result.stdout
+
+
+def test_mariadbd_override_keeps_admin_rules_and_other_bench_users(tmp_path: Path) -> None:
+    """A rerun replaces only this user's block; rules an admin or another bench user added stay."""
+    apparmor = tmp_path / "apparmor.d"
+    (apparmor / "local").mkdir(parents=True)
+    (apparmor / "mariadbd").write_text("profile mariadbd /usr/sbin/mariadbd {\n}\n")
+    (apparmor / "local" / "mariadbd").write_text("/srv/mysql/** rwk,\n")
+    result = run_installer_functions(
+        f"""
+bench_home() {{ echo "/home/$1"; }}
+apparmor_parser() {{ :; }}
+APPARMOR_DIR={apparmor}
+install_mariadb_apparmor_override frappe
+install_mariadb_apparmor_override erp
+install_mariadb_apparmor_override frappe
+""",
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    override = (apparmor / "local" / "mariadbd").read_text()
+    assert override.startswith("/srv/mysql/** rwk,\n")
+    assert override.count("# BEGIN Pilot for 'frappe'") == 1
+    assert override.count("owner /home/frappe/pilot/databases/mariadb/** rwk,") == 1
+    assert "owner /home/erp/pilot/databases/mariadb/** rwk," in override
