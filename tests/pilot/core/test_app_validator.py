@@ -24,7 +24,7 @@ from pilot.core.app.validator.repo_structure import RepoStructureCheck
 from pilot.core.app.validator.symlinks import SymlinkCheck
 from pilot.core.app.validator.syntax import SyntaxCheck
 from pilot.core.app.validator.version_specifiers import VersionSpecifiersCheck
-from pilot.exceptions import AppValidationError
+from pilot.exceptions import AppValidationError, BenchError
 
 
 @dataclass
@@ -830,6 +830,37 @@ def test_dependency_paths_tolerate_an_app_with_no_pyproject(tmp_path: Path) -> N
     bench = _FakeBench(apps_path=tmp_path / "apps", env_path=tmp_path / "env")
 
     assert ImportCheck._dependency_paths(bench.app("oldapp")) == []
+
+
+class _BenchWithoutMissingApps(_FakeBench):
+    def app(self, name: str) -> App:
+        if not (self.apps_path / name).is_dir():
+            raise BenchError(f"App {name} not found in bench")
+        return super().app(name)
+
+
+def test_import_check_names_a_declared_app_the_bench_lacks(monkeypatch, tmp_path: Path) -> None:
+    """A declared dependency that was never installed is not a pyproject mistake -
+    the message must say the required app is missing, not to add a package."""
+    app = _make_app(
+        tmp_path,
+        "crm",
+        '[project]\nname = "crm"\n\n[tool.bench.frappe-dependencies]\nfrappe = ">=16"\nwhatsapp = ">=1.3.0"\n',
+        {"crm/hooks.py": "app_name = 'crm'\n"},
+    )
+    app.bench = _BenchWithoutMissingApps(apps_path=tmp_path / "apps", env_path=tmp_path / "env")
+    monkeypatch.setattr(
+        "pilot.core.app.validator.imports.missing_modules",
+        lambda python, names: dict.fromkeys(names, "No module named 'whatsapp'"),
+    )
+    check = ImportCheck()
+    check.tmp_env._dir = str(tmp_path)
+
+    with pytest.raises(AppValidationError) as exc_info:
+        check._check_imports(app, {"whatsapp.api": ["crm/patch.py:6"]}, ["whatsapp.api"])
+
+    assert "declares whatsapp in [tool.bench.frappe-dependencies]" in str(exc_info.value)
+    assert "pyproject.toml's dependencies" not in str(exc_info.value)
 
 
 def test_import_check_trusts_the_bench_python_over_stat(monkeypatch, tmp_path: Path) -> None:

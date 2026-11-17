@@ -115,29 +115,45 @@ print(json.dumps({path: file_imports(path) for path in json.load(sys.stdin)["pat
         return [name for name in unresolved if name not in candidates or name in missing]
 
     @staticmethod
+    def get_declared_dependencies(app: "App") -> list[str]:
+        """Apps named in [tool.bench.frappe-dependencies], other than frappe and the app itself.
+
+        Read directly rather than through DependencyDeclarationsCheck, which rejects
+        an app with no pyproject.toml; this check also runs on update, where an app
+        may predate that rule.
+        """
+        declared = bench_table(app).get("frappe-dependencies", {})
+        if not isinstance(declared, dict):
+            return []  # DependencyDeclarationsCheck reports the bad table on install
+        return [name for name in declared if name not in ("frappe", app.config.name)]
+
+    @staticmethod
     def _dependency_paths(app: "App") -> list[Path]:
-        """Paths of the apps this one declares, to install alongside it.
+        """Paths of the declared apps the bench has, to install alongside this one.
 
         Installing every bench app instead would be both slow and wrong: apps that
         pin conflicting versions of a shared package coexist fine when installed
         one at a time, as the real environment does, but cannot be resolved
         together - so an unrelated pair of apps would fail this app's validation.
         """
-        # Read the table directly rather than through DependencyDeclarationsCheck,
-        # which rejects an app that has no pyproject.toml. This check also runs on
-        # update, where an app is allowed to predate that rule.
-        declared = bench_table(app).get("frappe-dependencies", {})
         paths: list[Path] = []
-        if not isinstance(declared, dict):
-            return paths  # DependencyDeclarationsCheck reports the bad table on install
-        for name in declared:
-            if name in ("frappe", app.config.name):
-                continue  # frappe is installed first; the app itself comes last
+        for name in ImportCheck.get_declared_dependencies(app):
             try:
                 paths.append(app.bench.app(name).path)
             except BenchError:
-                continue  # not installed - surfaces as an unresolved import instead
+                continue  # not installed - _check_imports names it if the app imports it
         return paths
+
+    @staticmethod
+    def get_missing_dependencies(app: "App") -> list[str]:
+        """Declared apps the bench does not have."""
+        missing = []
+        for name in ImportCheck.get_declared_dependencies(app):
+            try:
+                app.bench.app(name)
+            except BenchError:
+                missing.append(name)
+        return missing
 
     def _check_imports(self, app: "App", locations: dict[str, list[str]], unresolved: list[str]) -> None:
         """Raise for the imports that still fail in a temporary environment."""
@@ -149,10 +165,16 @@ print(json.dumps({path: file_imports(path) for path in json.load(sys.stdin)["pat
             f"{module}: {reason}\n    imported at: {', '.join(locations[module])}"
             for module, reason in reasons.items()
         ]
+        hint = "Add the missing packages to pyproject.toml's dependencies, or fix the import path."
+        imported_roots = {module.split(".", 1)[0] for module in reasons}
+        missing_apps = [name for name in self.get_missing_dependencies(app) if name in imported_roots]
+        if missing_apps:
+            hint = (
+                f"'{app.config.name}' declares {', '.join(missing_apps)} in [tool.bench.frappe-dependencies], "
+                "but the bench does not have it. Install the required apps before validating."
+            )
         raise AppValidationError(
-            f"'{app.config.name}' has imports that don't resolve:\n"
-            + "\n".join(lines)
-            + "\nAdd the missing packages to pyproject.toml's dependencies, or fix the import path."
+            f"'{app.config.name}' has imports that don't resolve:\n" + "\n".join(lines) + "\n" + hint
         )
 
     def _imported_module_locations(self, app: "App", stdlib: set[str] | None = None) -> dict[str, list[str]]:

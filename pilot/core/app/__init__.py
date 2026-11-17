@@ -440,7 +440,7 @@ class App:
     ) -> AppInstallResult:
         """Report that the app is installed, installing its dependencies when asked."""
         app = self.bench.app(self.module_name)
-        dependencies = app._install_dependencies(on_progress, skip_assets) if install_dependencies else []
+        dependencies = app.install_required_apps(on_progress, skip_assets) if install_dependencies else []
         on_progress(f"'{app.config.name}' already installed, skipping.")
         return AppInstallResult(app, already_installed=True, installed_dependencies=dependencies)
 
@@ -471,7 +471,7 @@ class App:
                 on_progress(f"Checking out {self.config.name} at {commit[:8]}...")
                 self.checkout_commit(commit)
             dependencies = (
-                self._install_dependencies(on_progress, skip_assets, on_step) if install_dependencies else []
+                self.install_required_apps(on_progress, skip_assets, on_step) if install_dependencies else []
             )
             if self.is_staged:
                 self.validate()
@@ -536,13 +536,13 @@ class App:
         if delete_clone:
             shutil.rmtree(self.path, ignore_errors=True)
 
-    def _install_dependencies(
+    def install_required_apps(
         self,
         on_progress: Callable[[str], None],
         skip_assets: bool = False,
         on_step: Callable[[str, str], object] = lambda key, label: None,
     ) -> list["App"]:
-        """Install the apps this app depends on."""
+        """Install the apps declared in [tool.bench.frappe-dependencies]."""
         from pilot.core.app.dependency_installer import AppDependencyInstaller
 
         on_step(f"dependencies_{self.config.name}", f"Install the apps {self.config.name} needs")
