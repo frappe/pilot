@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteLocation } from 'vue-router'
 import { authApi } from '@/api/auth'
+import { apiErrorMessage, hasApiError } from '@/api/client'
 import { useSession } from '@/composables/auth/useSession'
 import { safeRedirect } from '@/utils/redirect'
 
@@ -150,12 +151,22 @@ router.beforeEach(async (to) => {
   // session cookie and fall through to the normal /login redirect below.
   if (to.query.sid) {
     const sid = typeof to.query.sid === 'string' ? to.query.sid : ''
+    let linkError = ''
     try {
-      await authApi.loginWithSid(sid)
+      const result = await authApi.loginWithSid(sid)
+
+      if (hasApiError(result)) linkError = apiErrorMessage(result)
     } catch {
       /* fall through to the unauthenticated redirect below */
     }
     const { sid: _sid, ...query } = to.query
+
+    if (linkError) {
+      const redirect = router.resolve({ path: to.path, query }).fullPath
+
+      return { name: 'Login', query: { redirect, link_error: linkError } }
+    }
+
     return { path: to.path, query, replace: true }
   }
 

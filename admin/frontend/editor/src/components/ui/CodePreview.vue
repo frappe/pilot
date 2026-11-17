@@ -1,83 +1,71 @@
-<template>
-  <div ref="host" class="h-full w-full"></div>
-</template>
+<script setup lang="ts">
+import { Compartment, EditorState } from '@codemirror/state'
+import { Decoration, EditorView, lineNumbers } from '@codemirror/view'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-<script setup>
-import { onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
-import { monaco, languageFor, editorThemeName, applyEditorTheme } from '@/monaco'
-import { useTheme } from '@/composables/useTheme'
+import { loadLanguage } from '@/codemirror/languages'
+import { viewerSetup } from '@/codemirror/setup'
 import { useEditorStore } from '@/stores/editor'
 
-const props = defineProps({
-  content: { type: String, default: '' },
-  path: { type: String, default: '' },
-  line: { type: Number, default: 1 },
+const props = withDefaults(defineProps<{ content: string; path: string; line?: number }>(), {
+  line: 1,
 })
 
 const store = useEditorStore()
-const { isDark } = useTheme()
-const host = ref(null)
-let editor = null
-let model = null
-let decorations = null
+const host = ref<HTMLElement>()
+const hit = new Compartment()
 
-function setModel() {
-  const next = monaco.editor.createModel(props.content, languageFor(props.path))
-  editor.setModel(next)
-  model?.dispose()
-  model = next
-  decorations = editor.createDecorationsCollection()
-  highlight()
+let view: EditorView | undefined
+let renders = 0
+
+const hitLine = (from: number) =>
+  EditorView.decorations.of(Decoration.set(Decoration.line({ class: 'cm-searchHit' }).range(from)))
+
+const focusLine = () => {
+  if (!view) return
+
+  const { doc } = view.state
+  const line = doc.line(Math.min(Math.max(1, props.line), doc.lines))
+
+  view.dispatch({
+    selection: { anchor: line.from },
+    effects: [
+      hit.reconfigure(hitLine(line.from)),
+      EditorView.scrollIntoView(line.from, { y: 'center' }),
+    ],
+  })
 }
 
-function highlight() {
-  if (!editor || !model) return
-  const line = Math.min(Math.max(1, props.line), model.getLineCount())
-  decorations?.set([
-    {
-      range: new monaco.Range(line, 1, line, 1),
-      options: { isWholeLine: true, className: 'search-hit-line' },
-    },
-  ])
-  editor.setPosition({ lineNumber: line, column: 1 })
-  // automaticLayout measures via a ResizeObserver that has not fired yet on
-  // mount, so revealing would scroll against a zero-height viewport. Measure the
-  // host ourselves first.
-  const { width, height } = host.value.getBoundingClientRect()
-  if (width && height) editor.layout({ width, height })
-  editor.revealLineInCenter(line, monaco.editor.ScrollType.Immediate)
+const render = async () => {
+  const run = ++renders
+  const language = await loadLanguage(props.path)
+
+  if (run !== renders || !view) return
+
+  view.setState(
+    EditorState.create({
+      doc: props.content,
+      extensions: [lineNumbers(), viewerSetup, hit.of([]), language?.extension ?? []],
+    }),
+  )
+  focusLine()
 }
 
 onMounted(() => {
-  editor = monaco.editor.create(host.value, {
-    theme: editorThemeName(),
-    readOnly: true,
-    domReadOnly: true,
-    automaticLayout: true,
-    fontSize: store.fontSize,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    renderLineHighlight: 'none',
-    overviewRulerLanes: 0,
-    folding: false,
-    occurrencesHighlight: 'off',
-    contextmenu: false,
-    scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
-  })
-  setModel()
+  view = new EditorView({ parent: host.value })
+  render()
 })
 
-onBeforeUnmount(() => {
-  editor?.dispose()
-  model?.dispose()
-})
+onBeforeUnmount(() => view?.destroy())
 
-watch(() => [props.content, props.path], () => nextTick(setModel))
-watch(() => props.line, highlight)
-watch(isDark, applyEditorTheme)
+watch(() => [props.content, props.path], render)
+watch(() => props.line, focusLine)
 watch(
   () => store.fontSize,
-  (size) => editor?.updateOptions({ fontSize: size }),
+  () => view?.requestMeasure(),
 )
 </script>
+
+<template>
+  <div ref="host" class="h-full w-full" />
+</template>

@@ -1,15 +1,353 @@
+<script setup lang="ts">
+import { Button, Dropdown, dialog, Textarea, toast } from 'frappe-ui'
+import { computed, onMounted, ref } from 'vue'
+import { gitApi } from '@/api/git'
+import FileIcon from '@/components/FileIcon.vue'
+import PanelHeader from '@/components/ui/PanelHeader.vue'
+import { usePrompt } from '@/composables/usePrompt'
+import { useEditorStore } from '@/stores/editor'
+import { useGitStore } from '@/stores/git'
+import { useTreeStore } from '@/stores/tree'
+import { baseName, dirName, relTime } from '@/utils'
+
+interface Commit {
+  sha: string
+  short: string
+  subject: string
+  author: string
+  time: number
+}
+
+const emit = defineEmits<{ close: [] }>()
+
+const editor = useEditorStore()
+const git = useGitStore()
+const tree = useTreeStore()
+const { prompt } = usePrompt()
+
+const message = ref('')
+const committing = ref(false)
+const pushing = ref(false)
+const pulling = ref(false)
+const syncing = ref(false)
+const branchList = ref<string[]>([])
+const showHistory = ref(false)
+const commits = ref<Commit[]>([])
+const moreCommits = ref(false)
+const loadingCommits = ref(false)
+
+const commitPage = 30
+
+const statusColors: Record<string, string> = {
+  U: 'text-ink-green-5',
+  A: 'text-ink-green-5',
+  D: 'text-ink-red-7',
+}
+
+const letter = (code: string) => (code.includes('?') ? 'U' : code[0])
+
+const statusColor = (code: string) => statusColors[letter(code)] || 'text-ink-amber-5'
+
+const loadBranches = async () => {
+  branchList.value = (await git.branches()).branches
+}
+
+const loadCommits = async (reset = true) => {
+  loadingCommits.value = true
+
+  try {
+    const skip = reset ? 0 : commits.value.length
+    const d = await git.log(skip, commitPage)
+    const list: Commit[] = d.commits || []
+
+    commits.value = reset ? list : commits.value.concat(list)
+    moreCommits.value = !!d.more
+  } finally {
+    loadingCommits.value = false
+  }
+}
+
+const toggleHistory = () => {
+  showHistory.value = !showHistory.value
+
+  if (showHistory.value) loadCommits()
+}
+
+const stage = async (path: string) => {
+  await git.stage(path)
+}
+
+const unstage = async (path: string) => {
+  await git.unstage(path)
+}
+
+const discard = (path: string) => {
+  dialog.danger({
+    title: 'Discard changes',
+    message: `Discard changes to ${baseName(path)}?`,
+    confirmLabel: 'Discard',
+    onConfirm: async () => {
+      const r = await git.discard(path)
+
+      if (r?.ok === false) toast.error(r.message || 'Discard failed')
+      else if (editor.diff?.path === path) editor.closeDiff()
+    },
+  })
+}
+
+const stageAll = async () => {
+  for (const f of git.unstaged) await gitApi.stage(f.path)
+
+  await git.refresh()
+}
+
+const unstageAll = async () => {
+  for (const f of git.staged) await gitApi.unstage(f.path)
+
+  await git.refresh()
+}
+
+const commit = async () => {
+  if (!message.value.trim()) return
+
+  committing.value = true
+
+  try {
+    const all = git.staged.length === 0
+    const r = await git.commit(message.value.trim(), all)
+
+    if (r?.ok === false) toast.error(r.message || 'Commit failed')
+    else {
+      message.value = ''
+
+      if (showHistory.value) loadCommits()
+    }
+  } finally {
+    committing.value = false
+  }
+}
+
+const switchBranch = async (branch: string, create: boolean) => {
+  const r = await git.checkout(branch, create)
+
+  if (r?.ok === false) {
+    toast.error(r.message || 'Checkout failed')
+    return
+  }
+
+  await loadBranches()
+
+  if (showHistory.value) loadCommits()
+
+  tree.reload('')
+  // Open files now point at the other branch's content. Only reload saved tabs:
+  // refreshTab drops unsaved edits, and a checkout is no reason to lose them.
+  for (const tab of editor.tabs) {
+    if (!tab.dirty) editor.refreshTab(tab.path).catch(() => {})
+  }
+}
+
+const createBranch = async () => {
+  const name = await prompt('New branch name', '', 'feature/...')
+
+  if (name) switchBranch(name, true)
+}
+
+const push = async () => {
+  pushing.value = true
+
+  let r: Awaited<ReturnType<typeof git.push>> | undefined
+
+  try {
+    r = await git.push(false)
+  } finally {
+    pushing.value = false
+  }
+
+  if (r?.ok !== false) return
+
+  dialog.danger({
+    title: 'Force push',
+    message: `${r.message} Force push?`,
+    confirmLabel: 'Force push',
+    onConfirm: async () => {
+      pushing.value = true
+
+      try {
+        const fr = await git.push(true)
+
+        if (fr?.ok === false) toast.error(fr.message || 'Force push failed')
+      } finally {
+        pushing.value = false
+      }
+    },
+  })
+}
+
+const pull = async () => {
+  pulling.value = true
+
+  try {
+    const r = await git.pull()
+
+    if (r?.ok === false) {
+      toast.error(r.message || 'Pull failed')
+      return false
+    }
+
+    if (showHistory.value) loadCommits()
+
+    return true
+  } finally {
+    pulling.value = false
+  }
+}
+
+// Pull before push, so a sync on a diverged branch does not just fail the push.
+const sync = async () => {
+  syncing.value = true
+
+  try {
+    if (git.behind && !(await pull())) return
+
+    await push()
+  } finally {
+    syncing.value = false
+  }
+}
+
+const refresh = () => {
+  git.refresh()
+  loadBranches()
+
+  if (showHistory.value) loadCommits()
+}
+
+const commitPlaceholder = computed(() =>
+  git.staged.length ? 'Message for staged changes' : 'Message (stages everything)',
+)
+
+const commitLabel = computed(() => {
+  const n = git.staged.length || git.unstaged.length
+
+  return `Commit${n ? ` (${n})` : ''}`
+})
+
+const hasChanges = computed(() => git.staged.length > 0 || git.unstaged.length > 0)
+const hasRemoteWork = computed(() => git.ahead > 0 || git.behind > 0)
+
+const trackingLabel = computed(() => {
+  const parts: string[] = []
+
+  if (git.behind) parts.push(`↓${git.behind}`)
+
+  if (git.ahead) parts.push(`↑${git.ahead}`)
+
+  return parts.join(' ')
+})
+
+const trackingTitle = computed(() =>
+  [
+    git.behind ? `${git.behind} commit(s) to pull` : '',
+    git.ahead ? `${git.ahead} commit(s) to push` : '',
+  ]
+    .filter(Boolean)
+    .join(', '),
+)
+
+const primary = computed(() => {
+  if (!hasChanges.value && hasRemoteWork.value) {
+    return {
+      label: `Sync Changes${trackingLabel.value ? ` ${trackingLabel.value}` : ''}`,
+      icon: 'lucide-refresh-cw',
+      disabled: syncing.value,
+      loading: syncing.value,
+      run: sync,
+    }
+  }
+
+  return {
+    label: commitLabel.value,
+    icon: 'lucide-check',
+    disabled: !message.value.trim() || committing.value,
+    loading: committing.value,
+    run: commit,
+  }
+})
+
+const remoteOptions = computed(() => [
+  { label: 'Sync Changes', icon: 'lucide-refresh-cw', onClick: sync },
+  { label: 'Pull', icon: 'lucide-arrow-down', onClick: pull },
+  { label: 'Push', icon: 'lucide-arrow-up', onClick: push },
+])
+
+// Staged and unstaged rows differ only in their actions, so describe them once.
+const fileSections = computed(() => [
+  {
+    id: 'staged',
+    title: 'Staged Changes',
+    files: git.staged,
+    bulkIcon: 'lucide-minus',
+    bulkTitle: 'Unstage all',
+    bulk: unstageAll,
+    actions: [{ icon: 'lucide-minus', title: 'Unstage', run: unstage }],
+  },
+  {
+    id: 'unstaged',
+    title: 'Changes',
+    files: git.unstaged,
+    bulkIcon: 'lucide-plus',
+    bulkTitle: 'Stage all',
+    bulk: stageAll,
+    actions: [
+      { icon: 'lucide-undo-2', title: 'Discard changes', run: discard },
+      { icon: 'lucide-plus', title: 'Stage', run: stage },
+    ],
+  },
+])
+
+// git.branch is the one owner of "where we are"; the dropdown only lists what
+// else we could check out.
+// Kept short: the header shares its width with the panel title.
+const branchLabel = computed(() => (git.branch === 'HEAD' ? 'Detached' : git.branch || 'No branch'))
+
+const branchTitle = computed(() =>
+  [`On ${branchLabel.value}`, trackingTitle.value].filter(Boolean).join(' · '),
+)
+
+const branchItems = computed(() =>
+  branchList.value.map((name) => ({
+    label: name,
+    icon: 'lucide-git-branch',
+    selected: name === git.branch,
+    onClick: () => name !== git.branch && switchBranch(name, false),
+  })),
+)
+
+const branchMenu = computed(() => [
+  { group: 'Branches', options: branchItems.value },
+  {
+    group: 'Create',
+    hideLabel: true,
+    options: [{ label: 'Create new branch…', icon: 'lucide-plus', onClick: createBranch }],
+  },
+  { group: 'Remote', options: remoteOptions.value },
+])
+
+onMounted(() => {
+  if (!git.loaded) git.refresh()
+
+  loadBranches()
+})
+</script>
+
 <template>
   <div class="flex h-full flex-col">
     <PanelHeader title="Source Control" @close="emit('close')">
       <template v-if="git.repo" #context>
-        <Dropdown :options="branchMenu" placement="bottom-end">
+        <Dropdown :options="branchMenu" align="end">
           <template #default="{ open }">
-            <Button
-              class="min-w-0"
-              variant="ghost"
-              :title="branchTitle"
-              @click="loadBranches"
-            >
+            <Button class="min-w-0" variant="ghost" :title="branchTitle" @click="loadBranches">
               <span class="ed-name">{{ branchLabel }}</span>
               <template #suffix>
                 <span v-if="trackingLabel" class="ed-meta tabular-nums">{{ trackingLabel }}</span>
@@ -88,7 +426,7 @@
                   @click.stop="action.run(file.path)"
                 />
               </div>
-              <span class="ed-lane text-xs font-semibold" :class="statusColor(file.code)">
+              <span class="ed-lane text-xs-semibold" :class="statusColor(file.code)">
                 {{ letter(file.code) }}
               </span>
             </div>
@@ -135,291 +473,3 @@
     </template>
   </div>
 </template>
-
-<script setup>
-import { ref, computed, onMounted } from 'vue'
-import { Button, Dropdown, Textarea, confirmDialog, toast } from 'frappe-ui'
-import FileIcon from '@/components/FileIcon.vue'
-import PanelHeader from '@/components/ui/PanelHeader.vue'
-import { gitApi } from '@/api/git'
-import { useEditorStore } from '@/stores/editor'
-import { useGitStore } from '@/stores/git'
-import { useTreeStore } from '@/stores/tree'
-import { usePrompt } from '@/composables/usePrompt'
-import { baseName, dirName, relTime } from '@/utils'
-
-const emit = defineEmits(['close'])
-
-const editor = useEditorStore()
-const git = useGitStore()
-const tree = useTreeStore()
-const { prompt } = usePrompt()
-
-const message = ref('')
-const committing = ref(false)
-const pushing = ref(false)
-const pulling = ref(false)
-const syncing = ref(false)
-const branchList = ref([])
-const showHistory = ref(false)
-const commits = ref([])
-const moreCommits = ref(false)
-const loadingCommits = ref(false)
-
-const COMMIT_PAGE = 30
-
-const commitPlaceholder = computed(() =>
-  git.staged.length ? 'Message for staged changes' : 'Message (stages everything)',
-)
-const commitLabel = computed(() => {
-  const n = git.staged.length || git.unstaged.length
-  return `Commit${n ? ` (${n})` : ''}`
-})
-
-const hasChanges = computed(() => git.staged.length > 0 || git.unstaged.length > 0)
-const hasRemoteWork = computed(() => git.ahead > 0 || git.behind > 0)
-
-const trackingLabel = computed(() => {
-  const parts = []
-  if (git.behind) parts.push(`↓${git.behind}`)
-  if (git.ahead) parts.push(`↑${git.ahead}`)
-  return parts.join(' ')
-})
-const trackingTitle = computed(() =>
-  [
-    git.behind ? `${git.behind} commit(s) to pull` : '',
-    git.ahead ? `${git.ahead} commit(s) to push` : '',
-  ]
-    .filter(Boolean)
-    .join(', '),
-)
-
-const primary = computed(() => {
-  if (!hasChanges.value && hasRemoteWork.value) {
-    return {
-      label: `Sync Changes${trackingLabel.value ? ` ${trackingLabel.value}` : ''}`,
-      icon: 'lucide-refresh-cw',
-      disabled: syncing.value,
-      loading: syncing.value,
-      run: sync,
-    }
-  }
-  return {
-    label: commitLabel.value,
-    icon: 'lucide-check',
-    disabled: !message.value.trim() || committing.value,
-    loading: committing.value,
-    run: commit,
-  }
-})
-
-const remoteOptions = computed(() => [
-  { label: 'Sync Changes', icon: 'lucide-refresh-cw', onClick: sync },
-  { label: 'Pull', icon: 'lucide-arrow-down', onClick: pull },
-  { label: 'Push', icon: 'lucide-arrow-up', onClick: push },
-])
-
-// Staged and unstaged rows differ only in their actions, so describe them once.
-const fileSections = computed(() => [
-  {
-    id: 'staged',
-    title: 'Staged Changes',
-    files: git.staged,
-    bulkIcon: 'lucide-minus',
-    bulkTitle: 'Unstage all',
-    bulk: unstageAll,
-    actions: [{ icon: 'lucide-minus', title: 'Unstage', run: unstage }],
-  },
-  {
-    id: 'unstaged',
-    title: 'Changes',
-    files: git.unstaged,
-    bulkIcon: 'lucide-plus',
-    bulkTitle: 'Stage all',
-    bulk: stageAll,
-    actions: [
-      { icon: 'lucide-undo-2', title: 'Discard changes', run: discard },
-      { icon: 'lucide-plus', title: 'Stage', run: stage },
-    ],
-  },
-])
-
-// git.branch is the one owner of "where we are"; the dropdown only lists what
-// else we could check out.
-// Kept short: the header shares its width with the panel title.
-const branchLabel = computed(() => (git.branch === 'HEAD' ? 'Detached' : git.branch || 'No branch'))
-
-const branchTitle = computed(() =>
-  [`On ${branchLabel.value}`, trackingTitle.value].filter(Boolean).join(' · '),
-)
-
-const branchMenu = computed(() => [
-  { group: 'Branches', items: branchItems.value },
-  { group: '', items: [{ label: 'Create new branch…', icon: 'lucide-plus', onClick: createBranch }] },
-  { group: 'Remote', items: remoteOptions.value },
-])
-
-const branchItems = computed(() =>
-  branchList.value.map((name) => ({
-    label: name,
-    icon: 'lucide-git-branch',
-    selected: name === git.branch,
-    onClick: () => name !== git.branch && switchBranch(name, false),
-  })),
-)
-
-function letter(code) {
-  return code.includes('?') ? 'U' : code[0]
-}
-function statusColor(code) {
-  return { U: 'text-ink-green-3', A: 'text-ink-green-3', D: 'text-ink-red-4' }[letter(code)] || 'text-ink-amber-3'
-}
-
-async function loadBranches() {
-  branchList.value = (await git.branches()).branches
-}
-
-async function loadCommits(reset = true) {
-  loadingCommits.value = true
-  try {
-    const skip = reset ? 0 : commits.value.length
-    const d = await git.log(skip, COMMIT_PAGE)
-    const list = d.commits || []
-    commits.value = reset ? list : commits.value.concat(list)
-    moreCommits.value = !!d.more
-  } finally {
-    loadingCommits.value = false
-  }
-}
-
-function toggleHistory() {
-  showHistory.value = !showHistory.value
-  if (showHistory.value) loadCommits()
-}
-
-async function stage(path) {
-  await git.stage(path)
-}
-async function unstage(path) {
-  await git.unstage(path)
-}
-function discard(path) {
-  confirmDialog({
-    title: 'Discard changes',
-    message: `Discard changes to ${baseName(path)}?`,
-    onConfirm: async ({ hideDialog }) => {
-      hideDialog()
-      const r = await git.discard(path)
-      if (r?.ok === false) toast.error(r.message || 'Discard failed')
-      else if (editor.diff?.path === path) editor.closeDiff()
-    },
-  })
-}
-async function stageAll() {
-  for (const f of git.unstaged) await gitApi.stage(f.path)
-  await git.refresh()
-}
-async function unstageAll() {
-  for (const f of git.staged) await gitApi.unstage(f.path)
-  await git.refresh()
-}
-
-async function commit() {
-  if (!message.value.trim()) return
-  committing.value = true
-  try {
-    const all = git.staged.length === 0
-    const r = await git.commit(message.value.trim(), all)
-    if (r?.ok === false) toast.error(r.message || 'Commit failed')
-    else {
-      message.value = ''
-      if (showHistory.value) loadCommits()
-    }
-  } finally {
-    committing.value = false
-  }
-}
-
-async function switchBranch(branch, create) {
-  const r = await git.checkout(branch, create)
-  if (r?.ok === false) {
-    toast.error(r.message || 'Checkout failed')
-    return
-  }
-  await loadBranches()
-  if (showHistory.value) loadCommits()
-  tree.reload('')
-  // Open files now point at the other branch's content. Only reload saved tabs:
-  // refreshTab drops unsaved edits, and a checkout is no reason to lose them.
-  for (const tab of editor.tabs) {
-    if (!tab.dirty) editor.refreshTab(tab.path).catch(() => {})
-  }
-}
-
-async function createBranch() {
-  const name = await prompt('New branch name', '', 'feature/...')
-  if (name) switchBranch(name, true)
-}
-
-async function push() {
-  pushing.value = true
-  let r
-  try {
-    r = await git.push(false)
-  } finally {
-    pushing.value = false
-  }
-  if (r?.ok !== false) return
-  confirmDialog({
-    title: 'Force push',
-    message: `${r.message} Force push?`,
-    onConfirm: async ({ hideDialog }) => {
-      hideDialog()
-      pushing.value = true
-      try {
-        const fr = await git.push(true)
-        if (fr?.ok === false) toast.error(fr.message || 'Force push failed')
-      } finally {
-        pushing.value = false
-      }
-    },
-  })
-}
-
-async function pull() {
-  pulling.value = true
-  try {
-    const r = await git.pull()
-    if (r?.ok === false) {
-      toast.error(r.message || 'Pull failed')
-      return false
-    }
-    if (showHistory.value) loadCommits()
-    return true
-  } finally {
-    pulling.value = false
-  }
-}
-
-// Pull before push, so a sync on a diverged branch does not just fail the push.
-async function sync() {
-  syncing.value = true
-  try {
-    if (git.behind && !(await pull())) return
-    await push()
-  } finally {
-    syncing.value = false
-  }
-}
-
-function refresh() {
-  git.refresh()
-  loadBranches()
-  if (showHistory.value) loadCommits()
-}
-
-onMounted(() => {
-  if (!git.loaded) git.refresh()
-  loadBranches()
-})
-</script>

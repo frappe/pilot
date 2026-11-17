@@ -321,6 +321,17 @@ def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
     assert client.get("/api/v1/benches").status_code == 401
 
 
+def test_login_with_unverifiable_sid_on_a_full_disk_reports_storage_full(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path)
+    monkeypatch.setattr(
+        "admin.backend.api.v1.auth.shutil.disk_usage",
+        lambda path: SimpleNamespace(total=100, used=100, free=0),
+    )
+    resp = client.post("/api/v1/auth/session", json={"sid": _login_token("wrong-secret")})
+    assert resp.status_code == 507
+    assert resp.get_json()["error"]["code"] == "storage_full"
+
+
 def test_session_creation_requires_a_json_object(tmp_path: Path) -> None:
     response = _client(tmp_path).post("/api/v1/auth/session", json=["secret"])
 

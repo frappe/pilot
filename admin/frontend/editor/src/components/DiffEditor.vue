@@ -1,60 +1,65 @@
-<template>
-  <div ref="host" class="h-full w-full"></div>
-</template>
+<script setup lang="ts">
+import { MergeView, unifiedMergeView } from '@codemirror/merge'
+import { EditorView, lineNumbers } from '@codemirror/view'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-<script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { monaco, languageFor, editorThemeName, applyEditorTheme } from '@/monaco'
-import { useTheme } from '@/composables/useTheme'
+import { loadLanguage } from '@/codemirror/languages'
+import { viewerSetup } from '@/codemirror/setup'
 import { useMobile } from '@/composables/useMobile'
 import { useEditorStore } from '@/stores/editor'
 
-const props = defineProps({
-  original: { type: String, default: '' },
-  modified: { type: String, default: '' },
-  path: { type: String, default: '' },
-})
+const props = defineProps<{ original: string; modified: string; path: string }>()
 
 const store = useEditorStore()
-const { isDark } = useTheme()
 const { isMobile } = useMobile()
-const host = ref(null)
-let editor = null
-let originalModel = null
-let modifiedModel = null
+const host = ref<HTMLElement>()
 
-function setModels() {
-  const lang = languageFor(props.path)
-  originalModel?.dispose()
-  modifiedModel?.dispose()
-  originalModel = monaco.editor.createModel(props.original, lang)
-  modifiedModel = monaco.editor.createModel(props.modified, lang)
-  editor?.setModel({ original: originalModel, modified: modifiedModel })
+let diff: MergeView | EditorView | undefined
+let renders = 0
+
+const render = async () => {
+  const run = ++renders
+  const language = await loadLanguage(props.path)
+
+  if (run !== renders || !host.value) return
+
+  const extensions = [lineNumbers(), viewerSetup, language?.extension ?? []]
+
+  diff?.destroy()
+  diff = isMobile.value
+    ? new EditorView({
+        parent: host.value,
+        doc: props.modified,
+        extensions: [
+          ...extensions,
+          unifiedMergeView({ original: props.original, mergeControls: false }),
+        ],
+      })
+    : new MergeView({
+        parent: host.value,
+        a: { doc: props.original, extensions },
+        b: { doc: props.modified, extensions },
+      })
 }
 
-onMounted(() => {
-  editor = monaco.editor.createDiffEditor(host.value, {
-    theme: editorThemeName(),
-    readOnly: true,
-    automaticLayout: true,
-    fontSize: store.fontSize,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    renderOverviewRuler: false,
-    renderSideBySide: !isMobile.value,
-  })
-  setModels()
-})
+onMounted(render)
 
 onBeforeUnmount(() => {
-  editor?.dispose()
-  originalModel?.dispose()
-  modifiedModel?.dispose()
+  renders++
+  diff?.destroy()
 })
 
-watch(() => [props.original, props.modified, props.path], setModels)
-watch(isDark, applyEditorTheme)
-watch(() => store.fontSize, (s) => editor?.updateOptions({ fontSize: s }))
-watch(isMobile, (m) => editor?.updateOptions({ renderSideBySide: !m }))
+watch(() => [props.original, props.modified, props.path, isMobile.value], render)
+watch(
+  () => store.fontSize,
+  () => {
+    const views = diff instanceof MergeView ? [diff.a, diff.b] : [diff]
+
+    for (const view of views) view?.requestMeasure()
+  },
+)
 </script>
+
+<template>
+  <div ref="host" class="h-full w-full" />
+</template>

@@ -1,28 +1,62 @@
 import { defineStore } from 'pinia'
+
 import { filesApi } from '@/api/files'
 import { sessionApi } from '@/api/session'
 import { useGitStore } from '@/stores/git'
 import { baseName } from '@/utils'
 
-const autosaveTimers = new Map()
+export interface Tab {
+  path: string
+  name: string
+  content: string
+  saved: string
+  etag: string
+  dirty: boolean
+  preview: boolean
+  external?: number
+  saving?: boolean
+  saveAgain?: boolean
+}
+
+export interface Reveal {
+  path: string
+  line: number
+  col: number
+  ts: number
+}
+
+interface Cursor {
+  line: number
+  col: number
+}
+
+export interface Snapshot {
+  tabs: string[]
+  active: string | null
+  cursors?: Record<string, Cursor>
+  autosave?: boolean
+  blame?: boolean
+}
+
+const autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 const MIN_FONT = 9
 const MAX_FONT = 24
-const clampFont = (n) => Math.min(MAX_FONT, Math.max(MIN_FONT, n || 13))
+const clampFont = (n: number) => Math.min(MAX_FONT, Math.max(MIN_FONT, n || 13))
 
 export const useEditorStore = defineStore('editor', {
   state: () => ({
-    tabs: [],
-    activePath: null,
+    tabs: [] as Tab[],
+    activePath: null as string | null,
     // Bumped on every open() call (even re-opening the active file) so the UI
     // can react to "a file was opened" regardless of whether the path changed.
     openTick: 0,
-    conflict: null,
-    reveal: null,
-    diff: null,
+    conflict: null as { path: string; disk: string; etag: string } | null,
+    reveal: null as Reveal | null,
+    diff: null as { path: string; staged: boolean } | null,
     // Set to { sha } while viewing a past commit's changes.
-    commit: null,
-    cursors: {},
+    commit: null as { sha: string } | null,
+    cursors: {} as Record<string, Cursor>,
     autosave: localStorage.getItem('hatch-autosave') !== '0',
     blame: localStorage.getItem('hatch-blame') === '1',
     fontSize: clampFont(Number(localStorage.getItem('hatch-fontsize'))),
@@ -36,7 +70,10 @@ export const useEditorStore = defineStore('editor', {
   actions: {
     // preview: open in the single reusable preview slot (single click); a
     // permanent open (double click, or editing) pins the tab in place.
-    async open(path, { line, col, preview = false } = {}) {
+    async open(
+      path: string,
+      { line, col, preview = false }: { line?: number; col?: number; preview?: boolean } = {},
+    ) {
       let t = this.tabs.find((t) => t.path === path)
       if (!t) {
         const data = await filesApi.read(path)
@@ -44,7 +81,15 @@ export const useEditorStore = defineStore('editor', {
         // dblclick (permanent) which race here; without this they'd both push.
         t = this.tabs.find((t) => t.path === path)
         if (!t) {
-          t = { path, name: baseName(path), content: data.content, saved: data.content, etag: data.etag, dirty: false, preview }
+          t = {
+            path,
+            name: baseName(path),
+            content: data.content,
+            saved: data.content,
+            etag: data.etag,
+            dirty: false,
+            preview,
+          }
           const slot = preview ? this.tabs.findIndex((x) => x.preview) : -1
           if (slot !== -1) this.tabs.splice(slot, 1, t)
           else this.tabs.push(t)
@@ -55,11 +100,11 @@ export const useEditorStore = defineStore('editor', {
       this.openTick++
       if (line) this.reveal = { path, line, col: col || 1, ts: Date.now() }
     },
-    pin(path) {
+    pin(path: string) {
       const t = this.tabs.find((t) => t.path === path)
       if (t) t.preview = false
     },
-    async refreshTab(path) {
+    async refreshTab(path: string) {
       const t = this.tabs.find((t) => t.path === path)
       if (!t) return
       const data = await filesApi.read(path)
@@ -69,7 +114,7 @@ export const useEditorStore = defineStore('editor', {
       t.dirty = false
       t.external = (t.external || 0) + 1
     },
-    setContent(path, content) {
+    setContent(path: string, content: string) {
       const t = this.tabs.find((t) => t.path === path)
       if (!t) return
       t.content = content
@@ -94,18 +139,18 @@ export const useEditorStore = defineStore('editor', {
       this.blame = !this.blame
       localStorage.setItem('hatch-blame', this.blame ? '1' : '0')
     },
-    setFontSize(n) {
+    setFontSize(n: number) {
       this.fontSize = clampFont(n)
       localStorage.setItem('hatch-fontsize', String(this.fontSize))
     },
-    bumpFont(delta) {
+    bumpFont(delta: number) {
       this.setFontSize(this.fontSize + delta)
     },
     toggleMobileEdit() {
       this.mobileEdit = !this.mobileEdit
       localStorage.setItem('hatch-mobileedit', this.mobileEdit ? '1' : '0')
     },
-    async save(path) {
+    async save(path: string): Promise<void> {
       const t = this.tabs.find((t) => t.path === path)
       if (!t) return
       // Serialize saves per file. Overlapping saves (autosave + manual, or
@@ -137,7 +182,7 @@ export const useEditorStore = defineStore('editor', {
         }
       }
     },
-    async resolveConflict(action) {
+    async resolveConflict(action: 'override' | 'reload' | 'cancel') {
       const c = this.conflict
       this.conflict = null
       if (!c) return
@@ -156,7 +201,7 @@ export const useEditorStore = defineStore('editor', {
         t.external = (t.external || 0) + 1
       }
     },
-    close(path) {
+    close(path: string) {
       const i = this.tabs.findIndex((t) => t.path === path)
       if (i === -1) return
       this.tabs.splice(i, 1)
@@ -165,7 +210,7 @@ export const useEditorStore = defineStore('editor', {
         this.activePath = next ? next.path : null
       }
     },
-    closeOthers(path) {
+    closeOthers(path: string) {
       for (const t of [...this.tabs]) {
         if (t.path !== path) this.close(t.path)
       }
@@ -179,21 +224,21 @@ export const useEditorStore = defineStore('editor', {
         if (!t.dirty) this.close(t.path)
       }
     },
-    openDiff(path, staged = false) {
+    openDiff(path: string, staged = false) {
       this.diff = { path, staged: !!staged }
       this.commit = null
     },
     closeDiff() {
       this.diff = null
     },
-    openCommit(sha) {
+    openCommit(sha: string) {
       this.commit = { sha }
       this.diff = null
     },
     closeCommit() {
       this.commit = null
     },
-    renamePath(from, to) {
+    renamePath(from: string, to: string) {
       const t = this.tabs.find((t) => t.path === from)
       if (t) {
         t.path = to
@@ -201,21 +246,27 @@ export const useEditorStore = defineStore('editor', {
         if (this.activePath === from) this.activePath = to
       }
     },
-    closeUnder(prefix) {
+    closeUnder(prefix: string) {
       const pfx = prefix + '/'
       this.tabs
         .filter((t) => t.path === prefix || t.path.startsWith(pfx))
         .forEach((t) => this.close(t.path))
     },
-    setCursor(path, line, col) {
+    setCursor(path: string, line: number, col: number) {
       if (path) this.cursors[path] = { line, col }
     },
     snapshot() {
-      const cursors = {}
+      const cursors: Record<string, Cursor> = {}
       for (const t of this.tabs) if (this.cursors[t.path]) cursors[t.path] = this.cursors[t.path]
-      return { tabs: this.tabs.map((t) => t.path), active: this.activePath, cursors, autosave: this.autosave, blame: this.blame }
+      return {
+        tabs: this.tabs.map((t) => t.path),
+        active: this.activePath,
+        cursors,
+        autosave: this.autosave,
+        blame: this.blame,
+      }
     },
-    async restore(snap) {
+    async restore(snap: Partial<Snapshot> | null) {
       if (!snap || !Array.isArray(snap.tabs) || !snap.tabs.length) return
       if (typeof snap.autosave === 'boolean') this.autosave = snap.autosave
       if (typeof snap.blame === 'boolean') this.blame = snap.blame
