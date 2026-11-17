@@ -41,7 +41,7 @@ def test_external_server_does_not_infer_pilot_managed_socket(tmp_path) -> None:
         patch.object(type(manager), "state_dir", new_callable=PropertyMock, return_value=tmp_path),
         patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
     ):
-        assert manager._detect_socket() == ""
+        assert manager.client_socket == ""
 
 
 def test_default_port_avoids_standard_mysql_port() -> None:

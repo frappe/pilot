@@ -1117,7 +1117,7 @@ class MariaDBManager(UserOwnedDBManager):
             self.config.admin_user,
             "--batch",
         ]
-        socket_path = self._detect_socket()
+        socket_path = self.client_socket
         if socket_path:
             cmd.append(f"--socket={socket_path}")
         elif self.config.existing or not HostPlatform().is_macos:
@@ -1245,7 +1245,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Open an admin connection to the shared MariaDB server."""
         import pymysql
 
-        socket = self._detect_socket() or None
+        socket = self.client_socket or None
         return pymysql.connect(
             host=self.config.host,
             port=self.config.port,
@@ -1260,8 +1260,9 @@ class MariaDBManager(UserOwnedDBManager):
             ssl_disabled=is_local_host(self.config.host, socket),
         )
 
-    def _detect_socket(self) -> str:
-        """The server socket path, or an empty string for TCP."""
+    @property
+    def client_socket(self) -> str:
+        """The socket clients should use, or an empty string for TCP."""
         if self.config.socket_path:
             return self.config.socket_path
         if self.config.existing:

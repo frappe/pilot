@@ -39,6 +39,21 @@ def test_clone_uses_site_engine_instead_of_bench_defaults(
     assert imported[0]["db_port"] == getattr(destination.config, site_engine).port
 
 
+@pytest.mark.parametrize(("client_socket", "expected"), [("/pilot/run/mysqld.sock", "/pilot/run/mysqld.sock"), ("", None)])
+def test_clone_writes_the_socket_pilot_mariadb_listens_on(source, monkeypatch, client_socket, expected):
+    """Without db_socket, localhost means the default socket, which may be a system MariaDB."""
+    assert not source.config.mariadb.socket_path
+    imported = []
+    monkeypatch.setattr(
+        "pilot.managers.database.mariadb.MariaDBManager.client_socket", property(lambda self: client_socket)
+    )
+    monkeypatch.setattr(SiteDatabaseClone, "run", lambda self: imported.append(self.config.copy()))
+    monkeypatch.setattr(SiteClone, "finish", lambda *args: None)
+    monkeypatch.setattr("pilot.core.site.clone_runtime.CloneRuntime", lambda *args, **kwargs: nullcontext())
+    source.site("source.localhost").clone("copy.localhost", on_progress=lambda message: None)
+    assert imported[0].get("db_socket") == expected
+
+
 def test_clone_rejects_unsupported_site_engine_even_on_mariadb_bench(source):
     original = source.site("source.localhost")
     path = original.path / "site_config.json"
