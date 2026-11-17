@@ -29,7 +29,7 @@ const props = withDefaults(defineProps<Props>(), {
 const iconTone: Record<string, string> = {
   done: 'text-ink-gray-5',
   running: 'text-ink-gray-8 animate-pulse',
-  failed: 'text-ink-gray-5',
+  failed: 'text-ink-red-6',
 }
 
 const note = computed(() => {

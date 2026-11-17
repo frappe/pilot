@@ -164,7 +164,7 @@ onMounted(() => {
 
   <ErrorMessage v-else-if="error" class="px-3 md:px-4 py-12" :message="error" />
 
-  <div v-else-if="task" class="mx-auto p-3 md:p-4 md:pt-8 pb-10 md:pb-10 max-w-[1000px]">
+  <div v-else-if="task" class="mx-auto p-3 md:p-4 xl:pt-8 pb-10 md:pb-10 max-w-[1000px]">
     <Teleport defer to="#header-badge">
       <Badge :label="statusConfig(task).label" :theme="statusConfig(task).theme" />
     </Teleport>
@@ -195,12 +195,12 @@ onMounted(() => {
     <TaskDebugDialog v-model="showDebug" :task-id="taskId" />
 
     <dl
-      class="lg:flex gap-x-4 gap-y-2 grid grid-cols-2 sm:grid-cols-3 lg:divide-x divide-outline-gray-1.5 p-3 lg:px-4 lg:py-3.5 border border-outline-gray-1.5 rounded-5"
+      class="lg:flex gap-x-4 lg:gap-x-10 gap-y-2 grid grid-cols-2 sm:grid-cols-3 p-3 lg:px-4 lg:py-3.5 border border-outline-gray-1.5 rounded-5"
     >
       <div
         v-for="fact in facts"
         :key="fact.label"
-        class="flex flex-col grow gap-1 lg:gap-1.5 lg:px-5 lg:first:pl-0 min-w-0"
+        class="flex flex-col grow gap-1 lg:gap-1.5 min-w-0"
       >
         <dt class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
           <span class="size-3.5 text-ink-gray-4" :class="fact.icon" />
