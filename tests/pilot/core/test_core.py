@@ -486,6 +486,7 @@ def test_app_install_checks_out_the_pinned_commit_before_validating(tmp_path: Pa
     seen_at_validation = {}
 
     with (
+        patch.object(type(bench), "is_initialized", new=True),
         patch.object(App, "validate", lambda self: seen_at_validation.update(sha=self.installed_hash)),
         patch.object(App, "_install_into_environment"),
         patch.object(App, "_build_assets_via_env_manager"),
