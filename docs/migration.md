@@ -292,7 +292,7 @@ The normal update form never enables broad `--skip-failing` behavior.
 
 The Admin API calls this action **Restore**. Internally, the current task and state names use **revert**. Restore runs as its own task chain, one task per unit of work, the same way the forward update/migrate flow does:
 
-1. `RevertMigrationTask` checks that every required safeguard exists, then arms the chain.
+1. `RevertMigrationTask` checks that every migrated site has a backup, then arms the chain.
 2. `RevertAppsTask` returns selected apps to their captured commits, reinstalls dependencies, and rebuilds assets.
 3. `RevertSiteTask` runs once per migrated site: selectively restores MariaDB tables (or restores the whole SQLite/PostgreSQL database) and removes tables created by the migration, then clears that site's cache.
 4. `RestartServicesTask` restores maintenance and scheduler settings, restarts services, and marks the operation `reverted`.
@@ -302,6 +302,8 @@ Each step is checkpointed in `revert_checkpoints` (`apps`, `site:<name>` per sit
 Before importing MariaDB tables, Restore checks that the saved table inventory is valid and every required table dump exists. A missing inventory or dump stops Restore before database changes. Repair the recovery files, then use Restore again.
 
 Restore skips an app that was removed from the bench after the update and a site that was dropped after the failure. Neither has anything left to restore.
+
+Restore is offered (`can_restore`) when the operation changed something and every site that the migrate reached has a backup. A site still waiting to migrate needs no backup. So when a backup fails after a branch switch, Restore returns the app to its old branch, skips the database restores, and restarts the services. An operation that changed nothing, such as an update whose backup failed before the code changed, offers only Retry and Dismiss.
 
 ### Dismiss
 
