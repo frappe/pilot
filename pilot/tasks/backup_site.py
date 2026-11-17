@@ -40,7 +40,7 @@ class BackupSiteTask(Task):
             self.with_files = options["with_files"]
         self.backup()
 
-    @step("backup", lambda self: f"Backup site {self.site}")
+    @step("backup", lambda self: f"Backup site {self.site}", icon="lucide-database")
     def backup(self) -> None:
         """Take, upload and prune a backup, and record it."""
         try:
@@ -78,7 +78,7 @@ class BackupSiteTask(Task):
             return False
         return self.upload_to_s3(timestamp, backup_files)
 
-    @step("backup_upload", "Uploading backup to S3")
+    @step("backup_upload", "Uploading backup to S3", icon="lucide-database")
     def upload_to_s3(self, timestamp: str, backup_files: list[Path]) -> bool:
         """Upload the backup to S3; return whether that worked."""
         try:
@@ -90,7 +90,7 @@ class BackupSiteTask(Task):
             print(f"Something seems wrong with s3 integration currently skipping remote upload: {e!s}")
             return False
 
-    @step("retention", "Applying backup retention")
+    @step("retention", "Applying backup retention", icon="lucide-trash-2")
     def prune(self) -> list[str]:
         """Retention runs after every backup; a failure here must not fail the backup."""
         try:

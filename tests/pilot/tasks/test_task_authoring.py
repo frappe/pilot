@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
@@ -24,6 +25,10 @@ class DemoTask(Task):
     @step("work", "Do work")
     def succeed(self) -> None:
         return None
+
+    @step("build", "Build assets", icon="lucide-hammer")
+    def build(self) -> None:
+        pass
 
 
 def task(tmp_path: Path) -> DemoTask:
@@ -129,7 +134,9 @@ def test_task_bool_field_becomes_store_true_flag(tmp_path: Path) -> None:
 def test_a_bool_field_that_defaults_to_true_reaches_the_task_either_way(tmp_path: Path, value: bool) -> None:
     from pilot.tasks.rename_site import RenameSiteTask
 
-    argv = task_argv_suffix(RenameSiteTask, {"site": "a.localhost", "new_name": "b.localhost", "keep_old_hostname": value})
+    argv = task_argv_suffix(
+        RenameSiteTask, {"site": "a.localhost", "new_name": "b.localhost", "keep_old_hostname": value}
+    )
 
     assert parse_task(RenameSiteTask, tmp_path, argv).keep_old_hostname is value
 
@@ -205,3 +212,14 @@ def test_task_argv_suffix_is_derived_from_task_fields() -> None:
         "--mode",
         "safe",
     ]
+
+
+def test_step_prints_its_icon_only_when_given(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    demo = task(tmp_path)
+
+    demo.succeed()
+    demo.build()
+
+    output = capsys.readouterr().out
+    assert re.search(r"^STEP work,[\d.]+ Do work$", output, re.M)
+    assert re.search(r"^STEP build,[\d.]+,lucide-hammer Build assets$", output, re.M)

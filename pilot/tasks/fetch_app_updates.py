@@ -62,7 +62,7 @@ class FetchAppUpdatesTask(Task):
             "",
         )
 
-    @step("fetch", "Check for app updates")
+    @step("fetch", "Check for app updates", icon="lucide-download")
     def fetch(self) -> dict[str, dict]:
         """The available update of each app."""
         apps_dir = self.bench_root / "apps"

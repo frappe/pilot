@@ -59,13 +59,13 @@ const stageIcon: Record<string, Component | string> = {
 }
 
 const tileTone: Record<Status, string> = {
-  done: 'bg-surface-gray-1 border-outline-gray-1.5 text-ink-gray-6',
-  failed: 'bg-surface-red-1 border-outline-red-3 text-ink-red-6',
-  stopped: 'bg-surface-gray-1 border-outline-gray-4 text-ink-gray-6',
-  running: 'bg-surface-gray-1 border-outline-gray-1.5 text-ink-gray-7',
-  waiting: 'border-dashed border-outline-gray-4 text-ink-gray-5',
-  skipped: 'border-dashed border-outline-gray-4 text-ink-gray-5',
-  unknown: 'bg-surface-gray-1 border-outline-gray-1.5 text-ink-gray-5',
+  done: 'bg-surface-gray-1 text-ink-gray-6',
+  failed: 'bg-surface-red-1 text-ink-red-6',
+  stopped: 'bg-surface-gray-1 text-ink-gray-6',
+  running: 'text-ink-gray-7',
+  waiting: 'border border-dashed border-outline-gray-4 text-ink-gray-5',
+  skipped: 'border border-dashed border-outline-gray-4 text-ink-gray-5',
+  unknown: 'bg-surface-gray-1 text-ink-gray-5',
 }
 
 const logStatus: Record<string, Status> = {
@@ -446,9 +446,6 @@ const subtext = (stage: Stage) => [outcome(stage), stageNote(stage)].filter(Bool
 
 const failedKey = computed(() => stages.value.find((stage) => stage.status === 'failed')?.key)
 
-const threadTone = (next?: Stage) =>
-  next && isIdle(next.status) ? '[--step-thread-color:var(--outline-gray-1-5)]' : ''
-
 const matrixLine = (panel: Panel) => {
   const done = panel.rows.filter((row) => row.status === 'done').length
   const total = panel.rows.length
@@ -521,13 +518,13 @@ watch(
 
     <ol class="[&:not(:first-child)]:mt-4">
       <li
-        v-for="(stage, index) in stages"
+        v-for="stage in stages"
         :key="stage.key"
         class="relative grid grid-cols-[36px_minmax(0,1fr)] gap-x-3 pb-8 last:pb-0 step-thread"
-        :class="threadTone(stages[index + 1])"
+        :class="stage.status !== 'done' && 'step-thread-open'"
       >
         <span
-          class="relative place-items-center grid border rounded-5 size-9"
+          class="relative place-items-center grid rounded-5 size-9"
           :class="[tileTone[stage.status], stage.status === 'running' && 'status-ring']"
         >
           <span
@@ -580,7 +577,7 @@ watch(
             :class="shown.has(stage.key) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
           >
             <div class="overflow-hidden">
-              <div class="space-y-2 bg-surface-gray-0 mt-4 px-4 py-1.5 border border-outline-gray-1.5 rounded-5">
+              <div class="space-y-2 bg-surface-gray-0 mt-4 px-4 py-1.5 rounded-5">
                 <section v-for="panel in stage.panels" :key="panel.key">
                   <h3 v-if="panel.title" class="flex items-baseline gap-2 pt-1.5 h-7 text-ink-gray-5 text-sm">
                     <span class="text-ink-gray-7 text-base-medium">{{ panel.title }}</span>

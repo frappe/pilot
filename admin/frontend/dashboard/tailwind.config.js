@@ -8,6 +8,7 @@ export default {
     './index.html',
     './src/**/*.{vue,js,ts}',
     './node_modules/frappe-ui/src/**/*.{vue,js,ts}',
+    '../../../pilot/tasks/**/*.py',
   ],
   theme: {
     extend: {

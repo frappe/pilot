@@ -14,7 +14,7 @@ class RefreshStorageUsageTask(Task):
     static_resource_keys: ClassVar[tuple[str, ...]] = ("site-storage",)
     timeout_seconds: ClassVar[int] = 300
 
-    @step("measure", "Measuring every site's files and database")
+    @step("measure", "Measuring every site's files and database", icon="lucide-shield-check")
     def run(self) -> None:
         """Measure the site storage."""
         self.bench.site_storage.collect()

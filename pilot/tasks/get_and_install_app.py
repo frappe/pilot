@@ -32,7 +32,7 @@ class GetAndInstallAppTask(Task):
         self.reload_for_new_app()
         self.install_on_sites(result.app)
 
-    @step("reload", "Reload workers for the new app")
+    @step("reload", "Reload workers for the new app", icon="lucide-refresh-cw")
     def reload_for_new_app(self) -> None:
         """install-app enqueues jobs that import the app, and the running workers
         were started before it existed - they must restart before the site install."""
@@ -49,7 +49,7 @@ class GetAndInstallAppTask(Task):
             on_step=self.step,
         )
 
-    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
+    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}", icon="lucide-download")
     def look_up(self) -> tuple[App, str]:
         """The app to install and the commit to pin it at."""
         if not self.marketplace_app:
@@ -63,7 +63,11 @@ class GetAndInstallAppTask(Task):
         """Install the app on each site."""
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
-            with self.step(f"install_{safe_key}_{app.config.name}", f"Install {app.config.name} on {site}"):
+            with self.step(
+                f"install_{safe_key}_{app.config.name}",
+                f"Install {app.config.name} on {site}",
+                icon="lucide-package-plus",
+            ):
                 self.bench.site(site).install_app(app)
 
 

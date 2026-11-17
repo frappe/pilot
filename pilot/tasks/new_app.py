@@ -33,7 +33,7 @@ class NewAppTask(Task):
         restart once a new app is registered."""
         return {"web_only": False}
 
-    @step("create", lambda self: f"Create {self.name}")
+    @step("create", lambda self: f"Create {self.name}", icon="lucide-package-plus")
     def scaffold(self) -> None:
         """Create the app files."""
         options = NewAppOptions(
