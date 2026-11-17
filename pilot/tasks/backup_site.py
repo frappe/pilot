@@ -50,6 +50,8 @@ class BackupSiteTask(Task):
             self.record(status="failed", timestamp="", files={}, offsite=False, pruned=[])
             self.notify_if_failing()
             sys.exit(getattr(error, "returncode", None) or 1)
+        if offsite and self.with_files:
+            self.record_files_index(timestamp)
         pruned = self.prune()
         self.record(status="success", timestamp=timestamp, files=files, offsite=offsite, pruned=pruned)
 
@@ -89,6 +91,16 @@ class BackupSiteTask(Task):
         except S3IntegrationError as e:
             print(f"Something seems wrong with s3 integration currently skipping remote upload: {e!s}")
             return False
+
+    @step("backup_files_index", "Recording backup file index", icon="lucide-list")
+    def record_files_index(self, timestamp: str) -> None:
+        """Store the site's File index with the offsite run; a failure here must not fail the backup."""
+        try:
+            index = self.site_record.backups.get_files_index()
+            offsite_backup = OffsiteBackup.from_config(self.bench.config.s3, self.bench_root)
+            offsite_backup.set_files_index(self.site, timestamp, index)
+        except Exception as e:
+            print(f"Backup file index skipped due to error: {e!s}")
 
     @step("retention", "Applying backup retention", icon="lucide-trash-2")
     def prune(self) -> list[str]:

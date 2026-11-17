@@ -1,5 +1,6 @@
 """Offsite backup storage: uploads/downloads/deletes a bench's site backups in S3."""
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,15 @@ class BackupKeys:
         """The prefix of the metadata keys."""
         return f"sites/{self.site_name}/backups_metadata/"
 
+    def get_files_index_key(self, timestamp: str) -> str:
+        """The key of a run's File index, named like Frappe names the run's files."""
+        site_slug = self.site_name.replace(".", "_")
+        return f"{self.month_prefix}{timestamp}-{site_slug}-files-index.json"
+
+    def is_month_key(self, key: str) -> bool:
+        """Whether the key is a monthly metadata file, not a File index."""
+        return re.fullmatch(r"\d{4}-\d{2}\.json", key.removeprefix(self.month_prefix)) is not None
+
 
 class Metadata:
     """Monthly offsite-backup index, locked during read-modify-write."""
@@ -63,22 +73,25 @@ class Metadata:
             runs.setdefault(timestamp, {})[_file_type(filename)] = filename
             self.s3.write_json(self.bucket, key, runs)
 
-    def remove(self, timestamp: str, filename: str) -> None:
-        """Remove a backup file from the month metadata."""
+    def remove(self, timestamp: str, filename: str) -> bool:
+        """Remove a backup file from the month metadata. True when that emptied the run."""
         key = self.keys.get_month_key(timestamp)
         with exclusive_file_lock(self.lock):
             runs = self._read_month(key)
             run = runs.get(timestamp)
             if run is None:
-                return
+                return False
             run.pop(_file_type(filename), None)
             if not run:
                 runs.pop(timestamp)
             self.s3.write_json(self.bucket, key, runs)
+            return not run
 
     def iter_runs(self) -> Iterator[tuple[str, dict[str, str]]]:
         """Yield (timestamp, files) pairs newest first, one month at a time."""
-        month_keys = self.s3.list_objects(self.bucket, prefix=self.keys.month_prefix)
+        month_keys = filter(
+            self.keys.is_month_key, self.s3.list_objects(self.bucket, prefix=self.keys.month_prefix)
+        )
         for key in sorted(month_keys, reverse=True):
             runs = self.s3.read_json(self.bucket, key)
             for timestamp in sorted(runs, reverse=True):
@@ -138,7 +151,13 @@ class OffsiteBackup:
         """Delete a backup file and its record."""
         keys = BackupKeys(site_name)
         self.s3.delete_object(self.bucket, keys.get_file_key(timestamp, filename))
-        self._metadata(keys).remove(timestamp, filename)
+        # S3 deletes of a missing key succeed, so runs without an index need no check.
+        if self._metadata(keys).remove(timestamp, filename):
+            self.s3.delete_object(self.bucket, keys.get_files_index_key(timestamp))
+
+    def set_files_index(self, site_name: str, timestamp: str, index: dict[str, list[dict]]) -> None:
+        """Store the run's File index next to the month metadata."""
+        self.s3.write_json(self.bucket, BackupKeys(site_name).get_files_index_key(timestamp), index)
 
     def list_backups(self, site_name: str, limit: int | None = None) -> dict[str, dict[str, str]]:
         """Return offsite backup runs newest first, keyed by timestamp."""
