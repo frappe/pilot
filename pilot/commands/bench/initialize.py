@@ -27,9 +27,18 @@ class InitCommand(Command):
             "Downloads prebuilt assets when published. For test jobs that never serve web pages."
         ),
     ] = False
+    country: Annotated[
+        str,
+        Arg(
+            help="Country, such as India. The first bench sets it for the server; "
+            "a later bench may pick another for itself. Fixed once initialised."
+        ),
+    ] = ""
 
     def run(self) -> None:
         """Set up the bench."""
+        if self.country:
+            self.bench.choose_country(self.country)
         if self.no_dev:
             self.bench.config.install_dev_extra = False
             self.bench.config.write(self.bench.path)

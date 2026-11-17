@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import BenchConfig
+from pilot.config.country import DEFAULT_COUNTRY, validate_country
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
@@ -738,6 +739,34 @@ class Bench:
         from admin.backend.internal.session import Session
 
         return Session(self).issue_setup_link_token()
+
+    @property
+    def country(self) -> str:
+        """This bench's own country, else the server's, else India."""
+        return self.config.country or self.config.server_country or DEFAULT_COUNTRY
+
+    def choose_country(self, country: str) -> None:
+        """Pick the country; it is fixed once the bench is initialised."""
+        validate_country(country)
+        if self.is_initialized:
+            if country != self.country:
+                raise BenchError(f"This bench's country is already {self.country} and cannot be changed.")
+            return
+        self.config.country = country
+        self.config.write(self.path)
+
+    def settle_country(self) -> None:
+        """Give the server this bench's country when it has none; keep only a different one here."""
+        config = self.config
+        if not config.country:
+            return
+        if not config.server_country:
+            config.server_country, config.country = config.country, ""
+        elif config.country == config.server_country:
+            config.country = ""
+        else:
+            return
+        config.write(self.path)
 
     def initialize(
         self, commit: str = "", skip_frontend: bool = False, on_progress: Callable[[str], None] = lambda message: None

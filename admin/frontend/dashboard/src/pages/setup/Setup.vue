@@ -23,6 +23,9 @@ const {
   dbPortPlaceholder,
   appRepo,
   appBranch,
+  country,
+  countryOptions,
+  serverCountry,
   rootUserPlaceholder,
   dbTypeOptions,
   branchOptions,
@@ -68,6 +71,21 @@ const {
         <LoadingText v-show="currentStep === 'loading'" class="justify-center py-10" />
 
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
+          <div v-if="serverCountry" class="flex flex-col gap-1.5">
+            <TextInput label="Country" :model-value="serverCountry" disabled />
+            <p class="text-ink-gray-5 text-p-sm">Set by the first bench on this server.</p>
+          </div>
+          <div v-else class="flex flex-col gap-1.5">
+            <Combobox
+              label="Country"
+              v-model="country"
+              :options="countryOptions"
+              placeholder="Search countries…"
+            />
+            <p class="text-ink-gray-5 text-p-sm">
+              Shared by every bench on this server. It can't be changed later.
+            </p>
+          </div>
           <Select side="bottom" label="Database engine" v-model="dbType" :options="dbTypeOptions" />
           <Select side="bottom" label="Database setup" v-model="dbMode" :options="dbModeOptions" />
           <template v-if="dbMode === 'external'">

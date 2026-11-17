@@ -215,6 +215,10 @@ class BenchConfig:
     # Whether `uv pip install -e` pulls an app's `dev` extra, such as frappe's watchdog.
     install_dev_extra: bool = True
     onboarding: str = ""
+    # This bench's own country, when it differs from the server's; see Bench.country.
+    country: str = ""
+    # common_config.toml's country, shared by every bench.
+    server_country: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
     lite_mode: LiteModeConfig = field(default_factory=LiteModeConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -318,6 +322,8 @@ class BenchConfig:
             enable_code_editor=bench_data.get("enable_code_editor", True),
             install_dev_extra=bench_data.get("install_dev_extra", True),
             onboarding=bench_data.get("onboarding", ""),
+            country=bench_data.get("country", ""),
+            server_country=common.country,
             apps=apps,
             mariadb=common.mariadb,
             postgres=common.postgres,
@@ -632,6 +638,7 @@ class BenchConfig:
             frappe_cloud=self.frappe_cloud,
             jwks_url=self.admin.jwks_url,
             jwks_audience=self.admin.jwks_audience,
+            country=self.server_country,
         )
         # This view of the shared file was read without holding its lock, so only
         # the settings it actually changed are applied - writing all of them back
@@ -685,6 +692,8 @@ class BenchConfig:
             bench["default_branch"] = self.default_branch
         if self.onboarding:
             bench["onboarding"] = self.onboarding
+        if self.country:
+            bench["country"] = self.country
         return bench
 
     def _apps_section(self) -> list[ConfigDict]:
@@ -881,6 +890,7 @@ class BenchConfig:
         settings["app_branch"] = app.branch
         settings["workers"] = [group.to_dict() for group in self.workers.groups]
         settings["production_process_manager"] = self.production.process_manager or "none"
+        settings["country"] = self.country
         return settings
 
     # -- wizard defaults --
@@ -1002,6 +1012,7 @@ _BENCH_KEYS = {
     "enable_code_editor",
     "install_dev_extra",
     "onboarding",
+    "country",
 }
 
 

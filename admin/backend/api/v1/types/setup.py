@@ -42,6 +42,9 @@ class SetupConfiguration(TypedDict):
     app_repo: str
     app_branch: str
     workers: list[WorkerGroup]
+    country: str
+    countries: list[str]
+    server_country: str
     admin_password_configured: bool
     mariadb_password_configured: bool
     postgres_password_configured: bool

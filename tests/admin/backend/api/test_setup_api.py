@@ -473,3 +473,30 @@ def test_finish_is_retryable_after_the_marker_was_already_cleared(tmp_path: Path
 
     assert retry.status_code == 204
     assert not (tmp_path / ".wizard-active").exists()
+
+
+def test_configuration_saves_the_country_and_lists_the_choices(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "one"
+    client = setup_client(bench_root)
+
+    response = client.put(
+        "/api/v1/setup/configuration",
+        json={"mariadb_password": "database-secret", "country": "Germany"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["country"] == "Germany"
+    assert "Germany" in body["countries"]
+    assert body["server_country"] == ""
+
+
+def test_configuration_rejects_an_unknown_country(tmp_path: Path) -> None:
+    client = setup_client(tmp_path / "benches" / "one")
+
+    response = client.put(
+        "/api/v1/setup/configuration",
+        json={"mariadb_password": "database-secret", "country": "Atlantis"},
+    )
+
+    assert response.status_code == 422

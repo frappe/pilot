@@ -6,6 +6,8 @@ from pathlib import Path
 from admin.backend.api.v1.setup.database import local_database_credentials
 from admin.backend.api.v1.setup.state import setup_handoff_task
 from pilot.config import BenchConfig
+from pilot.config.common import CommonConfig
+from pilot.config.country import COUNTRIES
 from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
@@ -15,6 +17,7 @@ SETTABLE_KEYS = frozenset(
     {
         "app_branch",
         "app_repo",
+        "country",
         "db_mode",
         "db_type",
         *(f"{engine}_{field}" for engine in _DB_ENGINES for field in ("admin_user", "existing", "host", "password", "port")),
@@ -36,6 +39,8 @@ def validate_configuration(data: dict) -> str | None:
         return error
     if error := _validate_existing_database(data):
         return error
+    if data.get("country") and data["country"] not in COUNTRIES:
+        return f"Unknown country: {data['country']}"
     return _validate_app_source(data)
 
 
@@ -44,6 +49,7 @@ def _validate_field_types(data: dict) -> str | None:
     text_fields = (
         "app_branch",
         "app_repo",
+        "country",
         "db_type",
         "mariadb_admin_user",
         "mariadb_host",
@@ -132,6 +138,8 @@ def read_defaults(bench_root: Path) -> dict:
         "is_linux": HostPlatform().is_linux,
         "native_process_manager": HostPlatform.native_process_manager,
         **defaults,
+        "countries": COUNTRIES,
+        "server_country": CommonConfig.read(bench_root.parent).country,
     }
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():

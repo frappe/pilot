@@ -30,6 +30,7 @@ class CommonConfig:
     """Settings shared by every bench in one benches directory."""
 
     schema = TomlSchema(
+        keys={"country"},
         tables={
             "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
             "postgres": TomlSchema(keys=field_names(PostgresConfig)),
@@ -66,6 +67,8 @@ class CommonConfig:
     webhook_endpoints: list[WebhookEndpoint] = field(default_factory=list)
     jwks_url: str = ""
     jwks_audience: str = ""
+    # Set once, by the first bench to initialise; a later bench keeps a different one in its bench.toml.
+    country: str = ""
 
     @classmethod
     def path(cls, benches_root: Path) -> Path:
@@ -104,6 +107,7 @@ class CommonConfig:
             webhook_endpoints=read_webhook_endpoints(data),
             jwks_url=admin.get("jwks_url", ""),
             jwks_audience=admin.get("jwks_audience", ""),
+            country=data.get("country", ""),
         )
 
     def write(self, benches_root: Path) -> None:
@@ -208,6 +212,8 @@ class CommonConfig:
             data["frappe_cloud"] = {"url": self.frappe_cloud.url}
         if self.webhook_endpoints:
             data["webhook_endpoints"] = [asdict(endpoint) for endpoint in self.webhook_endpoints]
+        if self.country:
+            data["country"] = self.country
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
