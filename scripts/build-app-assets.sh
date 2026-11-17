@@ -17,6 +17,7 @@ if [ -z "$hooks" ]; then
     exit 1
 fi
 app=$(basename "$(dirname "$hooks")")
+github_url=${PILOT_GITHUB_URL:-https://github.com}
 commit=$(git -C "$app_dir" rev-parse HEAD)
 
 # [tool.bench.assets] as Frappe Cloud reads it, or an array of such tables for an app with
@@ -68,9 +69,33 @@ mkdir -p "$bench/apps" "$bench/sites/assets"
 # When the app is frappe itself, the checkout is the framework that gets built.
 apps=(frappe)
 if [ "$app" != frappe ]; then
-    git clone --quiet --depth 1 --branch "$frappe_branch" https://github.com/frappe/frappe "$bench/apps/frappe"
+    git clone --quiet --depth 1 --branch "$frappe_branch" "$github_url/frappe/frappe" "$bench/apps/frappe"
     apps+=("$app")
 fi
+# The hooks.py `required_apps` as GitHub slugs; a bare name is a frappe/ repository.
+required_apps() {
+    python3 - "$hooks" <<'EOF'
+import ast
+import sys
+
+for node in ast.parse(open(sys.argv[1]).read()).body:
+    if isinstance(node, ast.Assign) and any(getattr(target, "id", "") == "required_apps" for target in node.targets):
+        for name in ast.literal_eval(node.value):
+            print(name if "/" in name else f"frappe/{name}")
+EOF
+}
+# A substitution, so a malformed hooks.py stops the build.
+required_output=$(required_apps)
+# Frontends import from sibling checkouts of the apps they require, such as CRM's @whatsapp/ui.
+for slug in $required_output; do
+    [ "${slug##*/}" = frappe ] && continue
+    branch_args=()
+    if git ls-remote --exit-code --heads "$github_url/$slug" "$frappe_branch" > /dev/null; then
+        branch_args=(--branch "$frappe_branch")
+    fi
+    echo "==> Checking out required app $slug"
+    git clone --quiet --depth 1 "${branch_args[@]}" "$github_url/$slug" "$bench/apps/${slug##*/}"
+done
 # A copy, not a symlink: frappe-ui finds the app by walking up the real path to apps/.
 cp -a "$app_dir" "$bench/apps/$app"
 app_dir="$bench/apps/$app"
