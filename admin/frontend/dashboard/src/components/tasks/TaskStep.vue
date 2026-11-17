@@ -1,31 +1,49 @@
 <script setup lang="ts">
-import { Spinner } from 'frappe-ui'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { Alert } from 'frappe-ui'
 
 import CopyBtn from '@/components/common/CopyBtn.vue'
 import LogView from '@/components/logs/LogView.vue'
 
 interface Props {
+  icon?: string
   label: string
   status?: string
   duration?: string | null
   lines?: string[]
   hasOutput?: boolean
   streaming?: boolean
+  failure?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  icon: '',
   status: 'pending',
   duration: null,
   lines: () => [],
   hasOutput: false,
   streaming: false,
+  failure: '',
 })
 
-// Open while running or failed; anything else settles closed unless toggled.
-const shouldExpand = (status: string) => {
-  return status === 'running' || status === 'failed'
+const iconTone: Record<string, string> = {
+  done: 'text-ink-gray-5',
+  running: 'text-ink-gray-8 animate-pulse',
+  failed: 'text-ink-gray-5',
 }
+
+const note = computed(() => {
+  const time = props.duration && props.duration !== '0.0s' ? props.duration : ''
+
+  if (props.status === 'running') return time || 'Running'
+  if (props.status === 'failed') return time || 'Failed'
+
+  return time || 'Done'
+})
+
+const canOpen = computed(() => props.hasOutput || Boolean(props.failure))
+
+const shouldExpand = (status: string) => status === 'running' || status === 'failed'
 
 const expanded = ref(shouldExpand(props.status))
 let userOverridden = false
@@ -38,53 +56,62 @@ watch(
 )
 
 const toggle = () => {
-  if (!props.hasOutput) return
+  if (!canOpen.value) return
+
   userOverridden = true
   expanded.value = !expanded.value
 }
 </script>
 
 <template>
-  <div>
-    <button
-      type="button"
-      class="flex items-center gap-3 px-2.5 py-2 rounded-4 w-full text-left transition-colors"
-      :class="hasOutput ? 'cursor-pointer hover:bg-surface-gray-1' : 'cursor-default'"
-      :aria-expanded="hasOutput ? expanded : undefined"
-      @click="toggle"
-    >
-      <span v-if="status === 'done'" class="size-5 text-ink-gray-5 shrink-0 lucide-circle-check" />
-      <Spinner v-else-if="status === 'running'" size="md" class="text-ink-amber-6 shrink-0" />
-      <span
-        v-else-if="status === 'failed'"
-        class="size-5 text-ink-red-6 shrink-0 lucide-circle-x"
-      />
-      <span v-else class="size-5 text-ink-gray-3 shrink-0 lucide-circle-dashed" />
+  <li
+    class="relative grid grid-cols-[16px_minmax(0,1fr)] gap-x-3 pb-5 last:pb-0 step-thread step-thread-compact"
+    :class="status !== 'done' && 'step-thread-open'"
+  >
+    <span
+      class="mt-1 size-4"
+      :class="[icon || 'lucide-terminal', iconTone[status] || iconTone.done]"
+    />
 
-      <span
-        class="flex-1 min-w-0 truncate"
-        :class="status === 'pending' ? 'text-ink-gray-4' : 'font-medium text-ink-gray-9'"
+    <div class="min-w-0">
+      <button
+        type="button"
+        class="group flex items-center gap-3 w-full min-h-6 text-left"
+        :class="canOpen ? 'cursor-pointer' : 'cursor-default'"
+        :aria-expanded="canOpen ? expanded : undefined"
+        @click="toggle"
       >
-        {{ label }}
-      </span>
+        <span
+          class="flex-1 min-w-0 text-p-base sm:text-base text-ink-gray-8 sm:truncate"
+          :class="canOpen && 'group-hover:text-ink-gray-9'"
+        >
+          {{ label }}
+        </span>
 
-      <span class="w-16 text-ink-gray-5 text-sm text-right tabular-nums shrink-0">
-        <template v-if="duration">{{ duration }}</template>
-        <span v-else-if="status === 'running'" class="animate-pulse">running</span>
-      </span>
+        <span
+          class="flex justify-end items-center gap-1 sm:w-24 text-sm tabular-nums shrink-0"
+          :class="status === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5'"
+        >
+          <span v-if="status === 'done'" class="size-3.5 text-ink-green-6 lucide-check" />
+          <span v-else-if="status === 'failed'" class="size-3.5 lucide-x" />
+          {{ note }}
+        </span>
 
-      <span
-        class="size-4 text-ink-gray-4 transition-transform shrink-0 lucide-chevron-down"
-        :class="[hasOutput ? '' : 'invisible', expanded ? 'rotate-180' : '']"
-      />
-    </button>
+        <span
+          class="size-4 text-ink-gray-4 transition-transform shrink-0 lucide-chevron-down"
+          :class="[canOpen ? '' : 'invisible', expanded ? 'rotate-180' : '']"
+        />
+      </button>
 
-    <div v-if="expanded && hasOutput" class="relative mt-1">
-      <LogView :lines="lines" :streaming="streaming" />
-      <CopyBtn
-        :text="lines.join('\n')"
-        class="top-2 right-4 absolute bg-surface-gray-1 p-1 rounded-4 text-ink-gray-5 hover:text-ink-gray-8 transition-colors"
-      />
+      <Alert v-if="expanded && failure" class="mt-3" theme="red" :title="failure" />
+
+      <div v-if="expanded && hasOutput" class="relative mt-3">
+        <LogView :lines="lines" :streaming="streaming" />
+        <CopyBtn
+          :text="lines.join('\n')"
+          class="top-2 right-4 absolute bg-surface-gray-1 p-1 rounded-4 text-ink-gray-5 hover:text-ink-gray-8 transition-colors"
+        />
+      </div>
     </div>
-  </div>
+  </li>
 </template>
