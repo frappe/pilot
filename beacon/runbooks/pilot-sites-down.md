@@ -1,4 +1,4 @@
-# Sites down on server
+# Many sites down
 
 Pilot pings each site on the server once a minute, and 3 or more sites, and 20% or more of them, do not answer. The fault is on the server, not in one site.
 

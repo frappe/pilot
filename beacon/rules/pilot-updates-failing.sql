@@ -1,4 +1,5 @@
 -- title: App update failing on many servers
+-- description: The same app release failed to update on 3 or more servers. The release is likely broken.
 -- severity: Low
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-updates-failing.md
@@ -7,7 +8,7 @@
 -- resolve_after: 3600
 -- Pilot tells the owner of one server whose update failed. The same release of one repository that fails on 3 or more servers points to the release, not to the servers.
 SELECT {region:String} AS resource_id, concat(repository, '@', to_version) AS alert_key, toFloat64(servers) AS value,
-       concat(repository, ' ', to_version, ' failed on ', toString(servers), ' servers in 6 h, last in ', last_phase, ': ', last_message) AS detail
+       concat(repository, ' ', to_version, ' failed on ', toString(servers), ' servers in 6 h (limit 3), last in ', last_phase, ': ', last_message) AS detail
 FROM (
     SELECT attributes['repository'] AS repository, attributes['to_version'] AS to_version,
            uniqExact(resource_id) AS servers, argMax(attributes['phase'], ts) AS last_phase,
