@@ -31,11 +31,8 @@ class Validator:
             check.run(self.app)
 
 
-def _all_checks() -> list["ValidationCheck"]:
-    """Every check, on every path. An app that has moved to a new revision is
-    held to the same standard as one being installed: the revision can have
-    dropped a pyproject.toml or a declaration just as easily as a hook.
-    """
+def source_checks() -> list["ValidationCheck"]:
+    """The checks that read only the app's own files, so they need no bench environment."""
     return [
         RepoStructureCheck(),
         VersionSpecifiersCheck(),
@@ -44,6 +41,16 @@ def _all_checks() -> list["ValidationCheck"]:
         HooksCheck(),
         FixturesCheck(),
         DependencyDeclarationsCheck(),
+    ]
+
+
+def _all_checks() -> list["ValidationCheck"]:
+    """Every check, on every path. An app that has moved to a new revision is
+    held to the same standard as one being installed: the revision can have
+    dropped a pyproject.toml or a declaration just as easily as a hook.
+    """
+    return [
+        *source_checks(),
         FrappeCompatibilityCheck(),
         DependencyResolutionCheck(),
         ImportCheck(),

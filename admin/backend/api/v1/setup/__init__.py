@@ -7,10 +7,10 @@ from flask import Blueprint, current_app, jsonify
 from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.api.v1.setup.config import (
-    apply_existing_local_database,
     read_defaults,
     validate_configuration,
     validate_settable_keys,
+    validate_shared_database,
 )
 from admin.backend.api.v1.setup.database import database_validation, database_validation_state
 from admin.backend.api.v1.setup.state import (
@@ -75,7 +75,8 @@ def _update_configuration(bench_root: Path, data: dict):
             503,
         )
 
-    data = apply_existing_local_database(bench_root, data)
+    if error := validate_shared_database(bench_root, data):
+        return error_response("invalid_setup_configuration", error, 422)
     settings = {**current, **data, "admin_enabled": True}
     error = validate_configuration(settings)
     if error:

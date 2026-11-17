@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Button, Combobox, ErrorMessage, LoadingText, Password, Select, TextInput } from 'frappe-ui'
+import {
+  Alert,
+  Button,
+  Combobox,
+  ErrorMessage,
+  LoadingText,
+  Password,
+  Select,
+  TextInput,
+} from 'frappe-ui'
 import TaskStream from '@/components/tasks/TaskStream.vue'
 import { useSetup } from '@/composables/setup/useSetup'
 
@@ -18,6 +27,7 @@ const {
   dbPassword,
   dbMode,
   dbModeOptions,
+  databaseReady,
   dbHost,
   dbPort,
   dbPortPlaceholder,
@@ -69,8 +79,21 @@ const {
 
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
           <Select side="bottom" label="Database engine" v-model="dbType" :options="dbTypeOptions" />
-          <Select side="bottom" label="Database setup" v-model="dbMode" :options="dbModeOptions" />
-          <template v-if="dbMode === 'external'">
+          <Alert
+            v-if="databaseReady"
+            theme="green"
+            title="Database is ready"
+            description="This bench will use it. Nothing to configure."
+            :dismissible="false"
+          />
+          <Select
+            v-else
+            side="bottom"
+            label="Database setup"
+            v-model="dbMode"
+            :options="dbModeOptions"
+          />
+          <template v-if="!databaseReady && dbMode === 'external'">
             <div class="flex gap-4">
               <TextInput
                 class="flex-1"
@@ -209,7 +232,7 @@ const {
         </Button>
 
         <Button
-          v-show="isConfiguring && currentStep === 'database' && dbMode === 'external'"
+          v-show="isConfiguring && currentStep === 'database' && !databaseReady && dbMode === 'external'"
           variant="solid"
           :loading="isSubmitting"
           class="flex-1"
@@ -219,7 +242,7 @@ const {
         </Button>
 
         <Button
-          v-show="isConfiguring && currentStep === 'database' && dbMode !== 'external'"
+          v-show="isConfiguring && currentStep === 'database' && (databaseReady || dbMode !== 'external')"
           variant="solid"
           class="flex-1"
           @click="goToNextStep"

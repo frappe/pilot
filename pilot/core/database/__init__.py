@@ -124,3 +124,16 @@ def make_site_database(
         socket=config.get("db_socket") or None,
         connect_timeout=connect_timeout,
     )
+
+
+def is_shared_server_ready(benches_root: Path, engine: str, excluding: Path | None = None) -> bool:
+    """Whether the benches folder's shared <engine> server has a root login and a set-up
+    bench, other than `excluding`, already uses it."""
+    from pilot.config.common import CommonConfig
+
+    common = CommonConfig.read(benches_root)
+    section = common.mariadb if engine == "mariadb" else common.postgres
+    if not section.root_password:
+        return False
+    benches = (path.parent for path in benches_root.glob("*/bench.toml"))
+    return any((bench / "env" / "bin" / "python").exists() for bench in benches if bench != excluding)

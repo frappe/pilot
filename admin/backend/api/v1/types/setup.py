@@ -45,8 +45,8 @@ class SetupConfiguration(TypedDict):
     admin_password_configured: bool
     mariadb_password_configured: bool
     postgres_password_configured: bool
-    mariadb_local_available: bool
-    postgres_local_available: bool
+    mariadb_ready: bool
+    postgres_ready: bool
     running_setup_task_id: str | None
 
 

@@ -60,22 +60,11 @@ def database_validation(bench_root: Path, data: dict):
     return engine, PostgresManager(config), password, existing
 
 
-def local_database_credentials(bench_root: Path, engine: str) -> dict | None:
-    """Credentials for the shared local <engine> server, already recorded in
-    common_config.toml once any bench on this host has set it up (never an
-    external/'existing' server)."""
-    from pilot.config.common import CommonConfig
+def is_database_ready(bench_root: Path, engine: str) -> bool:
+    """Every bench shares the host's server, so setup leaves a ready one alone."""
+    from pilot.core.database import is_shared_server_ready
 
-    common = CommonConfig.read(bench_root.parent)
-    section = common.mariadb if engine == "mariadb" else common.postgres
-    if section.existing or not section.root_password:
-        return None
-    return {
-        "host": section.host,
-        "port": section.port,
-        "admin_user": section.admin_user,
-        "password": section.root_password,
-    }
+    return is_shared_server_ready(bench_root.parent, engine, excluding=bench_root)
 
 
 def database_validation_state(manager, password: str, existing: bool) -> str:

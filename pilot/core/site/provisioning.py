@@ -42,10 +42,26 @@ class SiteProvisioner:
             via_wildcard = validate_new_site(self.bench, self.name, self.apps)
             self.bench.site_aliases.release(self.name)
             owner.claim(os.environ.get(TASK_ID_ENV, ""))
-            return self._provision(via_wildcard, on_progress, schedule_backups)
+            return self._provision(
+                via_wildcard, on_progress, schedule_backups, lambda site: site.create(db_type=self.db_type)
+            )
+
+    def adopt(self, config: dict, on_progress: Callable[[str], None], *, schedule_backups: bool = True) -> "Site":
+        """Create a site on a database that already exists, from its site_config.json values."""
+        with SiteCreationOwner(self.bench.path, self.name).locked() as owner:
+            via_wildcard = validate_new_site(self.bench, self.name, [])
+            self.bench.site_aliases.release(self.name)
+            owner.claim(os.environ.get(TASK_ID_ENV, ""))
+            return self._provision(
+                via_wildcard, on_progress, schedule_backups, lambda site: write_adopted_config(site, config)
+            )
 
     def _provision(
-        self, via_wildcard: bool, on_progress: Callable[[str], None], schedule_backups: bool
+        self,
+        via_wildcard: bool,
+        on_progress: Callable[[str], None],
+        schedule_backups: bool,
+        create: Callable[["Site"], None],
     ) -> "Site":
         """Register the route, create the site, install apps and finish setup."""
         from pilot.core.site import Site
@@ -67,7 +83,7 @@ class SiteProvisioner:
             self.bench,
         )
         on_progress(f"Creating site '{self.name}'...")
-        site.create(db_type=self.db_type)
+        create(site)
         self.write_email_sender_name(site)
         self.write_route_policy(site)
         self.finish(site, on_progress)
@@ -186,6 +202,14 @@ class SiteProvisioner:
             )
             return
         NginxManager(self.bench).apply_config()
+
+
+def write_adopted_config(site: "Site", config: dict) -> None:
+    from pilot.internal.private_files import PrivateFile
+
+    for directory in ("logs", "locks", "public/files", "private/files"):
+        (site.path / directory).mkdir(parents=True, exist_ok=True)
+    PrivateFile(site.path / "site_config.json").write_text(json.dumps(config, indent=1))
 
 
 def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
