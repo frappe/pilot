@@ -29,3 +29,5 @@ class SetBenchConfigCommand(Command):
             # A fresh bench gets its runtime configs from `pilot init`.
             self.bench.rebuild_runtime_config()
         self.report(f"Set {self.key} in bench.toml.")
+        if self.key == "production_sandbox":
+            self.report("Run `pilot restart` to apply it.")

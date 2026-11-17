@@ -74,6 +74,7 @@ FLAT_KEYS = {
     "admin_allow_bench_management": "admin.allow_bench_management",
     "letsencrypt_email": "letsencrypt.email",
     "production_process_manager": "production.process_manager",
+    "production_sandbox": "production.sandbox",
     "lite_mode_enabled": "lite_mode.enabled",
 }
 
@@ -856,6 +857,8 @@ class BenchConfig:
         """Apply one flat setting."""
         if key == "admin_password":
             self.admin.set_password(str(value))
+        elif key == "production_sandbox":
+            self.production.sandbox = _sandbox_setting(value)
         elif key in FLAT_KEYS:
             _set_path(self, FLAT_KEYS[key], value)
         elif key == "app_repo":
@@ -938,6 +941,16 @@ def _set_path(config: BenchConfig, path: str, value) -> None:
     elif isinstance(current, str):
         value = str(value)
     setattr(obj, leaf, value)
+
+
+def _sandbox_setting(value) -> bool | None:
+    """`production.sandbox` from a flat value. Empty or "default" unsets it."""
+    if value is None or str(value).lower() in ("", "default"):
+        return None
+    parsed = _sbool(value)
+    if not isinstance(parsed, bool):
+        raise ConfigError(f"production_sandbox must be true, false or default, got {value!r}.")
+    return parsed
 
 
 def _sbool(value):
