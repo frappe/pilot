@@ -237,7 +237,7 @@ class MigrationOperation(MigrationRecovery):
                 "output_excerpt": "",
             }
             self._enter_needs_attention("backing_up", name)
-            self._lift_maintenance()
+            self.lift_maintenance_if_code_unchanged()
             raise
         self._save()
         if self.next_backup_site() is None:
@@ -341,7 +341,7 @@ class MigrationOperation(MigrationRecovery):
         self.diagnosis = {"phase": phase, "message": message, "output_excerpt": ""}
         self._enter_needs_attention(phase, None if phase == "updating" else name)
         if phase == "backing_up":
-            self._lift_maintenance()
+            self.lift_maintenance_if_code_unchanged()
         raise BenchError(message)
 
     def fail_stopped_step(self, task_id: str, phase: str, site_name: str | None, reason: str = "") -> None:
@@ -378,7 +378,7 @@ class MigrationOperation(MigrationRecovery):
         }
         self._enter_needs_attention(phase, site_name)
         if phase == "backing_up":
-            self._lift_maintenance()
+            self.lift_maintenance_if_code_unchanged()
 
     def _fail_site_step(self, phase: str, site_name: str) -> None:
         """Mark the site's backup or migrate step as failed."""
@@ -450,6 +450,12 @@ class MigrationOperation(MigrationRecovery):
         """Restore maintenance settings and refresh web workers."""
         self._restore_maintenance()
         self.bench.reload_workers(web_only=True, raises=True)
+
+    def lift_maintenance_if_code_unchanged(self) -> None:
+        """Reopen the sites after a paused backup. A branch switch changed the code before its
+        backups, so its sites stay closed: they would run new code on a schema not migrated yet."""
+        if not self.apps_updated:
+            self._lift_maintenance()
 
     def _restart_services(self) -> None:
         """Restart every process on the app code now on disk, then lift maintenance."""
