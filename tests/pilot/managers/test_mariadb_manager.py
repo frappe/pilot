@@ -1532,3 +1532,30 @@ def test_admin_sql_connects_within_the_client_timeout_but_lets_the_batch_run_lon
     assert f"--connect-timeout={manager.client_timeout}" in argv
     # A clone's CREATE DATABASE and GRANT batch took over 5 s on a loaded host (#847).
     assert run.call_args.kwargs["timeout"] == manager.admin_sql_timeout > manager.client_timeout
+
+
+def test_provision_checks_for_a_server_while_holding_the_provision_lock(tmp_path) -> None:
+    manager = _manager()
+    events = []
+    lock = MagicMock()
+    lock.return_value.__enter__.side_effect = lambda: events.append("locked")
+    lock.return_value.__exit__.side_effect = lambda *args: events.append("unlocked")
+
+    with (
+        patch("pilot.managers.platform.HostPlatform.is_macos", new_callable=PropertyMock, return_value=False),
+        patch.object(manager, "install"),
+        patch.object(type(manager), "config_dir", new_callable=PropertyMock, return_value=tmp_path),
+        patch.object(manager, "is_provisioned", side_effect=lambda: events.append("checked") or True),
+        patch.object(manager, "_initialize_data_dir") as initialize,
+        patch.object(manager, "install_sizing_unit"),
+        patch.object(manager, "enable_and_start"),
+        patch.object(manager, "_wait_until_reachable"),
+        patch.object(manager, "secure_installation"),
+        patch(f"{MODULE}.exclusive_file_lock", lock),
+    ):
+        manager.provision()
+
+    # A bench initialised in parallel waits, then finds the server the first one created.
+    lock.assert_called_once_with(tmp_path / "provision")
+    assert events == ["locked", "checked", "unlocked"]
+    initialize.assert_not_called()
