@@ -31,8 +31,22 @@ class AppDependencyInstaller:
         resolver = self._find_resolver()
         if resolver is None:
             return []
+        declared = self.get_declared_dependencies()
+        if declared is not None:
+            resolver.dependencies = declared
         self._install_missing(resolver, on_progress, skip_assets)
         return self._dependency_apps(resolver)
+
+    def get_declared_dependencies(self) -> dict[str, str] | None:
+        """The app dependencies the checkout's pyproject.toml declares, which a branch install
+        may have moved past the marketplace entry's; None when it declares no table."""
+        from pilot.core.app.validator.base import bench_table
+        from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
+
+        if "frappe-dependencies" not in bench_table(self.app):
+            return None
+        declared = DependencyDeclarationsCheck().get_frappe_dependencies(self.app)
+        return {name: specifier for name, specifier in declared.items() if name != "frappe"}
 
     def _find_resolver(self) -> Resolver | None:
         """The marketplace resolver for the app, or None when it is not listed."""
