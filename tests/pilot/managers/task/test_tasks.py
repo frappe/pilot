@@ -277,7 +277,7 @@ def test_get_progress_reads_steps_and_the_running_step_progress_bar(tmp_path: Pa
     task_id = "20260521-143022-aabbcc"
     task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="running")
     (task_dir / "output.log").write_text(
-        "STEP fetch,100.5 Fetch erpnext\ncloning\nSTEP install,160.0 Install erpnext on site1\n"
+        "STEP fetch,100.5 Fetch erpnext\ncloning\nSTEP install,160.0,lucide-package-plus Install erpnext on site1\n"
         "Updating DocTypes for erpnext : [====      ] 45%\n"
     )
     reader = TaskReader(tmp_path)
@@ -286,8 +286,14 @@ def test_get_progress_reads_steps_and_the_running_step_progress_bar(tmp_path: Pa
 
     assert progress == {
         "steps": [
-            {"key": "fetch", "label": "Fetch erpnext", "status": "done", "started_at": 100.5},
-            {"key": "install", "label": "Install erpnext on site1", "status": "running", "started_at": 160.0},
+            {"key": "fetch", "label": "Fetch erpnext", "icon": None, "status": "done", "started_at": 100.5},
+            {
+                "key": "install",
+                "label": "Install erpnext on site1",
+                "icon": "lucide-package-plus",
+                "status": "running",
+                "started_at": 160.0,
+            },
         ],
         "activity": "Updating DocTypes for erpnext",
         "percent": 45,

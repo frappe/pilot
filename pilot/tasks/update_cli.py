@@ -18,14 +18,14 @@ class UpdateCliTask(Task):
         self.update()
         self.restart_admins()
 
-    @step("update", lambda self: f"Update Pilot at {Server().root}")
+    @step("update", lambda self: f"Update Pilot at {Server().root}", icon="lucide-git-branch")
     def update(self) -> None:
         """Upgrade Pilot."""
         from pilot.updater import perform_upgrade
 
         perform_upgrade(on_progress=print)
 
-    @step("restart-admin", lambda self: "Restart every bench's admin service")
+    @step("restart-admin", lambda self: "Restart every bench's admin service", icon="lucide-refresh-cw")
     def restart_admins(self) -> None:
         """Every bench's admin imports Pilot's code, so each would mix old and new modules."""
         from pilot.core.server import Server

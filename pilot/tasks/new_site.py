@@ -28,7 +28,7 @@ class NewSiteTask(Task):
         self.reload_for_site_apps()
         self.create()
 
-    @step("reload", "Reload workers for the site's apps")
+    @step("reload", "Reload workers for the site's apps", icon="lucide-refresh-cw")
     def reload_for_site_apps(self) -> None:
         """Provisioning runs install-app, which enqueues jobs that import the
         site's apps. Always reload: an app already on the bench may still predate
@@ -46,7 +46,7 @@ class NewSiteTask(Task):
         """The callback args that release the site creation."""
         return {"site": self.name}
 
-    @step("create", lambda self: f"Create site {self.name}")
+    @step("create", lambda self: f"Create site {self.name}", icon="lucide-package-plus")
     def create(self) -> None:
         """Create the site."""
         Site.provision(

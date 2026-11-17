@@ -22,7 +22,7 @@ class CloneSiteTask(Task):
             self.get_host_resource_key(self.name),
         ]
 
-    @step("clone", lambda self: f"Clone {self.site} into {self.name}")
+    @step("clone", lambda self: f"Clone {self.site} into {self.name}", icon="lucide-package-plus")
     def run(self) -> None:
         """Clone the site to the target bench."""
         from pilot.core.bench import Bench

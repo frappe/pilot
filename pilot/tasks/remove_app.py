@@ -21,7 +21,7 @@ class RemoveAppTask(Task):
         import map, so they need a restart once this task lands."""
         return {"web_only": False}
 
-    @step("remove", lambda self: f"Remove {self.name}")
+    @step("remove", lambda self: f"Remove {self.name}", icon="lucide-trash-2")
     def remove(self) -> None:
         """Remove the app from the bench."""
         self.bench.app(self.name).remove(force=True, on_progress=self.report)

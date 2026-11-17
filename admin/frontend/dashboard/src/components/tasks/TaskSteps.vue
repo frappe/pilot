@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, toRef } from 'vue'
+import { Alert } from 'frappe-ui'
 
 import LogView from '@/components/logs/LogView.vue'
 import TaskStep from '@/components/tasks/TaskStep.vue'
@@ -11,28 +12,34 @@ interface Props {
   rawLines?: string[]
   streaming?: boolean
   taskStatus?: string
+  finishedAt?: string | null
   emptyText?: string
+  failure?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   rawLines: () => [],
   streaming: false,
   taskStatus: '',
+  finishedAt: null,
   emptyText: 'No output.',
+  failure: '',
 })
 
 const rawLinesRef = toRef(props, 'rawLines')
 const streamingRef = toRef(props, 'streaming')
-const taskRef = computed(() => ({ status: props.taskStatus }))
+const taskRef = computed(() => ({ status: props.taskStatus, finished_at: props.finishedAt }))
 
 const { stepSections, hasSteps, stepDuration } = useTaskSteps(rawLinesRef, streamingRef, taskRef)
 const processedLines = computed(() => props.rawLines.map(processLine))
 
 const sectionLines = (section: StepSection) => {
-  return props.rawLines
+  const lines = props.rawLines
     .slice(section.lineStart, section.lineEnd)
     .filter((line) => !STEP_MARKER_RE.test(line))
-    .map(processLine)
+  const filled = lines.map((line) => Boolean(line.trim()))
+
+  return lines.slice(filled.indexOf(true), filled.lastIndexOf(true) + 1).map(processLine)
 }
 
 const sectionHasOutput = (section: StepSection) => {
@@ -43,21 +50,24 @@ const sectionHasOutput = (section: StepSection) => {
 </script>
 
 <template>
-  <div
-    v-if="hasSteps"
-    class="flex flex-col gap-1 p-1 border border-outline-gray-2 rounded-6 min-w-0"
-  >
+  <ol v-if="hasSteps" class="p-3 sm:p-4 border border-outline-gray-1.5 rounded-5">
     <TaskStep
       v-for="section in stepSections"
       :key="section.key"
+      :icon="section.icon"
       :label="section.label"
       :status="section.status"
       :duration="stepDuration(section)"
       :lines="sectionLines(section)"
       :has-output="sectionHasOutput(section)"
       :streaming="streaming && section.status === 'running'"
+      :failure="section.status === 'failed' ? failure : ''"
     />
-  </div>
+  </ol>
 
-  <LogView v-else :lines="processedLines" :streaming="streaming" :empty-text="emptyText" />
+  <div v-else class="space-y-4">
+    <Alert v-if="failure" theme="red" :title="failure" />
+
+    <LogView :lines="processedLines" :streaming="streaming" :empty-text="emptyText" />
+  </div>
 </template>

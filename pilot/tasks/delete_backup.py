@@ -45,7 +45,11 @@ class DeleteBackupTask(Task):
             print(f"Something seems wrong with s3 integration, skipping remote delete for {filename}: {e!s}")
             return False
 
-    @step("delete", lambda self: f"Delete {len(self.filenames)} backup(s) for {self.site}")
+    @step(
+        "delete",
+        lambda self: f"Delete {len(self.filenames)} backup(s) for {self.site}",
+        icon="lucide-trash-2",
+    )
     def delete(self) -> None:
         """Delete the local and offsite backup files, and record it."""
         backups = self.site_record.backups
