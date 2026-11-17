@@ -189,7 +189,6 @@ const openRazorpayCheckout = (handles: PaymentMethodSetup) => {
       ondismiss: () => {
         releaseRazorpayCheckout()
         working.value = false
-        message.value = __('Setup cancelled.')
       },
     },
   })

@@ -49,6 +49,17 @@ export interface BillingSummary {
   plan_change?: { plan: string | null; progress_url: string | null } | null
   /** This site's server's share of the team's next bill. Absent before Central sends it. */
   next_bill?: NextBill
+  /** The AI credit of the server's trial key, when it has one and Grove answered. */
+  ai_credits?: AiCredits | null
+}
+
+export interface AiCredits {
+  state: 'Active' | 'Ended'
+  /** Total for a trial key, Monthly once the trial converts. */
+  window: 'Total' | 'Monthly'
+  cap: number
+  /** Null once ended. */
+  spent: number | null
 }
 
 export interface NextBill {

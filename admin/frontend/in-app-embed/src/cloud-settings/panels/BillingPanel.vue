@@ -6,6 +6,7 @@ import { Button, ErrorMessage, toast } from 'frappe-ui'
 import { List } from 'frappe-ui/list'
 import { computed, ref, watch } from 'vue'
 import AddPaymentCard from '../components/AddPaymentCard.vue'
+import AiCreditsMeter from '../components/AiCreditsMeter.vue'
 import BillingNotice from '../components/BillingNotice.vue'
 import BillingRow from '../components/BillingRow.vue'
 import BillingSummary from '../components/BillingSummary.vue'
@@ -253,7 +254,12 @@ const invoicePayment = useInvoicePayment(async () => {
         :aria-label="__('Plan')"
       >
         <List :columns="['minmax(0,1fr)']">
-          <BillingRow :label="__('Plan')" :value="__('Free trial')" :detail="plan.subtitle" />
+          <BillingRow :label="__('Plan')" :value="__('Free trial')" :detail="plan.subtitle">
+            <template v-if="billing.ai_credits" #detail>
+              <span class="text-p-sm text-ink-gray-5">{{ plan.subtitle }}</span>
+              <AiCreditsMeter class="mt-1.5" :credits="billing.ai_credits" />
+            </template>
+          </BillingRow>
         </List>
       </section>
 
