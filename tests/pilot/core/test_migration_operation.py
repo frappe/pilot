@@ -897,6 +897,36 @@ def test_reverting_a_branch_switch_migration_returns_the_app_to_its_branch(tmp_p
     assert mock_bench._reinstall_apps.call_args.args[0] == {"myapp"}
 
 
+def test_a_failed_backup_after_a_branch_switch_can_restore_the_app(tmp_path: Path) -> None:
+    """The site never migrated, so the app goes back to its branch without a database restore."""
+    mock_bench, operation = _branch_switch_migration(tmp_path)
+    operation.state = get_state("backing_up")
+    mock_bench.site.return_value.migration_backup.create.side_effect = RuntimeError("disk full")
+
+    with pytest.raises(RuntimeError):
+        operation.back_up_site("site1.localhost")
+
+    assert operation.state == "needs_attention"
+    assert operation.can_revert
+    operation.revert()
+    operation.revert_apps()
+    mock_bench.app.return_value.return_to.assert_called_once_with("main", "1111111")
+    assert operation.state == "restarting"
+    mock_bench.site.return_value.migration_backup.restore.assert_not_called()
+
+
+def test_restore_is_unavailable_when_nothing_changed_or_a_migrated_site_has_no_backup(tmp_path: Path) -> None:
+    operation, _ = _backing_up_operation(tmp_path)
+    operation.site("site1.localhost").backup_status = "failed"
+    assert not operation.can_revert
+
+    operation.site("site1.localhost").migration_status = "failed"
+    assert not operation.can_revert
+
+    operation.site("site1.localhost").backup_status = "backed_up"
+    assert operation.can_revert
+
+
 def _backing_up_operation(tmp_path: Path):
     from pilot.core.bench.migration.store import MigrationStore
 

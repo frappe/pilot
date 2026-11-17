@@ -236,7 +236,9 @@ def restore_action(operation_id: str):
         return _invalid_state(operation)
     if not operation.can_revert:
         return error_response(
-            "restore_unavailable", "Restore is unavailable: no safeguards were created.", 409
+            "restore_unavailable",
+            "Restore is unavailable: nothing changed, or a migrated site has no backup.",
+            409,
         )
     return _queue_action(operation, RevertMigrationTask, "restore")
 

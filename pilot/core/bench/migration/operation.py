@@ -128,8 +128,12 @@ class MigrationOperation(MigrationRecovery):
 
     @property
     def can_revert(self) -> bool:
-        """Whether every site has a backup to revert to."""
-        return not self.safeguards_disabled and all(site.backup_status == "backed_up" for site in self.sites)
+        """Whether there is something to revert and every site the migrate reached has a backup.
+        A site still pending needs none, so a failed backup after a branch switch can still restore the app."""
+        reached = [site for site in self.sites if site.migration_status != "pending"]
+        if not (self.apps_updated or reached):
+            return False
+        return all(site.backup_status == "backed_up" for site in reached)
 
     @property
     def needs_app_update(self) -> bool:

@@ -171,7 +171,7 @@ class MigrationRecovery:
         if self.state not in ("needs_attention", "revert_failed"):
             raise MigrationStateError(f"Restore is not allowed from state {self.state}")
         if not self.can_revert:
-            raise BenchError("Restore is unavailable: safeguards were not created for this update.")
+            raise BenchError("Restore is unavailable: nothing changed, or a migrated site has no backup.")
         self.diagnosis = None
         self._advance_revert()
 

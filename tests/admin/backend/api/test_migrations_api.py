@@ -153,6 +153,7 @@ def test_restore_action_uses_documented_endpoint(tmp_path: Path) -> None:
     operation = Bench(bench_root).migrations.create_site_migrate("site1.localhost")
     operation.state = get_state("needs_attention")
     operation.sites[0].backup_status = "backed_up"
+    operation.sites[0].migration_status = "failed"
     operation.store.save(operation)
 
     with patch("pilot.tasks.revert_migration.RevertMigrationTask.queue", return_value="task-restore"):
