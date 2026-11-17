@@ -64,6 +64,11 @@ export const useSetup = () => {
   const dbPassword = ref('')
   const appRepo = ref('https://github.com/frappe/frappe')
   const appBranch = ref('develop')
+  const country = ref('India')
+  const countries = ref<string[]>([])
+  // Set by the first bench on this server; later benches show it locked.
+  const serverCountry = ref('')
+  const countryOptions = computed(() => countries.value.map((name) => ({ label: name, value: name })))
   const validatingFramework = ref(false)
   const resolvedFramework = ref<{ repo: string; branch: string } | null>(null)
 
@@ -152,6 +157,9 @@ export const useSetup = () => {
       if (config.db_type) dbType.value = config.db_type
       if (config.app_repo) appRepo.value = config.app_repo
       if (config.app_branch) appBranch.value = config.app_branch
+      countries.value = config.countries || []
+      serverCountry.value = config.server_country || ''
+      country.value = serverCountry.value || config.country || 'India'
       if (config.db_type === 'postgres') {
         if (config.postgres_admin_user) dbUser.value = config.postgres_admin_user
         if (config.postgres_existing) {
@@ -266,6 +274,7 @@ export const useSetup = () => {
   })
 
   const validateDatabaseStep = async () => {
+    if (!country.value) return 'Choose a country'
     if (dbMode.value !== 'external') return null
     const databaseName = dbType.value === 'postgres' ? 'PostgreSQL' : 'MariaDB'
     if (!dbHost.value) return 'Host is required for an external database'
@@ -330,6 +339,7 @@ export const useSetup = () => {
       db_type: dbType.value,
       app_repo: appRepo.value.trim(),
       app_branch: appBranch.value.trim(),
+      ...(serverCountry.value ? {} : { country: country.value }),
     }
     if (dbMode.value === 'existing_local') {
       return { ...base, db_mode: 'existing_local' }
@@ -430,6 +440,9 @@ export const useSetup = () => {
     dbPortPlaceholder,
     appRepo,
     appBranch,
+    country,
+    countryOptions,
+    serverCountry,
     rootUserPlaceholder,
     dbTypeOptions: DB_TYPE_OPTIONS,
     branchOptions,

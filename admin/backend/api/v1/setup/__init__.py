@@ -22,7 +22,7 @@ from admin.backend.api.v1.setup.state import (
 from pilot.config import BenchConfig
 from pilot.config.bench import FRAMEWORK_BRANCHES
 from pilot.core.bench import Bench
-from pilot.exceptions import TaskConflictError, TaskNotFoundError
+from pilot.exceptions import BenchError, TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.managers.task import TaskReader, TaskStatus
 from pilot.tasks.wizard_setup import WizardSetupTask
@@ -89,6 +89,10 @@ def _update_configuration(bench_root: Path, data: dict):
             {**data, "admin_enabled": True},
             port_offset=BenchConfig.current_port_offset(toml_path),
         )
+        if data.get("country"):
+            Bench(bench_root).choose_country(data["country"])
+    except BenchError as error:
+        return error_response("invalid_setup_configuration", str(error), 422)
     except (TypeError, ValueError):
         return error_response(
             "invalid_setup_configuration",

@@ -52,6 +52,7 @@ class BenchInitializer:
         # server (see MariaDBManager/PostgresManager).
         steps: list[tuple[str, Callable[[], None]]] = [
             ("Validate bench.toml", self.bench.config.validate),
+            ("Save country", self.bench.settle_country),
             ("Ensure admin password", self._ensure_admin_password),
             ("Ensure database credentials", self._ensure_database_credentials),
             ("Install system packages", self._install_system_packages),
