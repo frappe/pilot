@@ -81,7 +81,7 @@ class SwitchBranchTask(Task):
         import map, so they need a restart once this task lands."""
         return {"web_only": False}
 
-    @step("checkout", lambda self: f"Switch to branch '{self.branch}'")
+    @step("checkout", lambda self: f"Switch to branch '{self.branch}'", icon="lucide-git-branch")
     def checkout(self, app) -> None:
         """Check out the branch; exit on failure."""
         try:
@@ -90,22 +90,22 @@ class SwitchBranchTask(Task):
             print(str(exc))
             sys.exit(1)
 
-    @step("validate", lambda self: f"Validate {self.name} on '{self.branch}'")
+    @step("validate", lambda self: f"Validate {self.name} on '{self.branch}'", icon="lucide-shield-check")
     def validate(self, app) -> None:
         """Validate the app."""
         app.validate()
 
-    @step("install", lambda self: f"Reinstall {self.name}")
+    @step("install", lambda self: f"Reinstall {self.name}", icon="lucide-package-plus")
     def install(self, env, app) -> None:
         """Install the app into the environment."""
         env.install_app(app)
 
-    @step("assets", "Build assets")
+    @step("assets", "Build assets", icon="lucide-hammer")
     def build_assets(self, env, app) -> None:
         """Build the app's assets."""
         env.build_assets_for_app(app)
 
-    @step("restore", lambda self: f"Return {self.name} to its previous branch")
+    @step("restore", lambda self: f"Return {self.name} to its previous branch", icon="lucide-undo-2")
     def restore(self, env, app, previous_branch: str, previous_sha: str, is_installed: bool) -> None:
         """The editable install makes a checkout live at once, so go straight back."""
         app.return_to(previous_branch, previous_sha)
@@ -113,7 +113,11 @@ class SwitchBranchTask(Task):
             env.install_app(app)
             env.build_assets_for_app(app)
 
-    @step("migrate", lambda self: f"Queue backup and migration for {len(self.sites)} site(s)")
+    @step(
+        "migrate",
+        lambda self: f"Queue backup and migration for {len(self.sites)} site(s)",
+        icon="lucide-database",
+    )
     def queue_site_migrations(self, previous_branch: str, previous_sha: str, new_sha: str) -> None:
         """The migration takes over this task's locks, so no update starts in between. Its
         revert returns the app to the previous branch as well as the site databases."""

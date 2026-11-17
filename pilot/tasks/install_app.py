@@ -29,7 +29,7 @@ class InstallAppTask(Task):
         site.clear_cache()
         self.bench.audit_action("app", {"event": "installed", "app": self.app, "site": self.site})
 
-    @step("install", lambda self: f"Install {self.app} into {self.site}")
+    @step("install", lambda self: f"Install {self.app} into {self.site}", icon="lucide-package-plus")
     def install(self, site: "Site", app: "App") -> list["App"]:
         """Install the app and its dependencies; return the dependencies."""
         from pilot.exceptions import BenchError
@@ -49,6 +49,7 @@ class InstallAppTask(Task):
             with self.step(
                 f"assets_{dependency_app.config.name}",
                 f"Build assets for {dependency_app.config.name}",
+                icon="lucide-hammer",
             ):
                 env.build_assets_for_app(dependency_app)
 

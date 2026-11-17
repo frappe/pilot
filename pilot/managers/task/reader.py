@@ -128,7 +128,7 @@ def _split_percent(line: str) -> tuple[str, int | None]:
 
 
 class TaskReader:
-    step_re = re.compile(r"^STEP ([\w-]+),([\d.]+) ?(.*)$")
+    step_re = re.compile(r"^STEP ([\w-]+),([\d.]+)(?:,([\w-]+))? ?(.*)$")
     step_failed_re = re.compile(r"^STEP-FAILED ([\w-]+),")
 
     def __init__(self, bench_root: Path) -> None:
@@ -199,9 +199,15 @@ class TaskReader:
                     steps[-1]["status"] = "done"
                 step_line = ""
                 if match[1] != "done":
-                    key, started_at, label = match.groups()
+                    key, started_at, icon, label = match.groups()
                     steps.append(
-                        {"key": key, "label": label, "status": "running", "started_at": float(started_at)}
+                        {
+                            "key": key,
+                            "label": label,
+                            "icon": icon or None,
+                            "status": "running",
+                            "started_at": float(started_at),
+                        }
                     )
             elif match := self.step_failed_re.match(line):
                 steps = [{**step, "status": "failed"} if step["key"] == match[1] else step for step in steps]

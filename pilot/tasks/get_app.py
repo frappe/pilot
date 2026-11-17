@@ -25,7 +25,7 @@ class GetAppTask(Task):
         import map, so they need a restart once this task lands."""
         return {"web_only": False}
 
-    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
+    @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}", icon="lucide-download")
     def fetch(self) -> None:
         """Get the app from the marketplace or a repository."""
         commit = ""
@@ -35,9 +35,7 @@ class GetAppTask(Task):
         else:
             repo, branch = self.repo, self.branch
         app = App.from_repo(self.bench, repo, branch)
-        app.install(
-            install_dependencies=bool(self.marketplace_app), commit=commit, on_progress=self.report
-        )
+        app.install(install_dependencies=bool(self.marketplace_app), commit=commit, on_progress=self.report)
 
 
 if __name__ == "__main__":

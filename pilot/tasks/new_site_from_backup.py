@@ -34,7 +34,7 @@ class NewSiteFromBackupTask(Task):
         """The callback args that release the site creation."""
         return {"site": self.name}
 
-    @step("restore", lambda self: f"Restore site {self.name} from backup")
+    @step("restore", lambda self: f"Restore site {self.name} from backup", icon="lucide-database")
     def restore(self) -> None:
         """Create the site and restore the backup."""
         provision_from_backup(
