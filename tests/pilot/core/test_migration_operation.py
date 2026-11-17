@@ -1661,3 +1661,24 @@ def test_a_migration_that_already_switched_app_code_cannot_stop(tmp_path: Path) 
     operation.apps_updated = True
 
     assert not operation.can_stop
+
+
+def test_a_failed_start_deletes_the_record_so_it_cannot_own_the_sites(tmp_path: Path) -> None:
+    """Left in preparing, the record would block the sites' next backup, and nothing could dismiss it."""
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    site = mock_bench.site.return_value
+    site.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+
+    from pilot.core.bench.migration.store import MigrationStore
+
+    store = MigrationStore(mock_bench)
+    operation = store.create_site_migrate("site1.localhost")
+    with (
+        patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", side_effect=BenchError("resource busy")),
+        pytest.raises(BenchError, match="resource busy"),
+    ):
+        operation.begin()
+
+    assert store.get_all() == []
+    site.set_maintenance_settings.assert_called_with({"maintenance_mode": 0, "pause_scheduler": 0})

@@ -55,7 +55,13 @@ class SwitchBranchTask(Task):
 
         app.record_branch()
         print(f"'{self.name}' switched to '{self.branch}'.")
-        self.queue_site_migrations(previous_branch, previous_sha, app.head_sha)
+        try:
+            self.queue_site_migrations(previous_branch, previous_sha, app.head_sha)
+        except Exception:
+            # Unmigrated sites must not run the new branch's code.
+            self.restore(env, app, previous_branch, previous_sha, is_installed=True)
+            app.record_branch()
+            raise
 
     def require_migration_locks(self) -> None:
         """Without these locks the final migration cannot start, so check before changing code."""

@@ -291,7 +291,6 @@ def migrate_site(name: str):
     try:
         task_id = operation.begin()
     except Exception as error:
-        bench.migrations.delete(operation.id)
         return task_failure(error)
     return accepted_response(
         {"operation_id": operation.id, "task_id": task_id},

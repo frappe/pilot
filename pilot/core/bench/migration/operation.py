@@ -152,9 +152,10 @@ class MigrationOperation(MigrationRecovery):
 
     def begin(self, handoff_from: str | None = None) -> str:
         """Enter the first phase and queue the first chain task. Returns its id.
-        `handoff_from` is a running task that passes its resources to this chain."""
-        self.ensure_disk_space()
+        `handoff_from` is a running task that passes its resources to this chain. A failed start
+        deletes the record: left unresolved, it would own the sites and block their next backup."""
         try:
+            self.ensure_disk_space()
             self._prepare_sites()
             self._enter_first_phase()
             task_id = self.enqueue_next(handoff_from=handoff_from)
@@ -162,6 +163,7 @@ class MigrationOperation(MigrationRecovery):
                 raise BenchError(f"Migration {self.id} has no work to do.")
         except Exception:
             self._restore_maintenance()
+            self.store.delete(self.id)
             raise
         self.root_task_id = task_id
         self._save()
