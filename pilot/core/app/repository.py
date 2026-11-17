@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 class AppRepository:
     fetch_timeout_seconds = 30
+    history_margin_seconds = 24 * 60 * 60  # committer clocks drift, so history reaches a little further back
     # Changes `frappe migrate` syncs into the database, as Frappe Cloud decides a migrate deploy.
     migrate_paths = tuple(
         re.compile(pattern)
@@ -121,8 +122,9 @@ class AppRepository:
 
     def _is_ahead_of_installed(self, commit: str, version: str) -> bool:
         """Whether `commit` descends from HEAD. A stale registry can advertise an older
-        release, so only proven descent counts. When a shallow clone holds both commits
-        without the history between them, the version decides, then the commit date."""
+        release, so only proven descent counts. A shallow clone fetches the history it
+        lacks first, since a branch can lower its version. When that fetch fails, the
+        version decides, then the commit date."""
         installed = self.installed_hash
         if installed == commit:
             return False
@@ -134,7 +136,15 @@ class AppRepository:
             return True
         if not repo.has_commit(commit) or repo.is_ancestor(commit, installed):
             return False
+        if repo.is_shallow and self.fetch_history_since(installed, commit):
+            return repo.is_ancestor(installed, commit)
         return self._is_newer_than_installed(commit, version)
+
+    def fetch_history_since(self, installed: str, commit: str) -> bool:
+        """Fetch the history of `commit` back to a day before `installed` was committed,
+        which proves descent without the whole repository. False when the fetch fails."""
+        since = self.repo.get_commit_time(installed) - self.history_margin_seconds
+        return self.repo.fetch(f"--shallow-since=@{since}", commit, timeout=self.fetch_timeout_seconds)
 
     def _is_newer_than_installed(self, commit: str, version: str) -> bool:
         """A newer version, or the same version at a later commit, since develop releases share one."""

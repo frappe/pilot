@@ -378,18 +378,36 @@ def test_a_shallow_clone_fetches_the_update_target_without_its_history(
     assert not repository.repo.has_commit(middle)
 
 
-def test_a_shallow_clone_decides_an_update_by_version(
+def _go_offline(repository: AppRepository, remote: Path, commit: str) -> None:
+    """Keep `commit` without its history, then lose the remote that holds the history."""
+    repository.fetch_missing_commit(commit)
+    remote.rename(remote.with_name("gone"))
+
+
+def test_a_shallow_clone_fetches_the_history_that_proves_a_lower_version_is_newer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A branch can lower its version, as insights develop went from 4.0.0-dev to 3.50.0-dev."""
+    remote, (first, _, tip) = _remote_with_three_commits(tmp_path, monkeypatch)
+    repository = _shallow_clone_at(remote, first, tmp_path / "app")
+    repository.app.installed_version = "4.0.0.dev0"
+
+    assert repository._is_ahead_of_installed(tip, "3.50.0-dev") is True
+
+
+def test_an_offline_shallow_clone_decides_an_update_by_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     remote, (first, _, tip) = _remote_with_three_commits(tmp_path, monkeypatch)
     repository = _shallow_clone_at(remote, first, tmp_path / "app")
     repository.app.installed_version = "1.0.0"
+    _go_offline(repository, remote, tip)
 
     assert repository._is_ahead_of_installed(tip, "1.1.0") is True
     assert repository._is_ahead_of_installed(tip, "0.9.0") is False
 
 
-def test_a_shallow_clone_decides_a_same_version_update_by_commit_date(
+def test_an_offline_shallow_clone_decides_a_same_version_update_by_commit_date(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Releases on a develop branch share one version, such as 17.0.0-dev."""
@@ -397,12 +415,14 @@ def test_a_shallow_clone_decides_a_same_version_update_by_commit_date(
     behind = _shallow_clone_at(remote, first, tmp_path / "behind")
     ahead = _shallow_clone_at(remote, tip, tmp_path / "ahead")
     behind.app.installed_version = ahead.app.installed_version = "17.0.0.dev0"
+    ahead.fetch_missing_commit(first)
+    _go_offline(behind, remote, tip)
 
     assert behind._is_ahead_of_installed(tip, "17.0.0-dev") is True
     assert ahead._is_ahead_of_installed(first, "17.0.0-dev") is False
 
 
-def test_a_shallow_clone_does_not_offer_a_same_version_commit_from_the_same_time(
+def test_an_offline_shallow_clone_does_not_offer_a_same_version_commit_from_the_same_time(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without history or a later date, nothing proves the release is newer."""
@@ -412,6 +432,7 @@ def test_a_shallow_clone_does_not_offer_a_same_version_commit_from_the_same_time
     )
     repository = _shallow_clone_at(remote, first, tmp_path / "app")
     repository.app.installed_version = "17.0.0.dev0"
+    _go_offline(repository, remote, tip)
 
     assert repository._is_ahead_of_installed(tip, "17.0.0-dev") is False
 
