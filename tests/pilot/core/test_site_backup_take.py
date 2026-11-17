@@ -219,3 +219,19 @@ def test_a_failed_files_index_call_raises(tmp_path: Path) -> None:
         pytest.raises(CommandError),
     ):
         bench.site("site1.localhost").backups.get_files_index()
+
+
+def test_no_output_from_frappe_raises_a_clear_error(tmp_path: Path) -> None:
+    """An empty `execute` output names the missing index instead of an IndexError."""
+    import subprocess
+
+    bench, _ = _site_with_backups(tmp_path)
+
+    with (
+        patch(
+            "pilot.internal.command.run_command",
+            side_effect=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, "\n", ""),
+        ),
+        pytest.raises(BenchError, match="no File index"),
+    ):
+        bench.site("site1.localhost").backups.get_files_index()
