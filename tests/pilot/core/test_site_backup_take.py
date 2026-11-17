@@ -1,3 +1,4 @@
+import json
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -175,3 +176,46 @@ def test_the_refusal_names_sizes_a_person_can_read() -> None:
         "plus 500 MB kept free for the system, and 200 MB is free."
     )
     assert InsufficientDiskSpaceError.format_size(400 * 1024) == "400 KB"
+
+
+def test_files_index_comes_from_frappe_execute(tmp_path: Path) -> None:
+    """Frappe builds the index; pilot runs its method and reads the JSON it prints last."""
+    import subprocess
+
+    bench, _ = _site_with_backups(tmp_path)
+    index = {
+        "files_index": [],
+        "private_files_index": [{"name": "a", "file_url": "/private/files/a", "size": 1}],
+    }
+    calls = []
+
+    def frappe_execute(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, f"a warning\n{json.dumps(index)}\n", "")
+
+    with patch("pilot.internal.command.run_command", side_effect=frappe_execute):
+        result = bench.site("site1.localhost").backups.get_files_index()
+
+    argv, kwargs = calls[0]
+    assert argv[-5:] == [
+        "frappe",
+        "--site",
+        "site1.localhost",
+        "execute",
+        "frappe.core.doctype.file.utils.get_files_index",
+    ]
+    assert kwargs["cwd"] == bench.sites_path
+    assert result == index
+
+
+def test_a_failed_files_index_call_raises(tmp_path: Path) -> None:
+    """An older Frappe has no such method; the error reaches the caller instead of an empty index."""
+    from pilot.exceptions import CommandError
+
+    bench, _ = _site_with_backups(tmp_path)
+
+    with (
+        patch("pilot.internal.command.run_command", side_effect=CommandError("no method", returncode=1)),
+        pytest.raises(CommandError),
+    ):
+        bench.site("site1.localhost").backups.get_files_index()
