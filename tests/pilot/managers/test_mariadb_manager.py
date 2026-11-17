@@ -1521,3 +1521,14 @@ def test_external_client_command_honors_an_explicit_socket_on_macos() -> None:
         command = manager._client_command()
     assert "--socket=/tmp/external-mariadb.sock" in command
     assert "-h" not in command
+
+
+def test_admin_sql_connects_within_the_client_timeout_but_lets_the_batch_run_longer() -> None:
+    manager = _manager()
+    with patch("subprocess.run") as run:
+        manager.run_admin_sql("CREATE DATABASE `site`;")
+
+    argv = run.call_args.args[0]
+    assert f"--connect-timeout={manager.client_timeout}" in argv
+    # A clone's CREATE DATABASE and GRANT batch took over 5 s on a loaded host (#847).
+    assert run.call_args.kwargs["timeout"] == manager.admin_sql_timeout > manager.client_timeout

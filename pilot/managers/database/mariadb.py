@@ -47,6 +47,8 @@ class _ManagedCnfParser(configparser.ConfigParser):
 
 class MariaDBManager(UserOwnedDBManager):
     client_timeout = 5
+    # A DDL batch on a loaded host can run far longer than it takes to connect.
+    admin_sql_timeout = 600
     mebibyte = 1024 * 1024
 
     sized_for = re.compile(r"^# pilot-sized-for-memory-mb = (\d+)$", re.M)
@@ -1132,7 +1134,7 @@ class MariaDBManager(UserOwnedDBManager):
             text=True,
             check=True,
             capture_output=True,
-            timeout=self.client_timeout,
+            timeout=self.admin_sql_timeout,
             env={**os.environ, "MYSQL_PWD": self.config.root_password},
         )
 
