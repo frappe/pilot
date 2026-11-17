@@ -421,7 +421,7 @@ test('Razorpay checkout takes clicks while the settings dialog is open', async (
   await page.locator('#rzp-pay').click()
 
   await page.locator('#rzp-close').click()
-  await expect(page.getByText('Setup cancelled.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Continue with Razorpay' })).toBeEnabled()
   await expect.poll(() => page.evaluate(() => document.getElementById('razorpay-checkout-clicks') !== null)).toBe(false)
 })
 
