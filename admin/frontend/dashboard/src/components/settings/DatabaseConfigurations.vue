@@ -276,7 +276,7 @@ onMounted(load)
             </code>
 
             <span
-              class="ml-auto w-28 text-sm text-right truncate tabular-nums shrink-0"
+              class="ml-auto w-28 text-base text-right truncate tabular-nums shrink-0"
               :class="variable.supported ? 'text-ink-gray-8' : 'text-ink-gray-5'"
             >
               {{ formatValue(variable) }}

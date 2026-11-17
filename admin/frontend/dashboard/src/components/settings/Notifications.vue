@@ -210,7 +210,7 @@ onMounted(async () => {
         :href="centralServerUrl()"
         target="_blank"
         rel="noopener"
-        class="inline-flex items-center gap-0.5 text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
+        class="inline-flex items-center gap-0.5 text-p-base-medium text-ink-gray-8 hover:text-ink-gray-9"
       >
         <span>Central</span>
         <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />

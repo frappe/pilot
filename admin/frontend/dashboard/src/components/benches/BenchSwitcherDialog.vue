@@ -60,9 +60,9 @@ const showDropConfirm = computed({
 
 const columns = [
   { label: 'Bench', key: 'name', class: 'w-1/3' },
-  { label: 'Mode', key: 'mode', class: 'text-ink-gray-6 text-sm' },
-  { label: 'Manager', key: 'manager', class: 'text-ink-gray-6 text-sm' },
-  { label: 'Sites', key: 'sites', class: 'text-ink-gray-6 text-sm' },
+  { label: 'Mode', key: 'mode', class: 'text-ink-gray-6' },
+  { label: 'Manager', key: 'manager', class: 'text-ink-gray-6' },
+  { label: 'Sites', key: 'sites', class: 'text-ink-gray-6' },
   { label: 'Status', key: 'status', class: 'text-center' },
   { label: '', key: 'actions', class: 'w-12' },
 ]
@@ -239,7 +239,7 @@ watch(show, (open) => {
       <Table v-else :columns="columns" :rows="rows" height="max-h-96">
         <template #name="{ row }">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="font-medium text-sm truncate">{{ row.name }}</span>
+            <span class="text-base-medium truncate">{{ row.name }}</span>
             <Badge v-if="isCurrentBench(row.bench)" theme="green" size="sm" label="Current" />
           </div>
         </template>
@@ -259,7 +259,7 @@ watch(show, (open) => {
 
   <Dialog v-model="showDropConfirm" title="Drop Bench" size="sm">
     <div class="flex flex-col gap-4" @pointerdown.stop>
-      <div class="flex flex-col gap-2 text-ink-gray-7 text-sm leading-relaxed">
+      <div class="flex flex-col gap-2 text-ink-gray-7 text-p-base">
         <p>Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?</p>
 
         <p>

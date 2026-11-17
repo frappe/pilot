@@ -13,7 +13,7 @@ class RestartDatabaseTask(Task):
     static_resource_keys: ClassVar[tuple[str, ...]] = ("database-server",)
     is_cancellable_while_running: ClassVar[bool] = False
 
-    @step("restart", "Restarting MariaDB and checking its health")
+    @step("restart", "Restarting MariaDB and checking its health", icon="lucide-refresh-cw")
     def run(self) -> None:
         """Restart the database server."""
         DatabaseQuickActions(self.bench.config).restart()

@@ -13,6 +13,7 @@ import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import type { MigrationAccepted, MigrationSummary } from '@/types/migrations'
 import { processLine } from '@/utils/ansi'
 import { errorMessage } from '@/utils/error'
+import { knownErrorMessage } from '@/utils/knownErrors'
 import { fmtDateTime, fmtDuration } from '@/utils/taskFormat'
 import { opTitle, patchSkipped, pendingActionLabel, skippedPatches } from '@/utils/updateFormat'
 
@@ -80,6 +81,12 @@ const showsFailure = computed(
     isAttention.value ||
     (['reverted', 'dismissed'].includes(op.value?.state || '') && !!op.value?.diagnosis),
 )
+
+const failureMessage = computed(() => {
+  const diagnosis = op.value?.diagnosis
+
+  return knownErrorMessage(diagnosis?.message, diagnosis?.output_excerpt) ?? diagnosis?.message
+})
 
 const showOutput = ref(false)
 const outputLines = computed(() =>
@@ -216,7 +223,7 @@ onUnmounted(() => clearTimeout(timer))
 <template>
   <div>
     <template v-if="loading && !op">
-      <div class="flex flex-col gap-8 mx-auto p-3 md:p-4 md:pt-8 max-w-[1000px]">
+      <div class="flex flex-col gap-8 mx-auto p-3 md:p-4 xl:pt-8 max-w-[1000px]">
         <Skeleton class="rounded-5 h-[68px]" />
         <Skeleton v-for="index in 4" :key="index" class="rounded-5 h-16" />
       </div>
@@ -258,14 +265,14 @@ onUnmounted(() => clearTimeout(timer))
         />
       </Teleport>
 
-      <div class="space-y-8 mx-auto p-3 md:p-4 md:pt-8 pb-10 md:pb-10 max-w-[1000px]">
+      <div class="space-y-8 mx-auto p-3 md:p-4 xl:pt-8 pb-10 md:pb-10 max-w-[1000px]">
         <dl
-          class="flex flex-wrap items-stretch gap-y-3 px-5 py-3.5 border border-outline-gray-1.5 rounded-5 divide-x divide-outline-gray-1.5"
+          class="flex flex-wrap items-stretch gap-x-10 gap-y-3 px-5 py-3.5 border border-outline-gray-1.5 rounded-5"
         >
           <div
             v-for="fact in facts"
             :key="fact.label"
-            class="flex flex-col grow gap-1.5 px-5 first:pl-0"
+            class="flex flex-col grow gap-1.5"
           >
             <dt class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
               <span class="size-3.5 text-ink-gray-4 shrink-0" :class="fact.icon" aria-hidden="true" />
@@ -274,7 +281,7 @@ onUnmounted(() => clearTimeout(timer))
             <dd class="tabular-nums text-ink-gray-8 text-base-medium">{{ fact.value }}</dd>
           </div>
 
-          <div v-if="op.apps.length" class="flex flex-col grow gap-1.5 px-5 first:pl-0">
+          <div v-if="op.apps.length" class="flex flex-col grow gap-1.5">
             <dt class="flex items-center gap-1.5 text-ink-gray-5 text-sm">
               <span class="size-3.5 text-ink-gray-4 lucide-package shrink-0" aria-hidden="true" />
               Apps
@@ -318,7 +325,7 @@ onUnmounted(() => clearTimeout(timer))
               @dismiss="confirmDismiss = true"
             >
               <template #description>
-                <p v-if="op.diagnosis?.message">{{ op.diagnosis.message }}</p>
+                <p v-if="failureMessage">{{ failureMessage }}</p>
 
                 <p v-if="op.diagnosis?.patch" class="mt-1 font-mono text-xs">
                   {{ op.diagnosis.patch }}{{ patchAlreadySkipped ? ' · skipped' : '' }}
@@ -412,7 +419,7 @@ onUnmounted(() => clearTimeout(timer))
             <li
               v-for="(decision, index) in skipped"
               :key="index"
-              class="flex items-center gap-3 px-4 h-11 text-sm"
+              class="flex items-center gap-3 px-4 h-11 text-base"
             >
               <code class="flex-1 min-w-0 font-mono text-ink-gray-7 text-xs truncate">
                 {{ decision.patch }}

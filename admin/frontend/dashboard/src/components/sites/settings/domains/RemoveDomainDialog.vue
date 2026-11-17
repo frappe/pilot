@@ -46,7 +46,7 @@ const confirmRemove = async () => {
 
 <template>
   <Dialog v-model="show" title="Remove domain" size="md">
-    <p class="text-ink-gray-7 text-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Remove <span class="font-semibold text-ink-gray-8 break-all">{{ domain }}</span> from this
       site? It will stop serving this domain.
     </p>

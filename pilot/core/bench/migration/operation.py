@@ -128,8 +128,12 @@ class MigrationOperation(MigrationRecovery):
 
     @property
     def can_revert(self) -> bool:
-        """Whether every site has a backup to revert to."""
-        return not self.safeguards_disabled and all(site.backup_status == "backed_up" for site in self.sites)
+        """Whether there is something to revert and every site the migrate reached has a backup.
+        A site still pending needs none, so a failed backup after a branch switch can still restore the app."""
+        reached = [site for site in self.sites if site.migration_status != "pending"]
+        if not (self.apps_updated or reached):
+            return False
+        return all(site.backup_status == "backed_up" for site in reached)
 
     @property
     def needs_app_update(self) -> bool:
@@ -152,9 +156,10 @@ class MigrationOperation(MigrationRecovery):
 
     def begin(self, handoff_from: str | None = None) -> str:
         """Enter the first phase and queue the first chain task. Returns its id.
-        `handoff_from` is a running task that passes its resources to this chain."""
-        self.ensure_disk_space()
+        `handoff_from` is a running task that passes its resources to this chain. A failed start
+        deletes the record: left unresolved, it would own the sites and block their next backup."""
         try:
+            self.ensure_disk_space()
             self._prepare_sites()
             self._enter_first_phase()
             task_id = self.enqueue_next(handoff_from=handoff_from)
@@ -162,6 +167,7 @@ class MigrationOperation(MigrationRecovery):
                 raise BenchError(f"Migration {self.id} has no work to do.")
         except Exception:
             self._restore_maintenance()
+            self.store.delete(self.id)
             raise
         self.root_task_id = task_id
         self._save()
@@ -231,7 +237,7 @@ class MigrationOperation(MigrationRecovery):
                 "output_excerpt": "",
             }
             self._enter_needs_attention("backing_up", name)
-            self._lift_maintenance()
+            self.lift_maintenance_if_code_unchanged()
             raise
         self._save()
         if self.next_backup_site() is None:
@@ -335,7 +341,7 @@ class MigrationOperation(MigrationRecovery):
         self.diagnosis = {"phase": phase, "message": message, "output_excerpt": ""}
         self._enter_needs_attention(phase, None if phase == "updating" else name)
         if phase == "backing_up":
-            self._lift_maintenance()
+            self.lift_maintenance_if_code_unchanged()
         raise BenchError(message)
 
     def fail_stopped_step(self, task_id: str, phase: str, site_name: str | None, reason: str = "") -> None:
@@ -372,7 +378,7 @@ class MigrationOperation(MigrationRecovery):
         }
         self._enter_needs_attention(phase, site_name)
         if phase == "backing_up":
-            self._lift_maintenance()
+            self.lift_maintenance_if_code_unchanged()
 
     def _fail_site_step(self, phase: str, site_name: str) -> None:
         """Mark the site's backup or migrate step as failed."""
@@ -444,6 +450,12 @@ class MigrationOperation(MigrationRecovery):
         """Restore maintenance settings and refresh web workers."""
         self._restore_maintenance()
         self.bench.reload_workers(web_only=True, raises=True)
+
+    def lift_maintenance_if_code_unchanged(self) -> None:
+        """Reopen the sites after a paused backup. A branch switch changed the code before its
+        backups, so its sites stay closed: they would run new code on a schema not migrated yet."""
+        if not self.apps_updated:
+            self._lift_maintenance()
 
     def _restart_services(self) -> None:
         """Restart every process on the app code now on disk, then lift maintenance."""

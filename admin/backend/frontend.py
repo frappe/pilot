@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from pilot.exceptions import BenchError
+from pilot.internal.atomic_file import exclusive_file_lock
 
 # The frontend toolchain (unplugin via frappe-ui/vite) uses import.meta.dirname,
 # which only exists in Node 20.11+. Older Node fails the build with an opaque
@@ -38,20 +39,19 @@ def build_admin_frontend(
     from pilot.core.server import Server
 
     _check_node_version()
-    root = Server().root
-    _build_frontend(
-        _find_frontend(), root / "admin" / "backend" / "static" / "dashboard", "dashboard", on_progress, force=force
-    )
-    _build_frontend(
-        _find_editor(), root / "admin" / "backend" / "static" / "editor", "editor", on_progress, force=force
-    )
-    _build_frontend(
-        _find_in_app_embed(),
-        root / "admin" / "backend" / "static" / "in-app-embed" / "cloud-settings",
-        "in-app-embed",
-        on_progress,
-        force=force,
-    )
+    static = Server().root / "admin" / "backend" / "static"
+    static.mkdir(parents=True, exist_ok=True)
+    # Every bench shares these sources and their node_modules, and benches can be initialised at once.
+    with exclusive_file_lock(static / "build"):
+        _build_frontend(_find_frontend(), static / "dashboard", "dashboard", on_progress, force=force)
+        _build_frontend(_find_editor(), static / "editor", "editor", on_progress, force=force)
+        _build_frontend(
+            _find_in_app_embed(),
+            static / "in-app-embed" / "cloud-settings",
+            "in-app-embed",
+            on_progress,
+            force=force,
+        )
     on_progress("\nAdmin frontend up to date.")
 
 

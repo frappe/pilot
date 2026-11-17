@@ -59,7 +59,7 @@ class RestoreSiteTask(Task):
         when the task process dies before it can remove them."""
         return {"site": self.site, "upload_dir": self.upload_dir}
 
-    @step("fetch", lambda self: self.fetch_label)
+    @step("fetch", lambda self: self.fetch_label, icon="lucide-download")
     def fetch(self, workdir: Path) -> BackupRun:
         """Get the backup files from their source."""
         if self.remote_site:
@@ -121,7 +121,7 @@ class RestoreSiteTask(Task):
         streamable = ["public", "private", *(["database"] if self.is_database_streamable else [])]
         return [part for part in streamable if part in self.parts and available.get(part)]
 
-    @step("restore", lambda self: f"Restore {', '.join(self.parts)} into {self.site}")
+    @step("restore", lambda self: f"Restore {', '.join(self.parts)} into {self.site}", icon="lucide-database")
     def restore(self, run: BackupRun) -> None:
         """Restore the backup into the site."""
         self.bench.site(self.site).restore_backup(

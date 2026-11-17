@@ -7,6 +7,4 @@ mql.addEventListener('change', (e) => {
   isMobile.value = e.matches
 })
 
-export function useMobile() {
-  return { isMobile }
-}
+export const useMobile = () => ({ isMobile })

@@ -5,6 +5,7 @@ import { List, ListCell, ListRow } from 'frappe-ui/list'
 import { computed, ref } from 'vue'
 import { formatDueDate } from '../invoicePayment'
 import { useTranslation } from '../translation'
+import AiCreditsMeter from './AiCreditsMeter.vue'
 import BillBreakdown from './BillBreakdown.vue'
 import BillingRow from './BillingRow.vue'
 
@@ -82,6 +83,12 @@ const creditDetail = computed(() =>
         :is-empty="!card"
       >
         <Button :label="card ? __('Change card') : __('Add card')" @click="emit('change-card')" />
+      </BillingRow>
+
+      <BillingRow v-if="billing.ai_credits" :label="__('AI usage')">
+        <template #value>
+          <AiCreditsMeter class="mt-1" :credits="billing.ai_credits" />
+        </template>
       </BillingRow>
 
       <BillingRow :label="__('Billing details')" :value="__('Name, address and tax ID on your invoices')">

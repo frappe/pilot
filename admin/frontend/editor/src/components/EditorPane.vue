@@ -1,337 +1,243 @@
-<template>
-  <div class="relative flex h-full flex-col">
-    <div
-      v-if="mergeConflicts.length"
-      class="flex items-center gap-2 border-b border-outline-gray-2 bg-surface-amber-1 px-3 py-2 text-sm text-ink-amber-3"
-    >
-      <span class="lucide-alert-triangle h-4 w-4"></span>
-      <span class="font-medium">{{ mergeConflicts.length }} unresolved conflict{{ mergeConflicts.length > 1 ? 's' : '' }}</span>
-    </div>
-    <div
-      v-show="store.active"
-      ref="host"
-      class="absolute inset-0"
-      :class="{ 'editor-readonly': readOnly, 'has-banner': mergeConflicts.length }"
-    ></div>
+<script setup lang="ts">
+import { autocompletion } from '@codemirror/autocomplete'
+import { foldGutter } from '@codemirror/language'
+import { Annotation, Compartment, EditorState } from '@codemirror/state'
+import { EditorView, lineNumbers } from '@codemirror/view'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-    <div
-      v-if="!store.active"
-      class="flex h-full flex-col items-center justify-center gap-2 text-ink-gray-4"
-    >
-      <span class="lucide-file-text h-8 w-8 text-current"></span>
-      <p class="text-sm">Open a file to start editing</p>
-    </div>
-  </div>
-</template>
-
-<script setup>
-import { onMounted, onBeforeUnmount, ref, watch, computed, nextTick } from 'vue'
-import { monaco, languageFor, editorThemeName, applyEditorTheme } from '@/monaco'
-import { useTheme } from '@/composables/useTheme'
+import { blame, gitGutter, type LineChanges, setBlame, setLineChanges } from '@/codemirror/git'
+import { loadLanguage } from '@/codemirror/languages'
+import { conflictCount, mergeConflicts } from '@/codemirror/mergeConflicts'
+import { editorSetup } from '@/codemirror/setup'
 import { useMobile } from '@/composables/useMobile'
-import { useMergeConflicts } from '@/composables/useMergeConflicts'
-import { useEditorStore } from '@/stores/editor'
+import { type Reveal, useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
-import { relTime } from '@/utils'
 
 const store = useEditorStore()
 const git = useGitStore()
-const { isDark } = useTheme()
 const { isMobile } = useMobile()
-const host = ref(null)
-const models = new Map()
-const activeMergeHandler = ref(null)
-const mergeConflicts = ref([])
+const host = ref<HTMLElement>()
+const conflicts = ref(0)
+const states = new Map<string, EditorState>()
+const editable = new Compartment()
+const completion = new Compartment()
+const external = Annotation.define<boolean>()
 
 const readOnly = computed(() => isMobile.value && !store.mobileEdit)
-let editor = null
-let applying = false
-let blameDecos = null
-let gitDecos = null
-let blameData = []
 
-function modelFor(tab) {
-  let m = models.get(tab.path)
-  if (!m) {
-    m = monaco.editor.createModel(tab.content, languageFor(tab.path))
-    m.onDidChangeContent(() => {
-      if (applying) return
-      store.setContent(tab.path, m.getValue())
-    })
-    models.set(tab.path, m)
+let view: EditorView | undefined
+let shownPath: string | null = null
+let revealed: Reveal | null = null
+
+const editableExtension = () => [
+  EditorState.readOnly.of(readOnly.value),
+  EditorView.editable.of(!readOnly.value),
+]
+
+const completionExtension = () => autocompletion({ activateOnTyping: !isMobile.value })
+
+const reconfigure = () =>
+  view?.dispatch({
+    effects: [
+      editable.reconfigure(editableExtension()),
+      completion.reconfigure(completionExtension()),
+    ],
+  })
+
+const syncToStore = EditorView.updateListener.of((update) => {
+  if (!shownPath) return
+
+  const isExternal = update.transactions.some((transaction) => transaction.annotation(external))
+
+  if (update.docChanged && !isExternal) store.setContent(shownPath, update.state.doc.toString())
+
+  if (update.selectionSet) {
+    const head = update.state.selection.main.head
+    const line = update.state.doc.lineAt(head)
+
+    store.setCursor(shownPath, line.number, head - line.from + 1)
   }
-  return m
+
+  conflicts.value = conflictCount(update.state)
+})
+
+const createState = async (path: string, content: string) => {
+  const language = await loadLanguage(path)
+
+  return EditorState.create({
+    doc: content,
+    extensions: [
+      lineNumbers(),
+      gitGutter,
+      foldGutter(),
+      editorSetup,
+      blame,
+      mergeConflicts,
+      editable.of(editableExtension()),
+      completion.of(completionExtension()),
+      syncToStore,
+      language?.extension ?? [],
+    ],
+  })
 }
 
-function setActiveMergeHandler(tab) {
-  if (activeMergeHandler.value) {
-    activeMergeHandler.value.dispose()
-    activeMergeHandler.value = null
-  }
-  if (!editor || !tab) return
-  const m = models.get(tab.path)
-  if (!m) return
-  activeMergeHandler.value = useMergeConflicts(
-    editor,
-    m,
-    (conflicts) => {
-      mergeConflicts.value = conflicts || []
-    },
-    (conflicts) => {
-      mergeConflicts.value = conflicts || []
-      const t = store.tabs.find((t) => t.path === tab.path)
-      if (t) {
-        t.content = m.getValue()
-        t.saved = m.getValue()
-        t.dirty = false
-      }
-    },
-    { isDark: isDark.value },
-  )
-}
-
-function showActive() {
-  if (!editor) return
+const syncDoc = () => {
   const tab = store.active
-  if (!tab) return
-  const m = modelFor(tab)
-  if (editor.getModel() !== m) editor.setModel(m)
-  setActiveMergeHandler(tab)
-  if (store.blame) loadBlame()
+
+  if (!view || !tab || tab.path !== shownPath || view.state.doc.toString() === tab.content) return
+
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: tab.content },
+    annotations: external.of(true),
+  })
+}
+
+const lineChanges = async (path: string): Promise<LineChanges> => {
+  if (!git.repo) return {}
+
+  if (!git.statusFor(path).includes('?')) return git.getDiff(path)
+
+  const lines = view?.state.doc.lines ?? 0
+
+  return { added: Array.from({ length: lines }, (_, index) => index + 1) }
+}
+
+const loadGitGutter = async () => {
+  const path = shownPath
+
+  if (!path) return
+
+  const changes = await lineChanges(path)
+
+  if (path === shownPath) view?.dispatch({ effects: setLineChanges.of(changes) })
+}
+
+const loadBlame = async () => {
+  const path = shownPath
+
+  if (!path) return
+
+  const lines = store.blame ? await git.getBlame(path) : []
+
+  if (path === shownPath) view?.dispatch({ effects: setBlame.of(lines) })
+}
+
+const applyReveal = () => {
+  const reveal = store.reveal
+
+  if (!view || !reveal || reveal === revealed || reveal.path !== shownPath) return
+
+  const { doc } = view.state
+  const line = doc.line(Math.min(Math.max(1, reveal.line), doc.lines))
+  const anchor = Math.min(line.from + reveal.col - 1, line.to)
+
+  revealed = reveal
+  view.dispatch({
+    selection: { anchor },
+    effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
+  })
+  view.focus()
+}
+
+const showActive = async () => {
+  const tab = store.active
+
+  if (!view || !tab || tab.path === shownPath) return
+
+  const state = states.get(tab.path) ?? (await createState(tab.path, tab.content))
+
+  if (!view || store.active?.path !== tab.path) return
+
+  if (shownPath && states.has(shownPath)) states.set(shownPath, view.state)
+
+  states.set(tab.path, state)
+  shownPath = tab.path
+  view.setState(state)
+  reconfigure()
+  syncDoc()
+  conflicts.value = conflictCount(view.state)
   loadGitGutter()
+  loadBlame()
+  applyReveal()
 }
 
-async function loadGitGutter() {
-  if (!editor || !store.active || !git.repo) {
-    if (gitDecos) gitDecos.clear()
-    return
-  }
-  const path = store.active.path
-  const code = git.statusFor(path)
-  let d
-  if (code.includes('?')) {
-    const n = editor.getModel()?.getLineCount() || 0
-    d = { added: Array.from({ length: n }, (_, i) => i + 1), modified: [], deleted: [] }
-  } else {
-    d = await git.getDiff(path)
-  }
-  if (store.active && store.active.path === path) renderGitGutter(d)
-}
+const zoom = (event: WheelEvent) => {
+  if (!event.ctrlKey && !event.metaKey) return
 
-function renderGitGutter(d) {
-  if (!editor) return
-  if (!gitDecos) gitDecos = editor.createDecorationsCollection()
-  const model = editor.getModel()
-  if (!model) return
-  const max = model.getLineCount()
-  const decos = []
-  const add = (line, cls) => {
-    if (line < 1 || line > max) return
-    decos.push({
-      range: new monaco.Range(line, 1, line, 1),
-      options: { linesDecorationsClassName: cls },
-    })
-  }
-  for (const l of d.added || []) add(l, 'git-gutter git-gutter-add')
-  for (const l of d.modified || []) add(l, 'git-gutter git-gutter-mod')
-  for (const l of d.deleted || []) add(Math.max(1, l), 'git-gutter git-gutter-del')
-  gitDecos.set(decos)
-}
-
-async function loadBlame() {
-  if (!store.active) return
-  blameData = await git.getBlame(store.active.path)
-  renderBlame()
-}
-
-function renderBlame() {
-  if (!editor) return
-  if (!blameDecos) blameDecos = editor.createDecorationsCollection()
-  if (!store.blame || !blameData.length) {
-    blameDecos.clear()
-    return
-  }
-  const pos = editor.getPosition() || { lineNumber: 1, column: 1 }
-  const b = blameData[pos.lineNumber - 1]
-  const model = editor.getModel()
-  if (!b || !model) {
-    blameDecos.clear()
-    return
-  }
-  const col = model.getLineMaxColumn(pos.lineNumber)
-  const label = b.author === 'Uncommitted'
-    ? '      Uncommitted changes'
-    : `      ${b.author}, ${relTime(b.time)} • ${b.summary}`
-  blameDecos.set([
-    {
-      range: new monaco.Range(pos.lineNumber, col, pos.lineNumber, col),
-      options: {
-        after: { content: label, inlineClassName: 'blame-inline' },
-        showIfCollapsed: true,
-      },
-    },
-  ])
+  event.preventDefault()
+  store.bumpFont(event.deltaY < 0 ? 1 : -1)
 }
 
 onMounted(() => {
-  editor = monaco.editor.create(host.value, {
-    model: null,
-    theme: editorThemeName(),
-    automaticLayout: true,
-    readOnly: readOnly.value,
-    domReadOnly: readOnly.value,
-    fontSize: store.fontSize,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    smoothScrolling: true,
-    renderWhitespace: 'selection',
-    tabSize: 2,
-    // Improve touch handling on phones/tablets.
-    quickSuggestions: !isMobile.value,
-    parameterHints: { enabled: !isMobile.value },
-    hover: { enabled: !isMobile.value },
-    suggestOnTriggerCharacters: !isMobile.value,
-    acceptSuggestionOnEnter: isMobile.value ? 'off' : 'on',
-  })
-  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-    if (store.active?.dirty) store.save(store.active.path)
-  })
-  editor.onDidChangeCursorPosition((e) => {
-    if (store.active) store.setCursor(store.active.path, e.position.lineNumber, e.position.column)
-    if (store.blame) renderBlame()
-  })
   if (new URLSearchParams(location.search).get('blame') === '1') store.blame = true
-  host.value.addEventListener('wheel', onWheelZoom, { passive: false, capture: true })
-  nextTick(() => {
-    showActive()
-    applyInputMode()
-  })
+
+  view = new EditorView({ parent: host.value })
+  showActive()
 })
 
-// Tell mobile browsers not to raise the virtual keyboard while read-only, even
-// if Monaco's hidden input element gets focused on tap.
-function applyInputMode() {
-  const input = host.value?.querySelector('.native-edit-context, textarea.inputarea')
-  if (!input) return
-  if (readOnly.value) input.setAttribute('inputmode', 'none')
-  else input.removeAttribute('inputmode')
-}
-
-// Ctrl/Cmd + wheel (and trackpad pinch, which the browser maps to ctrl+wheel)
-// steps the editor font size, keeping the store as the single source of truth.
-function onWheelZoom(e) {
-  if (!(e.ctrlKey || e.metaKey)) return
-  e.preventDefault()
-  store.bumpFont(e.deltaY < 0 ? 1 : -1)
-}
-
 onBeforeUnmount(() => {
-  host.value?.removeEventListener('wheel', onWheelZoom, { capture: true })
-  editor?.dispose()
-  activeMergeHandler.value?.dispose()
-  models.forEach((m) => m.dispose())
-  models.clear()
+  view?.destroy()
+  view = undefined
+  states.clear()
 })
 
 watch(() => store.activePath, showActive)
+watch(() => store.active?.external, syncDoc)
+watch(() => store.reveal, applyReveal)
+watch(() => store.blame, loadBlame)
+watch(() => `${git.repo}:${git.count}`, loadGitGutter)
+watch(isMobile, reconfigure)
 
 watch(
-  () => store.tabs.map((t) => t.path),
+  () => store.tabs.map((tab) => tab.path),
   (paths) => {
-    for (const [p, m] of models) {
-      if (!paths.includes(p)) {
-        m.dispose()
-        models.delete(p)
-      }
-    }
+    for (const path of states.keys()) if (!paths.includes(path)) states.delete(path)
+
+    if (shownPath && !paths.includes(shownPath)) shownPath = null
   },
 )
 
 watch(
-  () => (store.active ? store.active.external : null),
+  () => store.active?.saved,
   () => {
-    const tab = store.active
-    if (!tab) return
-    const m = modelFor(tab)
-    if (m.getValue() !== tab.content) {
-      applying = true
-      m.setValue(tab.content)
-      applying = false
-    }
-  },
-)
+    if (store.active) git.invalidateBlame(store.active.path)
 
-watch(
-  () => store.reveal,
-  (r) => {
-    if (!r || !editor || !store.active || store.active.path !== r.path) return
-    nextTick(() => {
-      editor.revealLineInCenter(r.line)
-      editor.setPosition({ lineNumber: r.line, column: r.col || 1 })
-      editor.focus()
-      if (store.blame) renderBlame()
-    })
-  },
-)
-
-watch(
-  () => (store.active ? store.active.saved : null),
-  () => {
-    git.invalidateBlame(store.active?.path)
-    if (store.blame) loadBlame()
+    loadBlame()
     loadGitGutter()
   },
 )
 
-watch(
-  () => git.repo + ':' + git.count,
-  () => loadGitGutter(),
-)
+watch(readOnly, (value) => {
+  reconfigure()
 
-watch(
-  () => store.blame,
-  (on) => {
-    if (on) loadBlame()
-    else if (blameDecos) blameDecos.clear()
-  },
-)
-
-watch(isDark, () => {
-  applyEditorTheme()
-  // Re-render conflict zones so they pick up the new theme
-  setActiveMergeHandler(store.active)
-})
-
-watch(isMobile, (mobile) => {
-  if (!editor) return
-  editor.updateOptions({
-    quickSuggestions: !mobile,
-    parameterHints: { enabled: !mobile },
-    hover: { enabled: !mobile },
-    suggestOnTriggerCharacters: !mobile,
-    acceptSuggestionOnEnter: mobile ? 'off' : 'on',
-  })
+  if (!value) view?.focus()
 })
 
 watch(
   () => store.fontSize,
-  (size) => editor?.updateOptions({ fontSize: size }),
-)
-
-watch(readOnly, (ro) => {
-  if (!editor) return
-  editor.updateOptions({ readOnly: ro, domReadOnly: ro })
-  applyInputMode()
-  if (!ro) nextTick(() => editor.focus())
-})
-
-// When the diff overlay closes the editor was display:none, so Monaco needs a
-// relayout to fill the area again.
-watch(
-  () => store.diff,
-  (d) => {
-    if (!d) nextTick(() => editor?.layout())
-  },
+  () => view?.requestMeasure(),
 )
 </script>
+
+<template>
+  <div class="flex h-full flex-col">
+    <p
+      v-if="conflicts"
+      class="flex items-center gap-2 border-b border-outline-gray-2 bg-surface-amber-1 px-3 py-2 text-sm-medium text-ink-amber-5"
+    >
+      <span class="lucide-alert-triangle h-4 w-4" />
+      {{ conflicts }}
+      unresolved conflict{{ conflicts > 1 ? 's' : '' }}
+    </p>
+
+    <div v-show="store.active" ref="host" class="min-h-0 flex-1" @wheel.capture="zoom" />
+
+    <p
+      v-if="!store.active"
+      class="flex h-full flex-col items-center justify-center gap-2 text-sm text-ink-gray-4"
+    >
+      <span class="lucide-file-text h-8 w-8" />
+      Open a file to start editing
+    </p>
+  </div>
+</template>

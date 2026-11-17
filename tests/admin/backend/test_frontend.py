@@ -145,3 +145,23 @@ def test_released_install_without_dist_raises(tmp_path: Path) -> None:
         pytest.raises(BenchError, match="missing from this release"),
     ):
         frontend.ensure_admin_frontend()
+
+
+def test_build_admin_frontend_builds_while_holding_the_shared_build_lock(tmp_path: Path) -> None:
+    events = []
+    with (
+        patch("pilot.core.server.Server.root", tmp_path),
+        patch.object(frontend, "exclusive_file_lock") as lock,
+        patch.object(frontend, "_check_node_version"),
+        patch.object(frontend, "_find_frontend"),
+        patch.object(frontend, "_find_editor"),
+        patch.object(frontend, "_find_in_app_embed"),
+        patch.object(frontend, "_build_frontend", side_effect=lambda *args, **kwargs: events.append(args[2])),
+    ):
+        lock.return_value.__enter__.side_effect = lambda: events.append("locked")
+        lock.return_value.__exit__.side_effect = lambda *args: events.append("unlocked")
+        frontend.build_admin_frontend()
+
+    # A second bench's init waits here instead of sharing node_modules mid-install.
+    lock.assert_called_once_with(tmp_path / "admin" / "backend" / "static" / "build")
+    assert events == ["locked", "dashboard", "editor", "in-app-embed", "unlocked"]

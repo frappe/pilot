@@ -14,4 +14,11 @@ export const appsApi = {
     request
       .post(`apps/${encodeURIComponent(name)}/actions/switch-branch`, { json: { branch } })
       .json(),
+
+  followBranch: (name: string, followBranch: boolean): Promise<TaskPayload> =>
+    request
+      .post(`apps/${encodeURIComponent(name)}/actions/follow-branch`, {
+        json: { follow_branch: followBranch },
+      })
+      .json(),
 }

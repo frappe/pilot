@@ -8,7 +8,7 @@ from unittest.mock import call, patch
 import pytest
 
 from pilot.core.app import App
-from pilot.exceptions import AppValidationError, CommandError
+from pilot.exceptions import AppValidationError, BenchError, CommandError
 from pilot.managers.environment import PythonEnvManager
 from pilot.tasks.switch_branch import SwitchBranchTask
 from tests.pilot.commands.test_commands import make_bench
@@ -187,3 +187,27 @@ def test_return_to_restores_the_commit_on_its_tracked_branch(tmp_path: Path, bra
     assert switch.call_args_list == ([call(switched_to)] if switched_to else [])
     checkout.assert_called_once_with("abc1234")
     assert app.config.branch == ("develop" if switched_to else tracked)
+
+
+def test_a_migration_that_cannot_start_returns_the_app_to_its_old_branch(tmp_path: Path) -> None:
+    """Sites that will not be migrated must not run the new branch's code."""
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    _write_app(bench, '[{"doctype": "Role"}]\n')
+
+    with (
+        patch.object(App, "head_sha", "abc1234"),
+        patch("pilot.core.bench.inventory.BenchInventory._git_branch", return_value="main"),
+        patch.object(App, "switch_branch"),
+        patch.object(App, "record_branch") as record_branch,
+        patch.object(App, "return_to") as return_to,
+        patch.object(PythonEnvManager, "install_app") as install,
+        patch.object(PythonEnvManager, "build_assets_for_app"),
+        patch.object(SwitchBranchTask, "queue_site_migrations", side_effect=BenchError("not enough disk space")),
+        pytest.raises(BenchError, match="disk space"),
+    ):
+        _task(bench).run()
+
+    return_to.assert_called_once_with("main", "abc1234")
+    assert install.call_count == 2
+    assert record_branch.call_count == 2

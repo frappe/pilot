@@ -72,6 +72,8 @@ branch = "develop"
 follow_branch = true
 ```
 
+In Admin, the app menu on a site's Apps tab sets this flag with **Use latest commits** and clears it with **Use marketplace releases**. Each change starts an update check.
+
 A linked app uses `path` instead of `repo` and `branch`. Pilot symlinks that checkout into `apps/` and never pulls, switches, or checks out commits in it. `pilot dev setup` writes this entry:
 
 ```toml

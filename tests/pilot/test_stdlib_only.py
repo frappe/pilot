@@ -27,6 +27,7 @@ ADMIN_VENV_IMPORTS = {
 # Scripts that pilot runs with the bench's Python and never imports.
 BENCH_PYTHON_IMPORTS = {
     "pilot/core/site/console/jedi_helper.py": {"jedi"},
+    "pilot/core/database/bench_query.py": {"pymysql", "psycopg2", "psycopg"},
 }
 NON_CLI_IMPORTS = {**ADMIN_VENV_IMPORTS, **BENCH_PYTHON_IMPORTS}
 FIRST_PARTY = {"pilot", "admin"}

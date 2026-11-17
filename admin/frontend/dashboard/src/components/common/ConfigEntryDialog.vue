@@ -115,7 +115,7 @@ const submit = async () => {
 
 <template>
   <Dialog v-model="open" :title="isNew ? 'Add config' : `Edit ${known?.title ?? editKey}`" size="xl">
-    <div class="space-y-3">
+    <div class="space-y-4">
       <Combobox
         v-if="isNew"
         label="Config name"

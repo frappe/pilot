@@ -94,7 +94,7 @@ const isDatabaseListExpandable = computed(
       />
 
       <div class="flex items-center gap-2 mt-4 py-3 border-t border-outline-alpha-gray-1">
-        <span class="font-medium text-ink-gray-8 text-sm">Usage per database</span>
+        <span class="text-ink-gray-8 text-base-medium">Usage per database</span>
         <Badge :label="String(data.databases.length)" />
       </div>
 
@@ -113,7 +113,7 @@ const isDatabaseListExpandable = computed(
             <div class="flex items-center gap-2">
               <span class="text-ink-gray-5" :class="row.site ? 'lucide-globe' : 'lucide-database'" />
               <span
-                class="text-sm truncate"
+                class="text-base truncate"
                 :class="row.site ? 'text-ink-gray-8' : 'text-ink-gray-7'"
               >
                 {{ row.site || row.schema }}
@@ -123,7 +123,7 @@ const isDatabaseListExpandable = computed(
               <span v-if="row.site" class="size-3.5 text-ink-gray-5 lucide-chevron-right" />
             </div>
 
-            <div class="text-ink-gray-8 text-sm tabular-nums shrink-0">
+            <div class="text-ink-gray-8 text-base tabular-nums shrink-0">
               {{ formatBytes(row.bytes) }}
             </div>
           </div>

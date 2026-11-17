@@ -285,7 +285,7 @@ onMounted(refresh)
 
             <span
               class="whitespace-nowrap"
-              :class="index === current ? 'text-ink-gray-8 text-sm-medium' : 'text-ink-gray-6 text-sm'"
+              :class="index === current ? 'text-ink-gray-8 text-base-medium' : 'text-ink-gray-6 text-base'"
             >
               {{ step.name }}
             </span>

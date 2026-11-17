@@ -177,6 +177,16 @@ class Database(ABC):
         MariaDB overrides it with backticks."""
         return '"{}"'.format(name.replace('"', ""))
 
+    @property
+    def has_driver(self) -> bool:
+        """Whether this Python can load the engine's client library."""
+        return True
+
+    @property
+    def connection_settings(self) -> dict:
+        """How to connect, for a query run by another interpreter."""
+        raise NotImplementedError(f"{type(self).__name__} needs no driver outside the standard library")
+
     @abstractmethod
     def get_tables(self) -> list[str]:
         """The table names."""

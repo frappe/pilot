@@ -47,6 +47,8 @@ class _ManagedCnfParser(configparser.ConfigParser):
 
 class MariaDBManager(UserOwnedDBManager):
     client_timeout = 5
+    # A DDL batch on a loaded host can run far longer than it takes to connect.
+    admin_sql_timeout = 600
     mebibyte = 1024 * 1024
 
     sized_for = re.compile(r"^# pilot-sized-for-memory-mb = (\d+)$", re.M)
@@ -164,10 +166,13 @@ class MariaDBManager(UserOwnedDBManager):
         if HostPlatform().is_macos:
             return self._provision_macos()
 
-        if not self.is_provisioned():
-            sizing = self._write_config()
-            self._initialize_data_dir()
-            self._install_unit(sizing)
+        # Benches initialised in parallel share this server; one of them creates the data directory.
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        with exclusive_file_lock(self.config_dir / "provision"):
+            if not self.is_provisioned():
+                sizing = self._write_config()
+                self._initialize_data_dir()
+                self._install_unit(sizing)
         self.install_sizing_unit()
         self.enable_and_start()
         self._wait_until_reachable()
@@ -1117,7 +1122,7 @@ class MariaDBManager(UserOwnedDBManager):
             self.config.admin_user,
             "--batch",
         ]
-        socket_path = self._detect_socket()
+        socket_path = self.client_socket
         if socket_path:
             cmd.append(f"--socket={socket_path}")
         elif self.config.existing or not HostPlatform().is_macos:
@@ -1132,7 +1137,7 @@ class MariaDBManager(UserOwnedDBManager):
             text=True,
             check=True,
             capture_output=True,
-            timeout=self.client_timeout,
+            timeout=self.admin_sql_timeout,
             env={**os.environ, "MYSQL_PWD": self.config.root_password},
         )
 
@@ -1245,7 +1250,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Open an admin connection to the shared MariaDB server."""
         import pymysql
 
-        socket = self._detect_socket() or None
+        socket = self.client_socket or None
         return pymysql.connect(
             host=self.config.host,
             port=self.config.port,
@@ -1260,8 +1265,9 @@ class MariaDBManager(UserOwnedDBManager):
             ssl_disabled=is_local_host(self.config.host, socket),
         )
 
-    def _detect_socket(self) -> str:
-        """The server socket path, or an empty string for TCP."""
+    @property
+    def client_socket(self) -> str:
+        """The socket clients should use, or an empty string for TCP."""
         if self.config.socket_path:
             return self.config.socket_path
         if self.config.existing:

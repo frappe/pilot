@@ -18,7 +18,7 @@ class CloneBenchTask(Task):
         """The resources this task holds while active."""
         return [f"bench:{self.source_bench}", f"bench:{self.name}"]
 
-    @step("clone", lambda self: f"Clone {self.source_bench} into {self.name}")
+    @step("clone", lambda self: f"Clone {self.source_bench} into {self.name}", icon="lucide-package-plus")
     def run(self) -> None:
         """Clone the source bench."""
         from pilot.core.bench import Bench

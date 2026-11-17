@@ -183,7 +183,7 @@ onMounted(async () => {
   </div>
 
   <div v-else class="flex flex-col gap-8">
-    <section class="space-y-5">
+    <section class="space-y-6">
       <SettingsSwitch
         label="Enable web application firewall"
         description="Inspects request contents for SQLi, XSS and path traversal, across all sites and the admin."

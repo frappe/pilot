@@ -77,7 +77,7 @@ const navigate = (delta: number) => {
           ref="inputRef"
           v-model="query"
           placeholder="Search"
-          class="w-full border-0 bg-transparent p-0 text-sm !outline-none !ring-0"
+          class="w-full border-0 bg-transparent p-0 text-base !outline-none !ring-0"
         />
         <button class="text-ink-gray-5 hover:text-ink-gray-8" aria-label="Close" @click="close">
           <span class="lucide-x size-4" />
@@ -85,7 +85,7 @@ const navigate = (delta: number) => {
       </div>
 
       <Scrollbar v-if="flatItems.length">
-        <div ref="resultsRef" class="flex max-h-[36vh] min-h-[36vh] flex-col p-2 text-sm" role="listbox">
+        <div ref="resultsRef" class="flex max-h-[36vh] min-h-[36vh] flex-col p-2 text-base" role="listbox">
           <template v-for="(group, name) in filtered" :key="name">
             <span class="mb-1 block px-2 py-1 text-xs uppercase text-ink-gray-4">
               {{ name }}

@@ -1,5 +1,172 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import DiffEditor from '@/components/DiffEditor.vue'
+import FileIcon from '@/components/FileIcon.vue'
+import { useMobile } from '@/composables/useMobile'
+import { useEditorStore } from '@/stores/editor'
+import { useGitStore } from '@/stores/git'
+import { baseName, dirName, relTime } from '@/utils'
+
+interface CommitFile {
+  path: string
+  code: string
+}
+
+interface CommitInfo {
+  sha: string
+  short: string
+  subject: string
+  body: string
+  author: string
+  time: number
+  files: CommitFile[]
+}
+
+interface FileDiff {
+  old: string
+  new: string
+}
+
+const editor = useEditorStore()
+const git = useGitStore()
+const { isMobile } = useMobile()
+
+const info = ref<CommitInfo | null>(null)
+const loadingInfo = ref(false)
+const selectedPath = ref<string | null>(null)
+const diff = ref<FileDiff>({ old: '', new: '' })
+const loadingDiff = ref(false)
+const copied = ref(false)
+
+const sha = computed(() => editor.commit?.sha || '')
+
+// Drill-down levels pushed onto browser history so the device/back button and
+// the in-UI back buttons behave the same: diff -> file list -> close.
+let pushed = 0
+
+const pushHist = () => {
+  history.pushState({ hatchCommit: true }, '')
+  pushed++
+}
+
+const onPop = () => {
+  if (pushed <= 0) return
+
+  pushed--
+
+  if (isMobile.value && selectedPath.value) selectedPath.value = null
+  else editor.closeCommit()
+}
+
+const goBack = () => {
+  if (pushed > 0) history.back()
+  else editor.closeCommit()
+}
+
+const backToFiles = () => {
+  if (pushed > 0) history.back()
+  else selectedPath.value = null
+}
+
+const letter = (code: string) => (code.includes('?') ? 'U' : code[0])
+
+const statusColors: Record<string, string> = {
+  U: 'text-ink-green-5',
+  A: 'text-ink-green-5',
+  D: 'text-ink-red-7',
+}
+
+const statusColor = (code: string) => statusColors[letter(code)] || 'text-ink-amber-5'
+
+const loadDiff = async () => {
+  if (!selectedPath.value) return
+
+  loadingDiff.value = true
+
+  try {
+    diff.value = await git.commitFileDiff(sha.value, selectedPath.value)
+  } catch {
+    diff.value = { old: '', new: '' }
+  }
+
+  loadingDiff.value = false
+}
+
+const selectFile = (path: string) => {
+  if (path === selectedPath.value) return
+
+  selectedPath.value = path
+
+  if (isMobile.value) pushHist()
+
+  loadDiff()
+}
+
+const openFile = () => {
+  const p = selectedPath.value
+
+  if (!p) return
+
+  editor.closeCommit()
+  editor.open(p).catch(() => {})
+}
+
+const copySha = async () => {
+  if (!info.value) return
+
+  try {
+    await navigator.clipboard.writeText(info.value.sha)
+    copied.value = true
+    setTimeout(() => (copied.value = false), 1500)
+  } catch {
+    /* clipboard unavailable */
+  }
+}
+
+const loadInfo = async () => {
+  if (!sha.value) return
+
+  loadingInfo.value = true
+  info.value = null
+  selectedPath.value = null
+  diff.value = { old: '', new: '' }
+
+  try {
+    info.value = await git.commitInfo(sha.value)
+  } catch {
+    info.value = null
+  }
+
+  loadingInfo.value = false
+
+  // On desktop the right pane is always visible, so preselect the first file.
+  if (!isMobile.value && info.value?.files?.length) {
+    selectedPath.value = info.value.files[0].path
+    loadDiff()
+  }
+}
+
+watch(sha, loadInfo)
+
+onMounted(() => {
+  window.addEventListener('popstate', onPop)
+  pushHist()
+  loadInfo()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', onPop)
+  // Unwind any history entries we still own (e.g. closed via the activity bar).
+  const n = pushed
+
+  pushed = 0
+
+  if (n > 0) history.go(-n)
+})
+</script>
+
 <template>
-  <div class="flex h-full flex-col bg-surface-white sm:flex-row">
+  <div class="flex h-full flex-col bg-surface-base sm:flex-row">
     <!-- files + metadata; on mobile this is the first page, hidden once a file opens -->
     <div
       v-show="!isMobile || !selectedPath"
@@ -28,11 +195,17 @@
               <span class="flex items-center gap-1">
                 <span class="lucide-clock h-3.5 w-3.5"></span>{{ relTime(info.time) }}
               </span>
-              <button class="flex items-center gap-1 rounded hover:text-ink-gray-8" :title="info.sha" @click="copySha">
+              <button
+                class="flex items-center gap-1 rounded-4 hover:text-ink-gray-8"
+                :title="info.sha"
+                @click="copySha"
+              >
                 <span class="lucide-copy h-3.5 w-3.5"></span>{{ copied ? 'Copied' : info.short }}
               </button>
             </div>
-            <p v-if="info.body" class="mt-2 whitespace-pre-wrap text-sm text-ink-gray-7">{{ info.body }}</p>
+            <p v-if="info.body" class="mt-2 whitespace-pre-wrap text-sm text-ink-gray-7">
+              {{ info.body }}
+            </p>
           </div>
 
           <div class="ed-section">
@@ -50,7 +223,7 @@
               <FileIcon :name="baseName(f.path)" class="ed-lane" />
               <span class="ed-name">{{ baseName(f.path) }}</span>
               <span class="ed-path">{{ dirName(f.path) }}</span>
-              <span class="ed-lane ml-auto text-xs font-semibold" :class="statusColor(f.code)">
+              <span class="ed-lane ml-auto text-xs-semibold" :class="statusColor(f.code)">
                 {{ letter(f.code) }}
               </span>
             </div>
@@ -62,7 +235,10 @@
 
     <!-- diff; on mobile this is the second page, shown only when a file is open -->
     <div v-show="!isMobile || selectedPath" class="flex min-h-0 w-full flex-1 flex-col">
-      <div v-if="selectedPath" class="flex h-11 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-2 sm:h-9">
+      <div
+        v-if="selectedPath"
+        class="flex h-11 shrink-0 items-center gap-2 border-b border-outline-gray-1 px-2 sm:h-9"
+      >
         <button class="ed-icon-button sm:hidden" title="Back" @click="backToFiles">
           <span class="lucide-chevron-left h-[18px] w-[18px] text-current"></span>
         </button>
@@ -75,7 +251,10 @@
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto pb-24 sm:pb-2">
-        <div v-if="!selectedPath" class="ed-empty hidden h-full items-center justify-center sm:flex">
+        <div
+          v-if="!selectedPath"
+          class="ed-empty hidden h-full items-center justify-center sm:flex"
+        >
           Select a file to view its changes.
         </div>
         <div v-else-if="loadingDiff" class="ed-empty">Loading…</div>
@@ -84,124 +263,3 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import FileIcon from '@/components/FileIcon.vue'
-import DiffEditor from '@/components/DiffEditor.vue'
-import { useEditorStore } from '@/stores/editor'
-import { useGitStore } from '@/stores/git'
-import { useMobile } from '@/composables/useMobile'
-import { baseName, dirName, relTime } from '@/utils'
-
-const editor = useEditorStore()
-const git = useGitStore()
-const { isMobile } = useMobile()
-
-const info = ref(null)
-const loadingInfo = ref(false)
-const selectedPath = ref(null)
-const diff = ref({ old: '', new: '' })
-const loadingDiff = ref(false)
-const copied = ref(false)
-
-const sha = computed(() => editor.commit?.sha || '')
-
-// Drill-down levels pushed onto browser history so the device/back button and
-// the in-UI back buttons behave the same: diff -> file list -> close.
-let pushed = 0
-function pushHist() {
-  history.pushState({ hatchCommit: true }, '')
-  pushed++
-}
-function onPop() {
-  if (pushed <= 0) return
-  pushed--
-  if (isMobile.value && selectedPath.value) selectedPath.value = null
-  else editor.closeCommit()
-}
-function goBack() {
-  if (pushed > 0) history.back()
-  else editor.closeCommit()
-}
-function backToFiles() {
-  if (pushed > 0) history.back()
-  else selectedPath.value = null
-}
-
-function letter(code) {
-  return code.includes('?') ? 'U' : code[0]
-}
-function statusColor(code) {
-  return { U: 'text-ink-green-3', A: 'text-ink-green-3', D: 'text-ink-red-4' }[letter(code)] || 'text-ink-amber-3'
-}
-
-function selectFile(path) {
-  if (path === selectedPath.value) return
-  selectedPath.value = path
-  if (isMobile.value) pushHist()
-  loadDiff()
-}
-
-function openFile() {
-  const p = selectedPath.value
-  editor.closeCommit()
-  editor.open(p).catch(() => {})
-}
-
-async function copySha() {
-  try {
-    await navigator.clipboard.writeText(info.value.sha)
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1500)
-  } catch {
-    /* clipboard unavailable */
-  }
-}
-
-async function loadDiff() {
-  if (!selectedPath.value) return
-  loadingDiff.value = true
-  try {
-    diff.value = await git.commitFileDiff(sha.value, selectedPath.value)
-  } catch {
-    diff.value = { old: '', new: '' }
-  }
-  loadingDiff.value = false
-}
-
-async function loadInfo() {
-  if (!sha.value) return
-  loadingInfo.value = true
-  info.value = null
-  selectedPath.value = null
-  diff.value = { old: '', new: '' }
-  try {
-    info.value = await git.commitInfo(sha.value)
-  } catch {
-    info.value = null
-  }
-  loadingInfo.value = false
-  // On desktop the right pane is always visible, so preselect the first file.
-  if (!isMobile.value && info.value?.files?.length) {
-    selectedPath.value = info.value.files[0].path
-    loadDiff()
-  }
-}
-
-watch(sha, loadInfo)
-
-onMounted(() => {
-  window.addEventListener('popstate', onPop)
-  pushHist()
-  loadInfo()
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('popstate', onPop)
-  // Unwind any history entries we still own (e.g. closed via the activity bar).
-  const n = pushed
-  pushed = 0
-  if (n > 0) history.go(-n)
-})
-</script>

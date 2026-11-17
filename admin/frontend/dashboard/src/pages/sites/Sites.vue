@@ -121,10 +121,10 @@ const showSkeleton = computed(() => loading.value && sites.value.length === 0)
 const listColumns = [
   { label: 'Site', key: 'site', class: 'w-1/3' },
   { label: 'Status', key: 'status' },
-  { label: 'Requests · 24h', key: 'requests', class: 'text-ink-gray-6 text-sm tabular-nums' },
-  { label: 'Uptime', key: 'uptime', class: 'text-ink-gray-6 text-sm tabular-nums' },
-  { label: 'Storage', key: 'storage', class: 'text-ink-gray-6 text-sm tabular-nums' },
-  { label: 'Apps', key: 'apps', class: 'text-ink-gray-6 text-sm' },
+  { label: 'Requests · 24h', key: 'requests', class: 'text-ink-gray-6 tabular-nums' },
+  { label: 'Uptime', key: 'uptime', class: 'text-ink-gray-6 tabular-nums' },
+  { label: 'Storage', key: 'storage', class: 'text-ink-gray-6 tabular-nums' },
+  { label: 'Apps', key: 'apps', class: 'text-ink-gray-6' },
   { label: '', key: 'actions' },
 ]
 
@@ -270,7 +270,7 @@ onMounted(() => {
     <template v-else-if="showSkeleton || filteredSites.length">
       <div
         v-if="showSkeleton || view === 'grid'"
-        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5"
       >
         <template v-if="showSkeleton">
           <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />

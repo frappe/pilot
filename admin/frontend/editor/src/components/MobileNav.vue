@@ -1,12 +1,87 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+
+interface Item {
+  id: 'files' | 'search' | 'git' | 'goto'
+  icon: string
+  label: string
+  kind: 'panel' | 'command'
+}
+
+const props = withDefaults(
+  defineProps<{
+    active?: string
+    gitCount?: number
+    hasFile?: boolean
+    editable?: boolean
+    fontSize?: number
+  }>(),
+  { gitCount: 0, hasFile: false, editable: false, fontSize: 13 },
+)
+
+const emit = defineEmits<{
+  select: [id: string]
+  goto: []
+  'toggle-edit': []
+  font: [delta: number]
+}>()
+
+const open = ref(false)
+
+const items: Item[] = [
+  { id: 'files', icon: 'lucide-folder', label: 'Explorer', kind: 'panel' },
+  { id: 'search', icon: 'lucide-search', label: 'Search', kind: 'panel' },
+  { id: 'git', icon: 'lucide-git-branch', label: 'Source Control', kind: 'panel' },
+  { id: 'goto', icon: 'lucide-file-text', label: 'Go to File', kind: 'command' },
+]
+
+const R = 164
+
+// Bloom along a quarter arc from straight-up to straight-left (upper-left
+// quadrant), so the petals fan out like a flower from the corner FAB.
+const petalStyle = (i: number) => {
+  const n = items.length
+  const deg = 90 + (n === 1 ? 45 : (i * 90) / (n - 1))
+  const rad = (deg * Math.PI) / 180
+  const dx = Math.cos(rad) * R
+  const dy = -Math.sin(rad) * R
+
+  if (open.value) {
+    return {
+      transform: `translate(${dx}px, ${dy}px)`,
+      opacity: 1,
+      transitionDelay: `${i * 35}ms`,
+      pointerEvents: 'auto' as const,
+    }
+  }
+
+  return {
+    transform: 'translate(0, 0) scale(0.3)',
+    opacity: 0,
+    transitionDelay: `${(n - 1 - i) * 25}ms`,
+    pointerEvents: 'none' as const,
+  }
+}
+
+const mainIcon = computed(() => {
+  const a = items.find((it) => it.id === props.active)
+
+  return a ? a.icon : 'lucide-grid'
+})
+
+const choose = (it: Item) => {
+  if (it.kind === 'panel') emit('select', it.id)
+  else emit('goto')
+
+  open.value = false
+}
+</script>
+
 <template>
   <div>
     <!-- dim backdrop while the dial is open -->
     <transition name="fade">
-      <div
-        v-if="open"
-        class="fixed inset-0 z-40 bg-black/40"
-        @click="open = false"
-      ></div>
+      <div v-if="open" class="fixed inset-0 z-40 bg-black/40" @click="open = false"></div>
     </transition>
 
     <!-- editor controls float at the top, clear of the corner flower -->
@@ -26,7 +101,9 @@
           >
             <span class="lucide-minus h-4 w-4 text-current"></span>
           </button>
-          <span class="w-7 text-center text-sm font-semibold tabular-nums text-ink-gray-8">{{ fontSize }}</span>
+          <span class="w-7 text-center text-sm-semibold tabular-nums text-ink-gray-8"
+            >{{ fontSize }}</span
+          >
           <button
             class="flex h-8 w-8 items-center justify-center rounded-full text-ink-gray-6 hover:bg-surface-gray-2"
             aria-label="Increase font size"
@@ -41,7 +118,10 @@
           :aria-label="editable ? 'Switch to read-only' : 'Enable editing'"
           @click="$emit('toggle-edit')"
         >
-          <span :class="editable ? 'lucide-pencil' : 'lucide-lock'" class="h-[18px] w-[18px] text-current"></span>
+          <span
+            :class="editable ? 'lucide-pencil' : 'lucide-lock'"
+            class="h-[18px] w-[18px] text-current"
+          ></span>
         </button>
       </div>
     </transition>
@@ -64,7 +144,7 @@
         <span :class="it.icon" class="h-5 w-5 text-current"></span>
         <span
           v-if="it.id === 'git' && gitCount"
-          class="fab-solid absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-2xs font-semibold ring-2 ring-panel"
+          class="fab-solid absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-2xs-semibold ring-2 ring-panel"
         >
           {{ gitCount }}
         </span>
@@ -83,91 +163,3 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { ref, computed } from 'vue'
-
-const props = defineProps({
-  active: String,
-  gitCount: { type: Number, default: 0 },
-  hasFile: { type: Boolean, default: false },
-  editable: { type: Boolean, default: false },
-  fontSize: { type: Number, default: 13 },
-})
-const emit = defineEmits(['select', 'goto', 'toggle-edit', 'font'])
-
-const open = ref(false)
-
-const items = [
-  { id: 'files', icon: 'lucide-folder', label: 'Explorer', kind: 'panel' },
-  { id: 'search', icon: 'lucide-search', label: 'Search', kind: 'panel' },
-  { id: 'git', icon: 'lucide-git-branch', label: 'Source Control', kind: 'panel' },
-  { id: 'goto', icon: 'lucide-file-text', label: 'Go to File', kind: 'command' },
-]
-
-const R = 164
-
-// Bloom along a quarter arc from straight-up to straight-left (upper-left
-// quadrant), so the petals fan out like a flower from the corner FAB.
-function petalStyle(i) {
-  const n = items.length
-  const deg = 90 + (n === 1 ? 45 : (i * 90) / (n - 1))
-  const rad = (deg * Math.PI) / 180
-  const dx = Math.cos(rad) * R
-  const dy = -Math.sin(rad) * R
-  if (open.value) {
-    return {
-      transform: `translate(${dx}px, ${dy}px)`,
-      opacity: 1,
-      transitionDelay: `${i * 35}ms`,
-      pointerEvents: 'auto',
-    }
-  }
-  return {
-    transform: 'translate(0, 0) scale(0.3)',
-    opacity: 0,
-    transitionDelay: `${(n - 1 - i) * 25}ms`,
-    pointerEvents: 'none',
-  }
-}
-
-const mainIcon = computed(() => {
-  const a = items.find((it) => it.id === props.active)
-  return a ? a.icon : 'lucide-grid'
-})
-
-function choose(it) {
-  if (it.kind === 'panel') emit('select', it.id)
-  else emit(it.id)
-  open.value = false
-}
-</script>
-
-<style scoped>
-.petal {
-  transition:
-    transform 0.28s cubic-bezier(0.34, 1.4, 0.64, 1),
-    opacity 0.2s ease;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-.drop-enter-active,
-.drop-leave-active {
-  transition:
-    transform 0.22s ease,
-    opacity 0.2s ease;
-}
-.drop-enter-from,
-.drop-leave-to {
-  opacity: 0;
-  transform: translate(-50%, -12px);
-}
-</style>

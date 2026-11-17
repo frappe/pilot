@@ -76,7 +76,7 @@ const submit = async () => {
       <Spinner size="lg" class="text-ink-gray-4" />
     </div>
 
-    <div v-else @pointerdown.stop class="space-y-5">
+    <div v-else @pointerdown.stop class="space-y-6">
       <!-- Site name -->
       <!-- Without wildcard site name -->
       <TextInput
@@ -87,7 +87,7 @@ const submit = async () => {
         @keyup.enter="submit"
       />
       <div v-else class="space-y-1.5">
-        <span class="text-ink-gray-7 text-p-sm-medium">Site name</span>
+        <span class="text-ink-gray-7 text-p-base-medium">Site name</span>
         <div class="flex items-stretch gap-2">
           <TextInput
             v-model="sitePrefix"
@@ -124,7 +124,7 @@ const submit = async () => {
       <!-- Choose apps -->
       <div v-if="availableApps.length">
         <div class="flex justify-between items-center mb-2">
-          <span class="text-ink-gray-7 text-p-sm-medium">Choose apps</span>
+          <span class="text-ink-gray-7 text-p-base-medium">Choose apps</span>
           <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
         </div>
 

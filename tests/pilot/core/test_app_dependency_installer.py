@@ -9,7 +9,12 @@ import pytest
 
 from pilot.core.app import App
 from pilot.core.app.dependency_installer import AppDependencyInstaller
-from pilot.exceptions import BenchError, DependencyResolutionError, RegistryUnavailableError
+from pilot.exceptions import (
+    AppValidationError,
+    BenchError,
+    DependencyResolutionError,
+    RegistryUnavailableError,
+)
 from pilot.integrations.marketplace import Marketplace, Resolver
 from tests.pilot.commands.test_commands import make_bench
 from tests.pilot.commands.test_get_app import make_resolver
@@ -149,3 +154,52 @@ def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(
         pytest.raises(BenchError, match="isn't in the marketplace registry"),
     ):
         AppDependencyInstaller(bench, app).install()
+
+
+def test_install_uses_the_dependency_ranges_the_checkout_declares(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app = make_app(bench, "crm")
+    (bench.apps_path / "crm").mkdir(parents=True)
+    # The branch head needs a newer whatsapp than the marketplace entry for crm says.
+    (bench.apps_path / "crm" / "pyproject.toml").write_text(
+        '[project]\nname = "crm"\n\n[tool.bench.frappe-dependencies]\n'
+        'frappe = ">=16.0.0-dev"\nwhatsapp = ">=1.3.0,<2.0.0"\n'
+    )
+    old_whatsapp = make_resolver("whatsapp")
+    crm = make_resolver("crm", deps={"whatsapp": ">=1.0.0,<2.0.0"})
+    crm._registry = {"whatsapp": [old_whatsapp]}
+
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[crm]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="17.0.0-dev"),
+        patch.object(Marketplace, "_load_registry", return_value=[]),
+        patch.object(App, "install") as install,
+        pytest.raises(DependencyResolutionError, match=r"whatsapp' has no version satisfying '>=1.3.0,<2.0.0'"),
+    ):
+        AppDependencyInstaller(bench, app).install()
+
+    install.assert_not_called()
+
+
+@pytest.mark.parametrize("pyproject", [None, '[project]\nname = "helpdesk"\n'])
+def test_marketplace_dependencies_stay_when_the_checkout_declares_none(tmp_path: Path, pyproject: str | None) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app = make_app(bench, "helpdesk")
+    if pyproject is not None:
+        (bench.apps_path / "helpdesk").mkdir(parents=True)
+        (bench.apps_path / "helpdesk" / "pyproject.toml").write_text(pyproject)
+
+    assert AppDependencyInstaller(bench, app).get_declared_dependencies() is None
+
+
+def test_a_malformed_dependency_table_fails_instead_of_using_the_marketplace(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app = make_app(bench, "crm")
+    (bench.apps_path / "crm").mkdir(parents=True)
+    (bench.apps_path / "crm" / "pyproject.toml").write_text('[tool.bench]\nfrappe-dependencies = "16"\n')
+
+    with pytest.raises(AppValidationError, match="frappe-dependencies"):
+        AppDependencyInstaller(bench, app).get_declared_dependencies()

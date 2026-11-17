@@ -301,3 +301,31 @@ def test_switch_branch_rejects_a_bad_branch_and_an_unknown_app(tmp_path: Path) -
 
     assert bad_branch.status_code == 422
     assert unknown_app.status_code == 404
+
+
+def test_follow_branch_saves_the_flag_and_queues_an_update_check(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _make_cloned_app(bench_root, "helpdesk")
+
+    with (
+        patch("pilot.core.app.App.set_follow_branch") as set_follow_branch,
+        patch("admin.backend.api.v1.apps.FetchAppUpdatesTask.queue", return_value="task-1"),
+        patch("admin.backend.api.v1.apps.accepted_task_response", return_value=("", 202)),
+    ):
+        response = client.post("/api/v1/apps/helpdesk/actions/follow-branch", json={"follow_branch": True})
+
+    assert response.status_code == 202
+    set_follow_branch.assert_called_once_with(True)
+
+
+def test_follow_branch_rejects_a_non_boolean_and_an_unknown_app(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _make_cloned_app(bench_root, "helpdesk")
+
+    not_boolean = client.post("/api/v1/apps/helpdesk/actions/follow-branch", json={"follow_branch": "yes"})
+    unknown_app = client.post("/api/v1/apps/nope/actions/follow-branch", json={"follow_branch": True})
+
+    assert not_boolean.status_code == 422
+    assert unknown_app.status_code == 404

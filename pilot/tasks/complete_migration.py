@@ -11,7 +11,7 @@ class CompleteMigrationTask(Task):
 
     operation_id: str
 
-    @step("restart", "Restart services and finish migration")
+    @step("restart", "Restart services and finish migration", icon="lucide-refresh-cw")
     def run(self) -> None:
         """Complete the migration."""
         self.bench.migrations.get_for_chain_task(

@@ -187,7 +187,7 @@ onMounted(load)
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-5">
+  <div v-else class="space-y-6">
     <div class="flex justify-between items-center gap-3">
       <div class="flex flex-col gap-1">
         <p class="text-base-medium text-ink-gray-8">Two-factor authentication</p>
@@ -296,7 +296,7 @@ onMounted(load)
 
           <div class="bg-surface-gray-2 mt-2 p-3 rounded-6">
             <p class="font-mono text-ink-gray-8 break-all">{{ enrollment.secret }}</p>
-            <button class="mt-1 text-ink-blue-2 text-sm" @click="copy(enrollment.secret)">
+            <button class="mt-1 text-ink-blue-2 text-base" @click="copy(enrollment.secret)">
               Copy key
             </button>
           </div>

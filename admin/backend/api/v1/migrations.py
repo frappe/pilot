@@ -165,11 +165,10 @@ def create_update():
 
 
 def _begin(bench: Bench, operation: MigrationOperation):
-    """Start the operation's task chain, cleaning up the record if queuing fails."""
+    """Start the operation's task chain."""
     try:
         task_id = operation.begin()
     except Exception as error:
-        bench.migrations.delete(operation.id)
         return task_failure(error)
     return _accepted(operation, task_id)
 
@@ -237,7 +236,9 @@ def restore_action(operation_id: str):
         return _invalid_state(operation)
     if not operation.can_revert:
         return error_response(
-            "restore_unavailable", "Restore is unavailable: no safeguards were created.", 409
+            "restore_unavailable",
+            "Restore is unavailable: nothing changed, or a migrated site has no backup.",
+            409,
         )
     return _queue_action(operation, RevertMigrationTask, "restore")
 

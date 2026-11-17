@@ -55,7 +55,7 @@ sandbox = true # or false
 ```
 
 - A new systemd bench has no `sandbox` setting and runs in the sandbox.
-- A bench that existed before the sandbox became the default got `sandbox = false` from a patch, so an update does not change how it runs. Set `sandbox = true` to opt in. `pilot restart` applies it.
+- A bench that existed before the sandbox became the default got `sandbox = false` from a patch, so an update does not change how it runs. Set `sandbox = true` to opt in, or run `pilot set-bench-config production_sandbox true`. `pilot restart` applies it.
 - `sandbox = true` with Supervisor is a config error.
 
 Before Pilot writes the units, it starts a trial unit with the same directives. If the host cannot start it, a bench with no setting runs without the sandbox and Pilot logs the reason. A bench with `sandbox = true` fails with the systemd error and keeps its current units.

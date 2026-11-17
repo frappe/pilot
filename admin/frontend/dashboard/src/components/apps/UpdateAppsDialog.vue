@@ -141,7 +141,7 @@ const runUpdate = async () => {
 
         <label v-if="isMigrating" class="flex items-center gap-2 pt-2 cursor-pointer">
           <Checkbox v-model="safeguard" />
-          <span class="text-ink-gray-7 text-sm">Take backup of sites</span>
+          <span class="text-ink-gray-7 text-base">Take backup of sites</span>
         </label>
       </template>
 

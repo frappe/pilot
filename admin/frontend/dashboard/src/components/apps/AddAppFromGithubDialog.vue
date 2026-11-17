@@ -239,7 +239,7 @@ const submit = async () => {
 
       <template v-else>
         <div
-          class="flex items-center justify-between gap-2 bg-surface-gray-1 py-1.5 pr-1.5 pl-3 border rounded-6 border-outline-gray-2 text-ink-gray-7 text-sm"
+          class="flex items-center justify-between gap-2 bg-surface-gray-1 py-1.5 pr-1.5 pl-3 border rounded-6 border-outline-gray-2 text-ink-gray-7 text-base"
         >
           <p class="min-w-0 truncate">
             Connected as
@@ -280,7 +280,7 @@ const submit = async () => {
 
       <p v-if="fetching" class="text-p-sm text-ink-gray-5">Loading branches…</p>
       <p v-else-if="resolving" class="text-p-sm text-ink-gray-5">Checking repository…</p>
-      <div v-else-if="foundName" class="min-w-0 text-p-sm">
+      <div v-else-if="foundName" class="min-w-0 text-p-base">
         <p class="text-ink-green-7">
           Found {{ foundName }}
           <template v-if="siteName">, will be installed on {{ siteName }}</template>

@@ -145,7 +145,7 @@ onMounted(load)
           class="flex flex-col flex-1 justify-center items-center gap-1 min-h-[300px] text-center"
         >
           <span class="size-6 text-ink-gray-3 lucide-chart-bar" />
-          <p class="text-sm-medium text-ink-gray-7">No usage yet</p>
+          <p class="text-base-medium text-ink-gray-7">No usage yet</p>
           <p class="text-p-xs text-ink-gray-5">Data will appear here once activity is tracked</p>
         </div>
 
@@ -158,7 +158,7 @@ onMounted(load)
           <template #tooltip="{ label, items }">
             <p class="mb-2 text-ink-gray-5 text-p-sm">{{ label }}</p>
 
-            <div v-for="item in items" :key="item.name" class="flex items-start gap-2 text-p-sm">
+            <div v-for="item in items" :key="item.name" class="flex items-start gap-2 text-p-base">
               <span class="mt-1.5 rounded-1 size-2 shrink-0" :style="{ background: item.color }" />
               <span class="flex-1 min-w-0 text-ink-gray-6 break-words">{{ item.label }}</span>
               <span class="font-semibold text-ink-gray-8 tabular-nums shrink-0">

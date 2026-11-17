@@ -278,7 +278,7 @@ onMounted(() => {
             <span class="size-3.5" :class="activityTypeMeta(row.entry).icon" />
           </span>
 
-          <span class="font-medium text-sm">{{ row.activity }}</span>
+          <span class="text-base-medium">{{ row.activity }}</span>
         </template>
 
         <template #time="{ row }">
@@ -310,7 +310,7 @@ onMounted(() => {
       </div>
 
       <div class="flex flex-col items-center gap-1">
-        <p class="font-semibold text-ink-gray-8 text-sm">No activity yet</p>
+        <p class="text-ink-gray-8 text-base-semibold">No activity yet</p>
         <p class="max-w-xs text-ink-gray-5 text-p-sm text-center">
           Actions like logins, backups, and app changes will show up here once they happen.
         </p>
@@ -320,7 +320,7 @@ onMounted(() => {
 
   <Dialog v-model="showDetail" title="Activity details" size="md">
     <div class="space-y-2 max-h-96 overflow-y-auto">
-      <div v-for="d in detailEntries" :key="d.key" class="flex gap-3 text-p-sm">
+      <div v-for="d in detailEntries" :key="d.key" class="flex gap-3 text-p-base">
         <span class="w-28 shrink-0 text-ink-gray-5 capitalize">{{ d.key.replace(/_/g, ' ') }}</span>
         <span class="text-ink-gray-8 break-all">{{ d.value }}</span>
       </div>

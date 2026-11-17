@@ -20,7 +20,7 @@ class BuildTask(Task):
         """Build the assets."""
         self.build()
 
-    @step("build", lambda self: self.build_label)
+    @step("build", lambda self: self.build_label, icon="lucide-hammer")
     def build(self) -> None:
         """Build the assets of a site, an app or the bench."""
         if self.site:

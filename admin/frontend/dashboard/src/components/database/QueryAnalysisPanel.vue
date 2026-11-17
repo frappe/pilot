@@ -232,7 +232,7 @@ const openQuery = ref('')
     @update:model-value="openQuery = ''"
   >
     <pre
-      class="bg-surface-gray-2 p-3 border rounded-6 border-outline-gray-1 text-ink-gray-7 text-sm whitespace-pre-wrap"
+      class="bg-surface-gray-2 p-3 border rounded-6 border-outline-gray-1 text-ink-gray-7 text-base whitespace-pre-wrap"
       >{{ openQuery }}</pre
     >
   </Dialog>

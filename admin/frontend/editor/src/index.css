@@ -7,7 +7,7 @@
  */
 @layer components {
   .ed-row {
-    @apply flex h-10 cursor-pointer select-none items-center gap-2 rounded-md px-2 text-ink-gray-7 sm:h-7;
+    @apply flex h-10 cursor-pointer select-none items-center gap-2 rounded-5 px-2 text-ink-gray-7 sm:h-7;
   }
   .ed-row:hover {
     @apply bg-surface-gray-2;
@@ -44,11 +44,11 @@
   /* Search hit. The amber surface alone is too close to white, so it carries a
      ring to stay legible on both panel backgrounds. */
   .ed-mark {
-    @apply rounded-[2px] bg-surface-amber-1 text-ink-gray-9 ring-1 ring-outline-amber-2;
+    @apply rounded-[2px] bg-surface-amber-1 text-ink-gray-9 ring-1 ring-outline-amber-3;
   }
   /* Square icon button used in panel headers and row hover actions. */
   .ed-icon-button {
-    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8 disabled:opacity-40 sm:h-6 sm:w-6;
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-5 text-ink-gray-6 hover:bg-surface-gray-2 hover:text-ink-gray-8 disabled:opacity-40 sm:h-6 sm:w-6;
   }
 }
 
@@ -75,18 +75,68 @@ html {
   --surface-panel: #ffffff;
   --sb-thumb: rgba(0, 0, 0, 0.18);
   --sb-thumb-hover: rgba(0, 0, 0, 0.32);
+  --code-bg: var(--surface-panel);
+  --code-fg: #171717;
+  --code-comment: #6f6f6f;
+  --code-keyword: #c2410c;
+  --code-string: #a16207;
+  --code-number: #7e22ce;
+  --code-type: #15803d;
+  --code-function: #0f766e;
+  --code-variable: #1d4ed8;
+  --code-special: #b91c1c;
+  --code-punctuation: #6f6f6f;
+  --code-line-number: #8f8f8f;
+  --code-line-number-active: #171717;
+  --code-line-highlight: #f7f7f7;
+  --code-selection: #dbe9fb;
+  --code-guide: #ececec;
+  --code-widget: #ffffff;
+  --code-border: #e2e2e2;
+  --code-search: rgba(227, 179, 65, 0.25);
+  --code-search-active: rgba(227, 179, 65, 0.5);
+  --code-inserted-line: rgba(125, 197, 162, 0.08);
+  --code-inserted-text: rgba(125, 197, 162, 0.15);
+  --code-removed-line: rgba(255, 117, 117, 0.08);
+  --code-removed-text: rgba(255, 117, 117, 0.15);
+  --git-added: #2da44e;
+  --git-modified: #4c8bf5;
+  --git-deleted: #cf222e;
+  --conflict: #e3b341;
+  --conflict-action: #0969da;
 }
 [data-theme='dark'] {
   --surface-chrome: #0d0d0d;
   --surface-panel: #171717;
   --sb-thumb: rgba(255, 255, 255, 0.13);
   --sb-thumb-hover: rgba(255, 255, 255, 0.26);
+  --code-fg: #d9d9d9;
+  --code-comment: #7a7a7a;
+  --code-keyword: #fa8a40;
+  --code-string: #f4c25f;
+  --code-number: #c993ef;
+  --code-type: #7dc5a2;
+  --code-function: #51decf;
+  --code-variable: #76bef9;
+  --code-special: #ff7575;
+  --code-punctuation: #7a7a7a;
+  --code-line-number: #575757;
+  --code-line-number-active: #afafaf;
+  --code-line-highlight: #1f1f1f;
+  --code-selection: #383838;
+  --code-guide: #2e2e2e;
+  --code-widget: #1f1f1f;
+  --code-border: #383838;
+  --conflict-action: #4daafc;
 }
 .bg-chrome {
   background-color: var(--surface-chrome);
 }
 .bg-panel {
   background-color: var(--surface-panel);
+}
+.ring-panel {
+  --tw-ring-color: var(--surface-panel);
 }
 
 /* High-contrast circular action button (FAB): inverts with theme */
@@ -153,104 +203,105 @@ body {
   z-index: 40 !important;
 }
 
-/*
- * frappe-ui's Dialog sets no z-index (stacks at auto), but Monaco's own
- * widgets do (e.g. the read-only "Cannot edit" bubble is z-index: 10000).
- * Clear Monaco's max so confirm dialogs stay on top of an open diff view.
- */
-.dialog-overlay,
-.dialog-content {
-  z-index: 10050 !important;
+.tok-keyword {
+  color: var(--code-keyword);
 }
-
-.monaco-editor,
-.monaco-editor .overflow-guard {
-  border-radius: 0;
+.tok-string {
+  color: var(--code-string);
 }
-
-/* Read-only (mobile default): no blinking caret on tap. */
-.editor-readonly .monaco-editor .cursors-layer {
-  display: none !important;
+.tok-number {
+  color: var(--code-number);
 }
-
-/* Match line in the search preview */
-.monaco-editor .search-hit-line {
-  background: rgba(227, 179, 65, 0.16);
+.tok-type {
+  color: var(--code-type);
 }
-
-.monaco-editor .blame-inline {
-  opacity: 0.5;
+.tok-function {
+  color: var(--code-function);
+}
+.tok-variable,
+.tok-link {
+  color: var(--code-variable);
+}
+.tok-special {
+  color: var(--code-special);
+}
+.tok-comment {
+  color: var(--code-comment);
   font-style: italic;
 }
+.tok-punctuation {
+  color: var(--code-punctuation);
+}
+.tok-heading,
+.tok-strong {
+  font-weight: 600;
+}
+.tok-emphasis {
+  font-style: italic;
+}
+.tok-link {
+  text-decoration: underline;
+}
 
-.monaco-editor .git-gutter {
-  margin-left: 3px;
-  width: 3px !important;
+.cm-editor {
+  isolation: isolate;
 }
-.monaco-editor .git-gutter-add {
-  background: #2da44e;
+.cm-mergeView {
+  height: 100%;
 }
-.monaco-editor .git-gutter-mod {
-  background: #4c8bf5;
+.cm-searchHit {
+  background: rgba(227, 179, 65, 0.16);
 }
-.monaco-editor .git-gutter-del {
-  background: #cf222e;
+.cm-blame {
+  margin-left: 3em;
+  font-style: italic;
+  opacity: 0.5;
 }
 
-/* Merge conflict decorations */
-.monaco-editor .mc-gutter-marker {
-  margin-left: 3px;
-  width: 3px !important;
-  background: #e3b341;
+.cm-gitGutter {
+  width: 9px;
 }
-.monaco-editor .mc-current-region {
+.cm-gitGutter .cm-gutterElement {
+  width: 3px;
+  margin-left: 3px;
+}
+.cm-gitAdded {
+  background: var(--git-added);
+}
+.cm-gitModified {
+  background: var(--git-modified);
+}
+.cm-gitDeleted {
+  background: var(--git-deleted);
+}
+
+.cm-conflictCurrent {
   background: rgba(45, 164, 78, 0.08);
 }
-.monaco-editor .mc-incoming-region {
+.cm-conflictIncoming {
   background: rgba(76, 139, 245, 0.08);
 }
-
-/* Editor with banner: offset to avoid overlap */
-.has-banner {
-  top: 41px !important;
+.cm-lineNumbers .cm-conflictStart {
+  box-shadow: inset 3px 0 var(--conflict);
 }
-@media (max-width: 639px) {
-  .has-banner {
-    top: 37px !important;
-  }
-}
-.monaco-editor .mc-current-region {
-  background: rgba(45, 164, 78, 0.08);
-}
-.monaco-editor .mc-incoming-region {
-  background: rgba(76, 139, 245, 0.08);
-}
-
-/* Merge conflict inline actions */
-.monaco-editor .mc-zone {
-  display: flex !important;
+.cm-conflictActions {
+  display: flex;
   align-items: center;
   gap: 16px;
-  height: 100%;
+  height: 26px;
   padding-left: 12px;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  position: relative;
-  z-index: 10;
 }
-.monaco-editor .mc-btn {
+.cm-conflictActions button {
   padding: 0;
   border: none;
   background: none;
-  font-size: 12px;
+  color: var(--conflict-action);
   cursor: pointer;
   white-space: nowrap;
-  color: #0969da;
 }
-.monaco-editor .mc-zone.mc-dark .mc-btn {
-  color: #4daafc;
-}
-.monaco-editor .mc-btn:hover {
+.cm-conflictActions button:hover {
   text-decoration: underline;
 }
 

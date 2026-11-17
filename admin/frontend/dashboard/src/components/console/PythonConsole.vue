@@ -273,7 +273,7 @@ onBeforeUnmount(stopScript)
   </div>
 
   <Dialog v-model="showConfirm" title="Run in Read/Write mode">
-    <p class="text-ink-gray-7 text-p-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Changes this script makes will be saved to the database.
     </p>
 

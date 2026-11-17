@@ -10,6 +10,7 @@ import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
 import { useSite } from '@/composables/sites/useSite'
 import { apiErrorMessage } from '@/api/client'
+import { appsApi } from '@/api/apps'
 import { sitesApi } from '@/api/sites'
 import { errorMessage } from '@/utils/error'
 import { toSentenceCase } from '@/utils/format'
@@ -27,6 +28,7 @@ interface AppCardEntry {
   logo_url: string | null
   documentation: string
   website: string
+  badge: string
   missing: boolean
   unfinished: boolean
 }
@@ -74,7 +76,8 @@ const appObjects = computed<AppCardEntry[]>(() =>
         ? 'Not on bench'
         : detail?.install_unfinished
           ? 'Install incomplete'
-          : detail?.version || '',
+          : (detail?.follow_branch && detail.branch) || detail?.version || '',
+      badge: detail?.follow_branch ? 'Latest commits' : '',
       description: detail?.missing
         ? 'The site lists this app, but the bench does not have it. Uninstall removes it from the site.'
         : detail?.install_unfinished
@@ -114,6 +117,21 @@ const retryInstall = async (app: AppCardEntry) => {
   }
 }
 
+const setFollowBranch = async (app: AppCardEntry, followBranch: boolean) => {
+  const fallback = `Could not change where ${app.title} gets updates from.`
+  try {
+    const result = await appsApi.followBranch(app.name, followBranch)
+    const source = followBranch
+      ? `the latest commits on ${appDetailMap.value[app.name]?.branch || 'its branch'}`
+      : 'marketplace releases'
+    if (result.task_id) toast.success(`${app.title} now updates to ${source}. Checking for updates…`)
+    else toast.error(apiErrorMessage(result, fallback))
+  } catch (caught) {
+    toast.error(errorMessage(caught, fallback))
+  }
+  await loadApps()
+}
+
 const menuOptions = (app: AppCardEntry): DropdownItem[] => {
   const options: DropdownItem[] = []
 
@@ -151,6 +169,22 @@ const menuOptions = (app: AppCardEntry): DropdownItem[] => {
         showSwitchBranch.value = true
       },
     })
+
+  const detail = appDetailMap.value[app.name]
+  if (detail?.is_marketplace)
+    options.push(
+      detail.follow_branch
+        ? {
+            label: 'Use marketplace releases',
+            icon: 'lucide-package',
+            onClick: () => setFollowBranch(app, false),
+          }
+        : {
+            label: 'Use latest commits',
+            icon: 'lucide-git-commit-horizontal',
+            onClick: () => setFollowBranch(app, true),
+          },
+    )
 
   if (app.name !== 'frappe')
     options.push({

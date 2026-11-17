@@ -486,6 +486,7 @@ def test_app_install_checks_out_the_pinned_commit_before_validating(tmp_path: Pa
     seen_at_validation = {}
 
     with (
+        patch.object(type(bench), "is_initialized", new=True),
         patch.object(App, "validate", lambda self: seen_at_validation.update(sha=self.installed_hash)),
         patch.object(App, "_install_into_environment"),
         patch.object(App, "_build_assets_via_env_manager"),
@@ -1063,7 +1064,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
     bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
     captured = _capture_site_cmd(monkeypatch)
     statements = _capture_admin_sql(monkeypatch)
-    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: "")
+    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager.client_socket", property(lambda self: ""))
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
@@ -1295,3 +1296,18 @@ def test_follow_branch_is_kept_in_bench_toml(tmp_path: Path) -> None:
     reread = BenchConfig.read(tmp_path).get_app_by_name("myapp")
 
     assert reread.follow_branch is True
+
+
+def test_set_follow_branch_turns_the_flag_on_and_off_in_bench_toml(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.config.write(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="develop"), bench)
+
+    app.set_follow_branch(True)
+    added = BenchConfig.read(tmp_path).get_app_by_name("myapp")
+    app.set_follow_branch(False)
+    removed = BenchConfig.read(tmp_path).get_app_by_name("myapp")
+
+    assert (added.branch, added.follow_branch) == ("develop", True)
+    assert removed.follow_branch is False
+    assert app.config.follow_branch is False

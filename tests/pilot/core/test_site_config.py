@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.core.database import bench_query
 from pilot.core.database.base import QueryResult
 from pilot.core.database.engines import MariaDB, PostgreSQL
 from pilot.core.site.config import database_state
@@ -233,7 +235,9 @@ def test_the_frappe_app_list_fallback_runs_the_bench_python_with_its_safe_argv(t
     assert run.call_args.kwargs["cwd"] == str(bench.sites_path)
 
 
-def _make_wizard_site(bench_root: Path, site_name: str, wizard_apps: dict[str, int], disabled: list[str]) -> None:
+def _make_wizard_site(
+    bench_root: Path, site_name: str, wizard_apps: dict[str, int], disabled: list[str]
+) -> None:
     """A site whose Frappe tracks setup per app, the way v16 does."""
     site_path = bench_root / "sites" / site_name
     (site_path / "db").mkdir(parents=True)
@@ -277,3 +281,87 @@ def test_is_setup_complete_true_when_every_wizard_is_done(tmp_path: Path) -> Non
     _make_wizard_site(tmp_path, "s.localhost", {"frappe": 1, "erpnext": 1}, disabled=[])
 
     assert SiteDatabaseState(tmp_path, "s.localhost").is_setup_complete is True
+
+
+@pytest.fixture
+def bench_without_driver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A bench whose CLI Python lacks PyMySQL, so queries go through the bench env."""
+    from pilot.config import BenchConfig
+
+    root = tmp_path / "dev"
+    root.mkdir()
+    BenchConfig.default("dev", benches_root=tmp_path).write(root)
+    python = root / "env" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    monkeypatch.setattr(MariaDB, "has_driver", property(lambda self: False))
+    monkeypatch.setattr(database_state, "make_site_database", lambda *args, **kwargs: _mariadb())
+    return root
+
+
+def _stub_bench_env(
+    monkeypatch: pytest.MonkeyPatch, returncode: int, stdout: str = "", stderr: str = ""
+) -> list:
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, json.loads(kwargs["input"])))
+        return subprocess.CompletedProcess(argv, returncode, stdout, stderr)
+
+    monkeypatch.setattr(database_state.subprocess, "run", run)
+    return calls
+
+
+def test_query_runs_with_the_bench_python_when_the_cli_has_no_driver(
+    bench_without_driver: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI is stdlib-only; Frappe's env ships PyMySQL."""
+    calls = _stub_bench_env(monkeypatch, 0, '[["frappe"], ["erpnext"]]')
+
+    assert SiteDatabaseState(bench_without_driver, "site.localhost").installed_apps == ["frappe", "erpnext"]
+    argv, request = calls[0]
+    assert argv[:3] == [str(bench_without_driver / "env" / "bin" / "python"), "-I", bench_query.__file__]
+    assert request["settings"] == _mariadb().connection_settings
+    assert "`tabInstalled Application`" in request["query"]
+
+
+def test_query_reports_a_bench_env_without_a_driver(
+    bench_without_driver: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bench_env(monkeypatch, bench_query.MISSING_DRIVER, stderr="No module named 'pymysql'")
+
+    with pytest.raises(DatabaseError, match="no database driver"):
+        _ = SiteDatabaseState(bench_without_driver, "site.localhost").installed_apps
+
+
+def test_query_reports_a_bench_without_an_env(bench_without_driver: Path) -> None:
+    (bench_without_driver / "env" / "bin" / "python").unlink()
+
+    with pytest.raises(DatabaseError, match="no Python env"):
+        _ = SiteDatabaseState(bench_without_driver, "site.localhost").installed_apps
+
+
+def test_query_through_the_bench_env_is_none_when_the_database_is_unreachable(
+    bench_without_driver: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_bench_env(monkeypatch, 1, stderr="Can't connect to MySQL server")
+
+    assert SiteDatabaseState(bench_without_driver, "site.localhost").installed_apps is None
+
+
+@pytest.mark.parametrize(
+    ("engine", "read_only"),
+    [("mariadb", "START TRANSACTION READ ONLY"), ("postgres", "SET TRANSACTION READ ONLY")],
+)
+def test_bench_query_runs_read_only_and_rolls_back(
+    monkeypatch: pytest.MonkeyPatch, engine: str, read_only: str
+) -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = [("frappe",)]
+    monkeypatch.setattr(bench_query, f"connect_{engine}", lambda settings: connection)
+
+    assert bench_query.run({"engine": engine}, "SELECT app_name") == [["frappe"]]
+    assert [call.args[0] for call in cursor.execute.call_args_list] == [read_only, "SELECT app_name"]
+    connection.rollback.assert_called_once()
+    connection.close.assert_called_once()

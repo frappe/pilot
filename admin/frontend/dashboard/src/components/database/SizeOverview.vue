@@ -297,7 +297,7 @@ const updatedLabel = computed(() => {
 </script>
 
 <template>
-  <section class="flex xl:flex-row flex-col xl:h-[calc(100dvh-93px)] text-sm tabular-nums fade-in">
+  <section class="flex xl:flex-row flex-col xl:h-[calc(100dvh-93px)] text-base tabular-nums fade-in">
     <aside
       class="flex flex-col order-last p-5 xl:pb-2 xl:overflow-y-auto border-t xl:border-t-0 xl:border-l border-outline-gray-1 w-full xl:w-[19rem] shrink-0"
     >
@@ -346,10 +346,10 @@ const updatedLabel = computed(() => {
         :key="group.label"
         class="flex flex-col mt-3 pt-3 border-t border-outline-gray-2"
       >
-        <dt class="flex items-center h-7 text-sm-medium text-ink-gray-8">{{ group.label }}</dt>
+        <dt class="flex items-center h-7 text-base-medium text-ink-gray-8">{{ group.label }}</dt>
 
         <div v-for="fact in group.rows" :key="fact.label" class="flex items-center gap-2 h-7">
-          <dt class="w-[8.5rem] text-ink-gray-5 shrink-0">{{ fact.label }}</dt>
+          <dt class="w-40 text-ink-gray-5 shrink-0">{{ fact.label }}</dt>
           <Skeleton v-if="loading && group.label === 'Disk'" class="rounded-2 w-16 h-3.5" />
           <dd v-else class="flex items-center gap-2 text-ink-gray-8">
             <span v-if="fact.dot" class="rounded-full size-1.5" :class="fact.dot" />

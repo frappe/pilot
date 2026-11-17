@@ -897,6 +897,36 @@ def test_reverting_a_branch_switch_migration_returns_the_app_to_its_branch(tmp_p
     assert mock_bench._reinstall_apps.call_args.args[0] == {"myapp"}
 
 
+def test_a_failed_backup_after_a_branch_switch_can_restore_the_app(tmp_path: Path) -> None:
+    """The site never migrated, so the app goes back to its branch without a database restore."""
+    mock_bench, operation = _branch_switch_migration(tmp_path)
+    operation.state = get_state("backing_up")
+    mock_bench.site.return_value.migration_backup.create.side_effect = RuntimeError("disk full")
+
+    with pytest.raises(RuntimeError):
+        operation.back_up_site("site1.localhost")
+
+    assert operation.state == "needs_attention"
+    assert operation.can_revert
+    operation.revert()
+    operation.revert_apps()
+    mock_bench.app.return_value.return_to.assert_called_once_with("main", "1111111")
+    assert operation.state == "restarting"
+    mock_bench.site.return_value.migration_backup.restore.assert_not_called()
+
+
+def test_restore_is_unavailable_when_nothing_changed_or_a_migrated_site_has_no_backup(tmp_path: Path) -> None:
+    operation, _ = _backing_up_operation(tmp_path)
+    operation.site("site1.localhost").backup_status = "failed"
+    assert not operation.can_revert
+
+    operation.site("site1.localhost").migration_status = "failed"
+    assert not operation.can_revert
+
+    operation.site("site1.localhost").backup_status = "backed_up"
+    assert operation.can_revert
+
+
 def _backing_up_operation(tmp_path: Path):
     from pilot.core.bench.migration.store import MigrationStore
 
@@ -1661,3 +1691,47 @@ def test_a_migration_that_already_switched_app_code_cannot_stop(tmp_path: Path) 
     operation.apps_updated = True
 
     assert not operation.can_stop
+
+
+def test_a_failed_start_deletes_the_record_so_it_cannot_own_the_sites(tmp_path: Path) -> None:
+    """Left in preparing, the record would block the sites' next backup, and nothing could dismiss it."""
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    site = mock_bench.site.return_value
+    site.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+
+    from pilot.core.bench.migration.store import MigrationStore
+
+    store = MigrationStore(mock_bench)
+    operation = store.create_site_migrate("site1.localhost")
+    with (
+        patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", side_effect=BenchError("resource busy")),
+        pytest.raises(BenchError, match="resource busy"),
+    ):
+        operation.begin()
+
+    assert store.get_all() == []
+    site.set_maintenance_settings.assert_called_with({"maintenance_mode": 0, "pause_scheduler": 0})
+
+
+def test_a_branch_switch_backup_failure_keeps_the_sites_in_maintenance(tmp_path: Path) -> None:
+    """The switched code already runs; reopening the sites would serve it on an unmigrated schema."""
+    mock_bench = MagicMock()
+    mock_bench.path = tmp_path
+    site = mock_bench.site.return_value
+    site.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": 0}
+    site.migration_backup.create.side_effect = RuntimeError("dump failed")
+
+    from pilot.core.bench.migration.operation import AppRevision
+    from pilot.core.bench.migration.store import MigrationStore
+
+    switched = AppRevision(name="crm", sha="1111111", updated_sha="2222222", branch="main")
+    operation = MigrationStore(mock_bench).create_site_migrate("crm.local", switched_app=switched)
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="task-101"):
+        operation.begin()
+    with pytest.raises(RuntimeError, match="dump failed"):
+        operation.back_up_site("crm.local")
+
+    assert operation.state == "needs_attention"
+    site.set_maintenance_settings.assert_not_called()
+    mock_bench.reload_workers.assert_not_called()

@@ -256,7 +256,7 @@ const restore = async () => {
           class="flex justify-between items-center gap-4 py-2.5"
         >
           <div class="min-w-0">
-            <p class="font-medium text-ink-gray-8 text-sm">{{ item.label }}</p>
+            <p class="text-ink-gray-8 text-base-medium">{{ item.label }}</p>
             <p class="text-ink-gray-5 text-p-sm truncate">
               {{ uploadHint(item.part, item.hint) }}
             </p>
@@ -297,7 +297,7 @@ const restore = async () => {
           :site-name="siteName"
         />
 
-        <div v-else class="space-y-3">
+        <div v-else class="space-y-4">
           <TextInput v-model="remoteSite" label="Site" placeholder="erp.example.com" />
           <TextInput
             v-model="password"

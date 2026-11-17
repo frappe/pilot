@@ -87,6 +87,7 @@ def site_apps(name: str):
                 "has_local_changes": info.has_local_changes,
                 # Registry links and metadata describe the listed repository, not a fork of it.
                 "is_marketplace": app.is_marketplace,
+                "follow_branch": app.config.follow_branch,
             }
         except (BenchError, OSError, ValueError, subprocess.SubprocessError) as error:
             # An unreadable app keeps its row, with its name only.
@@ -224,7 +225,7 @@ def _cloned_app(bench: Bench, app: str, repo: str) -> "App | None":
 
 @sites_bp.post("/<name>/actions/update-apps")
 @require_scope(site_name)
-def update_site_apps(name: str):  # noqa: C901
+def update_site_apps(name: str):
     """Update apps installed on this site through Pilot's safeguarded migration flow."""
     bench_root = ApiRequest.get_bench_root()
     if not site_exists(bench_root, name):
@@ -255,8 +256,6 @@ def update_site_apps(name: str):  # noqa: C901
     except MigrationConflictError:
         raise  # the app-wide handler answers 409 migration_conflict with its message
     except Exception as error:
-        if "operation" in locals():
-            migrations.delete(operation.id)
         return task_failure(error)
 
     return accepted_response(

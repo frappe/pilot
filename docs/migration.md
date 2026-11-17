@@ -232,7 +232,7 @@ Migration snapshots are separate from normal user backups. They are not shown in
 
 Before an operation with safeguards starts, Pilot adds up every site's predicted database backup size (see [Scheduled Backups](configuration.md#scheduled-backups)) and refuses the operation when the bench disk cannot hold them and still keep 500 MB free for the system. No site enters maintenance mode, and the Admin API answers `507 insufficient_disk_space`.
 
-Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused.
+Pilot stops before updating code, records the failed site, and restores every site's original maintenance and scheduler settings. Retry takes fresh backups of every site because the sites can receive new writes while the operation is paused. A branch switch is the exception: it changes the app code before its backups, so its sites stay in maintenance mode until a retry migrates them or the user dismisses the operation.
 
 ### Update or migration failure
 
@@ -267,7 +267,7 @@ To recognize a new failure:
 
 `resolver_id` is reserved for a future suggestion lookup: once populated, it will key
 into a table of human-readable remediation text per `failure_kind`, shown next to
-`diagnosis.message` in `MigrationDetail.vue`. It is not read anywhere yet, so setting
+`diagnosis.message` in `UpdateDetail.vue`. It is not read anywhere yet, so setting
 it today has no visible effect — leave it `None` until that lookup exists.
 
 ## Recovery Actions
@@ -292,7 +292,7 @@ The normal update form never enables broad `--skip-failing` behavior.
 
 The Admin API calls this action **Restore**. Internally, the current task and state names use **revert**. Restore runs as its own task chain, one task per unit of work, the same way the forward update/migrate flow does:
 
-1. `RevertMigrationTask` checks that every required safeguard exists, then arms the chain.
+1. `RevertMigrationTask` checks that every migrated site has a backup, then arms the chain.
 2. `RevertAppsTask` returns selected apps to their captured commits, reinstalls dependencies, and rebuilds assets.
 3. `RevertSiteTask` runs once per migrated site: selectively restores MariaDB tables (or restores the whole SQLite/PostgreSQL database) and removes tables created by the migration, then clears that site's cache.
 4. `RestartServicesTask` restores maintenance and scheduler settings, restarts services, and marks the operation `reverted`.
@@ -302,6 +302,8 @@ Each step is checkpointed in `revert_checkpoints` (`apps`, `site:<name>` per sit
 Before importing MariaDB tables, Restore checks that the saved table inventory is valid and every required table dump exists. A missing inventory or dump stops Restore before database changes. Repair the recovery files, then use Restore again.
 
 Restore skips an app that was removed from the bench after the update and a site that was dropped after the failure. Neither has anything left to restore.
+
+Restore is offered (`can_restore`) when the operation changed something and every site that the migrate reached has a backup. A site still waiting to migrate needs no backup. So when a backup fails after a branch switch, Restore returns the app to its old branch, skips the database restores, and restarts the services. An operation that changed nothing, such as an update whose backup failed before the code changed, offers only Retry and Dismiss.
 
 ### Dismiss
 
@@ -334,7 +336,7 @@ Starting an update or standalone migration returns both an operation identity an
 
 The global migration status button shows unresolved failures before active work, and active work before ordinary update availability.
 
-The list page filters by status through five tabs — All, Running, Attention, Completed, Closed — held in the `status` query parameter so a filtered view survives a reload. Running covers every in-flight state and Attention covers both `needs_attention` and `revert_failed`, Closed covers `reverted` and `dismissed`, groupings the `status` API parameter cannot express because it matches one state exactly; the list therefore filters client-side over the page it already fetched.
+The list page filters by status through five tabs — All, Running, Attention, Completed, Closed — held in the `status` query parameter (`all`, `active`, `attention`, `completed`, `closed`) so a filtered view survives a reload. Running covers every in-flight state, Attention covers `needs_attention` and `revert_failed`, and Closed covers `reverted`, `dismissed` and `stopped`. The `status` API parameter cannot express these groups because it matches one state exactly, so the list filters client-side over the page it already fetched. The groups are `FILTER_STATES` in `utils/updateFormat.ts`.
 
 The detail page groups the chain into a Server section and a Sites section, split on whether a `task_logs` entry names a site: bench-level tasks (`update`, `revert-apps`, `restart-services`) on one side, per-site ones under their site row on the other. Every entry carries the task's own `status`, which is how the UI marks the attempt that failed; it is `null` only when the task is no longer readable. The Target Apps card shows the original and updated commit and offers a GitHub comparison link when the app uses a GitHub repository.
 
@@ -365,8 +367,11 @@ pilot/tasks/
 admin/backend/api/v1/migrations.py
   migration history, detail, and recovery endpoints
 
-admin/frontend/dashboard/src/pages/migrations/
-  migration history and detail pages
+admin/frontend/dashboard/src/pages/updates/
+  update history (Updates.vue) and detail (UpdateDetail.vue) pages
+
+admin/frontend/dashboard/src/components/updates/UpdateFlow.vue
+  the stage and per-site progress view on the detail page
 ```
 
 When debugging, start with the operation JSON and its current state. Then follow the latest task ID for execution output.

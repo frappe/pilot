@@ -14,6 +14,7 @@ interface AppCard {
   compatible?: boolean
   needs?: string
   nightly?: boolean
+  badge?: string
   frappe_version?: string
 }
 
@@ -46,6 +47,9 @@ const incompatibleReason = computed(
           <span class="font-medium text-ink-gray-8 truncate">{{ app.title }}</span>
           <span v-if="app.label" class="text-ink-gray-5 text-xs shrink-0">{{ app.label }}</span>
           <Badge v-if="app.nightly" label="Nightly" size="sm" />
+          <Badge v-if="app.badge" :label="app.badge" size="sm">
+            <template #prefix><span class="size-3 lucide-git-commit-horizontal" /></template>
+          </Badge>
         </div>
 
         <div class="mt-0.5 text-ink-gray-5 text-p-sm truncate">
@@ -82,8 +86,8 @@ const incompatibleReason = computed(
     </div>
 
     <Dialog v-model="showIncompatible" title="Incompatible app" size="sm">
-      <p class="text-ink-gray-7 text-p-sm">{{ incompatibleReason }}</p>
-      <div class="flex flex-col gap-1.5 mt-3 text-sm">
+      <p class="text-ink-gray-7 text-p-base">{{ incompatibleReason }}</p>
+      <div class="flex flex-col gap-1.5 mt-3 text-base">
         <div class="flex justify-between">
           <span class="text-ink-gray-5">Current version</span>
           <span class="font-medium text-ink-gray-8">{{ app.frappe_version || 'Unknown' }}</span>

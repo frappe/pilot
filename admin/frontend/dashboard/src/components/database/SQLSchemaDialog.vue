@@ -59,7 +59,7 @@ const preview = (table: TableSchema) => {
         <button
           v-for="table in filteredTables"
           :key="table.name"
-          class="block px-2 py-1.5 rounded-5 w-full text-sm text-left truncate transition-colors"
+          class="block px-2 py-1.5 rounded-5 w-full text-base text-left truncate transition-colors"
           :class="selected?.name === table.name
             ? 'bg-surface-gray-2 text-ink-gray-9 font-medium'
             : 'text-ink-gray-7 hover:bg-surface-alpha-gray-1'"
@@ -77,7 +77,7 @@ const preview = (table: TableSchema) => {
       <div class="flex-1 min-w-0 overflow-y-auto">
         <template v-if="selected">
           <div class="flex items-center justify-between mb-2">
-            <h3 class="font-medium text-ink-gray-8 text-sm truncate">
+            <h3 class="text-ink-gray-8 text-base-medium truncate">
               {{ selected.name }}
               <span class="font-normal text-ink-gray-5"
                 >({{ selected.columns.length }}
