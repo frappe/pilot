@@ -314,7 +314,7 @@ onMounted(() => {
   </template>
 
   <Dialog v-model="showDelete" title="Delete Backup" size="sm">
-    <p class="text-ink-gray-7 text-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Delete the backup from
       <strong>{{ deleteTarget ? fmtDateTime(deleteTarget.created_at) : '' }}</strong>? This cannot
       be undone.

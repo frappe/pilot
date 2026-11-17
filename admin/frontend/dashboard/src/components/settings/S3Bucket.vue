@@ -148,7 +148,7 @@ onMounted(load)
   </div>
 
   <Dialog v-model="showDisconnect" title="Disconnect object storage" size="sm">
-    <p class="text-ink-gray-7 text-p-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Backups stop going to this bucket until you connect storage again.
     </p>
 

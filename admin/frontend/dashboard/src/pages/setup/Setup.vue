@@ -117,14 +117,14 @@ const {
           <p v-else-if="validatingFramework" class="text-ink-gray-5 text-p-sm">
             Checking repository…
           </p>
-          <p v-else-if="frameworkIsValid" class="flex items-center gap-1 text-ink-green-7 text-sm">
+          <p v-else-if="frameworkIsValid" class="flex items-center gap-1 text-ink-green-7 text-base">
             <span class="size-3.5 shrink-0 lucide-check" />
             Found frappe
           </p>
         </div>
 
         <div v-show="isInstalling" class="flex flex-col gap-4">
-          <p class="text-ink-gray-7 text-sm">{{ streamStatus }}</p>
+          <p class="text-ink-gray-7 text-base">{{ streamStatus }}</p>
           <button
             type="button"
             class="flex items-center self-start gap-1 text-ink-gray-5 hover:text-ink-gray-7 text-sm"
@@ -163,7 +163,7 @@ const {
 
         <!-- Done: plain dev bench, production is a deliberate step the user runs later -->
         <div v-show="isDone && !isProductionHandoff" class="flex flex-col gap-4 py-2">
-          <p class="text-ink-gray-7 text-p-sm">
+          <p class="text-ink-gray-7 text-p-base">
             Your bench is ready. Run one of these in your terminal:
           </p>
 

@@ -161,7 +161,7 @@ watch(
   >
     <div class="flex flex-col gap-4">
       <div v-for="item in opened?.transactions ?? []" :key="item.number" class="flex flex-col gap-2">
-        <div class="flex items-center gap-2 text-ink-gray-8 text-sm">
+        <div class="flex items-center gap-2 text-ink-gray-8 text-base">
           <span class="font-medium">{{ transactionLabel(item) }}</span>
           <Badge v-if="item.victim" label="Rolled back" theme="red" size="sm" />
         </div>
@@ -170,7 +170,7 @@ watch(
           <template v-if="item.index">({{ item.index }})</template>
         </p>
         <pre
-          class="bg-surface-gray-2 p-3 border rounded-6 border-outline-gray-1 text-ink-gray-7 text-sm whitespace-pre-wrap"
+          class="bg-surface-gray-2 p-3 border rounded-6 border-outline-gray-1 text-ink-gray-7 text-base whitespace-pre-wrap"
           >{{ item.query || '—' }}</pre
         >
       </div>

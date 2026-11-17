@@ -158,7 +158,7 @@ const goBack = () => {
             >
               <h4
                 v-if="group.label"
-                class="flex items-center px-2 h-7 text-ink-gray-8 text-sm-semibold"
+                class="flex items-center px-2 h-7 text-ink-gray-8 text-base-semibold"
               >
                 {{ group.label }}
               </h4>

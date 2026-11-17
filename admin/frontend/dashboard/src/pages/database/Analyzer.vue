@@ -546,7 +546,7 @@ onMounted(load)
     class="flex flex-col items-center gap-1 bg-surface-white m-3 md:m-4 py-14 border rounded-6 border-outline-gray-2 text-center"
   >
     <span class="size-6 text-ink-gray-3 lucide-database" />
-    <p class="font-medium text-ink-gray-7 text-sm">No database server</p>
+    <p class="text-ink-gray-7 text-base-medium">No database server</p>
     <p class="max-w-sm text-ink-gray-5 text-p-xs">{{ diagnostics.reason }}</p>
   </div>
 
@@ -629,7 +629,7 @@ onMounted(load)
         <template #actions>
           <label class="flex items-center gap-2 cursor-pointer">
             <Switch v-model="autoRefreshLocks" />
-            <span class="text-ink-gray-7 text-sm">Auto Refresh</span>
+            <span class="text-ink-gray-7 text-base">Auto Refresh</span>
           </label>
         </template>
 
@@ -760,12 +760,12 @@ onMounted(load)
   </template>
 
   <Dialog v-model="showKillDialog" title="Kill database process" size="sm">
-    <p class="text-ink-gray-7 text-sm leading-relaxed">
+    <p class="text-ink-gray-7 text-p-base">
       Close connection <strong>{{ killTarget?.id }}</strong> and roll back whatever it is running?
       Any bench sharing this server may own it.
     </p>
 
-    <dl class="flex flex-col gap-2 mt-4 text-sm">
+    <dl class="flex flex-col gap-2 mt-4 text-base">
       <div
         v-for="item in killDetails"
         :key="item.label"
@@ -794,7 +794,7 @@ onMounted(load)
   </Dialog>
 
   <Dialog v-model="showPurgeDialog" title="Delete binary logs" size="sm">
-    <p class="text-ink-gray-7 text-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Permanently delete
       <strong
         >{{ pendingFiles.length }}

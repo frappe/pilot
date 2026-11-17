@@ -224,7 +224,7 @@ defineExpose({ disabled, currentScheduleLabel, loading, enable })
   <div>
     <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
       <div v-if="!titleless">
-        <p class="font-medium text-ink-gray-8 text-sm">{{ title }}</p>
+        <p class="text-ink-gray-8 text-base-medium">{{ title }}</p>
         <p class="mt-0.5 text-ink-gray-5 text-sm">
           <template v-if="disabled">{{ disabledHint }}</template>
           <template v-else>{{ enabledHint }}</template>
@@ -290,7 +290,7 @@ defineExpose({ disabled, currentScheduleLabel, loading, enable })
 
   <!-- Disable confirmation -->
   <Dialog v-model="showDisableConfirm" :title="`Disable ${noun}`" size="sm">
-    <p class="text-ink-gray-7 text-sm">{{ disableBody }}</p>
+    <p class="text-ink-gray-7 text-p-base">{{ disableBody }}</p>
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="showDisableConfirm = false">Cancel</Button>

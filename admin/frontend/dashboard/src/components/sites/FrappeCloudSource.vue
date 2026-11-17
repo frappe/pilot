@@ -153,7 +153,7 @@ onBeforeUnmount(() => clearTimeout(timer))
   </div>
 
   <div v-else-if="connection.status === 'Pending'" class="space-y-3">
-    <p class="text-p-sm text-ink-gray-7">
+    <p class="text-p-base text-ink-gray-7">
       Open Frappe Cloud and enter this pass code to allow access to the backups of
       <b>{{ connection.remote_site }}</b>.
     </p>
@@ -171,7 +171,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 
   <div v-else class="space-y-3">
     <div class="flex items-center justify-between">
-      <p class="text-p-sm text-ink-gray-7">Backups of <b>{{ connection.remote_site }}</b></p>
+      <p class="text-p-base text-ink-gray-7">Backups of <b>{{ connection.remote_site }}</b></p>
       <Button size="sm" variant="ghost" @click="cancel">Change site</Button>
     </div>
     <RadioGroup

@@ -78,11 +78,11 @@ watch(() => props.window, load, { immediate: true })
           :key="rule.id"
           class="flex justify-between items-center gap-2 py-1"
         >
-          <span class="min-w-0 text-ink-gray-8 text-sm truncate" :title="rule.message">
+          <span class="min-w-0 text-ink-gray-8 text-base truncate" :title="rule.message">
             <span class="font-mono text-ink-gray-5 text-xs">{{ rule.id }}</span> {{ rule.message }}
           </span>
 
-          <span class="font-medium text-ink-gray-7 text-sm shrink-0">{{ rule.count }}</span>
+          <span class="text-ink-gray-7 text-base-medium shrink-0">{{ rule.count }}</span>
         </div>
       </div>
 
@@ -98,7 +98,7 @@ watch(() => props.window, load, { immediate: true })
           class="flex justify-between items-center gap-2 py-1"
         >
           <span class="font-mono text-ink-gray-8 text-sm truncate">{{ row.ip }}</span>
-          <span class="font-medium text-ink-gray-7 text-sm shrink-0">{{ row.count }}</span>
+          <span class="text-ink-gray-7 text-base-medium shrink-0">{{ row.count }}</span>
         </div>
       </div>
     </div>

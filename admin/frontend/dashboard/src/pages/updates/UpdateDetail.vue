@@ -412,7 +412,7 @@ onUnmounted(() => clearTimeout(timer))
             <li
               v-for="(decision, index) in skipped"
               :key="index"
-              class="flex items-center gap-3 px-4 h-11 text-sm"
+              class="flex items-center gap-3 px-4 h-11 text-base"
             >
               <code class="flex-1 min-w-0 font-mono text-ink-gray-7 text-xs truncate">
                 {{ decision.patch }}

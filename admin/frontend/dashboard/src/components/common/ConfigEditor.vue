@@ -154,7 +154,7 @@ const refresh = async () => {
   />
 
   <Dialog v-model="showDelete" title="Remove config" size="sm">
-    <p class="text-ink-gray-7 text-sm">
+    <p class="text-ink-gray-7 text-p-base">
       Remove <code class="text-ink-gray-9">{{ deleteKey }}</code> from
       <code class="text-ink-gray-9">{{ fileName }}</code>?
     </p>

@@ -137,7 +137,7 @@ watch(visible, (value) => {
           <span class="text-base text-ink-gray-8">{{ field.label }}</span>
 
           <span
-            class="text-p-sm"
+            class="text-p-base"
             :class="fieldError(field) && field.variable?.editable ? 'text-ink-red-5' : 'text-ink-gray-6'"
           >
             {{ fieldNote(field) }}

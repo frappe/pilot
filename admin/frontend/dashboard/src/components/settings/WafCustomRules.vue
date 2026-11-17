@@ -157,7 +157,7 @@ const confirmRemove = () => {
 </script>
 
 <template>
-  <div class="space-y-5" ref="root">
+  <div class="space-y-6" ref="root">
     <div class="flex justify-between items-center gap-3">
       <div class="flex flex-col gap-1 min-w-0">
         <p class="text-base-medium text-ink-gray-8">Custom rules</p>

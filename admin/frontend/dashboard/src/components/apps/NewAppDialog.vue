@@ -93,7 +93,7 @@ const submit = async () => {
 
 <template>
   <Dialog v-model="open" title="Create new app" size="md">
-    <form class="flex flex-col gap-3" @submit.prevent="submit">
+    <form class="flex flex-col gap-4" @submit.prevent="submit">
       <TextInput
         label="App name"
         v-model="name"

@@ -371,7 +371,7 @@ watch(perPage, () => {
   <SQLSchemaDialog v-model="showSchema" :schema="schema" @preview="previewTable" />
 
   <Dialog v-model="showConfirm" title="Run in Read/Write mode">
-    <p class="text-ink-gray-7 text-p-sm">Changes this query makes will be saved to the database.</p>
+    <p class="text-ink-gray-7 text-p-base">Changes this query makes will be saved to the database.</p>
 
     <pre
       class="bg-surface-gray-1 mt-3 p-3 border rounded-4 border-outline-gray-2 max-h-40 overflow-auto font-mono text-ink-gray-8 text-sm leading-relaxed whitespace-pre-wrap break-words"
