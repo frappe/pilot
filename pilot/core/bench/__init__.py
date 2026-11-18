@@ -458,6 +458,12 @@ class Bench:
         return (self.apps_path / "frappe" / "frappe" / "runner.py").is_file()
 
     @property
+    def has_renamed_blob_relocation(self) -> bool:
+        """Whether this bench's Frappe can move a renamed site's stored files."""
+        relocate = self.apps_path / "frappe" / "frappe" / "storage" / "relocate.py"
+        return relocate.is_file() and "def relocate_renamed_site_blobs(" in relocate.read_text()
+
+    @property
     def has_runner_socket_support(self) -> bool:
         """Whether lite mode's process serves on a socket systemd passes it. An older one binds
         the port itself, which a socket already holding it would refuse."""

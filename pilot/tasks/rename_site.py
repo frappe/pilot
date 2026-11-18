@@ -41,6 +41,7 @@ class RenameSiteTask(Task):
             on_progress=self.report,
             keep_old_hostname=self.keep_old_hostname,
             make_primary=self.make_primary,
+            resource_handoff_from=self.running_task_id or None,
         )
 
 
