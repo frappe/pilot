@@ -1,7 +1,15 @@
 name: Release
+# Releases are cut only by Weekly Release, from master.
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      ref:
+        description: Commit to build.
+        type: string
+        required: true
 jobs:
   release:
     runs-on: ubuntu-22.04
@@ -9,10 +17,11 @@ jobs:
       contents: write
     env:
       UV_PYTHON: "3.14"
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -34,7 +43,7 @@ jobs:
           npm ci
           npm run build
       - name: Stamp version
-        run: echo "${{ github.event.release.tag_name }}" > VERSION
+        run: echo "$TAG" > VERSION
       - name: Package release tarball
         run: |
           tar -czf /tmp/pilot.tar.gz \
@@ -51,4 +60,4 @@ jobs:
       - name: Upload to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" /tmp/pilot.tar.gz --clobber
+        run: gh release upload "$TAG" /tmp/pilot.tar.gz --clobber
