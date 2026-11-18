@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.config import BenchConfig, RoutePolicy, SiteConfig
+from pilot.config import BenchConfig, RoutePolicy, S3Config, SiteConfig
 from pilot.config.site import email_sender_name
 from pilot.core.bench import Bench
 from pilot.core.site import Site
@@ -27,6 +27,72 @@ def _provisioner(tmp_path: Path, skip_assets: bool = False) -> SiteProvisioner:
     bench = Bench(BenchConfig._from_dict(_BASE_DATA), tmp_path)
     bench.config.letsencrypt.email = "ops@example.com"
     return SiteProvisioner(bench, "site1.example.com", ["frappe"], "admin", "mariadb", skip_assets)
+
+
+@pytest.mark.parametrize("case", ["new", "existing", "partial", "incomplete", "unconfigured"])
+def test_new_sites_inherit_bench_storage_credentials(tmp_path: Path, case: str) -> None:
+    # Distinct dummy values catch incorrect translations from Pilot's S3 field names.
+    provisioner = _provisioner(tmp_path)
+    provisioner.bench.config.admin.allow_site_to_pilot_communication = False
+    defaults = {
+        "access_key_id": "bench-access",
+        "secret_access_key": "bench-secret",
+        "bucket": "bench-backups",
+        "region": "eu-west-1",
+        "endpoint_url": "https://s3.example.com",
+    }
+    if case != "unconfigured":
+        provisioner.bench.config.s3 = S3Config(
+            access_key="bench-access",
+            secret_key="" if case == "incomplete" else "bench-secret",
+            bucket="bench-backups",
+            provider="aws",
+            region="eu-west-1",
+            endpoint_url="https://s3.example.com",
+        )
+
+    initial = {"db_name": "site1", "custom_setting": "preserved"}
+    if case in {"existing", "partial"}:
+        # Storage flags and extra driver options belong to the site, not this inheritance step.
+        initial.update(storage_driver="local", storage_v2=0, storage_local_cache=1)
+        initial["storage_driver_config"] = (
+            {key: f"site-{key}" for key in defaults}
+            if case == "existing"
+            else {"access_key_id": "", "endpoint_url": None}
+        ) | {"prefix": "preserved"}
+
+    expected = {**initial, "email_sender_name": "Site1"}
+    if case not in {"incomplete", "unconfigured"}:
+        # Existing keys win even when empty or None; only absent connection fields inherit.
+        expected["storage_driver_config"] = defaults | initial.get("storage_driver_config", {})
+
+    def create_site(site: Site, db_type: str | None = None) -> None:
+        site.path.mkdir(parents=True)
+        (site.path / "site_config.json").write_text(json.dumps(initial))
+
+    def install_apps(site: Site, on_progress) -> None:
+        # App installation must already see the inherited config without storage being enabled.
+        assert site.config_file.read() == expected
+
+    with (
+        patch("pilot.core.site.provisioning.validate_new_site", return_value=False),
+        patch.object(Site, "create", create_site),
+        patch.object(provisioner, "install_apps", side_effect=install_apps) as install,
+        patch.object(provisioner, "build_missing_assets"),
+        patch.object(provisioner, "add_to_hosts"),
+        patch.object(provisioner, "reload_nginx"),
+        patch.object(provisioner, "obtain_cert"),
+        patch.object(provisioner.bench, "write_common_site_config"),
+        patch.object(Site, "enable_scheduler"),
+    ):
+        site = provisioner.provision(lambda _: None, schedule_backups=False)
+
+    # Later provisioning must preserve both copied credentials and unrelated site settings.
+    install.assert_called_once()
+    assert site.config_file.read() == expected
+    # Site configs containing inherited credentials remain readable only by their owner.
+    if case not in {"incomplete", "unconfigured"}:
+        assert site.config_file.path.stat().st_mode & 0o777 == 0o600
 
 
 def test_provisioning_records_its_owner_before_site_creation_starts(tmp_path, monkeypatch):
