@@ -63,9 +63,10 @@ class GetAndInstallAppTask(Task):
         """Install the app on each site."""
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
+            target = "" if len(self.sites) == 1 else f" on {site}"
             with self.step(
                 f"install_{safe_key}_{app.config.name}",
-                f"Install {app.config.name} on {site}",
+                f"Install {app.config.name}{target}",
                 icon="lucide-package-plus",
             ):
                 self.bench.site(site).install_app(app)

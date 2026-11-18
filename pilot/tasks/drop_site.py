@@ -23,7 +23,7 @@ class DropSiteTask(Task):
         self.require_production_privileges()
         self.drop()
 
-    @step("drop", lambda self: f"Drop site {self.site}", icon="lucide-trash-2")
+    @step("drop", "Drop site", icon="lucide-trash-2")
     def drop(self) -> None:
         """Drop the site."""
         self.bench.site(self.site).drop(on_progress=self.report, no_backup=self.no_backup)

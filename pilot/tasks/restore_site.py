@@ -121,7 +121,7 @@ class RestoreSiteTask(Task):
         streamable = ["public", "private", *(["database"] if self.is_database_streamable else [])]
         return [part for part in streamable if part in self.parts and available.get(part)]
 
-    @step("restore", lambda self: f"Restore {', '.join(self.parts)} into {self.site}", icon="lucide-database")
+    @step("restore", lambda self: f"Restore {', '.join(self.parts)}", icon="lucide-database")
     def restore(self, run: BackupRun) -> None:
         """Restore the backup into the site."""
         self.bench.site(self.site).restore_backup(

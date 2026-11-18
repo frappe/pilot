@@ -20,7 +20,7 @@ class ClearCacheTask(Task):
         """Clear the site cache."""
         self.clear_cache()
 
-    @step("clear_cache", lambda self: f"Clear cache for {self.site}", icon="lucide-trash-2")
+    @step("clear_cache", "Clear cache", icon="lucide-trash-2")
     def clear_cache(self) -> None:
         """Clear the site cache."""
         self.bench.site(self.site).clear_cache()
