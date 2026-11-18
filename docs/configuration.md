@@ -126,7 +126,7 @@ allow_site_to_pilot_communication = true
 
 With `enabled = false`, `pilot start` does not run the Admin. `pilot dev setup` creates benches this way.
 
-Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. It also permits killing database processes and purging binlogs, because both affect every bench on the host. Database settings and the MariaDB restart do not need it.
+Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. The database analyzer, database settings and the MariaDB restart do not need it.
 
 A production site calls Pilot at the loopback `pilot_endpoint` in its `site_config.json`, independently of DNS or `admin.domain`. The browser loads Cloud Settings assets from `cloud_settings_embed_url = "/_pilot"`; nginx serves `/_pilot/embed/cloud-settings/` on the site's origin. API calls still pass through Frappe with the server-held site token. `cloud_server_url` holds the public admin URL for dashboard links and follows admin domain changes. Development benches without nginx retain the public admin embed URL. The `serve_site_embeds_locally` upgrade patch publishes nginx routes before updating existing production site configs and clearing their caches. Set `allow_site_to_pilot_communication = false` to skip writing these keys into new sites, so Frappe treats them as self-hosted (its `is_v2_site` check reads `pilot_endpoint` and `pilot_auth_token`).
 
