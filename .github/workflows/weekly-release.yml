@@ -78,7 +78,7 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" \
             | xargs -r -I{} gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/{}"
-          gh release create "$TAG" --draft --prerelease --target "$SHA" \
+          gh release create "$TAG" --draft --target "$SHA" \
             --title "$TAG" --generate-notes --notes-start-tag "$PREVIOUS"
 
   build:
