@@ -1,6 +1,6 @@
 name: Weekly Release
 
-# Cuts the next vX.Y.N-pre-alpha release. Run it by hand from master once a week.
+# Cuts the next vX.Y.Z-rc.N release. Run it by hand from master once a week.
 # The release stays a draft until its tarball is uploaded, because installs and
 # auto-updates take the newest published release and need pilot.tar.gz on it.
 on:
@@ -37,8 +37,8 @@ jobs:
       - name: Pick the next version
         id: version
         run: |
-          previous=$(git tag --list 'v*-pre-alpha' --sort=-v:refname | head -n1)
-          if ! [[ "$previous" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-pre-alpha)$ ]]; then
+          previous=$(git tag --list 'v*-rc.*' --sort=-v:refname | head -n1)
+          if ! [[ "$previous" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+-rc\.)([0-9]+)$ ]]; then
             echo "Could not parse the latest release tag: '$previous'." >&2
             exit 1
           fi
@@ -47,7 +47,7 @@ jobs:
             echo "master has no commits since $previous. Skipping the release."
             exit 0
           fi
-          tag="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))${BASH_REMATCH[4]}"
+          tag="${BASH_REMATCH[1]}$((BASH_REMATCH[2] + 1))"
           echo "Releasing $tag at $sha (previous: $previous)."
           {
             echo "tag=$tag"
