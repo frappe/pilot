@@ -808,12 +808,15 @@ require_linger() {
     exit 1
 }
 
-release_api_url() {
-    if [ -n "$PILOT_VERSION" ]; then
-        echo "https://api.github.com/repos/$GITHUB_SLUG/releases/tags/$PILOT_VERSION"
-    else
-        echo "https://api.github.com/repos/$GITHUB_SLUG/releases?per_page=1"
-    fi
+# The releases feed lists prereleases, newest first, and is not under the GitHub API rate limit.
+latest_release_tag() {
+    curl -fsSL --proto '=https' --tlsv1.2 "https://github.com/$GITHUB_SLUG/releases.atom" \
+        | grep -o 'releases/tag/[^"]*' | sed -n '1s|.*/||p'
+}
+
+release_asset_url() {
+    tag="${PILOT_VERSION:-$(latest_release_tag)}"
+    [ -n "$tag" ] && echo "https://github.com/$GITHUB_SLUG/releases/download/$tag/pilot.tar.gz"
 }
 
 # The release tarball ships the compiled admin frontend and a VERSION file;
@@ -831,10 +834,9 @@ fetch_pilot() {
     fi
 
     echo "Fetching pilot ${PILOT_VERSION:-(latest release)}..."
-    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 "$(release_api_url)" \
-        | grep -o 'https://[^"]*/pilot\.tar\.gz' | head -n1)
+    asset_url=$(release_asset_url) || true
     if [ -z "$asset_url" ]; then
-        echo "Could not find a pilot.tar.gz release asset." >&2
+        echo "Could not find the latest Pilot release." >&2
         echo "Install a development checkout instead with: $INSTALL_URL --dev" >&2
         exit 1
     fi
