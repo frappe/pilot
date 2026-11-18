@@ -170,3 +170,24 @@ def test_deleting_a_run_without_an_index_does_not_fail(tmp_path) -> None:
     offsite.delete("site", "20260701_020000", "20260701_020000-site-files.tar")
 
     assert s3.objects[keys.get_month_key("20260701_020000")] == {}
+
+
+def test_failed_index_delete_keeps_the_run_listed(tmp_path) -> None:
+    """A run that drops out of the listing first would leave its index unreachable and its blobs pinned."""
+    import pytest
+
+    s3, offsite = _offsite(tmp_path)
+    keys = BackupKeys("site")
+    offsite._metadata(keys).add("20260701_020000", "20260701_020000-site-files.tar")
+    offsite.set_files_index("site", "20260701_020000", INDEX)
+
+    def delete_object(bucket: str, key: str) -> None:
+        if key == keys.get_files_index_key("20260701_020000"):
+            raise OSError("S3 unavailable")
+        s3.objects.pop(key, None)
+
+    s3.delete_object = delete_object
+    with pytest.raises(OSError):
+        offsite.delete("site", "20260701_020000", "20260701_020000-site-files.tar")
+
+    assert "20260701_020000" in offsite.list_backups("site")
