@@ -25,12 +25,14 @@ const DB_TYPE_OPTIONS = [
   { label: 'PostgreSQL', value: 'postgres' },
 ]
 const STEP_TITLES: Record<string, string> = {
+  country: 'Country',
   database: 'Database',
   customize: 'Customize your bench',
   running: 'Setting up your bench',
   done: 'Setup complete',
 }
 const STEP_SUBTITLES: Record<string, string> = {
+  country: 'Choose the country for this bench',
   database: 'Choose and configure your database',
 }
 
@@ -66,8 +68,6 @@ export const useSetup = () => {
   const appBranch = ref('develop')
   const country = ref('India')
   const countries = ref<string[]>([])
-  // Set by the first bench on this server; later benches show it locked.
-  const serverCountry = ref('')
   const countryOptions = computed(() => countries.value.map((name) => ({ label: name, value: name })))
   const validatingFramework = ref(false)
   const resolvedFramework = ref<{ repo: string; branch: string } | null>(null)
@@ -117,7 +117,7 @@ export const useSetup = () => {
   })
 
   // Steps
-  const stepSequence = computed(() => ['database', 'customize'])
+  const stepSequence = computed(() => ['country', 'database', 'customize'])
   const stepNumber = computed(() => stepSequence.value.indexOf(currentStep.value) + 1)
   const isConfiguring = computed(() => stepNumber.value > 0)
   const isInstalling = computed(() => currentStep.value === 'running')
@@ -158,8 +158,7 @@ export const useSetup = () => {
       if (config.app_repo) appRepo.value = config.app_repo
       if (config.app_branch) appBranch.value = config.app_branch
       countries.value = config.countries || []
-      serverCountry.value = config.server_country || ''
-      country.value = serverCountry.value || config.country || 'India'
+      country.value = config.country || config.server_country || 'India'
       if (config.db_type === 'postgres') {
         if (config.postgres_admin_user) dbUser.value = config.postgres_admin_user
         if (config.postgres_existing) {
@@ -177,9 +176,9 @@ export const useSetup = () => {
       }
 
       if (config.running_setup_task_id) startStream(config.running_setup_task_id)
-      else currentStep.value = 'database'
+      else currentStep.value = 'country'
     } catch {
-      if (currentStep.value === 'loading') currentStep.value = 'database'
+      if (currentStep.value === 'loading') currentStep.value = 'country'
     }
     loadBranches()
   }
@@ -273,8 +272,9 @@ export const useSetup = () => {
     if (selectedRepo && selectedBranch) validateFramework(selectedRepo, selectedBranch)
   })
 
+  const validateCountryStep = async () => (country.value ? null : 'Choose a country')
+
   const validateDatabaseStep = async () => {
-    if (!country.value) return 'Choose a country'
     if (dbMode.value !== 'external') return null
     const databaseName = dbType.value === 'postgres' ? 'PostgreSQL' : 'MariaDB'
     if (!dbHost.value) return 'Host is required for an external database'
@@ -312,6 +312,7 @@ export const useSetup = () => {
   // Navigation
   const goToNextStep = async () => {
     const validators: Record<string, () => Promise<string | null>> = {
+      country: validateCountryStep,
       database: validateDatabaseStep,
     }
     const message = await validators[currentStep.value]?.()
@@ -339,7 +340,7 @@ export const useSetup = () => {
       db_type: dbType.value,
       app_repo: appRepo.value.trim(),
       app_branch: appBranch.value.trim(),
-      ...(serverCountry.value ? {} : { country: country.value }),
+      country: country.value,
     }
     if (dbMode.value === 'existing_local') {
       return { ...base, db_mode: 'existing_local' }
@@ -442,7 +443,6 @@ export const useSetup = () => {
     appBranch,
     country,
     countryOptions,
-    serverCountry,
     rootUserPlaceholder,
     dbTypeOptions: DB_TYPE_OPTIONS,
     branchOptions,
