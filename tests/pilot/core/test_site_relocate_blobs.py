@@ -44,8 +44,8 @@ def test_skipped_rows_do_not_fail(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("stdout", [_stats(moved=1, errors=2), ""])
 def test_failed_or_missing_results_raise(tmp_path: Path, stdout: str) -> None:
-    """Errors fail the relocation task, which can be retried on its own."""
-    with pytest.raises(BenchError):
+    """Errors fail the relocation task, so the message points at that task, not at the finished rename."""
+    with pytest.raises(BenchError, match="relocate-renamed-blobs"):
         _relocate(tmp_path, stdout)
 
 

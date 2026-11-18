@@ -16,8 +16,10 @@ import pytest
 from pilot.config import RoutePolicy
 from pilot.core.bench import Bench
 from pilot.core.site.rename import SiteRename
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, TaskConflictError
 from pilot.internal.atomic_file import exchange_paths
+from pilot.internal.tasks.process import TASK_ID_ENV
+from pilot.tasks.rename_site import RenameSiteTask
 from tests.pilot.integrations.test_central_client import _bench
 
 OLD = "old.example.com"
@@ -408,7 +410,9 @@ def test_an_s3_site_queues_its_stored_files_to_move_after_the_rename(tmp_path: P
 
     _, queue = _rename_queueing_relocation(bench)
 
-    queue.assert_called_once_with(bench, site=NEW, idempotency_key=f"relocate-renamed-blobs:{NEW}")
+    queue.assert_called_once_with(
+        bench, site=NEW, idempotency_key=f"relocate-renamed-blobs:{NEW}", resource_handoff_from=None
+    )
     assert not pending.exists()
 
 
@@ -432,6 +436,66 @@ def test_a_frappe_without_relocation_still_finishes_the_rename(tmp_path: Path) -
     queue.assert_not_called()
     assert any("stay under the old name" in message for message in messages)
     assert (bench.sites_path / NEW).is_dir()
+
+
+def _active_rename_task(bench: Bench) -> str:
+    """A real queued rename task: while active it holds both site names, as it does when the worker runs it."""
+    with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=True):
+        return RenameSiteTask.queue(bench, site=OLD, new_name=NEW)
+
+
+def _rename_inside_task(bench: Bench, handoff: str | None) -> None:
+    with (
+        patch.object(SiteRename, "_reload_nginx"),
+        patch.object(SiteRename, "run_followups"),
+        patch.object(Bench, "has_renamed_blob_relocation", True),
+        patch("pilot.internal.tasks.runner.task_workers.wake", return_value=True),
+    ):
+        SiteRename(bench.site(OLD), NEW, resource_handoff_from=handoff).run(lambda message: None)
+
+
+def _queued_commands(bench: Bench) -> list[dict]:
+    return [json.loads(meta.read_text()) for meta in sorted((bench.path / "tasks").glob("*/meta.json"))]
+
+
+def test_the_relocation_task_takes_over_the_running_renames_site_lock(tmp_path: Path) -> None:
+    """The rename task holds the new site's key, so the relocation task is handed that key
+    instead of competing for it; the worker runs one task at a time, so it starts after the rename."""
+    bench = _bench(tmp_path)
+    _site(bench, OLD, storage_driver="s3")
+    rename_id = _active_rename_task(bench)
+
+    _rename_inside_task(bench, handoff=rename_id)
+
+    relocations = [meta for meta in _queued_commands(bench) if meta["command"] == "relocate-renamed-blobs"]
+    assert len(relocations) == 1
+    assert relocations[0]["resource_keys"] == [f"site:{NEW}"]
+
+
+def test_without_the_handoff_the_relocation_task_conflicts_and_the_rename_stays_pending(
+    tmp_path: Path,
+) -> None:
+    """Queueing beside the active rename task is refused, which would leave every retry pending."""
+    bench = _bench(tmp_path)
+    _site(bench, OLD, storage_driver="s3")
+    _active_rename_task(bench)
+    pending = SiteRename(bench.site(OLD), NEW).progress_path
+
+    with pytest.raises(TaskConflictError):
+        _rename_inside_task(bench, handoff=None)
+
+    assert pending.exists()
+
+
+def test_the_rename_task_hands_its_own_id_to_the_rename(tmp_path: Path, monkeypatch) -> None:
+    bench = _bench(tmp_path)
+    monkeypatch.setenv(TASK_ID_ENV, "task-1")
+    task = RenameSiteTask(bench=bench, bench_root=tmp_path, site=OLD, new_name=NEW)
+
+    with patch("pilot.core.site.Site.rename_to") as rename_to:
+        task.rename_site()
+
+    assert rename_to.call_args.kwargs["resource_handoff_from"] == "task-1"
 
 
 def test_a_failed_rename_keeps_the_new_route_for_recovery(tmp_path: Path) -> None:
