@@ -171,6 +171,8 @@ def test_page_islands_are_built_with_frappe_s_own_script(tmp_path: Path) -> None
         builder.build_page_islands()
 
     assert compile_islands.call_args.args[0] == ["node", str(script), "--production"]
+    # Frappe's script runs yarn, so it needs the build PATH that finds yarn.
+    assert compile_islands.call_args.kwargs["env"] is manager._build_env.return_value
 
 
 def test_the_studio_editor_installs_before_frappe_builds_an_app_s_studio_apps(tmp_path: Path) -> None:
