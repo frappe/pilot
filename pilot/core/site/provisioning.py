@@ -68,6 +68,7 @@ class SiteProvisioner:
         )
         on_progress(f"Creating site '{self.name}'...")
         site.create(db_type=self.db_type)
+        self.write_storage_credentials(site)
         self.write_email_sender_name(site)
         self.write_route_policy(site)
         self.finish(site, on_progress)
@@ -92,6 +93,24 @@ class SiteProvisioner:
     def write_email_sender_name(self, site: "Site") -> None:
         """Set the email sender name."""
         site.config_file.set_values({"email_sender_name": email_sender_name(site.config.name)})
+
+    def write_storage_credentials(self, site: "Site") -> None:
+        """Fill missing S3 connection fields without changing the site's storage selection."""
+        s3 = self.bench.config.s3
+        if not s3.is_configured:
+            return
+        defaults = {
+            "access_key_id": s3.access_key,
+            "secret_access_key": s3.secret_key,
+            "bucket": s3.bucket,
+            "region": s3.region,
+            "endpoint_url": s3.endpoint_url,
+        }
+        with site.config_file.updating() as config:
+            storage = config.setdefault("storage_driver_config", {})
+            for field, value in defaults.items():
+                # Explicit values, including empty ones, belong to the site.
+                storage.setdefault(field, value)
 
     def write_route_policy(self, site: "Site") -> None:
         """Persist provider route metadata after site creation."""
