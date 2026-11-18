@@ -124,6 +124,7 @@ The limits below are conservative safety limits, not expected operation times. L
 | Domain provider command | 30 seconds | Per provider invocation. |
 | Git revision probe / branch switch | 30 / 300 seconds | Clone and other fetch paths rely on the outer task deadline. |
 | Remote backup API / download read | 30 / 300 seconds | Download reads have an idle limit, not a total transfer deadline. |
+| Backup File index | 300 seconds | The `frappe execute` call after an offsite backup with files. A timeout skips the index, not the backup. |
 | Prebuilt asset download read | 60 seconds | Per socket operation; the task deadline bounds total work. |
 | Site login / app enable or disable | 30 / 110 seconds | These can run directly in Admin requests rather than as queued tasks. |
 
