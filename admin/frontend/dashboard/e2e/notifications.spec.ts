@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test'
 
-const note = 'This server is managed by Central, so alerts also show there.'
+const note = 'This server is managed by the dashboard, so alerts also show there.'
 
 const mockBench = async (page: Page, central: object) => {
   await page.route('**/api/v1/**', async (route) => {
@@ -25,7 +25,7 @@ test('Links the Central note to this server in Central', async ({ page }) => {
   const dialog = page.getByRole('dialog')
 
   await expect(dialog.getByText(note)).toBeVisible()
-  await expect(dialog.getByRole('link', { name: 'Central', exact: true })).toHaveAttribute(
+  await expect(dialog.getByRole('link', { name: 'the dashboard', exact: true })).toHaveAttribute(
     'href',
     'https://central.example.com/dashboard/servers?pilot=pilot-test&action=overview',
   )
@@ -37,7 +37,7 @@ test('Shows the Central note without a link when the Central URL is unknown', as
   const dialog = page.getByRole('dialog')
 
   await expect(dialog.getByText(note)).toBeVisible()
-  await expect(dialog.getByRole('link', { name: 'Central', exact: true })).toHaveCount(0)
+  await expect(dialog.getByRole('link', { name: 'the dashboard', exact: true })).toHaveCount(0)
 })
 
 test('Hides the Central note on a host without Central', async ({ page }) => {
