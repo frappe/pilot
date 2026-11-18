@@ -105,7 +105,8 @@ class GitHubProvider(GitProvider):
         if result.returncode != 0:
             if "authentication failed" in result.stderr.lower():
                 raise GitAuthError(f"GitHub rejected the stored token for {repo_url}.")
-            raise GitProviderError(f"Could not read {repo_url}.")
+            reason = (result.stderr.strip().splitlines() or ["no output"])[-1]
+            raise GitProviderError(f"Could not read {repo_url}: {reason}")
         return result.stdout
 
     def list_branches(self, full_name: str) -> list[str]:

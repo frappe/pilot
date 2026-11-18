@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -267,7 +268,8 @@ def _resolved_app_response(bench_root: Path, repo_url: str, branch: str):
             401,
             {"token_invalid": True},
         )
-    except GitProviderError:
+    except GitProviderError as exc:
+        logging.warning("Could not resolve an app from %s: %s", repo_url, exc)
         return error_response(
             "invalid_app_repository",
             "Could not resolve a Frappe app from this repository.",
