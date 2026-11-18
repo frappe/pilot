@@ -391,11 +391,12 @@ class Site:
         on_progress: Callable[[str], None] = lambda message: None,
         keep_old_hostname: bool = True,
         make_primary: bool = False,
+        resource_handoff_from: str | None = None,
     ) -> None:
-        """Rename the site."""
+        """Rename the site. `resource_handoff_from` is the running task whose locks follow-up tasks take over."""
         from pilot.core.site.rename import SiteRename
 
-        SiteRename(self, new_name, keep_old_hostname, make_primary).run(on_progress)
+        SiteRename(self, new_name, keep_old_hostname, make_primary, resource_handoff_from).run(on_progress)
 
     def _provider_domains(self) -> list[str]:
         """Capture provider-owned domains before the site config is removed."""

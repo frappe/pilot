@@ -21,7 +21,12 @@ class SiteRename:
     """Rename a site without dropping requests."""
 
     def __init__(
-        self, site: "Site", new_name: str, keep_old_hostname: bool = True, make_primary: bool = False
+        self,
+        site: "Site",
+        new_name: str,
+        keep_old_hostname: bool = True,
+        make_primary: bool = False,
+        resource_handoff_from: str | None = None,
     ) -> None:
         self.site = site
         self.bench = site.bench
@@ -32,6 +37,8 @@ class SiteRename:
                 raise BenchError("Site names must stay within the bench's sites directory.")
         self.keep_old_hostname = keep_old_hostname
         self.make_primary = make_primary
+        # The running rename task, which holds the new site's key the relocation task needs.
+        self.resource_handoff_from = resource_handoff_from
         self._original_site_config: str | None = None
         self._old_pilot_auth_token = ""
         self._new_route: RoutePolicy | None = None
@@ -151,7 +158,10 @@ class SiteRename:
             on_progress("Stored files stay under the old name: this bench's Frappe cannot move them yet.")
             return
         RelocateRenamedBlobsTask.queue(
-            self.bench, site=self.new_name, idempotency_key=f"relocate-renamed-blobs:{self.new_name}"
+            self.bench,
+            site=self.new_name,
+            idempotency_key=f"relocate-renamed-blobs:{self.new_name}",
+            resource_handoff_from=self.resource_handoff_from,
         )
         on_progress("Queued a task to move stored files to the new name.")
 
