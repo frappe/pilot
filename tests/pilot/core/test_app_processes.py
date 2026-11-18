@@ -15,6 +15,7 @@ _SECTION = "[tool.pilot.processes.stalwart]\n"
 def _app(tmp_path: Path, pyproject: str, process_manager: str = "systemd") -> App:
     bench = make_bench(tmp_path)
     bench.config.production.process_manager = process_manager
+    bench.config.production.sandbox = process_manager == "systemd"
     bench.create_directories()
     (bench.apps_path / "mail" / ".git").mkdir(parents=True)
     (bench.apps_path / "mail" / "pyproject.toml").write_text(pyproject)

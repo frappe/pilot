@@ -63,15 +63,9 @@ class PilotSandboxPaths:
             self.interpreter_home,
             self.node_prefix,
             Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm"),
-            Path(self.mariadb_socket_path).parent,
         ]
+        # Not the database socket: its unix_socket login needs no password. Sites connect over TCP.
         return [str(path) for path in candidates if self.is_masked(path)]
-
-    @property
-    def mariadb_socket_path(self) -> str:
-        from pilot.managers.database import MariaDBManager
-
-        return MariaDBManager(self.bench.config.mariadb).socket_path
 
     @property
     def interpreter_home(self) -> Path:

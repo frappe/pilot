@@ -129,7 +129,7 @@ When using Central or another upstream proxy, keep the local Admin service priva
 
 [Sandbox](sandbox.md) explains what the sandbox is, which processes run in it and what it does not do. This section lists the systemd directives.
 
-The sandbox runs the bench's workload units (web, socketio, workers, redis and app processes) with `systemd.exec` sandbox directives. It needs `process_manager = "systemd"`, and a systemd bench uses it unless `sandbox = false` is set under `[production]`. A new bench has no setting, so it is sandboxed: Pilot marks that patch as applied when it creates the bench. A bench that existed before the default changed got `sandbox = false` from the `set_sandbox_off_for_existing_benches` patch; set it to `true` to opt in. A Supervisor bench is never sandboxed. The admin and central bootstrap units stay unsandboxed because the admin runs the nginx and certbot sudo commands.
+The sandbox runs the bench's workload units (web, socketio, workers, redis and app processes) with `systemd.exec` sandbox directives. It needs `process_manager = "systemd"`, and only a bench with `sandbox = true` under `[production]` uses it. A new bench gets `sandbox = true`, or `false` when it is created for Supervisor. A bench without the setting is not sandboxed; set it to `true` to opt in. When the host cannot run the sandbox, a bench with `sandbox = true` fails to write its units and says so. A Supervisor bench is never sandboxed. Sites reach MariaDB over TCP on `127.0.0.1`, because the sandbox hides the database socket: its `unix_socket` login needs no password. The admin and central bootstrap units stay unsandboxed because the admin runs the nginx and certbot sudo commands.
 
 | Directives | Effect |
 |---|---|

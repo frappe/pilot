@@ -1064,14 +1064,19 @@ def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: 
     bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
     captured = _capture_site_cmd(monkeypatch)
     statements = _capture_admin_sql(monkeypatch)
-    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager.client_socket", property(lambda self: ""))
+    monkeypatch.setattr(
+        "pilot.managers.database.mariadb.MariaDBManager.client_socket", property(lambda self: "/pilot/run/mysqld.sock")
+    )
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
     cmd = captured["cmd"]
     # mariadb is frappe's default engine - no --db-type flag is passed
     assert "--db-type" not in cmd
-    assert "--db-host" in cmd
+    # TCP even when the socket exists: the sandbox hides it.
+    assert "--db-socket" not in cmd
+    assert cmd[cmd.index("--db-host") + 1] == "127.0.0.1"
+    assert cmd[cmd.index("--db-port") + 1] == str(bench.config.mariadb.port)
     database = cmd[cmd.index("--db-name") + 1]
     user = cmd[cmd.index("--db-root-username") + 1]
     assert user.startswith("pilot_setup_")

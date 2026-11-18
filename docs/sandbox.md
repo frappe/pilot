@@ -66,7 +66,7 @@ The trial needs unprivileged user namespaces. Ubuntu 24.04 blocks them through A
 
 ## Give an app or a process more paths
 
-An empty home breaks things that a bench needs. So Pilot puts back, read-only, what its own workloads use: the Python that the venv links to, Node, nvm, the database socket folder and linked apps. An app that needs more says so in its own `pyproject.toml`. Pilot does not need to know the app.
+An empty home breaks things that a bench needs. So Pilot puts back, read-only, what its own workloads use: the Python that the venv links to, Node, nvm and linked apps. The database socket stays hidden, because its `unix_socket` login lets the OS user in with no password; sites connect over TCP instead. An app that needs more says so in its own `pyproject.toml`. Pilot does not need to know the app.
 
 ```toml
 # For every workload unit of the bench, while a site uses the app.

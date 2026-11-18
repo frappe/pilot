@@ -175,15 +175,9 @@ class SiteCommands:
 
         from pilot.managers.database import MariaDBManager
 
-        socket_path = MariaDBManager(self.site.bench.config.mariadb).client_socket
-        return self.mariadb_db_args(socket_path)
-
-    def mariadb_db_args(self, socket_path: str) -> list[str]:
-        """The new-site arguments for the MariaDB connection."""
-        mariadb = self.site.bench.config.mariadb
-        if socket_path:
-            return ["--db-socket", socket_path]
-        return ["--db-host", mariadb.host, "--db-port", str(mariadb.port)]
+        # TCP, not the socket: the sandbox hides the socket, whose unix_socket login needs no password.
+        mariadb = MariaDBManager(self.site.bench.config.mariadb)
+        return ["--db-host", mariadb.site_host, "--db-port", str(mariadb.config.port)]
 
     def postgres_db_args(self) -> list[str]:
         """The new-site arguments for the PostgreSQL connection."""

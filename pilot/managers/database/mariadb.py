@@ -1266,6 +1266,14 @@ class MariaDBManager(UserOwnedDBManager):
         )
 
     @property
+    def site_host(self) -> str:
+        """The host sites reach the server on over TCP. Pilot's server listens on 127.0.0.1, and MySQL clients
+        take `localhost` to mean the default socket. macOS reaches Homebrew's server through that socket."""
+        if self.config.existing or HostPlatform().is_macos:
+            return self.config.host
+        return "127.0.0.1"
+
+    @property
     def client_socket(self) -> str:
         """The socket clients should use, or an empty string for TCP."""
         if self.config.socket_path:

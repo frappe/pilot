@@ -384,12 +384,12 @@ def _unit_text(manager) -> str:
     return (manager.systemd_conf_dir / "test-bench-web.service").read_text()
 
 
-def test_a_systemd_bench_with_no_setting_is_sandboxed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="", sandbox=None)
+def test_a_systemd_bench_with_no_setting_is_not_sandboxed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="user namespaces are blocked", sandbox=None)
 
     manager.write_config()
 
-    assert "NoNewPrivileges=yes\n" in _unit_text(manager)
+    assert "NoNewPrivileges" not in _unit_text(manager)
 
 
 def test_a_bench_set_to_false_is_not_sandboxed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -398,18 +398,6 @@ def test_a_bench_set_to_false_is_not_sandboxed(tmp_path: Path, monkeypatch: pyte
     manager.write_config()
 
     assert "NoNewPrivileges" not in _unit_text(manager)
-
-
-def test_a_bench_with_no_setting_that_cannot_sandbox_runs_without_it_and_warns(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="user namespaces are blocked", sandbox=None)
-
-    manager.write_config()
-
-    assert "NoNewPrivileges" not in _unit_text(manager)
-    assert "user namespaces are blocked" in caplog.text
-    assert "sandbox = false" in caplog.text
 
 
 def test_a_bench_set_to_true_that_cannot_sandbox_still_fails(
