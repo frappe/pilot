@@ -147,6 +147,9 @@ class SiteRename:
 
         if not self.bench.site(self.new_name).has_s3_storage:
             return
+        if not self.bench.has_renamed_blob_relocation:
+            on_progress("Stored files stay under the old name: this bench's Frappe cannot move them yet.")
+            return
         RelocateRenamedBlobsTask.queue(
             self.bench, site=self.new_name, idempotency_key=f"relocate-renamed-blobs:{self.new_name}"
         )
