@@ -554,7 +554,7 @@ onMounted(load)
 
   <template v-else-if="diagnostics">
     <Tabs v-model="picked">
-      <TabList variant="underline" size="md" class="px-3 md:px-4">
+      <TabList variant="underline" size="md" class="px-3 md:px-4 overflow-x-auto [scrollbar-width:none]">
         <TabTrigger
           v-for="section in sections"
           :key="section.value"

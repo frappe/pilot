@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Literal, TypedDict
 
 from flask import Blueprint, jsonify, request
@@ -114,6 +115,7 @@ def check_cli_update():
     try:
         return jsonify(_cli_update(fetch=True))
     except Exception:
+        logging.exception("Could not check for a CLI update")
         return error_response("cli_update_check_failed", "Could not check for a CLI update.", 500)
 
 

@@ -50,12 +50,9 @@ class BenchCreator:
             return self.create(on_progress)
 
     def create(self, on_progress: Callable[[str], None]) -> "Bench":
-        """Write bench.toml with free ports and initial settings, and return the bench. The patch that turns
-        the sandbox off for existing benches is marked applied, so a new bench keeps the default."""
+        """Write bench.toml with free ports and initial settings, and return the bench."""
         from pilot.config import BenchConfig
         from pilot.core.bench import Bench
-        from pilot.internal.patch_state import mark_applied
-        from pilot.patches.set_sandbox_off_for_existing_benches import PATCH_NAME as SANDBOX_OFF_PATCH
 
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
@@ -82,7 +79,6 @@ class BenchCreator:
         if self.configure:
             self.configure(config)
         config.write(self.target_directory)
-        mark_applied(self.target_directory, SANDBOX_OFF_PATCH)
 
         admin_port = BenchConfig.default_ports()["admin.port"] + offset
         on_progress(f"\nBench '{self.name}' created at {self.target_directory}")
@@ -99,6 +95,8 @@ class BenchCreator:
         """The initial admin, worker and production settings."""
         import secrets
 
+        from pilot.managers.platform import HostPlatform
+
         settings = {
             "admin_enabled": True,
             "admin_password": self.admin_password or secrets.token_urlsafe(12),
@@ -112,6 +110,9 @@ class BenchCreator:
             settings["app_branch"] = self.frappe_branch
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
+        # Only a new bench is sandboxed, and only systemd runs the sandbox. A bench made before keeps no setting.
+        process_manager = self.process_manager or HostPlatform.native_process_manager
+        settings["production_sandbox"] = process_manager == "systemd"
         return settings
 
     def _pick_port_offset(self, bench_path: Path) -> int:

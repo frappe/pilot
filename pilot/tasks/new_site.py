@@ -46,7 +46,7 @@ class NewSiteTask(Task):
         """The callback args that release the site creation."""
         return {"site": self.name}
 
-    @step("create", lambda self: f"Create site {self.name}", icon="lucide-package-plus")
+    @step("create", "Create site", icon="lucide-package-plus")
     def create(self) -> None:
         """Create the site."""
         Site.provision(

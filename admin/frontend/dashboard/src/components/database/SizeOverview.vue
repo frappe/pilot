@@ -58,7 +58,7 @@ const partColumns = [
 ] as const
 
 const columns = computed(() => [
-  { key: 'name', label: props.site ? 'Table' : 'Database', class: 'w-[34%] max-w-0' },
+  { key: 'name', label: props.site ? 'Table' : 'Database', class: 'w-[34%] min-w-48 max-w-0' },
   { key: 'size', label: 'Size', class: 'w-[13%]' },
   { key: 'share', label: 'Share', class: 'w-[13%]' },
   ...partColumns.map((part) => ({ key: part.key, label: part.label, class: 'w-[13%]' })),
@@ -433,12 +433,12 @@ const updatedLabel = computed(() => {
             <RouterLink
               v-if="row.site"
               :to="{ query: { ...$route.query, site: row.site } }"
-              class="after:absolute after:inset-0 text-ink-gray-8 shrink-0"
+              class="after:absolute after:inset-0 min-w-0 text-ink-gray-8 truncate"
             >
               {{ row.label }}
             </RouterLink>
-            <span v-else class="text-ink-gray-6 shrink-0">{{ row.label }}</span>
-            <span v-if="row.site" class="min-w-0 font-mono text-ink-gray-4 text-xs truncate">
+            <span v-else class="min-w-0 text-ink-gray-6 truncate">{{ row.label }}</span>
+            <span v-if="row.site" class="max-sm:hidden min-w-0 font-mono text-ink-gray-4 text-xs truncate">
               {{ row.detail }}
             </span>
           </span>

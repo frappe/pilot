@@ -23,6 +23,8 @@ const {
   dbPortPlaceholder,
   appRepo,
   appBranch,
+  country,
+  countryOptions,
   rootUserPlaceholder,
   dbTypeOptions,
   branchOptions,
@@ -66,6 +68,16 @@ const {
 
       <div class="flex-1 p-5 overflow-y-auto">
         <LoadingText v-show="currentStep === 'loading'" class="justify-center py-10" />
+
+        <div v-show="currentStep === 'country'" class="flex flex-col gap-4">
+          <Combobox
+            label="Country"
+            v-model="country"
+            :options="countryOptions"
+            placeholder="Search countries…"
+          />
+          <ErrorMessage v-show="errorMessage" :message="errorMessage" />
+        </div>
 
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
           <Select side="bottom" label="Database engine" v-model="dbType" :options="dbTypeOptions" />

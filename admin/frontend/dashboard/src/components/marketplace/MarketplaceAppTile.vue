@@ -35,9 +35,7 @@ defineEmits(['install', 'uninstall'])
 const compactNumber = new Intl.NumberFormat('en', { notation: 'compact' })
 const isOpen = ref(false)
 
-const hasMeta = computed(
-  () => props.app.installed || props.app.stars || props.app.label || props.app.requires?.length,
-)
+const hasMeta = computed(() => props.app.stars || props.app.label || props.app.requires?.length)
 
 const categories = computed(() =>
   (props.app.categories?.length ? props.app.categories : [props.app.category])
@@ -135,8 +133,6 @@ const statusTheme = computed(() => {
           >
             <Badge :label="dependency.title" />
           </Tooltip>
-
-          <Badge v-if="app.installed" label="Installed" theme="green" class="ml-auto" />
         </div>
       </article>
     </template>

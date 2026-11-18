@@ -107,6 +107,20 @@ def test_cli_update_checks_release_compares_latest(tmp_path: Path) -> None:
     assert body["latest_version"] == "v0.0.2-pre-alpha"
 
 
+def test_cli_update_checks_logs_the_failure(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with (
+        patch("pilot.is_dev_build", False),
+        patch("pilot.updater.update_available", side_effect=OSError("HTTP Error 403: rate limit exceeded")),
+    ):
+        response = client.post("/api/v1/cli-update-checks")
+
+    assert response.status_code == 500
+    assert response.get_json()["error"]["code"] == "cli_update_check_failed"
+    assert "rate limit exceeded" in caplog.text
+
+
 @pytest.fixture
 def auto_update_client(tmp_path, monkeypatch):
     monkeypatch.setattr("pilot.core.server.Server.benches_dir", tmp_path)

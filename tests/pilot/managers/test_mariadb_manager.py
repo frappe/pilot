@@ -1559,3 +1559,13 @@ def test_provision_checks_for_a_server_while_holding_the_provision_lock(tmp_path
     lock.assert_called_once_with(tmp_path / "provision")
     assert events == ["locked", "checked", "unlocked"]
     initialize.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("existing", "is_macos", "host"),
+    [(False, False, "127.0.0.1"), (True, False, "db.example.com"), (False, True, "db.example.com")],
+)
+def test_sites_reach_pilots_server_on_the_loopback_address(existing: bool, is_macos: bool, host: str) -> None:
+    manager = MariaDBManager(MariaDBConfig(host="db.example.com", existing=existing))
+    with patch.object(HostPlatform, "is_macos", new_callable=PropertyMock, return_value=is_macos):
+        assert manager.site_host == host

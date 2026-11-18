@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from pilot.integrations.git.base import (
     GitAuthError,
-    GitNotFoundError,
     GitProvider,
     GitProviderError,
     basic_auth_config,
@@ -87,46 +87,65 @@ class GitHubProvider(GitProvider):
         """The git config that authenticates to the repository."""
         return basic_auth_config(repo_url, "x-access-token", self.token)
 
-    def list_branches(self, full_name: str) -> list[str]:
-        """The branches of a repository."""
-        repo_url = f"https://{self.host}/{full_name}"
+    def run_git(self, repo_url: str, *args: str) -> str:
+        """The output of a git command that reads the repository with the stored token.
+        Git, unlike the API, is not under the per-IP rate limit for anonymous calls."""
         try:
             result = subprocess.run(
-                ["git", "ls-remote", "--heads", repo_url],
+                ["git", *args],
                 capture_output=True,
                 text=True,
                 timeout=30,
                 env=git_env(self.auth_config(repo_url)),
             )
         except subprocess.TimeoutExpired as exc:
-            raise GitProviderError(f"Timed out listing branches for {full_name}.") from exc
+            raise GitProviderError(f"Timed out reading {repo_url}.") from exc
         except OSError as exc:
-            raise GitProviderError("Git is required to list repository branches.") from exc
+            raise GitProviderError("Git is required to read repositories.") from exc
         if result.returncode != 0:
             if "authentication failed" in result.stderr.lower():
-                raise GitAuthError(f"GitHub rejected the stored token for {full_name}.")
-            raise GitProviderError(f"Could not list branches for {full_name}.")
-        return [
-            line.split("refs/heads/", 1)[1]
-            for line in result.stdout.splitlines()
-            if "refs/heads/" in line
-        ]
+                raise GitAuthError(f"GitHub rejected the stored token for {repo_url}.")
+            reason = (result.stderr.strip().splitlines() or ["no output"])[-1]
+            raise GitProviderError(f"Could not read {repo_url}: {reason}")
+        return result.stdout
+
+    def list_branches(self, full_name: str) -> list[str]:
+        """The branches of a repository."""
+        repo_url = f"https://{self.host}/{full_name}"
+        output = self.run_git(repo_url, "ls-remote", "--heads", repo_url)
+        return [line.split("refs/heads/", 1)[1] for line in output.splitlines() if "refs/heads/" in line]
 
     def get_branch_commit(self, full_name: str, branch: str) -> dict | None:
         """The head commit of the branch, or None when it does not exist."""
-        url = f"{self.api_base}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"
-        try:
-            data, _ = self._get_json(url, self._headers())
-        except GitNotFoundError:
+        repo_url = f"https://{self.host}/{full_name}"
+        if not self.run_git(repo_url, "ls-remote", "--heads", repo_url, f"refs/heads/{branch}").strip():
             return None
-        lines = (data.get("commit", {}).get("commit", {}).get("message") or "").splitlines()
-        return {"sha": data.get("commit", {}).get("sha", ""), "message": lines[0] if lines else ""}
+        with tempfile.TemporaryDirectory() as directory:
+            # One commit and no trees: enough to read the subject.
+            self.run_git(
+                repo_url,
+                "clone",
+                "--quiet",
+                "--bare",
+                "--depth=1",
+                "--filter=tree:0",
+                "--single-branch",
+                "--branch",
+                branch,
+                repo_url,
+                directory,
+            )
+            output = self.run_git(repo_url, "-C", directory, "log", "-1", "--format=%H %s")
+        sha, _, message = output.strip().partition(" ")
+        return {"sha": sha, "message": message}
 
     def get_default_branch(self, full_name: str) -> str:
         """The default branch of a repository."""
-        url = f"{self.api_base}/repos/{full_name}"
-        data, _ = self._get_json(url, self._headers())
-        return data.get("default_branch", "")
+        repo_url = f"https://{self.host}/{full_name}"
+        for line in self.run_git(repo_url, "ls-remote", "--symref", repo_url, "HEAD").splitlines():
+            if line.startswith("ref: refs/heads/"):
+                return line.removeprefix("ref: refs/heads/").split("\t", 1)[0]
+        return ""
 
     def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
         """The text of a file in the repository."""

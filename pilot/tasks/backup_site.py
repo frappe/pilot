@@ -40,7 +40,7 @@ class BackupSiteTask(Task):
             self.with_files = options["with_files"]
         self.backup()
 
-    @step("backup", lambda self: f"Backup site {self.site}", icon="lucide-database")
+    @step("backup", "Back up site", icon="lucide-database")
     def backup(self) -> None:
         """Take, upload and prune a backup, and record it."""
         try:

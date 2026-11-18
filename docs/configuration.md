@@ -126,7 +126,7 @@ allow_site_to_pilot_communication = true
 
 With `enabled = false`, `pilot start` does not run the Admin. `pilot dev setup` creates benches this way.
 
-Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. It also permits killing database processes and purging binlogs, because both affect every bench on the host. Database settings and the MariaDB restart do not need it.
+Nginx proxies admin traffic to `port + 1` on localhost. In production, `admin.domain` is required. `allow_bench_management` permits this admin to manage sibling benches and defaults to enabled only for development installs. The database analyzer, database settings and the MariaDB restart do not need it.
 
 A production site calls Pilot at the loopback `pilot_endpoint` in its `site_config.json`, independently of DNS or `admin.domain`. The browser loads Cloud Settings assets from `cloud_settings_embed_url = "/_pilot"`; nginx serves `/_pilot/embed/cloud-settings/` on the site's origin. API calls still pass through Frappe with the server-held site token. `cloud_server_url` holds the public admin URL for dashboard links and follows admin domain changes. Development benches without nginx retain the public admin embed URL. The `serve_site_embeds_locally` upgrade patch publishes nginx routes before updating existing production site configs and clearing their caches. Set `allow_site_to_pilot_communication = false` to skip writing these keys into new sites, so Frappe treats them as self-hosted (its `is_v2_site` check reads `pilot_endpoint` and `pilot_auth_token`).
 
@@ -184,11 +184,17 @@ Nginx is shared by every bench on the host, so its listen ports live in `common_
 
 Unknown fields are ignored during normal loads. Strict validation reports them.
 
+## Country
+
+The country is a name from Frappe's country list, such as `India`. The first bench to initialise writes its choice as `country` in `common_config.toml`. A later bench uses that country unless it picks another one, which is kept as `country` under `[bench]` in its own `bench.toml`. A bench reads its own country, then the shared one, then defaults to `India`. Pick it on the first step of the setup wizard, which starts on the shared country, or with `pilot init --country`. It cannot be changed once the bench is initialised. The country list is in `pilot/config/country.py`, and `Bench.country` returns the effective value.
+
 ## Shared host configuration
 
 `common_config.toml` contains one copy of host-level settings:
 
 ```toml
+country = "India"
+
 [mariadb]
 host = "localhost"
 port = 3306
@@ -309,6 +315,7 @@ Each 5 minutes, the telemetry thread of the monitor sends:
 | `system_filesystem_size_bytes`, `system_filesystem_available_bytes` | The size and the free space of each disk, with `mountpoint`, `device` and `type`. |
 | `pilot_central_requests_last_5_minutes{method, result}` | The calls to Central in the last 5 minutes. `result` is `ok` or `failed`. |
 | `pilot_site_backups{status}` | The number of sites whose newest backup of the last day has `status` `success` or `failed`, over every bench. Beacon sees backups that fail on many servers at once. |
+| `pilot_site_backup_failed{site}` | 1 for each site whose newest backup of the last day failed. Beacon names these sites in an incident. |
 
 It also sends one log line for each app of each finished or failed update, with product `pilot`, service `update` and source `event`. The attributes are `app`, `repository` (such as `frappe/erpnext`), `from_version`, `to_version`, `status`, `phase` and `site`. A failed line has level `error` and the end of the output in the message. Pilot keeps the time of the newest accepted line in `system/logs/updates.sent`, and sends the next lines again until Datum accepts them. On the first run it starts from now.
 

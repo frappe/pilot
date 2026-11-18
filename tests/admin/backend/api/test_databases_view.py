@@ -783,14 +783,17 @@ def test_kill_process_maps_missing_process_to_422(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "kill_failed"
 
 
-def test_kill_process_forbidden_when_bench_management_disabled(tmp_path: Path) -> None:
+def test_the_analyzer_works_without_bench_management(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current", allow_bench_management=False)
-    patcher, provider = _patched_provider()
+    patcher, provider = _patched_provider(**{"get_process_list.return_value": []})
     with patcher:
-        response = client.post("/api/v1/database/processlist/kill", json={"process_id": 4096})
+        listed = client.get("/api/v1/database/processlist")
+        killed = client.post("/api/v1/database/processlist/kill", json={"process_id": 4096})
+        purged = client.post("/api/v1/database/binlogs/purge", json={"up_to": "mysql-bin.000002"})
 
-    assert response.status_code == 403
-    provider.kill_process.assert_not_called()
+    assert [listed.status_code, killed.status_code, purged.status_code] == [200, 200, 200]
+    provider.kill_process.assert_called_once_with(4096)
+    provider.purge_binlogs.assert_called_once_with("mysql-bin.000002")
 
 
 def test_purge_requires_up_to(tmp_path: Path) -> None:
@@ -808,16 +811,6 @@ def test_purge_maps_unknown_file_to_422(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert response.get_json()["error"]["code"] == "purge_failed"
-
-
-def test_purge_forbidden_when_bench_management_disabled(tmp_path: Path) -> None:
-    client = _client(tmp_path / "benches" / "current", allow_bench_management=False)
-    with patch(f"{_PROVIDER}.purge_binlogs") as purge, patch(f"{_PROVIDER}.__init__", return_value=None):
-        response = client.post("/api/v1/database/binlogs/purge", json={"up_to": "mysql-bin.000002"})
-
-    assert response.status_code == 403
-    assert response.get_json()["error"]["code"] == "bench_management_forbidden"
-    purge.assert_not_called()
 
 
 def test_binlog_listing_still_allowed_when_bench_management_disabled(tmp_path: Path) -> None:

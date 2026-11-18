@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 MANAGED_COMMON_SITE_CONFIG_KEYS = frozenset(
     {
         "client_cache_max_bytes",
+        "db_host",
+        "db_port",
         "default_site",
         "dns_multitenant",
         "maintenance_mode",
@@ -127,6 +129,17 @@ class BenchConfigFiles:
             else:
                 config.pop("client_cache_max_bytes", None)
             self.set_worker_queues(config)
+            self.set_database_address(config)
+
+    def set_database_address(self, config: dict) -> None:
+        """Sites reach Pilot's MariaDB over its socket, which Frappe prefers. Apps that connect over TCP,
+        such as Insights' Site DB, read only db_host and db_port, so give them the address it listens on.
+        Not `localhost`: MySQL clients take that to mean the default socket."""
+        mariadb = self.bench.config.mariadb
+        if self.bench.config.db_type != "mariadb" or mariadb.existing:
+            return
+        config["db_host"] = "127.0.0.1"
+        config["db_port"] = mariadb.port
 
     def set_worker_queues(self, config: dict) -> None:
         """Frappe rejects a queue missing from `workers` and reads each queue's job timeout there.

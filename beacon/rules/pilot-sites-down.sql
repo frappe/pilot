@@ -3,6 +3,7 @@
 -- severity: High
 -- resource_type: Virtual Machine
 -- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-sites-down.md
+-- charts: pilot-sites-down, pilot-database
 -- interval: 60
 -- pending_for: 300
 -- resolve_after: 300

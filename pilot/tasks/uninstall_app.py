@@ -20,7 +20,7 @@ class UninstallAppTask(Task):
         """Uninstall the app."""
         self.uninstall()
 
-    @step("uninstall", lambda self: f"Uninstall {self.app} from {self.site}", icon="lucide-trash-2")
+    @step("uninstall", lambda self: f"Uninstall {self.app}", icon="lucide-trash-2")
     def uninstall(self) -> None:
         """Uninstall the app from the site in maintenance mode."""
         site = self.bench.site(self.site)

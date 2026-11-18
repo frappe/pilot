@@ -16,7 +16,7 @@ from pilot.integrations.git import (
     parse_github_owner_repo,
     resolve_app_name_from_repo,
 )
-from pilot.integrations.git.base import GitAuthError, GitNotFoundError
+from pilot.integrations.git.base import GitAuthError
 
 
 def test_github_provider_omits_auth_header_without_token() -> None:
@@ -38,9 +38,7 @@ def test_list_branches_returns_every_head_from_one_ls_remote() -> None:
         "ccc\trefs/heads/mergify/bp/version-13-hotfix/pr-26107\n"
         "ddd\trefs/heads/version-16-hotfix\n"
     )
-    with patch(
-        "pilot.integrations.git.github.subprocess.run", return_value=_ls_remote(stdout=stdout)
-    ) as run:
+    with patch("pilot.integrations.git.github.subprocess.run", return_value=_ls_remote(stdout=stdout)) as run:
         branches = GitHubProvider(token="").list_branches("frappe/erpnext")
     assert branches == [
         "develop",
@@ -52,9 +50,7 @@ def test_list_branches_returns_every_head_from_one_ls_remote() -> None:
 
 
 def test_list_branches_offers_the_token_as_a_scoped_header() -> None:
-    with patch(
-        "pilot.integrations.git.github.subprocess.run", return_value=_ls_remote()
-    ) as run:
+    with patch("pilot.integrations.git.github.subprocess.run", return_value=_ls_remote()) as run:
         GitHubProvider(token="ghp_token").list_branches("acme/private")
     env = run.call_args.kwargs["env"]
     values = [env[key] for key in env if key.startswith("GIT_CONFIG_VALUE_")]
@@ -63,7 +59,9 @@ def test_list_branches_offers_the_token_as_a_scoped_header() -> None:
 
 
 def test_list_branches_maps_a_rejected_token_to_auth_error() -> None:
-    failed = _ls_remote(returncode=128, stderr="fatal: Authentication failed for 'https://github.com/acme/private/'")
+    failed = _ls_remote(
+        returncode=128, stderr="fatal: Authentication failed for 'https://github.com/acme/private/'"
+    )
     with (
         patch("pilot.integrations.git.github.subprocess.run", return_value=failed),
         pytest.raises(GitAuthError),
@@ -131,6 +129,20 @@ def test_git_env_disables_the_ext_transport() -> None:
         for index in range(int(env["GIT_CONFIG_COUNT"]))
     }
     assert settings["protocol.ext.allow"] == "never"
+
+
+def test_git_env_resets_inherited_headers_before_its_own() -> None:
+    """A CI checkout's .git/config holds an Authorization header too; GitHub refuses two with HTTP 400."""
+    from pilot.internal.git import git_env
+
+    key = "http.https://github.com/.extraHeader"
+    env = git_env({key: "Authorization: Basic abc"})
+
+    entries = [
+        (env[f"GIT_CONFIG_KEY_{index}"], env[f"GIT_CONFIG_VALUE_{index}"])
+        for index in range(int(env["GIT_CONFIG_COUNT"]))
+    ]
+    assert entries[-2:] == [(key, ""), (key, "Authorization: Basic abc")]
 
 
 def test_credential_store_round_trip(tmp_path: Path) -> None:
@@ -229,25 +241,66 @@ def test_resolve_app_name_defaults_description_when_missing(tmp_path: Path) -> N
     assert resolved == {"name": "myapp", "description": "", "commit": None}
 
 
-def test_github_get_branch_commit_returns_sha_and_subject() -> None:
-    payload = {"commit": {"sha": "abc1234def", "commit": {"message": "fix: thing\n\nbody"}}}
-    provider = GitHubProvider(token="")
-    with patch.object(provider, "_get_json", return_value=(payload, {})) as get_json:
-        commit = provider.get_branch_commit("acme/myapp", "feature/x")
+def _fake_git(heads: str = "", log: str = "", symref: str = ""):
+    """A subprocess.run stand-in that answers the git commands the provider runs."""
+
+    def run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
+        if "--symref" in args:
+            return _ls_remote(stdout=symref)
+        if "ls-remote" in args:
+            return _ls_remote(stdout=heads)
+        return _ls_remote(stdout=log)
+
+    return run
+
+
+def test_github_get_branch_commit_reads_sha_and_subject_through_git() -> None:
+    fake = _fake_git(heads="abc1234def\trefs/heads/feature/x\n", log="abc1234def fix: thing\n")
+    with patch("pilot.integrations.git.github.subprocess.run", side_effect=fake) as run:
+        commit = GitHubProvider(token="").get_branch_commit("acme/myapp", "feature/x")
+
     assert commit == {"sha": "abc1234def", "message": "fix: thing"}
-    assert get_json.call_args.args[0].endswith("/repos/acme/myapp/branches/feature%2Fx")
+    commands = [call.args[0] for call in run.call_args_list]
+    assert commands[0] == [
+        "git",
+        "ls-remote",
+        "--heads",
+        "https://github.com/acme/myapp",
+        "refs/heads/feature/x",
+    ]
+    assert {"clone", "--filter=tree:0", "--branch", "feature/x"} <= set(commands[1])
 
 
 def test_github_get_branch_commit_is_none_for_missing_branch() -> None:
-    provider = GitHubProvider(token="")
-    with patch.object(provider, "_get_json", side_effect=GitNotFoundError("HTTP 404")):
-        assert provider.get_branch_commit("acme/myapp", "nope") is None
+    with patch("pilot.integrations.git.github.subprocess.run", side_effect=_fake_git()) as run:
+        assert GitHubProvider(token="").get_branch_commit("acme/myapp", "nope") is None
+    run.assert_called_once()
 
 
-def test_github_get_branch_commit_raises_on_provider_outage() -> None:
-    provider = GitHubProvider(token="")
+def test_github_get_branch_commit_raises_when_git_fails() -> None:
+    failed = _ls_remote(returncode=128, stderr="fatal: unable to access")
     with (
-        patch.object(provider, "_get_json", side_effect=GitProviderError("HTTP 500")),
+        patch("pilot.integrations.git.github.subprocess.run", return_value=failed),
         pytest.raises(GitProviderError),
     ):
-        provider.get_branch_commit("acme/myapp", "main")
+        GitHubProvider(token="").get_branch_commit("acme/myapp", "main")
+
+
+@pytest.mark.parametrize(
+    ("symref", "expected"),
+    [("ref: refs/heads/develop\tHEAD\nabc\tHEAD\n", "develop"), ("abc\tHEAD\n", "")],
+)
+def test_github_get_default_branch_reads_the_head_symref(symref: str, expected: str) -> None:
+    with patch("pilot.integrations.git.github.subprocess.run", side_effect=_fake_git(symref=symref)):
+        assert GitHubProvider(token="").get_default_branch("acme/myapp") == expected
+
+
+def test_a_git_failure_names_what_git_said() -> None:
+    failed = _ls_remote(
+        returncode=128, stderr="remote: Repository not found.\nfatal: unable to access 'x': 403\n"
+    )
+    with (
+        patch("pilot.integrations.git.github.subprocess.run", return_value=failed),
+        pytest.raises(GitProviderError, match="fatal: unable to access 'x': 403"),
+    ):
+        GitHubProvider(token="").list_branches("acme/gone")
