@@ -103,10 +103,6 @@ const migrateStatus: Record<MigrationSite['migration_status'], Status> = {
 const chain = computed(() => props.op.chain)
 const logs = computed(() => new Map(props.op.task_logs.map((log) => [log.id, log])))
 
-const activity = computed(
-  () => props.op.task_logs.find((log) => log.status === 'running' && log.activity)?.activity,
-)
-
 const span = (links: MigrationChainLink[]) => {
   if (!links.length || links.some((link) => !link.started_at || !link.finished_at)) return ''
 
@@ -554,10 +550,6 @@ watch(
 
               <span class="block mt-1 text-ink-gray-5 group-[:enabled:hover]:text-ink-gray-6 text-sm truncate">
                 {{ subtext(stage) }}
-              </span>
-
-              <span v-if="stage.status === 'running' && activity" class="block mt-1.5 text-ink-gray-6 text-sm truncate">
-                {{ activity }}
               </span>
             </span>
 
