@@ -178,6 +178,10 @@ These tables are per-bench unless noted otherwise:
 - `[llm]`: admin assistant provider settings.
 - `[resource_limits]`: CPU, memory, disk, uptime, and webhook alerts.
 
+When `[s3]` has `access_key`, `secret_key`, `bucket`, `provider`, and `region`, Pilot fills missing fields in a new site's `storage_driver_config` before installing additional apps. It copies `access_key` as `access_key_id`, `secret_key` as `secret_access_key`, and the `bucket`, `region`, and `endpoint_url` fields under their original names. Existing fields, including empty strings and `null`, and extra driver options are preserved.
+
+This copy does not set `storage_driver`, `storage_v2`, or `storage_local_cache`. It runs once during Pilot's new-site provisioning, including creation from a backup. Existing sites, clones, and resumed provisioning do not receive this copy, and later bench credential changes do not update site configs. Running Frappe's `new-site` command directly bypasses it.
+
 `[monitor]` contains this bench's application metric log path. Host-wide system, database, and slow-query logs always use `cli_root()/system/logs/` and cannot be configured.
 
 Nginx is shared by every bench on the host, so its listen ports live in `common_config.toml`, not `bench.toml`. A `[nginx]` table in `bench.toml` is an error. See [Nginx Ports](#nginx-ports).
