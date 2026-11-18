@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,36 @@ def _keep_the_host_monitor_running(monkeypatch: pytest.MonkeyPatch) -> list[str]
     restarts: list[str] = []
     monkeypatch.setattr(MonitorConfigurator, "restart", lambda self: restarts.append("restart monitor"))
     return restarts
+
+
+FEED = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>tag:github.com,2008:Repository/1/v0.0.103-pre-alpha</id>
+    <link rel="alternate" type="text/html" href="https://github.com/frappe/pilot/releases/tag/v0.0.103-pre-alpha"/>
+    <title>Release name differs from tag</title>
+  </entry>
+  <entry>
+    <link rel="alternate" type="text/html" href="https://github.com/frappe/pilot/releases/tag/v0.0.102-pre-alpha"/>
+  </entry>
+</feed>"""
+
+
+def test_latest_release_reads_the_newest_entry_of_the_public_feed() -> None:
+    with patch.object(updater.urllib.request, "urlopen", return_value=io.BytesIO(FEED)) as urlopen:
+        release = updater.latest_release()
+
+    assert urlopen.call_args.args[0].full_url == "https://github.com/frappe/pilot/releases.atom"
+    assert release == {
+        "tag": "v0.0.103-pre-alpha",
+        "asset_url": "https://github.com/frappe/pilot/releases/download/v0.0.103-pre-alpha/pilot.tar.gz",
+    }
+
+
+def test_latest_release_is_none_for_an_empty_feed() -> None:
+    feed = b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+    with patch.object(updater.urllib.request, "urlopen", return_value=io.BytesIO(feed)):
+        assert updater.latest_release() is None
 
 
 def test_update_available_true_when_tag_differs() -> None:

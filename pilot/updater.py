@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -9,6 +8,7 @@ import tempfile
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pilot
 from pilot.exceptions import BenchError
@@ -21,21 +21,21 @@ Progress = Callable[[str], None]
 
 
 def latest_release() -> dict | None:
-    """Newest release as {tag, asset_url, body}, or None. Uses the releases list (prereleases included)."""
+    """Newest release as {tag, asset_url}, or None. Reads the public releases feed, which lists
+    prereleases and is not under the GitHub API rate limit."""
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=1",
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "pilot"},
+        f"https://github.com/{RELEASE_REPO}/releases.atom", headers={"User-Agent": "pilot"}
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        releases = json.load(response)
-    if not releases:
+        feed = ElementTree.parse(response).getroot()
+    link = feed.find("atom:entry/atom:link[@rel='alternate']", {"atom": "http://www.w3.org/2005/Atom"})
+    if link is None:
         return None
-    release = releases[0]
-    asset_url = next(
-        (a.get("browser_download_url") for a in release.get("assets", []) if a.get("name") == _TARBALL_ASSET),
-        None,
-    )
-    return {"tag": release.get("tag_name"), "asset_url": asset_url, "body": release.get("body", "")}
+    tag = link.get("href", "").rsplit("/", 1)[-1]
+    return {
+        "tag": tag,
+        "asset_url": f"https://github.com/{RELEASE_REPO}/releases/download/{tag}/{_TARBALL_ASSET}",
+    }
 
 
 def update_available() -> tuple[bool, str | None]:

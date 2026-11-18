@@ -524,18 +524,38 @@ create_bench_user frappe
         )
 
 
+FEED = """<feed xmlns="http://www.w3.org/2005/Atom">
+  <link type="text/html" rel="alternate" href="https://github.com/frappe/pilot/releases"/>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/frappe/pilot/releases/tag/v0.0.103-pre-alpha"/></entry>
+  <entry><link rel="alternate" type="text/html" href="https://github.com/frappe/pilot/releases/tag/v0.0.102-pre-alpha"/></entry>
+</feed>"""
+
+
 @pytest.mark.parametrize(
-    ("version", "url"),
-    [
-        ("", "https://api.github.com/repos/frappe/pilot/releases?per_page=1"),
-        ("v0.0.87", "https://api.github.com/repos/frappe/pilot/releases/tags/v0.0.87"),
-    ],
+    ("version", "tag"),
+    [("", "v0.0.103-pre-alpha"), ("v0.0.87", "v0.0.87")],
 )
-def test_a_pinned_version_fetches_that_release(version: str, url: str, tmp_path: Path) -> None:
-    result = run_installer_functions(f'PILOT_VERSION="{version}"\nrelease_api_url', tmp_path)
+def test_the_release_asset_comes_from_the_feed_or_the_pinned_version(
+    version: str, tag: str, tmp_path: Path
+) -> None:
+    feed = tmp_path / "releases.atom"
+    feed.write_text(FEED)
+    result = run_installer_functions(
+        f'curl() {{ echo "$*" >> {tmp_path}/curl.log; cat {feed}; }}\nPILOT_VERSION="{version}"\nrelease_asset_url',
+        tmp_path,
+    )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == url
+    assert result.stdout.strip() == f"https://github.com/frappe/pilot/releases/download/{tag}/pilot.tar.gz"
+    calls = (tmp_path / "curl.log").read_text() if (tmp_path / "curl.log").exists() else ""
+    assert ("https://github.com/frappe/pilot/releases.atom" in calls) is not bool(version)
+
+
+def test_an_unreadable_feed_finds_no_release(tmp_path: Path) -> None:
+    result = run_installer_functions('curl() { return 22; }\nPILOT_VERSION=""\nrelease_asset_url', tmp_path)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
 
 
 _FAKE_SUDO = """
@@ -621,7 +641,9 @@ echo continued
         (None, False),
     ],
 )
-def test_distro_mariadbd_profile_gets_pilot_s_directories(profile: str | None, is_overridden: bool, tmp_path: Path) -> None:
+def test_distro_mariadbd_profile_gets_pilot_s_directories(
+    profile: str | None, is_overridden: bool, tmp_path: Path
+) -> None:
     """Ubuntu 26.04's enforced mariadbd profile blocks Pilot's my.cnf under ~/pilot (#844)."""
     apparmor = tmp_path / "apparmor.d"
     apparmor.mkdir()
@@ -671,7 +693,10 @@ install_mariadb_apparmor_override frappe
     assert "owner /home/erp/pilot/databases/mariadb/** rwk," in override
 
 
-@pytest.mark.parametrize(("restricted", "has_executor", "is_installed"), [("1", True, True), ("0", True, False), ("1", False, False)])
+@pytest.mark.parametrize(
+    ("restricted", "has_executor", "is_installed"),
+    [("1", True, True), ("0", True, False), ("1", False, False)],
+)
 def test_systemd_executor_may_create_sandbox_namespaces_where_ubuntu_blocks_them(
     restricted: str, has_executor: bool, is_installed: bool, tmp_path: Path
 ) -> None:
