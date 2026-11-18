@@ -124,3 +124,56 @@ def test_backups_stream_only_with_s3_and_encryption_known_off(
     task.run()
 
     assert ("streamed" in AuditLog(bench).entries()[0]["files"]) is streams
+
+
+INDEX = {"files_index": [{"name": "a", "file_url": "/files/a", "size": 1}], "private_files_index": []}
+
+
+def _indexed_task(tmp_path, monkeypatch, with_files: bool, offsite: bool):
+    """A task whose backup succeeds, recording calls to set_files_index."""
+    task, bench = _task(tmp_path)
+    task.with_files = with_files
+    recorded = []
+    store = SimpleNamespace(set_files_index=lambda *args: recorded.append(args))
+    monkeypatch.setattr(BackupSiteTask, "take", lambda self: ("20261117_162033", {"f": 1}, offsite))
+    monkeypatch.setattr(BackupSiteTask, "prune", lambda self: [])
+    monkeypatch.setattr(SiteBackups, "get_files_index", lambda self: INDEX)
+    monkeypatch.setattr("pilot.tasks.backup_site.OffsiteBackup.from_config", lambda *args: store)
+    return task, bench, recorded
+
+
+def test_offsite_backup_with_files_records_the_index(tmp_path, monkeypatch) -> None:
+    """A with-files run that reached S3 gets its File index next to the run's metadata."""
+    task, _, recorded = _indexed_task(tmp_path, monkeypatch, with_files=True, offsite=True)
+
+    task.run()
+
+    assert recorded == [("site1", "20261117_162033", INDEX)]
+
+
+@pytest.mark.parametrize(
+    ("with_files", "offsite"), [(False, True), (True, False)], ids=["no-files", "local-only"]
+)
+def test_no_index_without_files_or_offsite(tmp_path, monkeypatch, with_files, offsite) -> None:
+    """The index pairs with the file archives, and needs an S3 run to sit beside."""
+    task, _, recorded = _indexed_task(tmp_path, monkeypatch, with_files=with_files, offsite=offsite)
+
+    task.run()
+
+    assert recorded == []
+
+
+def test_index_failure_keeps_the_backup_a_success(tmp_path, monkeypatch, capsys) -> None:
+    """The backup itself is good; a missing index must not mark it failed."""
+    task, bench, recorded = _indexed_task(tmp_path, monkeypatch, with_files=True, offsite=True)
+
+    def fail(self):
+        raise CommandError("no method", returncode=1)
+
+    monkeypatch.setattr(SiteBackups, "get_files_index", fail)
+
+    task.run()
+
+    assert recorded == []
+    assert AuditLog(bench).entries()[0]["status"] == "success"
+    assert "Backup file index skipped" in capsys.readouterr().out
