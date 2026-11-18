@@ -130,6 +130,7 @@ class SiteRename:
             self.bench.site(self.new_name).backups.move_schedule(self.old_name)
         except CronError as error:
             on_progress(f"Could not move the backup schedule to the new name: {error}")
+        self.bench.site(self.new_name).relocate_renamed_blobs()
         # Release the old route only after nginx has switched.
         if not self.keep_old_hostname:
             self._release_route(self.old_name)

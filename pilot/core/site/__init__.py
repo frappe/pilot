@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
+
+RELOCATE_RENAMED_BLOBS_METHOD = "frappe.storage.relocate.relocate_renamed_site_blobs"
 
 
 class Site:
@@ -157,6 +160,23 @@ class Site:
     def _frappe_call(self, *args: str) -> list[str]:
         """Build a frappe bench_helper command."""
         return [*self.bench.frappe_call, *args]
+
+    def relocate_renamed_blobs(self) -> None:
+        """Have Frappe copy the stored files left under a former name to this site's prefix."""
+        # Only S3 keys carry the site name, and older Frappe has no relocation method.
+        if self.config_file.read().get("storage_driver") != "s3":
+            return
+        argv = self._frappe_call(
+            "frappe", "--site", self.config.name, "execute", RELOCATE_RENAMED_BLOBS_METHOD
+        )
+        lines = run_command(argv, cwd=self.bench.sites_path).stdout.strip().splitlines()
+        # `execute` prints the return value last; Frappe may print warnings before it.
+        stats = json.loads(lines[-1]) if lines else {}
+        if stats.get("errors") != 0:
+            raise BenchError(
+                f"Some stored files of {self.config.name} did not move to the new name: {stats or 'no result'}. "
+                "Retry the rename."
+            )
 
     def create(self, db_type: str | None = None) -> None:
         """Create the site."""
