@@ -216,7 +216,13 @@ class PythonAssetBuilder:
         NodePackages(script.parent / "toolchain").ensure_installed()
         print("  Building Frappe UI page islands...")
         sys.stdout.flush()
-        self.run_compiler(["node", str(script), "--production"], cwd=frappe_path, stream_output=True)
+        # Frappe's script runs yarn, which a task's PATH lacks when yarn lives in ~/.local/bin.
+        self.run_compiler(
+            ["node", str(script), "--production"],
+            cwd=frappe_path,
+            env=self.manager._build_env(),
+            stream_output=True,
+        )
 
     def build_studio_apps(self, app: "App") -> None:
         """Build the app's exported Studio apps into `public/app_builds`, as Frappe's
