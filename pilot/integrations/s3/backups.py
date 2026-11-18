@@ -73,19 +73,19 @@ class Metadata:
             runs.setdefault(timestamp, {})[_file_type(filename)] = filename
             self.s3.write_json(self.bucket, key, runs)
 
-    def remove(self, timestamp: str, filename: str) -> bool:
-        """Remove a backup file from the month metadata. True when that emptied the run."""
+    def remove(self, timestamp: str, filename: str) -> None:
+        """Remove a backup file from the month metadata, and the run's File index with its last file."""
         key = self.keys.get_month_key(timestamp)
         with exclusive_file_lock(self.lock):
             runs = self._read_month(key)
             run = runs.get(timestamp)
             if run is None:
-                return False
+                return
             run.pop(_file_type(filename), None)
             if not run:
+                self.s3.delete_object(self.bucket, self.keys.get_files_index_key(timestamp))
                 runs.pop(timestamp)
             self.s3.write_json(self.bucket, key, runs)
-            return not run
 
     def iter_runs(self) -> Iterator[tuple[str, dict[str, str]]]:
         """Yield (timestamp, files) pairs newest first, one month at a time."""
@@ -151,9 +151,7 @@ class OffsiteBackup:
         """Delete a backup file and its record."""
         keys = BackupKeys(site_name)
         self.s3.delete_object(self.bucket, keys.get_file_key(timestamp, filename))
-        # S3 deletes of a missing key succeed, so runs without an index need no check.
-        if self._metadata(keys).remove(timestamp, filename):
-            self.s3.delete_object(self.bucket, keys.get_files_index_key(timestamp))
+        self._metadata(keys).remove(timestamp, filename)
 
     def set_files_index(self, site_name: str, timestamp: str, index: dict[str, list[dict]]) -> None:
         """Store the run's File index next to the month metadata."""
