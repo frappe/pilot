@@ -16,13 +16,12 @@ def paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PilotSandboxPaths:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("NVM_DIR", raising=False)
     monkeypatch.setattr(sandbox.shutil, "which", lambda _name: None)
-    monkeypatch.setattr(PilotSandboxPaths, "mariadb_socket_path", "/run/mysqld/mysqld.sock")
     return PilotSandboxPaths(make_bench(tmp_path / "benches" / "b"))
 
 
 def test_only_paths_the_sandbox_masks_are_listed(paths: PilotSandboxPaths) -> None:
-    # The interpreter and node here are outside the home. The socket is under /run, which the sandbox masks too.
-    assert paths.read == [str(Path.home() / ".nvm"), "/run/mysqld"]
+    # The interpreter and node here are outside the home.
+    assert paths.read == [str(Path.home() / ".nvm")]
 
 
 def test_a_uv_managed_interpreter_is_bound_by_the_directory_the_venv_links_to(
@@ -57,12 +56,8 @@ def test_nvm_dir_overrides_the_default(paths: PilotSandboxPaths, monkeypatch: py
     assert str(Path.home() / ".nvm") not in paths.read
 
 
-def test_the_database_socket_directory_is_bound_when_in_home(
-    paths: PilotSandboxPaths, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(PilotSandboxPaths, "mariadb_socket_path", str(Path.home() / "pilot/databases/mariadb/run/mysqld.sock"))
-
-    assert str(Path.home() / "pilot/databases/mariadb/run") in paths.read
+def test_the_database_socket_directory_is_never_bound(paths: PilotSandboxPaths) -> None:
+    assert not any("databases/mariadb" in path or "mysqld" in path for path in paths.read)
 
 
 def test_the_pilot_install_is_not_bound_as_a_whole(paths: PilotSandboxPaths) -> None:

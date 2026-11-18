@@ -13,7 +13,7 @@ from pilot.config import BenchConfig
 from pilot.config.common_site_config import update_common_site_config
 from pilot.core.bench import Bench
 from pilot.core.server import Server
-from pilot.managers.processes.sandbox import PilotSandboxPaths
+from pilot.managers.database import MariaDBManager
 from pilot.managers.processes.systemd import SystemdProcessManager
 from pilot.managers.systemd_user import systemctl_env
 
@@ -276,9 +276,12 @@ def test_a_background_job_runs_in_the_sandboxed_worker(sandboxed: Path) -> None:
     pytest.fail("the worker did not write a backup")
 
 
-def test_the_workload_still_reaches_the_database_socket(run_sandboxed, sandboxed: Path) -> None:
-    socket = PilotSandboxPaths(Bench(sandboxed)).mariadb_socket_path
-    assert run_sandboxed(f"python3 -c \"import socket; socket.socket(socket.AF_UNIX).connect('{socket}')\"")
+def test_the_workload_reaches_the_database_over_tcp_only(run_sandboxed, sandboxed: Path) -> None:
+    mariadb = MariaDBManager(Bench(sandboxed).config.mariadb)
+    tcp = f"socket.create_connection(('{mariadb.site_host}', {mariadb.config.port}), timeout=5)"
+    assert run_sandboxed(f'python3 -c "import socket; {tcp}"')
+    unix = f"socket.socket(socket.AF_UNIX).connect('{mariadb.socket_path}')"
+    assert not run_sandboxed(f'python3 -c "import socket; {unix}"')
 
 
 def test_home_is_an_empty_tmpfs_in_the_web_process(sandboxed: Path) -> None:

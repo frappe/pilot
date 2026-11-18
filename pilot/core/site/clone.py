@@ -180,8 +180,7 @@ class SiteClone:
         if engine == "mariadb":
             from pilot.managers.database import MariaDBManager
 
-            if socket := MariaDBManager(settings).client_socket:
-                config["db_socket"] = socket
+            config["db_host"] = MariaDBManager(settings).site_host
         return config
 
     def copy_files(self, site) -> None:

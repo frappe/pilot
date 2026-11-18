@@ -69,6 +69,16 @@ def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pyt
     assert target.is_dir()
     content = (target / "bench.toml").read_text()
     assert 'name = "my-bench"' in content
+    assert tomllib.loads(content)["production"]["sandbox"] is True
+
+
+def test_a_new_supervisor_bench_is_not_sandboxed(tmp_path: Path) -> None:
+    from pilot.core.bench.creator import BenchCreator
+
+    target = tmp_path / "benches" / "my-bench"
+    BenchCreator(target, "my-bench", process_manager="supervisor", admin_password="Test-password1!").run()
+
+    assert tomllib.loads((target / "bench.toml").read_text())["production"]["sandbox"] is False
 
 
 @pytest.mark.parametrize(

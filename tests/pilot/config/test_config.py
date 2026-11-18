@@ -448,14 +448,14 @@ def test_an_explicit_false_is_written_and_kept() -> None:
 @pytest.mark.parametrize(
     "production, expected",
     [
-        ({"enabled": True, "process_manager": "systemd"}, True),
+        ({"enabled": True, "process_manager": "systemd"}, False),
         ({"enabled": True, "process_manager": "supervisor"}, False),
         ({"enabled": False}, False),
         ({"enabled": True, "process_manager": "systemd", "sandbox": False}, False),
         ({"enabled": True, "process_manager": "systemd", "sandbox": True}, True),
     ],
 )
-def test_the_sandbox_is_on_by_default_only_for_systemd(production: dict, expected: bool) -> None:
+def test_only_a_bench_that_sets_the_sandbox_is_sandboxed(production: dict, expected: bool) -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["production"] = production
     data["admin"] = {"domain": "admin.example.com"}

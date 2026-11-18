@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import getpass
-import logging
 import os
 import subprocess
 from pathlib import Path
@@ -163,14 +162,6 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
             self.bench.path, self.bench.path.parent, read_paths, write_paths
         )
         if error := self.get_python_error() or get_sandbox_error(properties):
-            if production.sandbox is None:
-                logging.warning(
-                    "Bench '%s' runs without the sandbox: it cannot run sandboxed units here (%s)\n"
-                    "Set sandbox = false under [production] to silence this.",
-                    self.bench.config.name,
-                    error,
-                )
-                return []
             raise BenchError(
                 f"Bench '{self.bench.config.name}' cannot run sandboxed units here: {error}\n"
                 "Set sandbox = false under [production] to run the bench without it."
