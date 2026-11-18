@@ -54,7 +54,7 @@ const themeOptions = [
         class="flex items-center gap-3 px-3 py-2.5 text-ink-gray-8 hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
       >
         <span class="size-4 text-ink-gray-6 lucide-cloud" aria-hidden="true" />
-        Central
+        Dashboard
         <span class="ml-auto size-4 text-ink-gray-5 lucide-external-link" aria-hidden="true" />
       </a>
 

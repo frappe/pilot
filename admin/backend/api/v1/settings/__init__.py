@@ -180,7 +180,7 @@ def frappe_storage_regions():
         return jsonify(list(CentralClient().storage_regions()))
     except CentralClientError as exc:
         return error_response(
-            "frappe_storage_unavailable", f"Could not read Frappe storage regions from Central: {exc}", 502
+            "frappe_storage_unavailable", f"Could not read Frappe storage regions from the dashboard: {exc}", 502
         )
 
 
