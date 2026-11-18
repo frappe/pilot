@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
+
+RELOCATE_RENAMED_BLOBS_METHOD = "frappe.storage.relocate.relocate_renamed_site_blobs"
 
 
 class Site:
@@ -157,6 +160,25 @@ class Site:
     def _frappe_call(self, *args: str) -> list[str]:
         """Build a frappe bench_helper command."""
         return [*self.bench.frappe_call, *args]
+
+    @property
+    def has_s3_storage(self) -> bool:
+        """Whether Frappe stores this site's files on S3, where each key carries the site name."""
+        return self.config_file.read().get("storage_driver") == "s3"
+
+    def relocate_renamed_blobs(self) -> None:
+        """Have Frappe copy the stored files left under a former name to this site's prefix."""
+        argv = self._frappe_call(
+            "frappe", "--site", self.config.name, "execute", RELOCATE_RENAMED_BLOBS_METHOD
+        )
+        lines = run_command(argv, cwd=self.bench.sites_path).stdout.strip().splitlines()
+        # `execute` prints the return value last; Frappe may print warnings before it.
+        stats = json.loads(lines[-1]) if lines else {}
+        if stats.get("errors") != 0:
+            raise BenchError(
+                f"Some stored files of {self.config.name} did not move to the new name: {stats or 'no result'}. "
+                "Retry the relocate-renamed-blobs task."
+            )
 
     def create(self, db_type: str | None = None) -> None:
         """Create the site."""
@@ -369,11 +391,12 @@ class Site:
         on_progress: Callable[[str], None] = lambda message: None,
         keep_old_hostname: bool = True,
         make_primary: bool = False,
+        resource_handoff_from: str | None = None,
     ) -> None:
-        """Rename the site."""
+        """Rename the site. `resource_handoff_from` is the running task whose locks follow-up tasks take over."""
         from pilot.core.site.rename import SiteRename
 
-        SiteRename(self, new_name, keep_old_hostname, make_primary).run(on_progress)
+        SiteRename(self, new_name, keep_old_hostname, make_primary, resource_handoff_from).run(on_progress)
 
     def _provider_domains(self) -> list[str]:
         """Capture provider-owned domains before the site config is removed."""

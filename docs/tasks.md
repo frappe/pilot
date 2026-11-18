@@ -89,6 +89,7 @@ The limits below are conservative safety limits, not expected operation times. L
 | `new-site-from-backup` | 24 hours | Yes |
 | `refresh-storage-usage` | 5 minutes | Yes |
 | `reinstall-site` | 24 hours | No |
+| `relocate-renamed-blobs` | 24 hours | Yes |
 | `remove-app` | 1 hour | Yes |
 | `rename-site` | 1 hour | No |
 | `restart-database` | 1 hour | No |
