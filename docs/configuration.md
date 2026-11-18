@@ -186,7 +186,7 @@ Unknown fields are ignored during normal loads. Strict validation reports them.
 
 ## Country
 
-The country is a name from Frappe's country list, such as `India`. The first bench to initialise writes its choice as `country` in `common_config.toml`. A later bench uses that country unless it picks another one, which is kept as `country` under `[bench]` in its own `bench.toml`. A bench reads its own country, then the shared one, then defaults to `India`. Pick it in the setup wizard or with `pilot init --country`. It cannot be changed once the bench is initialised. The country list is in `pilot/config/country.py`, and `Bench.country` returns the effective value.
+The country is a name from Frappe's country list, such as `India`. The first bench to initialise writes its choice as `country` in `common_config.toml`. A later bench uses that country unless it picks another one, which is kept as `country` under `[bench]` in its own `bench.toml`. A bench reads its own country, then the shared one, then defaults to `India`. Pick it on the first step of the setup wizard, which starts on the shared country, or with `pilot init --country`. It cannot be changed once the bench is initialised. The country list is in `pilot/config/country.py`, and `Bench.country` returns the effective value.
 
 ## Shared host configuration
 
