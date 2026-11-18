@@ -24,7 +24,7 @@ export const useAppMenu = () => {
     ...(session.centralUrl
       ? [
           {
-            label: 'Central',
+            label: 'Dashboard',
             icon: 'lucide-cloud',
             onClick: () => window.open(centralServerUrl(), '_blank', 'noopener'),
           },

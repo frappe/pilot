@@ -409,7 +409,7 @@ class ConfigPatcher:
         try:
             endpoints = CentralClient().storage_regions()
         except CentralClientError as error:
-            return f"Could not read Frappe storage regions from Central: {error}"
+            return f"Could not read Frappe storage regions from the dashboard: {error}"
 
         if s3_config.region not in endpoints:
             return f"s3.region '{s3_config.region}' does not serve Frappe object storage."
