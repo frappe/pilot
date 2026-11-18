@@ -318,6 +318,23 @@ def test_skip_assets_controls_the_post_provisioning_build(
     assert build_missing_assets.call_count == builds
 
 
+@pytest.mark.parametrize("declares", [True, False])
+def test_a_new_site_applies_the_processes_the_framework_declares(tmp_path: Path, declares: bool) -> None:
+    from pilot.core.bench.processes import BenchProcesses
+
+    provisioner = _provisioner(tmp_path)
+    with (
+        patch.object(BenchProcesses, "has_declarations", return_value=declares) as has_declarations,
+        patch.object(BenchProcesses, "apply") as apply,
+        patch.object(Site, "install_app") as install_app,
+    ):
+        provisioner.install_apps(MagicMock(), lambda _: None)
+
+    has_declarations.assert_called_once_with(["frappe"])
+    assert apply.call_count == int(declares)
+    install_app.assert_not_called()
+
+
 def test_skip_assets_refuses_a_production_bench(tmp_path: Path) -> None:
     from pilot.exceptions import BenchError
 

@@ -106,8 +106,11 @@ class SiteProvisioner:
         PrivateFile(path).write_text(json.dumps(config, indent=1))
 
     def install_apps(self, site: "Site", on_progress: Callable[[str], None]) -> None:
-        """Install each app except the framework app."""
+        """Install each app except the framework app, which site creation installs. Its processes start
+        here, since the first site to use the framework is what makes them run."""
         framework = self.bench.config.framework_app.name
+        if self.bench.processes.has_declarations([framework]):
+            self.bench.processes.apply()
         for app_name in self.apps:
             if app_name == framework:
                 continue
