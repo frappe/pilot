@@ -384,6 +384,36 @@ def test_a_failure_part_way_through_keeps_the_forward_state_for_retry(tmp_path: 
     assert (bench.sites_path / NEW).is_dir()
 
 
+def test_the_renamed_site_relocates_its_stored_files(tmp_path: Path) -> None:
+    """Blobs keep keys under the old name until the renamed site moves them to its own prefix."""
+    bench = _bench(tmp_path)
+    _site(bench, OLD)
+
+    with patch("pilot.core.site.Site.relocate_renamed_blobs", autospec=True) as relocate:
+        _rename(bench)
+
+    relocate.assert_called_once()
+    assert relocate.call_args.args[0].config.name == NEW
+
+
+def test_a_failed_relocation_keeps_the_rename_pending_for_retry(tmp_path: Path) -> None:
+    """Relocation is safe to repeat, so a retry of the pending rename finishes the move."""
+    bench = _bench(tmp_path)
+    _site(bench, OLD)
+    pending = SiteRename(bench.site(OLD), NEW).progress_path
+
+    with (
+        patch("pilot.core.site.Site.relocate_renamed_blobs", side_effect=BenchError("S3 is down")),
+        pytest.raises(BenchError, match="S3 is down"),
+    ):
+        _rename(bench)
+    assert pending.exists()
+
+    with patch("pilot.core.site.Site.relocate_renamed_blobs"):
+        _rename(bench)
+    assert not pending.exists()
+
+
 def test_a_failed_rename_keeps_the_new_route_for_recovery(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _site(bench, OLD)
