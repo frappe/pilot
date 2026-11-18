@@ -212,9 +212,9 @@ onMounted(async () => {
         rel="noopener"
         class="inline-flex items-center gap-0.5 text-p-base-medium text-ink-gray-8 hover:text-ink-gray-9"
       >
-        <span>Central</span>
+        <span>the dashboard</span>
         <span class="size-3 lucide-arrow-up-right" aria-hidden="true" />
-      </a><template v-else>Central</template>, so alerts also show there.
+      </a><template v-else>the dashboard</template>, so alerts also show there.
     </p>
 
     <div class="-mx-3 -mt-3.5 inset-dividers">

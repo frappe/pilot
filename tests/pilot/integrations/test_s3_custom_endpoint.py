@@ -168,7 +168,7 @@ def test_frappe_storage_reports_an_unreachable_central(monkeypatch) -> None:
 
     error = ConfigPatcher(bench_config(), frappe_s3_update("Aradhya-Local")).apply()
 
-    assert error == "Could not read Frappe storage regions from Central: Cannot reach Central"
+    assert error == "Could not read Frappe storage regions from the dashboard: Cannot reach Central"
 
 
 def test_frappe_is_offered_only_on_a_central_bench_without_asking_central(monkeypatch) -> None:
@@ -208,7 +208,7 @@ def test_frappe_regions_route_reports_an_unreachable_central(monkeypatch) -> Non
 
     assert response.status_code == 502
     assert response.get_json()["error"]["message"] == (
-        "Could not read Frappe storage regions from Central: Cannot reach Central"
+        "Could not read Frappe storage regions from the dashboard: Cannot reach Central"
     )
 
 

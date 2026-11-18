@@ -50,7 +50,7 @@ export const useObjectStorage = () => {
       if (hasApiError(regions)) {
         error.value = apiErrorMessage(
           regions,
-          'Could not read Frappe storage regions from Central.',
+          'Could not read Frappe storage regions from the dashboard.',
         )
 
         return
@@ -58,7 +58,7 @@ export const useObjectStorage = () => {
 
       frappe.regions = regions
     } catch (e) {
-      error.value = errorMessage(e, 'Could not read Frappe storage regions from Central.')
+      error.value = errorMessage(e, 'Could not read Frappe storage regions from the dashboard.')
     } finally {
       loadingRegions.value = false
     }
