@@ -22,7 +22,7 @@ class ReinstallSiteTask(Task):
         """Reinstall the site."""
         self.reinstall()
 
-    @step("reinstall", lambda self: f"Reinstall site {self.site}", icon="lucide-package-plus")
+    @step("reinstall", "Reinstall site", icon="lucide-package-plus")
     def reinstall(self) -> None:
         """Reinstall the site with the new password."""
         self.bench.site(self.site).reinstall(self.admin_password)
