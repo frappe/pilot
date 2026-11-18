@@ -177,7 +177,7 @@ class Site:
         if stats.get("errors") != 0:
             raise BenchError(
                 f"Some stored files of {self.config.name} did not move to the new name: {stats or 'no result'}. "
-                "Retry the rename."
+                "Retry the relocate-renamed-blobs task."
             )
 
     def create(self, db_type: str | None = None) -> None:
