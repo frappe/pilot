@@ -130,7 +130,7 @@ class SiteRename:
             self.bench.site(self.new_name).backups.move_schedule(self.old_name)
         except CronError as error:
             on_progress(f"Could not move the backup schedule to the new name: {error}")
-        self.bench.site(self.new_name).relocate_renamed_blobs()
+        self._queue_blob_relocation(on_progress)
         # Release the old route only after nginx has switched.
         if not self.keep_old_hostname:
             self._release_route(self.old_name)
@@ -140,6 +140,17 @@ class SiteRename:
         self._report_reserved_hostname(on_progress)
         self.bench.site_aliases.record(self.old_name)
         self.progress_path.unlink()
+
+    def _queue_blob_relocation(self, on_progress: Callable[[str], None]) -> None:
+        """Move stored files in their own task, outside this rename's timeout and site lock."""
+        from pilot.tasks.relocate_renamed_blobs import RelocateRenamedBlobsTask
+
+        if not self.bench.site(self.new_name).has_s3_storage:
+            return
+        RelocateRenamedBlobsTask.queue(
+            self.bench, site=self.new_name, idempotency_key=f"relocate-renamed-blobs:{self.new_name}"
+        )
+        on_progress("Queued a task to move stored files to the new name.")
 
     def validate(self) -> None:
         """Raise when the new name is invalid or taken."""

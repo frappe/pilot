@@ -161,11 +161,13 @@ class Site:
         """Build a frappe bench_helper command."""
         return [*self.bench.frappe_call, *args]
 
+    @property
+    def has_s3_storage(self) -> bool:
+        """Whether Frappe stores this site's files on S3, where each key carries the site name."""
+        return self.config_file.read().get("storage_driver") == "s3"
+
     def relocate_renamed_blobs(self) -> None:
         """Have Frappe copy the stored files left under a former name to this site's prefix."""
-        # Only S3 keys carry the site name, and older Frappe has no relocation method.
-        if self.config_file.read().get("storage_driver") != "s3":
-            return
         argv = self._frappe_call(
             "frappe", "--site", self.config.name, "execute", RELOCATE_RENAMED_BLOBS_METHOD
         )
