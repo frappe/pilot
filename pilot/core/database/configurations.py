@@ -56,8 +56,8 @@ class DatabaseConfigurations:
 
     external_read_only = (
         "External MariaDB configurations are read-only. Pilot changes only the MariaDB instance it "
+        "provisioned on this server."
     )
-    "provisioned on this server."
 
     def __init__(
         self,

@@ -42,8 +42,10 @@ class WafManager:
     module_dirs = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
     crs_sha256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
-    crs_url = "https://github.com/coreruleset/coreruleset/releases/download/"
-    f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
+    crs_url = (
+        "https://github.com/coreruleset/coreruleset/releases/download/"
+        f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
+    )
 
     MODULE_PACKAGE = "modsecurity-nginx"
 

@@ -18,9 +18,11 @@ if TYPE_CHECKING:
 
 
 class BenchRuntime:
-    dev_restart_message = "Restart is available only for production benches managed by\n"
-    "systemd or Supervisor.\n\n"
-    "For development, stop the runner and execute `pilot start` again."
+    dev_restart_message = (
+        "Restart is available only for production benches managed by\n"
+        "systemd or Supervisor.\n\n"
+        "For development, stop the runner and execute `pilot start` again."
+    )
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
