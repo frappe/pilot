@@ -60,7 +60,7 @@ class PilotSandboxPaths:
     def read(self) -> list[str]:
         """Read-only paths, limited to those the sandbox masks."""
         candidates = [
-            self.interpreter_home,
+            *self.interpreter_homes,
             self.node_prefix,
             Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm"),
         ]
@@ -68,9 +68,18 @@ class PilotSandboxPaths:
         return [str(path) for path in candidates if self.is_masked(path)]
 
     @property
-    def interpreter_home(self) -> Path:
-        """Directory of the Python the bench venv links to, such as a uv-managed one."""
-        return Path(os.path.realpath(self.bench.python)).parent.parent
+    def interpreter_homes(self) -> list[Path]:
+        """Directories of the Python the bench venv links to, such as a uv-managed one.
+
+        uv links a venv through a minor-version alias such as cpython-3.14-linux-x86_64-gnu, itself a
+        link to the release. The masked home hides the alias, so it is bound next to the release."""
+        python = self.bench.python
+        release = Path(os.path.realpath(python)).parent.parent
+        if not python.is_symlink():
+            return [release]
+
+        alias = Path(os.path.abspath(python.parent / os.readlink(python))).parent.parent
+        return list(dict.fromkeys([alias, release]))
 
     @staticmethod
     def create_entries(bench: Bench, declared_paths: Iterable[str] = ()) -> None:
