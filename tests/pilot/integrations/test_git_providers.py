@@ -131,6 +131,20 @@ def test_git_env_disables_the_ext_transport() -> None:
     assert settings["protocol.ext.allow"] == "never"
 
 
+def test_git_env_resets_inherited_headers_before_its_own() -> None:
+    """A CI checkout's .git/config holds an Authorization header too; GitHub refuses two with HTTP 400."""
+    from pilot.internal.git import git_env
+
+    key = "http.https://github.com/.extraHeader"
+    env = git_env({key: "Authorization: Basic abc"})
+
+    entries = [
+        (env[f"GIT_CONFIG_KEY_{index}"], env[f"GIT_CONFIG_VALUE_{index}"])
+        for index in range(int(env["GIT_CONFIG_COUNT"]))
+    ]
+    assert entries[-2:] == [(key, ""), (key, "Authorization: Basic abc")]
+
+
 def test_credential_store_round_trip(tmp_path: Path) -> None:
     store = GitCredentialStore(tmp_path)
     assert store.load() is None
