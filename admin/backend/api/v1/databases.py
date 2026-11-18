@@ -9,7 +9,6 @@ from flask.typing import ResponseReturnValue
 
 from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import accepted_task_response, error_response
-from admin.backend.api.v1.benches.support import guard_bench_management
 from pilot.core.bench import Bench
 from pilot.core.database.configurations import (
     DatabaseConfigurationChange,
@@ -385,9 +384,6 @@ def set_memory_share():
 @database_bp.get("/processlist")
 def get_process_list():
     """List the database connections."""
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
     try:
         return jsonify(_provider().get_process_list(request.args.get("site", "")))
     except DatabaseError as exc:
@@ -399,11 +395,6 @@ def get_process_list():
 @database_bp.post("/processlist/kill")
 def kill_process():
     """Kill a database connection."""
-    # A killed connection can belong to any bench sharing this server.
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     process_id = data.get("process_id") if isinstance(data, dict) else None
     if not isinstance(process_id, int) or isinstance(process_id, bool) or process_id <= 0:
@@ -531,11 +522,6 @@ def get_binlogs():
 @database_bp.post("/binlogs/purge")
 def purge_binlogs():
     """Purge the binary logs."""
-    # Binlogs are server-wide state shared by every bench on this host.
-    forbidden = guard_bench_management()
-    if forbidden is not None:
-        return forbidden
-
     data = request.get_json(silent=True)
     up_to = data.get("up_to", "") if isinstance(data, dict) else ""
     if not isinstance(up_to, str) or not up_to.strip():
