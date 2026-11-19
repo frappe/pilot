@@ -272,7 +272,7 @@ def test_proxy_forwards_a_team_identity_token_request(tmp_path: Path) -> None:
         response = client.post(f"/api/v1/sites/s1.localhost/central/{method}", json=body)
 
     assert response.status_code == 200
-    forward.assert_called_once_with(method, "POST", body)
+    forward.assert_called_once_with(method, "POST", body, 10)
 
 
 @pytest.mark.parametrize(
@@ -292,7 +292,29 @@ def test_proxy_forwards_the_mailbox_connect_calls(tmp_path: Path, method: str) -
         response = client.post(f"/api/v1/sites/s1.localhost/central/{method}", json=body)
 
     assert response.status_code == 200
-    forward.assert_called_once_with(method, "POST", body)
+    forward.assert_called_once_with(method, "POST", body, 10)
+
+
+def test_proxy_waits_longer_for_a_provider_sign_in(tmp_path: Path) -> None:
+    client = _app_client(tmp_path / "bench")
+    method = "central.api.oauth.relay_token"
+    with patch(
+        "admin.backend.api.v1.sites.central.CentralClient.forward", return_value={"ok": True}
+    ) as forward:
+        client.post(f"/api/v1/sites/s1.localhost/central/{method}", json={"provider": "meta"})
+
+    # a Meta connect takes about 12 s, past the 10 s of other calls
+    assert forward.call_args.args[3] == 30
+
+
+def test_forward_passes_its_timeout_to_the_request() -> None:
+    _stage_credentials("https://central.test", "tok-7")
+    with patch(
+        "pilot.integrations.central.client.urllib.request.urlopen", return_value=_FakeResponse({"message": 1})
+    ) as urlopen:
+        CentralClient().forward("central.api.oauth.relay_token", "POST", {}, 30)
+
+    assert urlopen.call_args.kwargs["timeout"] == 30
 
 
 @pytest.mark.parametrize("providers", [["microsoft", "yandex"], []])
@@ -304,7 +326,7 @@ def test_proxy_returns_the_active_providers_list(tmp_path: Path, providers: list
 
     assert response.status_code == 200
     assert response.get_json() == providers
-    forward.assert_called_once_with(method, "POST", {})
+    forward.assert_called_once_with(method, "POST", {}, 10)
 
 
 def test_proxy_rejects_the_mailbox_callback(tmp_path: Path) -> None:

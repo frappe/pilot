@@ -120,7 +120,9 @@ def test_central_proxy_forwards_only_allowed_oauth_methods(
     response = client.post(f"/api/v1/sites/a.local/central/{method_path}", json={"provider": "meta"})
 
     assert response.status_code == status
-    assert forwarded == ([(method_path, "POST", {"provider": "meta"})] if status == 200 else [])
+    assert [args[:3] for args in forwarded] == (
+        [(method_path, "POST", {"provider": "meta"})] if status == 200 else []
+    )
 
 
 def test_cross_site_requests_cannot_use_the_session_cookie(app, bench_root: Path) -> None:
