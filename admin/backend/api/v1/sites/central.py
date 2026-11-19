@@ -64,8 +64,7 @@ def central_proxy(name: str, method_path: str):
     if data is not None and not isinstance(data, dict):
         return malformed_body()
     try:
-        # Central calls the provider several times in a sign-in (a Meta connect takes about 12 s);
-        # the site waits 30 s for this answer
+        # a provider sign-in can take longer than 10 s; the site waits 30 s
         timeout = 30 if method_path.startswith("central.api.oauth.") else 10
         return jsonify(CentralClient().forward(method_path, request.method, data, timeout))
     except CentralClientError as exc:

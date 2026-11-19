@@ -113,6 +113,8 @@ A site calls Central through `GET` or `POST /sites/<name>/central/<method>`. Pil
 
 The provider sends the browser to Central's `central.api.oauth.callback` directly, not through Pilot, and Central sends it back to the site's `return_url`.
 
+Pilot waits 10 seconds for Central's answer, and 30 seconds for a `central.api.oauth.*` method, because Central calls the provider several times during a sign-in. The site waits 30 seconds for Pilot.
+
 ### Renaming And Domains
 
 `POST /sites/<name>/actions/rename` takes `{"new_name": "...", "keep_old_hostname": true}` and queues `rename-site`. The new name is validated the same way a new site's is, and both names are claimed as task resources so nothing can create or drop either while the site is moving between them. `keep_old_hostname` defaults to true and keeps the old hostname on the site, so open tabs and existing links keep working; pass false to release a pooled name a fleet reuses. `make_primary` defaults to false. Pass true to make the new name the site's `host_name`, so the links the site builds use it and its other domains redirect to it. The Central VM hostname of the site (`site-*`) also redirects to it, except `/api/method/ping`, which Central probes for readiness. A rename also replaces the site's `pilot_auth_token` with one scoped to the new name. See [Renaming without downtime](commands.md#renaming-without-downtime).
