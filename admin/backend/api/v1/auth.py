@@ -18,7 +18,9 @@ from admin.backend.middleware import (
     client_ip,
     decode_session_token,
     is_request_authenticated,
+    is_site_mount,
     rate_limit,
+    session_cookie,
     set_session_cookie,
 )
 from pilot.config import BenchConfig
@@ -102,18 +104,24 @@ def create_session():
     # A redeemed link's session lasts only as long as the link had left; a password
     # login gets the full session.
     ttl = max(60, int(redeemed["exp"]) - int(time.time())) if redeemed else Session.DEFAULT_TTL
-    token, jti = Session(bench).issue_session_token(ip=client_ip(), ttl=ttl)
+    # Scripts on a site's pages share its origin, so a sign-in there opens only that site's editor.
+    scope, site = "bench", None
+    if is_site_mount():
+        scope, site = "site_editor", bench.resolve_site_name(request.host.split(":")[0])
+        if not site:
+            return error_response("site_not_found", "Site not found.", 404)
+    token, jti = Session(bench).issue_session_token(scope=scope, site=site, ip=client_ip(), ttl=ttl)
     bench.audit_action(
         "session",
         {
             "event": "issued",
             "jti": jti,
-            "scope": "bench",
+            "scope": scope,
             "via": "login_link" if redeemed else "password",
         },
     )
     response = created_response(
-        {"authenticated": True, "scope": "bench"},
+        {"authenticated": True, "scope": scope},
         url_for("auth.get_session"),
     )
     set_session_cookie(
@@ -141,7 +149,7 @@ def delete_session():
                 Session(bench).revoke_jti(claims["jti"])
                 bench.audit_action("session", {"event": "revoked", "jti": claims["jti"], "via": "logout"})
     response = no_content_response()
-    response.delete_cookie("sid")
+    response.delete_cookie(*session_cookie())
     return response
 
 

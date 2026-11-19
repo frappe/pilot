@@ -388,7 +388,9 @@ class NginxConfigRenderer:
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",
             "cors_paths": self.cors_paths,
             "admin_static": _admin_static_dir(),
-            "site_embed": self.embed_template.render(admin_static=_admin_static_dir()),
+            "site_embed": self.embed_template.render(
+                admin_static=_admin_static_dir(), admin_port=config.admin.internal_port
+            ),
             "vhosts": vhosts,
             "aliases": aliases or [],
         }

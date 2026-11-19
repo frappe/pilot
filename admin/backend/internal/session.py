@@ -259,18 +259,20 @@ class Session:
                 raise
         return True
 
-    def has_scope(self, claims: dict | None, site: str, token: str = "") -> bool:
-        """Whether the claims allow access to the site."""
+    def has_scope(
+        self, claims: dict | None, site: str, token: str = "", scopes: tuple[str, ...] = ("site",)
+    ) -> bool:
+        """Whether the claims allow access to the site through a route that takes these site scopes."""
         if not claims:
             return False
         scope = claims.get("scope")
         if scope == "bench":
             return True
-        if scope != "site":
+        if scope not in scopes:
             return False
         if claims.get("site") == site:
             return True
-        return self._is_current_site_token(site, token)
+        return scope == "site" and self._is_current_site_token(site, token)
 
     @staticmethod
     def get_login_user(claims: dict | None) -> tuple[str, str]:

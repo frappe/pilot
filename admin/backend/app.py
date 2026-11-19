@@ -3,14 +3,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, render_template, send_file, send_from_directory
+from flask import Flask, make_response, render_template, send_from_directory
 from werkzeug.exceptions import NotFound
 
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import API_V1_PREFIX
 from admin.backend.internal.rate_limiter import UsedTokens
-from admin.backend.middleware import allow_unauthenticated, install_auth_guard
+from admin.backend.middleware import allow_unauthenticated, install_auth_guard, is_site_mount
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -29,6 +29,13 @@ def _revalidate(response):
     fixed filename: the browser would pin the old bytes for a year."""
     response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+def _serve_index(index: Path, assets: str):
+    """A frontend's index.html with its relative asset links under the request's mount, so a site's
+    nginx can serve it below `/_pilot`."""
+    mount = "/_pilot" if is_site_mount() else ""
+    return _revalidate(make_response(index.read_text().replace('="./', f'="{mount}{assets}')))
 
 
 def create_app(bench_root: Path) -> Flask:
@@ -97,16 +104,18 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(migrations_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(git_bp, url_prefix=f"{API_V1_PREFIX}/git")
     app.register_blueprint(editor_bp, url_prefix=f"{API_V1_PREFIX}/editor")
+    app.register_blueprint(editor_bp, url_prefix=f"{API_V1_PREFIX}/sites/<name>/editor", name="site_editor")
     app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(notifications_bp, url_prefix=API_V1_PREFIX)
 
 
 def register_editor_frontend(app: Flask) -> None:
-    """Serve the isolated full-page code editor, scoped by /editor/<app_name>."""
+    """Serve the isolated full-page code editor, scoped by /editor/<app_name> or /editor/site/<site_name>."""
     editor_dist = STATIC_DIR / "editor"
 
     @app.route("/editor/<app_name>")
+    @app.route("/editor/site/<app_name>")
     @allow_unauthenticated
     def serve_editor(app_name):
         """Serve the code editor when it is on."""
@@ -117,7 +126,7 @@ def register_editor_frontend(app: Flask) -> None:
         index = editor_dist / "index.html"
         if not index.exists():
             return "Editor not built. Run: cd admin/frontend/editor && npm install && npm run build", 503
-        return send_file(str(index))
+        return _serve_index(index, "/editor-assets/")
 
     @app.route("/editor-assets/<path:path>")
     @allow_unauthenticated
@@ -182,7 +191,7 @@ def register_frontend(app: Flask) -> None:
             else:
                 return _immutable(response) if path.startswith("assets/") else response
         try:
-            return send_file(str(dashboard_dir / "index.html"))
+            return _serve_index(dashboard_dir / "index.html", "/")
         except FileNotFoundError:
             return render_template("startup.html")
 

@@ -7,39 +7,58 @@ from flask import Blueprint, request
 
 from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
+from admin.backend.core.editor.scope import EditorScope
 from admin.backend.core.editor.workspace import (
     BinaryFileError,
     EditorPathError,
-    EditorWorkspace,
+    ExcludedPathError,
     HiddenPathError,
 )
+from admin.backend.middleware import require_scope
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
+from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_app_name
 
 editor_bp = Blueprint("editor", __name__)
 
 
 def with_workspace(view):
-    """Resolve ?app=<name> to a workspace; 404 for unknown or missing apps."""
+    """Resolve the request's scope to a workspace: `?app=` on the editor routes, the site name on
+    `/sites/<name>/editor`. Each takes an optional `?base=` folder below its root."""
 
     @wraps(view)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, name: str | None = None, **kwargs):
         """Answer 404 unless the code editor is on, then call the view."""
         bench_root = ApiRequest.get_bench_root()
         config = _read_config(bench_root)
         if config is None or not config.enable_code_editor:
             return error_response("editor_disabled", "Code editor is turned off. Turn it on in Settings.", 403)
-        name = (request.args.get("app") or "").strip()
-        if validate_app_name(name) is not None:
-            return error_response("editor_app_not_found", "Unknown or missing app.", 404)
-        try:
-            root = Bench(config, bench_root).app(name).path
-        except BenchError:
-            return error_response("editor_app_not_found", "Unknown or missing app.", 404)
-        return view(EditorWorkspace(root), *args, **kwargs)
+        bench = Bench(config, bench_root)
+        scope = get_site_scope(bench, name) if name else get_app_scope(bench)
+        if scope is None:
+            return error_response("editor_scope_not_found", "Unknown or missing app or site.", 404)
+        return view(scope.get_workspace(), *args, **kwargs)
 
-    return wrapper
+    return require_scope(lambda view_args: view_args.get("name"), scopes=("site_editor",))(wrapper)
+
+
+def get_app_scope(bench: Bench) -> EditorScope | None:
+    """The app scope `?app=` names, or None."""
+    name = (request.args.get("app") or "").strip()
+    if validate_app_name(name) is not None:
+        return None
+    try:
+        return EditorScope.for_app(bench, name, request.args.get("base", ""))
+    except BenchError:
+        return None
+
+
+def get_site_scope(bench: Bench, name: str) -> EditorScope | None:
+    """The site scope `/sites/<name>/editor` names, or None."""
+    if not site_exists(bench.path, name):
+        return None
+    return EditorScope.for_site(bench, name, request.args.get("base", ""))
 
 
 def is_code_editor_enabled(bench_root: Path) -> bool:
@@ -80,6 +99,12 @@ def _hidden_error(_):
     return error_response(
         "hidden_path", "Dot files and folders cannot be opened or changed in the editor.", 403
     )
+
+
+@editor_bp.errorhandler(ExcludedPathError)
+def _excluded_error(_):
+    """Answer 403 for a path the scope keeps out of the editor."""
+    return error_response("excluded_path", "This path cannot be opened or changed in the editor.", 403)
 
 
 @editor_bp.errorhandler(BinaryFileError)
