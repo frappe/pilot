@@ -63,7 +63,7 @@ class SiteLogin:
 
     def redirect_url(self, site_config: dict, proxy_tls: bool = False) -> str:
         """The site's desk URL."""
-        return site_url(self.site.config.name, site_config, self.site.bench.config, proxy_tls) + "/desk"
+        return site_url(self.site.config.name, site_config, self.site.bench.config, proxy_tls)
 
 
 def site_url(site_name: str, site_config: dict, bench_config, proxy_tls: bool = False) -> str:
