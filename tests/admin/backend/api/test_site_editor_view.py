@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -113,13 +114,20 @@ def test_site_editor_opens_the_site_folder_without_its_excluded_paths(client, be
     private = client.get(f"{url}/tree", query_string={"path": "private"}, headers=headers)
     public = client.get(f"{url}/tree", query_string={"path": "public"}, headers=headers)
     files = client.get(f"{url}/files", headers=headers)
-    search = client.get(f"{url}/search", query_string={"q": "needle"}, headers=headers)
 
     assert {entry["name"] for entry in root.get_json()} == {"themes", "notes.md", "private", "public"}
     assert [entry["name"] for entry in private.get_json()] == ["notes.txt"]
     assert public.get_json() == []
     assert sorted(files.get_json()) == ["notes.md", "private/notes.txt", "themes/blue/style.css"]
-    assert sorted(match["file"] for match in search.get_json()) == ["notes.md", "private/notes.txt"]
+
+
+@pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep is not installed")
+def test_site_editor_search_skips_excluded_paths(client, bench_root: Path) -> None:
+    response = client.get(
+        f"/api/v1/sites/{SITE}/editor/search", query_string={"q": "needle"}, headers=_editor_token(bench_root)
+    )
+
+    assert sorted(match["file"] for match in response.get_json()) == ["notes.md", "private/notes.txt"]
 
 
 @pytest.mark.parametrize(
