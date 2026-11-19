@@ -12,7 +12,7 @@ class SearchUnavailable(RuntimeError):
     """ripgrep could not run; the caller must not report this as "no matches"."""
 
 
-def search(root, query: str, regex: bool, word: bool, case: bool, exclusions: list[str] = ()) -> list[dict]:
+def search(root, query: str, regex: bool, word: bool, case: bool, exclusions: list[str]) -> list[dict]:
     """Project-wide ripgrep search, grouped by file."""
     if not query:
         return []
@@ -27,7 +27,7 @@ def search(root, query: str, regex: bool, word: bool, case: bool, exclusions: li
     return results
 
 
-def _run_ripgrep(root, query: str, regex: bool, word: bool, case: bool, exclusions) -> str:
+def _run_ripgrep(root, query: str, regex: bool, word: bool, case: bool, exclusions: list[str]) -> str:
     """Raw --json stdout, or SearchUnavailable if ripgrep could not do the search."""
     args = ["--json", "--max-count", "500", "--max-columns", "500", "--max-filesize", "2M"]
     for glob in exclusions:

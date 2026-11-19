@@ -27,7 +27,7 @@ const EditorPane = defineAsyncComponent(() => import('@/components/EditorPane.vu
 const GitDiffView = defineAsyncComponent(() => import('@/components/GitDiffView.vue'))
 const CommitView = defineAsyncComponent(() => import('@/components/CommitView.vue'))
 
-const panels: Panel[] = ['files', 'search', ...(HAS_GIT ? ['git' as const] : []), '']
+const panels = (['files', 'search', 'git', ''] as Panel[]).filter((it) => HAS_GIT || it !== 'git')
 
 const store = useEditorStore()
 const git = useGitStore()
