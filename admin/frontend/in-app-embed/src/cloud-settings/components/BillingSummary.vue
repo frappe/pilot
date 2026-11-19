@@ -8,6 +8,7 @@ import { useTranslation } from '../translation'
 import AiCreditsMeter from './AiCreditsMeter.vue'
 import BillBreakdown from './BillBreakdown.vue'
 import BillingRow from './BillingRow.vue'
+import PlanCard from './PlanCard.vue'
 
 const __ = useTranslation()
 
@@ -38,62 +39,57 @@ const creditDetail = computed(() =>
 </script>
 
 <template>
-  <section class="rounded-6 border border-outline-gray-1.5 px-4" :aria-label="__('Plan and payment')">
-    <List :columns="['minmax(0,1fr)', 'auto']">
-      <BillingRow v-if="bill" :label="__('Next payment')">
-        <template #value>
-          <span class="text-xl-semibold tabular-nums text-ink-gray-9">{{ bill.amount }}</span>
-        </template>
-        <template #detail>
-          <span class="text-p-sm text-ink-gray-5">
-            {{ billDetail }}
-            <template v-if="bill.lines.length">
-              ·
-              <!-- Central's billing page links its breakdown the same way. -->
-              <button
-                type="button"
-                class="text-ink-gray-8 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
-                :aria-expanded="isBreakdownOpen"
-                aria-controls="next-payment-breakdown"
-                @click="isBreakdownOpen = !isBreakdownOpen"
-              >
-                {{ isBreakdownOpen ? __("Hide breakdown") : __("See breakdown") }}
-              </button>
-            </template>
-          </span>
-        </template>
-      </BillingRow>
-
-      <ListRow v-if="bill && isBreakdownOpen" id="next-payment-breakdown" class="pb-3">
-        <ListCell class="col-span-full"><BillBreakdown :bill="bill" /></ListCell>
-      </ListRow>
-
-      <BillingRow
-        :label="__('Plan')"
-        :value="plan?.name"
-        :detail="plan?.subtitle !== plan?.name ? plan?.subtitle : ''"
-      >
+  <div class="space-y-4">
+    <PlanCard :name="plan?.name || ''" :subtitle="plan?.subtitle !== plan?.name ? plan?.subtitle : ''">
+      <template #aside>
         <Button :label="__('Change plan')" @click="emit('change-plan')" />
-      </BillingRow>
+      </template>
+      <AiCreditsMeter v-if="billing.ai_credits" :credits="billing.ai_credits" />
+    </PlanCard>
 
-      <BillingRow
-        :label="__('Pay with')"
-        :value="card ? card.label : __('No card added')"
-        :detail="creditDetail"
-        :is-empty="!card"
-      >
-        <Button :label="card ? __('Change card') : __('Add card')" @click="emit('change-card')" />
-      </BillingRow>
+    <section class="rounded-6 border border-outline-gray-1.5 px-4" :aria-label="__('Payment')">
+      <List :columns="['minmax(0,1fr)', 'auto']">
+        <BillingRow v-if="bill" :label="__('Next payment')">
+          <template #value>
+            <span class="text-xl-semibold tabular-nums text-ink-gray-9">{{ bill.amount }}</span>
+          </template>
+          <template #detail>
+            <span class="text-p-sm text-ink-gray-5">
+              {{ billDetail }}
+              <template v-if="bill.lines.length">
+                ·
+                <!-- Central's billing page links its breakdown the same way. -->
+                <button
+                  type="button"
+                  class="text-ink-gray-8 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+                  :aria-expanded="isBreakdownOpen"
+                  aria-controls="next-payment-breakdown"
+                  @click="isBreakdownOpen = !isBreakdownOpen"
+                >
+                  {{ isBreakdownOpen ? __("Hide breakdown") : __("See breakdown") }}
+                </button>
+              </template>
+            </span>
+          </template>
+        </BillingRow>
 
-      <BillingRow v-if="billing.ai_credits" :label="__('AI usage')">
-        <template #value>
-          <AiCreditsMeter class="mt-1" :credits="billing.ai_credits" />
-        </template>
-      </BillingRow>
+        <ListRow v-if="bill && isBreakdownOpen" id="next-payment-breakdown" class="pb-3">
+          <ListCell class="col-span-full"><BillBreakdown :bill="bill" /></ListCell>
+        </ListRow>
 
-      <BillingRow :label="__('Billing details')" :value="__('Name, address and tax ID on your invoices')">
-        <Button :label="__('Edit')" @click="emit('edit-details')" />
-      </BillingRow>
-    </List>
-  </section>
+        <BillingRow
+          :label="__('Pay with')"
+          :value="card ? card.label : __('No card added')"
+          :detail="creditDetail"
+          :is-empty="!card"
+        >
+          <Button :label="card ? __('Change card') : __('Add card')" @click="emit('change-card')" />
+        </BillingRow>
+
+        <BillingRow :label="__('Billing details')" :value="__('Name, address and tax ID on your invoices')">
+          <Button :label="__('Edit')" @click="emit('edit-details')" />
+        </BillingRow>
+      </List>
+    </section>
+  </div>
 </template>

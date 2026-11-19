@@ -9,6 +9,9 @@ import { useTranslation } from './translation'
 export const formatInvoiceMonth = (date: string) =>
   new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(new Date(date))
 
+export const formatDate = (date?: string | null) =>
+  date ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(date)) : ''
+
 export const formatDueDate = (date?: string | null) =>
   date ? new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(new Date(date)) : ''
 
