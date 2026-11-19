@@ -28,7 +28,7 @@ def test_create_login_link_returns_url_with_sid(tmp_path: Path) -> None:
     body = response.get_json()
     assert response.headers["Location"] == body["url"]
     assert response.headers["Cache-Control"] == "no-store"
-    assert body["url"] == "http://s.localhost:8000/desk?sid=frappe-session-id"
+    assert body["url"] == "http://s.localhost:8000/?sid=frappe-session-id"
     create_session.assert_called_once_with("Administrator", "")
 
 
@@ -44,7 +44,7 @@ def test_create_login_link_resolves_a_renamed_sites_old_hostname(tmp_path: Path)
         response = client.post("/api/v1/sites/old.localhost/login")
 
     assert response.status_code == 201
-    assert response.get_json()["url"] == "http://new.localhost:8000/desk?sid=frappe-session-id"
+    assert response.get_json()["url"] == "http://new.localhost:8000/?sid=frappe-session-id"
 
 
 def test_create_login_link_hints_when_the_host_does_not_resolve(tmp_path: Path) -> None:
