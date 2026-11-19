@@ -108,7 +108,7 @@ A site calls Central through `GET` or `POST /sites/<name>/central/<method>`. Pil
 | `central.api.oauth.get_active_providers` | List the providers an account can connect with through Frappe Cloud right now. `POST` with no body; the answer is a list of provider keys, such as `["microsoft", "meta"]`. |
 | `central.api.oauth.start` | Start connecting an account through Frappe Cloud's OAuth app. `POST` `{"provider", "state", "code_challenge", "return_url"}`; the answer is `{"authorize_url", "client_id", "scopes"}`. |
 | `central.api.oauth.relay_token` | Exchange a sign-in code or refresh token at the provider with Frappe Cloud's app secret. `POST` `{"provider", "grant_type", ...}`; the answer is the provider's token response. For `meta`, Central also connects the WhatsApp number and routes its webhooks to the site. |
-| `central.api.oauth.disconnect` | Stop sending the site the Meta webhooks of a WhatsApp Business Account. `POST` `{"waba_id"}`. |
+| `central.api.meta_webhook.disconnect` | Stop sending the site the Meta webhooks of a WhatsApp Business Account. `POST` `{"waba_id"}`. |
 | `central.api.email_oauth.get_active_providers`, `.start`, `.relay_token` | The old path of the three `central.api.oauth` methods above, kept for sites that still call it. |
 
 The provider sends the browser to Central's `central.api.oauth.callback` directly, not through Pilot, and Central sends it back to the site's `return_url`.

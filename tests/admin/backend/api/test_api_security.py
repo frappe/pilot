@@ -102,6 +102,8 @@ def test_central_proxy_refuses_paths_that_reach_other_methods(
         ("central.api.oauth.start", 200),
         ("central.api.oauth.relay_token", 200),
         ("central.api.email_oauth.start", 200),
+        ("central.api.meta_webhook.disconnect", 200),
+        ("central.api.meta_webhook.handler", 403),
         ("central.api.oauth.exchange_token", 403),
     ],
 )

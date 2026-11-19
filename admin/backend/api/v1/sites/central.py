@@ -35,7 +35,7 @@ _ALLOWED_EXACT = frozenset(
         "central.api.oauth.get_active_providers",
         "central.api.oauth.start",
         "central.api.oauth.relay_token",
-        "central.api.oauth.disconnect",
+        "central.api.meta_webhook.disconnect",
     }
 )
 
