@@ -110,8 +110,8 @@ def get_cli_update():
         return error_response("cli_update_unavailable", "Could not read CLI update status.", 500)
 
 
-@updates_bp.post("/cli-updates")
-def start_cli_update():
+@updates_bp.post("/cli-updates/actions/install")
+def install_cli_update():
     """Queue a Pilot update."""
     try:
         return ApiRequest.queue_task(UpdateCliTask, ApiRequest.get_bench())
