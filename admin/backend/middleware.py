@@ -48,13 +48,13 @@ def is_request_authenticated(bench) -> bool:
     return True
 
 
-def set_session_cookie(response, token: str, secure: bool) -> None:
+def set_session_cookie(response, token: str, secure: bool, max_age: int = 24 * 3600) -> None:
     """Set the session cookie."""
     name, path = session_cookie()
     response.set_cookie(
         name,
         token,
-        max_age=24 * 3600,
+        max_age=max_age,
         httponly=True,
         secure=secure,
         samesite="Lax",

@@ -110,6 +110,7 @@ def create_session():
         scope, site = "site_editor", bench.resolve_site_name(request.host.split(":")[0])
         if not site:
             return error_response("site_not_found", "Site not found.", 404)
+        ttl = min(ttl, Session.SITE_EDITOR_TTL)
     token, jti = Session(bench).issue_session_token(scope=scope, site=site, ip=client_ip(), ttl=ttl)
     bench.audit_action(
         "session",
@@ -128,6 +129,7 @@ def create_session():
         response,
         token,
         current_app.config["SESSION_COOKIE_SECURE"],
+        max_age=ttl,
     )
     return response
 
