@@ -452,6 +452,20 @@ def test_admin_vhost_offloads_editor_dashboard_and_in_app_embed_assets(tmp_path:
     assert "application/javascript text/javascript text/css application/json" in config
 
 
+def test_site_vhost_proxies_only_the_site_editor_and_its_sign_in_to_the_admin(tmp_path: Path) -> None:
+    config = _site_config(tmp_path, _BASE_SITE)
+    start = config.index("location ~ ^/_pilot/(login|")
+    block = config[start : config.index("}", start)]
+
+    assert "location ^~ /_pilot/editor-assets/ {" in config
+    assert "location ^~ /_pilot/assets/ {" in config
+    assert "(login|editor/site/[^/]+|api/v1/(bootstrap|health|auth/session|sites/[^/]+/editor/.+))$" in block
+    assert "rewrite ^/_pilot(/.*)$ $1 break;" in block
+    assert "proxy_pass         http://127.0.0.1:" in block
+    assert 'proxy_set_header   Cookie             "sid=$cookie_pilot_sid";' in block
+    assert "proxy_set_header   X-Forwarded-Prefix /_pilot;" in block
+
+
 def test_in_app_embed_bundle_revalidates_instead_of_immutable(tmp_path: Path) -> None:
     # Fixed filename (cloud-settings.js): nginx must let it revalidate so a rebuild
     # is picked up, not pin the old bytes for a year like the hashed dashboard assets.

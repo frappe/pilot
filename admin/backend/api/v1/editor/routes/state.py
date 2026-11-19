@@ -14,7 +14,7 @@ from admin.backend.api.v1.editor import editor_bp, json_body, with_workspace
 @with_workspace
 def get_state(ws):
     """Show the saved editor state."""
-    path = _state_path(ws.root.name)
+    path = _state_path(ws.state_key)
     if not path.exists():
         return jsonify({})
     return jsonify(json.loads(path.read_text() or "{}"))
@@ -27,12 +27,12 @@ def put_state(ws):
     state = json_body()
     if len(json.dumps(state)) > 1_000_000:
         return error_response("too_large", "State exceeds 1MB.", 413)
-    path = _state_path(ws.root.name)
+    path = _state_path(ws.state_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state))
     return jsonify({"ok": True})
 
 
-def _state_path(app_name: str) -> Path:
-    """The editor state file of an app."""
-    return ApiRequest.get_bench_root() / ".editor-state" / f"{app_name}.json"
+def _state_path(key: str) -> Path:
+    """The editor state file of a scope."""
+    return ApiRequest.get_bench_root() / ".editor-state" / f"{key}.json"
