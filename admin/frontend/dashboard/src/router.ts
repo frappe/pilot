@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory, type RouteLocation } from 'vue-router'
 import { authApi } from '@/api/auth'
-import { apiErrorMessage, hasApiError } from '@/api/client'
+import { apiErrorMessage, hasApiError, MOUNT } from '@/api/client'
 import { useSession } from '@/composables/auth/useSession'
 import { safeRedirect } from '@/utils/redirect'
 
@@ -138,7 +138,7 @@ const routes = [
 ]
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(MOUNT),
   routes,
 })
 

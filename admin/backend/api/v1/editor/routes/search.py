@@ -13,7 +13,12 @@ def search_files(ws):
     """Search the files."""
     try:
         matches = search_service.search(
-            ws.root, request.args.get("q", ""), query_flag("regex"), query_flag("word"), query_flag("case")
+            ws.root,
+            request.args.get("q", ""),
+            query_flag("regex"),
+            query_flag("word"),
+            query_flag("case"),
+            ws.search_exclusions,
         )
     except search_service.SearchUnavailable as error:
         return error_response("search_unavailable", str(error), 503)

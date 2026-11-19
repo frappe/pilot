@@ -123,6 +123,12 @@ The provider sends the browser to Central's `central.api.email_oauth.callback` d
 
 Both operations re-point any matching `central.hostname_aliases` entry, so a VM hostname keeps reaching the thing it named. Every route that claims a hostname - creating a site, renaming one, moving the admin - also takes the task resource `host:<hostname>`, so two of them cannot run at once for the same name. That key is host-wide - benches share one nginx and one `/etc/letsencrypt` - so it conflicts with active tasks on every bench of the host, not only its own.
 
+### Site Code Editor
+
+The code editor routes serve two scopes. `/editor/*?app=<name>` opens an app folder. `/sites/<name>/editor/*` opens the site's own `sites/<name>/` folder, but never shows or changes `site_config.json`, `private/backups`, `private/files`, `public/files`, `logs` or `locks` (`EditorScope.site_excluded`), and has no git. Both take `?base=<folder>` to open a folder below their root. `admin.backend.core.editor.scope.EditorScope` owns each scope's root, base, excluded paths and saved state. `enable_code_editor` turns both on or off. The pages are `/editor/<app>` and `/editor/site/<name>`.
+
+To embed the site editor, load `/_pilot/editor/site/<name>?base=<folder>` in an iframe on that site. The site's nginx serves the editor, the dashboard sign-in page (`/_pilot/login`) and only the `bootstrap`, `auth/session` and `/sites/<name>/editor/` API routes under `/_pilot`, and sends them to the Admin on loopback with `X-Forwarded-Prefix: /_pilot`. Without a session, the editor opens the sign-in page, which returns to the editor. A sign-in there uses the Admin password and 2FA, but scripts on the site's pages share its origin, so the session is scoped `site_editor` to the site that answers to the host and opens only that site's editor. Its cookie is `pilot_sid` with `Path=/_pilot/`, so it never replaces the site's own `sid`. nginx sends Pilot only that cookie, as `sid`.
+
 ### Site Storage
 
 `GET /sites/storage` returns every site's `private_bytes`, `public_bytes`, `database_bytes`, and `total_bytes`, plus the `collected_at` of the reading. `database_bytes` is what the schema holds on disk, allocated-but-freed pages included, since nothing else can use that space until the tables are rebuilt.

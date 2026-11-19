@@ -1,29 +1,20 @@
-// Scope the copied editor to one app without touching component code.
-// The app name comes from the URL path (/editor/<app>), and every /api/*
-// call is rewritten to the admin backend's scoped, admin-only endpoints.
-export const APP = decodeURIComponent(location.pathname.match(/\/editor\/([^/]+)/)?.[1] || '')
-const BASE = '/api/v1/editor'
+// The page path picks what the editor opens: /editor/<app> or /editor/site/<site>, behind an
+// optional mount such as a site's /_pilot. ?base= opens a folder inside it.
+const match = location.pathname.match(/^(.*?)\/editor\/(?:(site)\/)?([^/]+)\/?$/)
+const name = decodeURIComponent(match?.[3] || '')
 
-export const scopedUrl = (url: string) => {
-  if (typeof url !== 'string' || !url.startsWith('/api/')) return url
+export const MOUNT = match?.[1] || ''
+export const SITE = match?.[2] ? name : ''
+export const APP = SITE ? '' : name
+export const BASE = new URLSearchParams(location.search).get('base') || ''
 
-  const rest = url.slice(4) // drop leading '/api'
-  const sep = rest.includes('?') ? '&' : '?'
+export const API_PREFIX = SITE
+  ? `${MOUNT}/api/v1/sites/${encodeURIComponent(SITE)}/editor`
+  : `${MOUNT}/api/v1/editor`
 
-  return `${BASE}${rest}${sep}app=${encodeURIComponent(APP)}`
+export const SEARCH_PARAMS: Record<string, string> = {
+  ...(APP && { app: APP }),
+  ...(BASE && { base: BASE }),
 }
 
-const nativeFetch = window.fetch.bind(window)
-
-window.fetch = (input, init) =>
-  nativeFetch(typeof input === 'string' ? scopedUrl(input) : input, init)
-
-const NativeEventSource = window.EventSource
-
-window.EventSource = class extends NativeEventSource {
-  constructor(url: string | URL, options?: EventSourceInit) {
-    super(typeof url === 'string' ? scopedUrl(url) : url, options)
-  }
-}
-
-if (APP) document.title = `${APP} · Editor`
+if (name) document.title = `${name} · Editor`

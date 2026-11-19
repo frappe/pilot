@@ -50,14 +50,27 @@ def is_request_authenticated(bench) -> bool:
 
 def set_session_cookie(response, token: str, secure: bool) -> None:
     """Set the session cookie."""
+    name, path = session_cookie()
     response.set_cookie(
-        "sid",
+        name,
         token,
         max_age=24 * 3600,
         httponly=True,
         secure=secure,
         samesite="Lax",
+        path=path,
     )
+
+
+def is_site_mount() -> bool:
+    """Whether a site's nginx forwarded this request from the site's `/_pilot` path."""
+    return request.headers.get("X-Forwarded-Prefix") == "/_pilot"
+
+
+def session_cookie() -> tuple[str, str]:
+    """The session cookie's name and path. On a site's domain `sid` is the site's own cookie, so
+    Pilot's is `pilot_sid` under `/_pilot`; the site's nginx hands it to Pilot as `sid`."""
+    return ("pilot_sid", "/_pilot/") if is_site_mount() else ("sid", "/")
 
 
 def decode_session_token(token: str, bench, ip: str = "unknown") -> dict | None:
@@ -79,8 +92,9 @@ def current_site_scope() -> str | None:
     return claims.get("site") if claims else None
 
 
-def require_scope(site):
-    """Scope a view to a site, given by name or by a resolver."""
+def require_scope(site, scopes: tuple[str, ...] = ("site",)):
+    """Scope a view to a site, given by name or by a resolver, for bench tokens and the site token
+    scopes listed. A resolver that returns None leaves the view to bench tokens alone."""
     if callable(site):
         resolve = site
     else:
@@ -90,8 +104,8 @@ def require_scope(site):
             return site
 
     def decorator(view):
-        """Attach the site resolver to the view."""
-        setattr(view, _SITE_SCOPE_RESOLVER, resolve)
+        """Attach the site resolver and the scopes to the view."""
+        setattr(view, _SITE_SCOPE_RESOLVER, (resolve, scopes))
         return view
 
     return decorator
@@ -101,10 +115,12 @@ def get_authorization_error(claims: dict | None, view, view_args: dict, bench, t
     """Why the claims cannot use the view, or None."""
     from admin.backend.internal.session import Session
 
-    resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
-    if resolve_site is not None:
-        site = resolve_site(view_args)
-        return None if Session(bench).has_scope(claims, site, token) else "Not authorized for this site"
+    resolve_site, scopes = getattr(view, _SITE_SCOPE_RESOLVER, (None, ()))
+    site = resolve_site(view_args) if resolve_site is not None else None
+    if site is not None:
+        return (
+            None if Session(bench).has_scope(claims, site, token, scopes) else "Not authorized for this site"
+        )
     if claims and claims.get("scope") == "bench":
         return None
     return "Not authorized for this bench"
@@ -157,7 +173,7 @@ def _check_auth_request(app: Flask, bench_root):
 
 def _resolve_site_route(bench):
     """The site a site route names, if any."""
-    if request.blueprint != "sites" or not request.view_args:
+    if request.blueprint not in ("sites", "site_editor") or not request.view_args:
         return None
     name = request.view_args.get("name")
     if not name:
