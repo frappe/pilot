@@ -380,7 +380,9 @@ class NginxConfigRenderer:
             "proxy_servers": self.get_proxy_servers(),
             "cloudflare_networks": CLOUDFLARE_NETWORKS if config.proxy.cloudflare else (),
             "proxy_gate_variable": "$bench_" + re.sub(r"[^a-zA-Z0-9_]", "_", config.name) + "_from_proxy",
-            "proxy_gate_enabled": any(vhost.trusted_proxy for vhost in vhosts),
+            # A serving alias trusts the edge scheme only from a known proxy, so it needs the gate too.
+            "proxy_gate_enabled": any(vhost.trusted_proxy for vhost in vhosts)
+            or bool(aliases and self.get_proxy_servers()),
             "firewall": config.firewall,
             "waf_active": self._is_waf_active(),
             "waf_rules_file": self.bench.config_path / "modsecurity" / "main.conf",
