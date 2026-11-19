@@ -2,7 +2,10 @@ import ky from 'ky'
 import type { ErrorResponse } from '@/types/common'
 import { isSignedOut, reportSignedOut } from '../composables/auth/useSignedOut.ts'
 
-export const API_V1_PREFIX = '/api/v1'
+// A site's nginx serves the sign-in page under /_pilot for its embedded code editor.
+export const MOUNT = globalThis.location?.pathname.startsWith('/_pilot/') ? '/_pilot' : ''
+
+export const API_V1_PREFIX = `${MOUNT}/api/v1`
 
 export const apiUrl = (path = '', origin = ''): string => {
   const suffix = path ? `/${String(path).replace(/^\/+/, '')}` : ''

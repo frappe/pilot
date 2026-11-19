@@ -2,22 +2,21 @@
 import { useTranslation } from '../translation'
 import { reconcilePaymentSetup, removePaymentMethod } from '@frappe/cloud-sdk/api'
 import type { PlanOption } from '@frappe/cloud-sdk'
-import { Button, ErrorMessage, toast } from 'frappe-ui'
-import { List } from 'frappe-ui/list'
+import { Button, ErrorMessage, Tooltip, toast } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import AddPaymentCard from '../components/AddPaymentCard.vue'
 import AiCreditsMeter from '../components/AiCreditsMeter.vue'
 import BillingNotice from '../components/BillingNotice.vue'
-import BillingRow from '../components/BillingRow.vue'
 import BillingSummary from '../components/BillingSummary.vue'
 import BillingProfileCard from '../components/BillingProfileCard.vue'
 import ChangePlanCard from '../components/ChangePlanCard.vue'
 import InvoiceList from '../components/InvoiceList.vue'
 import Panel from '../components/Panel.vue'
+import PlanCard from '../components/PlanCard.vue'
 import PlanMoveCard from '../components/PlanMoveCard.vue'
 import TrialCard from '../components/TrialCard.vue'
 import { openExternal } from '../external'
-import { useInvoicePayment } from '../invoicePayment'
+import { formatDate, useInvoicePayment } from '../invoicePayment'
 import { useErrorMessage, type Store } from '../store'
 
 const __ = useTranslation()
@@ -68,6 +67,12 @@ const error = computed(() => store.state.billingError)
 const loadFailed = computed(() => Boolean(error.value) && !billing.value)
 const plan = computed(() => billing.value?.plan)
 const trial = computed(() => billing.value?.trial)
+const daysLeft = computed(() => {
+  const days = trial.value?.days_left ?? 0
+  if (days <= 0) return __('Ends today')
+  return days === 1 ? __('1 day left') : __('{0} days left', [days])
+})
+
 const isAddingPayment = computed(() => flow.value === 'profile' || flow.value === 'payment')
 
 const stepLabel = (step: Step) =>
@@ -248,20 +253,22 @@ const invoicePayment = useInvoicePayment(async () => {
 
       <PlanMoveCard v-else-if="isMoving" :store="store" :plan="movingPlan" />
 
-      <section
-        v-else-if="!isAddingPayment && trial"
-        class="rounded-6 border border-outline-gray-1.5 px-4"
-        :aria-label="__('Plan')"
-      >
-        <List :columns="['minmax(0,1fr)']">
-          <BillingRow :label="__('Plan')" :value="__('Free trial')" :detail="plan.subtitle">
-            <template v-if="billing.ai_credits" #detail>
-              <span class="text-p-sm text-ink-gray-5">{{ plan.subtitle }}</span>
-              <AiCreditsMeter class="mt-1.5" :credits="billing.ai_credits" />
-            </template>
-          </BillingRow>
-        </List>
-      </section>
+      <PlanCard v-else-if="!isAddingPayment && trial" :name="__('Free trial')" :subtitle="plan.subtitle">
+        <template v-if="trial.state !== 'Ended'" #aside>
+          <Tooltip :text="__('Ends on {0}', [formatDate(trial.ends_on)])">
+            <span
+              tabindex="0"
+              class="cursor-default rounded-4 text-base tabular-nums text-ink-gray-7 underline decoration-outline-gray-3 decoration-dotted underline-offset-4"
+            >
+              {{ daysLeft }}
+            </span>
+          </Tooltip>
+        </template>
+
+        <AiCreditsMeter v-if="billing.ai_credits" :credits="billing.ai_credits">
+          <Button v-if="!flow" :label="__('Upgrade')" @click="startUpgrade" />
+        </AiCreditsMeter>
+      </PlanCard>
 
       <template v-if="!trial && !flow && !isMoving">
         <BillingNotice

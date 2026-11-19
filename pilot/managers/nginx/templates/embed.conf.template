@@ -10,3 +10,29 @@
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
+
+    location ^~ /_pilot/assets/ {
+        alias {{ admin_static }}/dashboard/assets/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location ^~ /_pilot/editor-assets/ {
+        alias {{ admin_static }}/editor/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    {# the site code editor and its sign-in; Pilot gets only its own pilot_sid cookie, never the site's #}
+    location ~ ^/_pilot/(login|editor/site/[^/]+|api/v1/(bootstrap|health|auth/session|sites/[^/]+/editor/.+))$ {
+        rewrite ^/_pilot(/.*)$ $1 break;
+        proxy_pass         http://127.0.0.1:{{ admin_port }};
+        proxy_read_timeout 120;
+        proxy_redirect     off;
+        proxy_set_header   Host               $host;
+        proxy_set_header   X-Real-IP          $pilot_client_addr;
+        proxy_set_header   X-Forwarded-Prefix /_pilot;
+        proxy_set_header   Cookie             "sid=$cookie_pilot_sid";
+    }

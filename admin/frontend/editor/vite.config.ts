@@ -13,7 +13,8 @@ export default defineConfig({
   css: {
     postcss: { plugins: [tailwindcss(), autoprefixer()] },
   },
-  base: '/editor-assets/',
+  // Relative, so chunks load under any mount; Flask points index.html at the mount's /editor-assets/.
+  base: './',
   build: {
     outDir: '../../backend/static/editor',
     emptyOutDir: true,
