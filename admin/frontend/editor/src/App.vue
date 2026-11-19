@@ -17,6 +17,7 @@ import Tabs from '@/components/Tabs.vue'
 import { useMobile } from '@/composables/useMobile'
 import { useQuickOpen } from '@/composables/useQuickOpen'
 import { useSearchModal } from '@/composables/useSearchModal'
+import { HAS_GIT } from '@/scope'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
 
@@ -26,7 +27,7 @@ const EditorPane = defineAsyncComponent(() => import('@/components/EditorPane.vu
 const GitDiffView = defineAsyncComponent(() => import('@/components/GitDiffView.vue'))
 const CommitView = defineAsyncComponent(() => import('@/components/CommitView.vue'))
 
-const panels: Panel[] = ['files', 'search', 'git', '']
+const panels: Panel[] = ['files', 'search', ...(HAS_GIT ? ['git' as const] : []), '']
 
 const store = useEditorStore()
 const git = useGitStore()

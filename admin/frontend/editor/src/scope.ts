@@ -6,6 +6,8 @@ const name = decodeURIComponent(match?.[3] || '')
 export const MOUNT = match?.[1] || ''
 export const SITE = match?.[2] ? name : ''
 export const APP = SITE ? '' : name
+// A site folder has no git, so the site editor hides source control and blame.
+export const HAS_GIT = !SITE
 export const BASE = new URLSearchParams(location.search).get('base') || ''
 
 export const API_PREFIX = SITE

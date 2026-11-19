@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 
 import { gitApi } from '@/api/git'
 import type { BlameLine, LineChanges } from '@/codemirror/git'
+import { HAS_GIT } from '@/scope'
 
 interface FileStatus {
   path: string
@@ -29,6 +30,7 @@ export const useGitStore = defineStore('git', {
       return this.files[path] || ''
     },
     async refresh() {
+      if (!HAS_GIT) return
       try {
         const d = await gitApi.status()
         this.repo = !!d.repo
