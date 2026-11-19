@@ -60,6 +60,8 @@ export interface AiCredits {
   cap: number
   /** Null once ended. */
   spent: number | null
+  /** What the product's AI credit pays for, from its Product record. */
+  note?: string | null
 }
 
 export interface NextBill {
