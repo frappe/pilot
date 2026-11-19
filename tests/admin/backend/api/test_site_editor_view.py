@@ -30,6 +30,7 @@ def bench_root(tmp_path: Path) -> Path:
     (site / "themes" / "blue" / "style.css").write_text("body {}\n")
     (site / "notes.md").write_text("needle\n")
     for path in (
+        "backups/site_config_backup.json",
         "private/backups/db.sql",
         "private/files/a.txt",
         "public/files/b.txt",
@@ -123,6 +124,7 @@ def test_site_editor_opens_the_site_folder_without_its_excluded_paths(client, be
     "path",
     [
         "site_config.json",
+        "backups/site_config_backup.json",
         "private/backups/db.sql",
         "private/files/a.txt",
         "public/files/b.txt",
