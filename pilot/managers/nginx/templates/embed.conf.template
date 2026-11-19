@@ -26,7 +26,7 @@
     }
 
     {# the site code editor and its sign-in; Pilot gets only its own pilot_sid cookie, never the site's #}
-    location ~ ^/_pilot/(login|editor/site/[^/]+|api/v1/(bootstrap|auth/session|sites/[^/]+/editor/.+))$ {
+    location ~ ^/_pilot/(login|editor/site/[^/]+|api/v1/(bootstrap|health|auth/session|sites/[^/]+/editor/.+))$ {
         rewrite ^/_pilot(/.*)$ $1 break;
         proxy_pass         http://127.0.0.1:{{ admin_port }};
         proxy_read_timeout 120;

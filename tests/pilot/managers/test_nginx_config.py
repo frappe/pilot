@@ -459,7 +459,7 @@ def test_site_vhost_proxies_only_the_site_editor_and_its_sign_in_to_the_admin(tm
 
     assert "location ^~ /_pilot/editor-assets/ {" in config
     assert "location ^~ /_pilot/assets/ {" in config
-    assert "(login|editor/site/[^/]+|api/v1/(bootstrap|auth/session|sites/[^/]+/editor/.+))$" in block
+    assert "(login|editor/site/[^/]+|api/v1/(bootstrap|health|auth/session|sites/[^/]+/editor/.+))$" in block
     assert "rewrite ^/_pilot(/.*)$ $1 break;" in block
     assert "proxy_pass         http://127.0.0.1:" in block
     assert 'proxy_set_header   Cookie             "sid=$cookie_pilot_sid";' in block
