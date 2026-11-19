@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { HAS_GIT } from '@/scope'
+
 withDefaults(defineProps<{ active?: string; gitCount?: number }>(), { gitCount: 0 })
 
 defineEmits<{ select: [id: string] }>()
@@ -7,7 +9,7 @@ const items = [
   { id: 'files', icon: 'lucide-file', title: 'Explorer', label: 'Files' },
   { id: 'search', icon: 'lucide-search', title: 'Search', label: 'Search' },
   { id: 'git', icon: 'lucide-git-branch', title: 'Source Control', label: 'Git' },
-]
+].filter((it) => HAS_GIT || it.id !== 'git')
 </script>
 
 <template>

@@ -117,7 +117,7 @@ const loadBlame = async () => {
 
   if (!path) return
 
-  const lines = store.blame ? await git.getBlame(path) : []
+  const lines = store.blame && git.repo ? await git.getBlame(path) : []
 
   if (path === shownPath) view?.dispatch({ effects: setBlame.of(lines) })
 }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import { HAS_GIT } from '@/scope'
+
 interface Item {
   id: 'files' | 'search' | 'git' | 'goto'
   icon: string
@@ -28,12 +30,14 @@ const emit = defineEmits<{
 
 const open = ref(false)
 
-const items: Item[] = [
+const allItems: Item[] = [
   { id: 'files', icon: 'lucide-folder', label: 'Explorer', kind: 'panel' },
   { id: 'search', icon: 'lucide-search', label: 'Search', kind: 'panel' },
   { id: 'git', icon: 'lucide-git-branch', label: 'Source Control', kind: 'panel' },
   { id: 'goto', icon: 'lucide-file-text', label: 'Go to File', kind: 'command' },
 ]
+
+const items = allItems.filter((it) => HAS_GIT || it.id !== 'git')
 
 const R = 164
 
