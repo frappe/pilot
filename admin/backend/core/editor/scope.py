@@ -18,8 +18,16 @@ class EditorScope:
     base: str = ""
     excluded: tuple[str, ...] = ()
 
-    # Secrets, backups, uploads that File records point to, and runtime files.
-    site_excluded = ("site_config.json", "private/backups", "private/files", "public/files", "logs", "locks")
+    # Secrets, Pilot's and Frappe's backups, uploads that File records point to, and runtime files.
+    site_excluded = (
+        "site_config.json",
+        "backups",
+        "private/backups",
+        "private/files",
+        "public/files",
+        "logs",
+        "locks",
+    )
 
     @classmethod
     def for_app(cls, bench: Bench, name: str, base: str = "") -> EditorScope:
