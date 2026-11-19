@@ -118,9 +118,9 @@ def get_authorization_error(claims: dict | None, view, view_args: dict, bench, t
     resolve_site, scopes = getattr(view, _SITE_SCOPE_RESOLVER, (None, ()))
     site = resolve_site(view_args) if resolve_site is not None else None
     if site is not None:
-        return (
-            None if Session(bench).has_scope(claims, site, token, scopes) else "Not authorized for this site"
-        )
+        if Session(bench).has_scope(claims, site, token, scopes):
+            return None
+        return "Not authorized for this site"
     if claims and claims.get("scope") == "bench":
         return None
     return "Not authorized for this bench"

@@ -114,10 +114,10 @@ def register_editor_frontend(app: Flask) -> None:
     """Serve the isolated full-page code editor, scoped by /editor/<app_name> or /editor/site/<site_name>."""
     editor_dist = STATIC_DIR / "editor"
 
-    @app.route("/editor/<app_name>")
-    @app.route("/editor/site/<app_name>")
+    @app.route("/editor/<name>")
+    @app.route("/editor/site/<name>")
     @allow_unauthenticated
-    def serve_editor(app_name):
+    def serve_editor(name):
         """Serve the code editor when it is on."""
         from admin.backend.api.v1.editor import is_code_editor_enabled
 
