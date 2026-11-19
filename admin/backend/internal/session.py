@@ -154,6 +154,8 @@ class Session:
     # The setup link, and so the session redeeming it, live 3h - shorter than a password
     # login because the link travels in a URL, over plain http.
     SETUP_SESSION_TTL = 3 * 3600
+    # A sign-in on a site's own domain, for its embedded code editor.
+    SITE_EDITOR_TTL = 3 * 3600
 
     # Asymmetric only: a published JWKS public key must never be accepted as an HMAC secret.
     _JWKS_ALGORITHMS: ClassVar[list[str]] = [

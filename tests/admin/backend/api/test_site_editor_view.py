@@ -77,6 +77,8 @@ def test_sign_in_on_a_site_mount_opens_only_that_sites_editor(client, bench_root
     assert response.get_json() == {"authenticated": True, "scope": "site_editor"}
     assert len(cookies) == 1 and "Path=/_pilot/" in cookies[0] and "HttpOnly" in cookies[0]
     assert (claims["scope"], claims["site"]) == ("site_editor", SITE)
+    assert claims["exp"] - claims["iat"] == Session.SITE_EDITOR_TTL == 3 * 3600
+    assert "Max-Age=10800" in cookies[0]
 
 
 def test_sign_in_on_an_unknown_host_is_refused(client) -> None:
