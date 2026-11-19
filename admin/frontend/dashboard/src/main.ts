@@ -16,5 +16,8 @@ const app = createApp(App)
 app.use(router)
 app.use(FrappeUI)
 
-router.isReady().then(() => app.mount('#app'))
-followHostTheme()
+// After mount: App.vue's useColorScheme() applies the saved or OS theme first.
+router.isReady().then(() => {
+  app.mount('#app')
+  followHostTheme()
+})
