@@ -844,10 +844,11 @@ def _cloud_config(
     central_enabled: bool = True,
     hostname_mappings: dict[str, str] | None = None,
     redirect: bool = True,
+    proxy_servers: list[str] | None = None,
 ) -> str:
     data = copy.deepcopy(_BASE_DATA)
     data["admin"] = {"domain": "admin.example.com"}
-    renderer = _renderer(tmp_path, data)
+    renderer = _renderer(tmp_path, data, proxy_servers)
     # Central settings are host-shared.
     central = renderer.bench.config.central
     central.enabled = central_enabled
@@ -963,9 +964,14 @@ def test_a_serving_alias_serves_static_files(tmp_path: Path) -> None:
         [(_PLACEHOLDER_SITE, False)],
         hostname_mappings={_SITE_GLOB: _PLACEHOLDER_SITE.name},
         redirect=False,
+        proxy_servers=["203.0.113.10"],
     )
 
     alias_block = _alias_block(config)
+    # The edge terminates TLS, so the site must see its scheme, not the alias's plain HTTP.
+    assert "if ($bench_test_bench_from_proxy = 1) { set $pilot_scheme $http_x_forwarded_proto; }" in alias_block
+    assert "X-Forwarded-Proto  $scheme" not in alias_block
+    assert "Origin $pilot_scheme://$http_host;" in alias_block
     assert f"root {tmp_path}/sites;" in alias_block
     assert "location /assets" in alias_block
     assert "location /socket.io" in alias_block
@@ -984,6 +990,7 @@ def test_a_serving_alias_serves_public_files_of_any_extension(tmp_path: Path) ->
     )
 
     alias_block = _alias_block(config)
+    assert "$http_x_forwarded_proto" not in alias_block  # no known proxy to trust
     assert "location /files/ {" in alias_block
     assert "location ~* ^/files/" in alias_block
     assert 'add_header Content-Disposition "attachment";' in alias_block
