@@ -103,10 +103,10 @@ const update = async () => {
   dialogError.value = null
   log.value = ''
   try {
-    const { task_id } = await tasksApi.run('update-cli')
+    const { task_id } = await cliUpdatesApi.start()
     await pollTask(task_id)
-  } catch {
-    dialogError.value = 'Update failed. Check the Tasks view for details.'
+  } catch (caught) {
+    dialogError.value = errorMessage(caught, 'Update failed. Check the Tasks view for details.')
   } finally {
     updating.value = false
   }

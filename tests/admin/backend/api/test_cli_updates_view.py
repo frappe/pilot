@@ -1,4 +1,4 @@
-"""Tests for GET /api/v1/cli-updates and POST /api/v1/cli-update-checks."""
+"""Tests for /api/v1/cli-updates and POST /api/v1/cli-update-checks."""
 
 from __future__ import annotations
 
@@ -178,3 +178,30 @@ def test_a_site_token_cannot_change_host_updates(auto_update_client, tmp_path):
     auto_update_client.set_cookie("sid", Session(Bench(tmp_path / "current")).issue_site_token("test.local"))
     response = auto_update_client.patch("/api/v1/cli-auto-update", json={"enabled": True})
     assert response.status_code == 403
+
+
+def test_cli_updates_post_queues_the_update(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    with (
+        patch("admin.backend.api.v1.updates.UpdateCliTask.queue", return_value="task-1") as queue,
+        patch("admin.backend.api.requests.accepted_task_response", return_value=({"task_id": "task-1"}, 202)),
+    ):
+        response = client.post("/api/v1/cli-updates", headers={"Idempotency-Key": "update-once"})
+
+    assert response.status_code == 202
+    assert response.get_json() == {"task_id": "task-1"}
+    assert queue.call_args.kwargs == {"idempotency_key": "update-once"}
+
+
+def test_cli_updates_post_refuses_a_second_update(tmp_path: Path) -> None:
+    from pilot.exceptions import TaskConflictError
+
+    client = _client(tmp_path / "benches" / "current")
+    with patch(
+        "admin.backend.api.v1.updates.UpdateCliTask.queue",
+        side_effect=TaskConflictError("update-cli is running"),
+    ):
+        response = client.post("/api/v1/cli-updates")
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
