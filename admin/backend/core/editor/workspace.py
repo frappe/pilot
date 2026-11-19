@@ -16,6 +16,10 @@ class HiddenPathError(ValueError):
     """Path is a dot file or inside a dot folder, such as `.git` or `.env`."""
 
 
+class ExcludedPathError(ValueError):
+    """Path is one the scope keeps out of the editor, such as a site's `site_config.json`."""
+
+
 class BinaryFileError(ValueError):
     """File is not valid UTF-8 text."""
 
@@ -25,10 +29,14 @@ class EditorWorkspace:
 
     file_list_cap = 20000
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self, root: Path, state_key: str = "", has_git: bool = True, excluded: tuple[Path, ...] = ()
+    ) -> None:
         self.root = Path(root)
         self.root_real = self.root.resolve()
-        self.git = EditorGit(self.root)
+        self.state_key = state_key or self.root.name
+        self.git = EditorGit(self.root, is_enabled=has_git)
+        self.excluded = tuple(path.resolve() for path in excluded)
 
     def safe(self, rel: str) -> Path:
         """Resolve a client path against the root, rejecting traversal, symlink escapes and dot files."""
@@ -45,7 +53,30 @@ class EditorWorkspace:
             raise EditorPathError(rel)
         if _is_hidden(clean) or _is_hidden(resolved.relative_to(self.root_real).as_posix()):
             raise HiddenPathError(rel)
+        if self.is_excluded(resolved):
+            raise ExcludedPathError(rel)
         return target
+
+    def is_excluded(self, path: Path) -> bool:
+        """Whether the path is, or is inside, a path the scope keeps out of the editor."""
+        resolved = path.resolve()
+        return any(resolved == excluded or excluded in resolved.parents for excluded in self.excluded)
+
+    def refuse_excluded_inside(self, path: Path) -> None:
+        """Deleting or moving a folder must not take an excluded path inside it along."""
+        resolved = path.resolve()
+        if any(resolved in excluded.parents for excluded in self.excluded):
+            raise ExcludedPathError(str(path))
+
+    @property
+    def search_exclusions(self) -> list[str]:
+        """ripgrep globs that keep the excluded paths below the root out of a search."""
+        paths = [
+            path.relative_to(self.root_real).as_posix()
+            for path in self.excluded
+            if self.root_real in path.parents
+        ]
+        return [glob for path in paths for glob in (f"!/{path}", f"!/{path}/**")]
 
     def relative(self, rel: str) -> str:
         """Validated in-app path, as git and the API expect to see it."""
@@ -55,6 +86,7 @@ class EditorWorkspace:
         """Validated in-app path whose whole tree a git command may change: no dot file inside."""
         target = self.safe(rel)
         _refuse_hidden_inside(target)
+        self.refuse_excluded_inside(target)
         return self.rel(target)
 
     def rel(self, abs_path: Path) -> str:
@@ -82,6 +114,8 @@ class EditorWorkspace:
         base = self.safe(rel)
         entries = []
         for item in os.scandir(base):
+            if self.is_excluded(Path(item.path)):
+                continue
             kind = "dir" if item.is_dir(follow_symlinks=False) else "file"
             info = item.stat(follow_symlinks=False)
             entries.append(
@@ -149,6 +183,7 @@ class EditorWorkspace:
         source = self.safe(frm)
         destination = self.safe(to)
         _refuse_hidden_inside(source)
+        self.refuse_excluded_inside(source)
         if source.resolve() in [destination.resolve(), *destination.resolve().parents]:
             raise EditorPathError(to)
         if destination.exists():
@@ -163,6 +198,7 @@ class EditorWorkspace:
         if target == self.root or target.resolve() == self.root_real:
             raise EditorPathError("cannot delete root")
         _refuse_hidden_inside(target)
+        self.refuse_excluded_inside(target)
         if target.is_dir() and not target.is_symlink():
             shutil.rmtree(target)
         else:
@@ -173,12 +209,20 @@ class EditorWorkspace:
         if self.git.is_repo:
             tracked = self.git.list_files(self.file_list_cap)
             if tracked is not None:
-                return [path for path in tracked if not _is_hidden(path)]
+                return [
+                    path
+                    for path in tracked
+                    if not _is_hidden(path) and not self.is_excluded(self.root / path)
+                ]
         out: list[str] = []
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d != "node_modules" and not d.startswith(".")]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if d != "node_modules" and not d.startswith(".") and not self.is_excluded(Path(dirpath) / d)
+            ]
             for name in filenames:
-                if name.startswith("."):
+                if name.startswith(".") or self.is_excluded(Path(dirpath) / name):
                     continue
                 out.append(self.rel(Path(dirpath) / name))
                 if len(out) >= self.file_list_cap:
