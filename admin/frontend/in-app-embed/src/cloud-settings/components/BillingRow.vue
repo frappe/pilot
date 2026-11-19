@@ -13,8 +13,8 @@ defineProps<Props>()
 </script>
 
 <template>
-  <ListRow class="py-3">
-    <ListCell class="flex-col !items-start">
+  <ListRow class="py-4">
+    <ListCell class="flex-col !items-start gap-1">
       <span class="text-sm text-ink-gray-5">{{ label }}</span>
       <slot name="value">
         <span class="text-base" :class="isEmpty ? 'text-ink-gray-5' : 'text-ink-gray-8'">{{ value }}</span>

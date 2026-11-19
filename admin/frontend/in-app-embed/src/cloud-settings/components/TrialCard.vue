@@ -3,6 +3,7 @@ import { useTranslation } from '../translation'
 import { Alert } from 'frappe-ui'
 import type { BillingTrial } from '@frappe/cloud-sdk'
 import { computed } from 'vue'
+import { formatDate } from '../invoicePayment'
 
 const __ = useTranslation()
 
@@ -14,9 +15,6 @@ interface Props {
 
 const props = defineProps<Props>()
 const emit = defineEmits<{ upgrade: [] }>()
-
-const formatDate = (value?: string | null) =>
-  value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) : ''
 
 const isEnded = computed(() => props.trial.state === 'Ended')
 
