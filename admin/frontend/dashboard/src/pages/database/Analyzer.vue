@@ -8,22 +8,24 @@ import {
   Select,
   Switch,
   TabList,
-  TabTrigger,
   Tabs,
+  TabTrigger,
   Tooltip,
   toast,
 } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { apiErrorMessage, hasApiError } from '@/api/client'
-import { databaseApi } from '@/api/database'
+
 import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
-import IndexAnalysisPanel from '@/components/database/IndexAnalysisPanel.vue'
 import DeadlocksPanel from '@/components/database/DeadlocksPanel.vue'
+import IndexAnalysisPanel from '@/components/database/IndexAnalysisPanel.vue'
 import QueryAnalysisPanel from '@/components/database/QueryAnalysisPanel.vue'
 import SizeOverview from '@/components/database/SizeOverview.vue'
+
+import { apiErrorMessage, hasApiError } from '@/api/client'
+import { databaseApi } from '@/api/database'
 import type {
   BinlogFile,
   DatabaseDiagnostics,
@@ -553,8 +555,8 @@ onMounted(load)
   <ErrorMessage v-else-if="error" :message="error" class="m-3 md:m-4" />
 
   <template v-else-if="diagnostics">
-    <Tabs v-model="picked">
-      <TabList variant="underline" size="md" class="px-3 md:px-4 overflow-x-auto [scrollbar-width:none]">
+    <Tabs v-model="picked" class="overflow-x-auto [scrollbar-width:none]">
+      <TabList variant="underline" size="md" class="px-3 md:px-4 w-max min-w-full">
         <TabTrigger
           v-for="section in sections"
           :key="section.value"
@@ -595,7 +597,6 @@ onMounted(load)
           :columns="processColumns"
           :rows="processRows"
           height="flex-1"
-         
         >
           <template #actions="{ row }">
             <Button
@@ -635,17 +636,14 @@ onMounted(load)
 
         <ErrorMessage v-if="lockWaitsError" :message="lockWaitsError" />
 
-        <Table
-          v-else-if="lockRows.length"
-          :columns="lockColumns"
-          :rows="lockRows"
-          height="flex-1"
-        >
+        <Table v-else-if="lockRows.length" :columns="lockColumns" :rows="lockRows" height="flex-1">
           <template #blocker="{ row }">
             <div v-if="row.blocker" class="flex items-center gap-2 min-w-0">
               <span class="truncate" :title="row.blocker.query || ''">
-                {{ row.blocker.id }} · {{ row.blockerQuery }}
+                {{ row.blocker.id }}
+                · {{ row.blockerQuery }}
               </span>
+
               <Button
                 variant="ghost"
                 iconLeft="lucide-x"
@@ -655,6 +653,7 @@ onMounted(load)
                 Kill
               </Button>
             </div>
+
             <span v-else>—</span>
           </template>
         </Table>
@@ -796,11 +795,9 @@ onMounted(load)
   <Dialog v-model="showPurgeDialog" title="Delete binary logs" size="sm">
     <p class="text-ink-gray-7 text-p-base">
       Permanently delete
-      <strong
-        >{{ pendingFiles.length }}
-        file{{ pendingFiles.length === 1 ? '' : 's' }}</strong
-      >, freeing {{ pendingSize }}? Binary logs are shared by every bench on this server and are
-      used for point-in-time recovery and replication.
+      <strong>{{ pendingFiles.length }} file{{ pendingFiles.length === 1 ? '' : 's' }}</strong>,
+      freeing {{ pendingSize }}? Binary logs are shared by every bench on this server and are used
+      for point-in-time recovery and replication.
     </p>
 
     <dl class="space-y-1.5 bg-surface-gray-1 mt-3 p-3 rounded-6 text-xs">
@@ -815,6 +812,7 @@ onMounted(load)
     </dl>
 
     <ErrorMessage v-if="purgeError" :message="purgeError" class="mt-3" />
+
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="showPurgeDialog = false">Cancel</Button>
