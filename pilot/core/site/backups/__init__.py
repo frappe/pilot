@@ -1,5 +1,6 @@
 """Apply a retention policy to one site's backups, local and offsite."""
 
+import json
 import re
 from dataclasses import asdict
 from datetime import datetime, timedelta
@@ -20,6 +21,7 @@ MAX_DAILY_FAILURES = 6
 # A dump grows between runs; the newest one plus this margin predicts the next.
 # Kept free after a backup, so the database and the system can still write.
 SYSTEM_RESERVED_BYTES = 500 * 1024**2
+FILES_INDEX_METHOD = "frappe.core.doctype.file.utils.get_files_index"
 
 
 def ensure_free_space(path: Path, needed_bytes: int, purpose: str) -> None:
@@ -122,6 +124,19 @@ class SiteBackups:
 
         offsite = OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)
         return SiteBackupStream(self.site, offsite).run(with_files)
+
+    def get_files_index(self) -> dict[str, list[dict]]:
+        """The site's File rows, storage v1 and v2, split by privacy. Frappe builds the index."""
+        from pilot.exceptions import BenchError
+        from pilot.internal.command import run_command
+
+        argv = [*self.site.bench.frappe_call, "frappe", "--site", self.site.config.name, "execute"]
+        result = run_command([*argv, FILES_INDEX_METHOD], cwd=self.site.bench.sites_path, timeout=300)
+        lines = result.stdout.strip().splitlines()
+        if not lines:
+            raise BenchError(f"Frappe returned no File index for {self.site.config.name}.")
+        # `execute` prints the return value last; Frappe may print warnings before it.
+        return json.loads(lines[-1])
 
     def _publish(self, staged: list[Path]) -> list[Path]:
         """Move a run in under the backups lock, so retention sees all of it or none of it."""

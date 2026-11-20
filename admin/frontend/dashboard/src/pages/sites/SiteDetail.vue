@@ -24,6 +24,7 @@ import Activities from '@/pages/Activities.vue'
 import { apiErrorMessage, hasApiError } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
+import { useSession } from '@/composables/auth/useSession'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSite } from '@/composables/sites/useSite'
@@ -171,11 +172,19 @@ const backupNow = async () => {
   }
 }
 
+const { session } = useSession()
+
+const openInEditor = () =>
+  window.open(`/editor/site/${encodeURIComponent(siteName)}`, '_blank', 'noopener')
+
 const menuOptions = computed(() => [
   ...(isMobile.value
     ? [{ label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace }]
     : []),
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: loginAsAdmin },
+  ...(session.codeEditor
+    ? [{ label: 'Open in code editor', icon: 'lucide-code', onClick: openInEditor }]
+    : []),
   { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
   { label: 'View jobs', icon: 'lucide-list-checks', onClick: viewJobs },
 ])

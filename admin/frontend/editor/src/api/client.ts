@@ -1,6 +1,6 @@
 import ky from 'ky'
 
-import { APP } from '@/scope'
+import { API_PREFIX, MOUNT, SEARCH_PARAMS } from '@/scope'
 
 export interface GitResult {
   ok: boolean
@@ -16,7 +16,7 @@ const redirectToLogin = () => {
 
   const back = encodeURIComponent(location.pathname + location.search)
 
-  location.assign(`/login?redirect=${back}`)
+  location.assign(`${MOUNT}/login?redirect=${back}`)
 }
 
 const isLoginRedirect = (response: Response) => {
@@ -27,13 +27,13 @@ const isLoginRedirect = (response: Response) => {
   return type.includes('text/html')
 }
 
-// Every editor endpoint is scoped to one app via ?app=. ky merges these instance
+// Every editor endpoint is scoped by the prefix and ?app=/?base=. ky merges these instance
 // searchParams onto each request, so we never rebuild the Request ourselves —
 // `new Request(url, request)` drops the body on some browsers, which silently
 // turned writes (save, discard, commit) into empty payloads.
 export const request = ky.create({
-  prefix: '/api/v1/editor',
-  searchParams: { app: APP },
+  prefix: API_PREFIX,
+  searchParams: SEARCH_PARAMS,
   throwHttpErrors: false,
   timeout: 60_000,
   hooks: {

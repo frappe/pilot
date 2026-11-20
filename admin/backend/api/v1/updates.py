@@ -9,8 +9,9 @@ from admin.backend.api.requests import ApiRequest
 from admin.backend.api.responses import error_response
 from pilot.core.bench import Bench
 from pilot.core.server import Server
-from pilot.exceptions import CronError
+from pilot.exceptions import CronError, TaskConflictError
 from pilot.internal.git import GitRepo
+from pilot.tasks.update_cli import UpdateCliTask
 
 
 class AppUpdate(TypedDict):
@@ -107,6 +108,15 @@ def get_cli_update():
         return jsonify(_cli_update(fetch=False))
     except Exception:
         return error_response("cli_update_unavailable", "Could not read CLI update status.", 500)
+
+
+@updates_bp.post("/cli-updates/actions/install")
+def install_cli_update():
+    """Queue a Pilot update."""
+    try:
+        return ApiRequest.queue_task(UpdateCliTask, ApiRequest.get_bench())
+    except TaskConflictError as error:
+        return error_response("task_conflict", str(error), 409)
 
 
 @updates_bp.post("/cli-update-checks")

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 
 import FileIcon from '@/components/FileIcon.vue'
 import { useContextMenu } from '@/composables/useContextMenu'
+import { HAS_GIT } from '@/scope'
 import { type Tab, useEditorStore } from '@/stores/editor'
 
 const emit = defineEmits<{ 'focus-files': [] }>()
@@ -146,6 +147,7 @@ const onTabClick = (t: Tab) => {
         Auto-save
       </button>
       <button
+        v-if="HAS_GIT"
         class="rounded-5 px-1.5 py-1 text-xs"
         :class="store.blame ? 'text-ink-green-5' : 'text-ink-gray-5 hover:text-ink-gray-8'"
         :title="store.blame ? 'Blame on' : 'Blame off'"

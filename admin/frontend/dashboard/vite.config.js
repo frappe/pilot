@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => {
       }),
       vue(),
     ],
+    // Relative, so the build also loads under a site's /_pilot; Flask points index.html at the mount.
+    base: './',
     build: {
       outDir: '../../backend/static/dashboard',
       emptyOutDir: true,

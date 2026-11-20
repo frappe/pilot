@@ -10,6 +10,7 @@ from pilot.tasks.build import BuildTask
 from pilot.tasks.change_admin_domain import ChangeAdminDomainTask
 from pilot.tasks.clear_cache import ClearCacheTask
 from pilot.tasks.new_site import NewSiteTask
+from pilot.tasks.relocate_renamed_blobs import RelocateRenamedBlobsTask
 from pilot.tasks.rename_site import RenameSiteTask
 from pilot.tasks.restart_database import RestartDatabaseTask
 from pilot.tasks.restore_site import RestoreSiteTask
@@ -59,6 +60,7 @@ def test_a_rename_and_an_admin_move_to_one_hostname_share_a_resource(tmp_path: P
     [
         (BuildTask, {"site": "a.localhost"}, {"site:a.localhost", "bench:update"}),
         (ClearCacheTask, {"site": "A.localhost"}, {"site:a.localhost"}),
+        (RelocateRenamedBlobsTask, {"site": "A.localhost"}, {"site:a.localhost"}),
         (SetupLetsEncryptTask, {}, set()),
         (RestoreSiteTask, {"site": "a.localhost", "parts": ["database"]}, {"site:a.localhost"}),
         (

@@ -11,9 +11,16 @@ def git_env(config: dict[str, str] | None = None, base: dict | None = None) -> d
     """Environment that carries git config for one invocation. Credentials belong here,
     never in argv (readable in /proc) or in .git/config (outlives the call)."""
     settings = {**{"protocol.ext.allow": "never"}, **(config or {})}
+    entries = []
+    for key, value in settings.items():
+        if key.lower().endswith(".extraheader"):
+            # An empty value drops headers from other config, such as a CI checkout's. Two Authorization
+            # headers make GitHub answer HTTP 400.
+            entries.append((key, ""))
+        entries.append((key, value))
     env = dict(os.environ if base is None else base)
-    env["GIT_CONFIG_COUNT"] = str(len(settings))
-    for index, (key, value) in enumerate(settings.items()):
+    env["GIT_CONFIG_COUNT"] = str(len(entries))
+    for index, (key, value) in enumerate(entries):
         env[f"GIT_CONFIG_KEY_{index}"] = key
         env[f"GIT_CONFIG_VALUE_{index}"] = value
     return env

@@ -1,6 +1,7 @@
 import { request, unwrap } from '@/api/client'
 import type { ClientAddress, CloudflareStatus, Settings, SettingsUpdate } from '@/types/settings'
 import type { CliDevUpdate, CliReleaseUpdate } from '@/types/updates'
+import type { TaskPayload } from '@/types/tasks'
 
 export type CliUpdate = CliDevUpdate | CliReleaseUpdate
 
@@ -39,6 +40,7 @@ export const settingsApi = {
 export const cliUpdatesApi = {
   status: (): Promise<CliUpdate> => unwrap(request.get('cli-updates').json()),
   check: (): Promise<CliUpdate> => unwrap(request.post('cli-update-checks').json()),
+  install: (): Promise<TaskPayload> => unwrap(request.post('cli-updates/actions/install').json()),
   autoUpdate: (enabled: boolean): Promise<{ auto_update: boolean }> =>
     unwrap(request.patch('cli-auto-update', { json: { enabled } }).json()),
 }

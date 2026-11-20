@@ -131,6 +131,20 @@ def test_git_env_disables_the_ext_transport() -> None:
     assert settings["protocol.ext.allow"] == "never"
 
 
+def test_git_env_resets_inherited_headers_before_its_own() -> None:
+    """A CI checkout's .git/config holds an Authorization header too; GitHub refuses two with HTTP 400."""
+    from pilot.internal.git import git_env
+
+    key = "http.https://github.com/.extraHeader"
+    env = git_env({key: "Authorization: Basic abc"})
+
+    entries = [
+        (env[f"GIT_CONFIG_KEY_{index}"], env[f"GIT_CONFIG_VALUE_{index}"])
+        for index in range(int(env["GIT_CONFIG_COUNT"]))
+    ]
+    assert entries[-2:] == [(key, ""), (key, "Authorization: Basic abc")]
+
+
 def test_credential_store_round_trip(tmp_path: Path) -> None:
     store = GitCredentialStore(tmp_path)
     assert store.load() is None
@@ -279,3 +293,14 @@ def test_github_get_branch_commit_raises_when_git_fails() -> None:
 def test_github_get_default_branch_reads_the_head_symref(symref: str, expected: str) -> None:
     with patch("pilot.integrations.git.github.subprocess.run", side_effect=_fake_git(symref=symref)):
         assert GitHubProvider(token="").get_default_branch("acme/myapp") == expected
+
+
+def test_a_git_failure_names_what_git_said() -> None:
+    failed = _ls_remote(
+        returncode=128, stderr="remote: Repository not found.\nfatal: unable to access 'x': 403\n"
+    )
+    with (
+        patch("pilot.integrations.git.github.subprocess.run", return_value=failed),
+        pytest.raises(GitProviderError, match="fatal: unable to access 'x': 403"),
+    ):
+        GitHubProvider(token="").list_branches("acme/gone")

@@ -38,6 +38,20 @@ def test_a_uv_managed_interpreter_is_bound_by_the_directory_the_venv_links_to(
     assert str(Path.home() / ".local/share/uv/python") not in paths.read
 
 
+def test_a_uv_minor_version_alias_is_bound_with_the_release_it_links_to(paths: PilotSandboxPaths) -> None:
+    uv_python = Path.home() / ".local/share/uv/python"
+    release = uv_python / "cpython-3.14.10-linux"
+    (release / "bin").mkdir(parents=True)
+    (release / "bin" / "python3.14").touch()
+    alias = uv_python / "cpython-3.14-linux"
+    alias.symlink_to(release)
+    paths.bench.env_path.joinpath("bin").mkdir(parents=True)
+    paths.bench.python.symlink_to(alias / "bin" / "python3.14")
+
+    assert paths.read[:2] == [str(alias), str(release)]
+    assert str(uv_python) not in paths.read
+
+
 def test_node_installed_under_the_home_is_bound_by_its_prefix(
     paths: PilotSandboxPaths, monkeypatch: pytest.MonkeyPatch
 ) -> None:

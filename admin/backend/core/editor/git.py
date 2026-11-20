@@ -21,8 +21,9 @@ class EditorGit:
     log_format = _FIELD.join(["%H", "%h", "%an", "%at", "%s", "%D"])
     info_format = _FIELD.join(["%H", "%h", "%an", "%ae", "%at", "%s", "%b"])
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, is_enabled: bool = True) -> None:
         self.root = Path(root)
+        self.is_enabled = is_enabled
 
     @cached_property
     def is_repo(self) -> bool:
@@ -321,7 +322,10 @@ class EditorGit:
     def _run(
         self, *args: str, input: str | None = None, combine: bool = False
     ) -> subprocess.CompletedProcess:
-        """Run git in the app."""
+        """Run git in the app. Disabled git fails every command, so a folder inside an outer
+        repository, such as a site under a bench checkout, never reaches that repository."""
+        if not self.is_enabled:
+            return subprocess.CompletedProcess(args, 128, "", "")
         try:
             return subprocess.run(
                 ["git", *args],
