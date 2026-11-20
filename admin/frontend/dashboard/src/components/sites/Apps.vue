@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { Button, Dropdown, type DropdownItem, toast } from 'frappe-ui'
+import { Button, Dropdown, type DropdownItem, Skeleton, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+import AppIcon from '@/components/apps/AppIcon.vue'
 import SwitchBranchDialog from '@/components/apps/SwitchBranchDialog.vue'
 import UninstallAppDialog from '@/components/apps/UninstallAppDialog.vue'
-import MarketplaceAppCard from '@/components/marketplace/MarketplaceAppCard.vue'
-import MarketplaceAppCardSkeleton from '@/components/marketplace/MarketplaceAppCardSkeleton.vue'
+import Table from '@/components/common/Table.vue'
+
+import { appsApi } from '@/api/apps'
+import { apiErrorMessage } from '@/api/client'
+import { sitesApi } from '@/api/sites'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
 import { useSite } from '@/composables/sites/useSite'
-import { apiErrorMessage } from '@/api/client'
-import { appsApi } from '@/api/apps'
-import { sitesApi } from '@/api/sites'
+import type { SiteHistory } from '@/types/siteHistory'
 import { errorMessage } from '@/utils/error'
 import { toSentenceCase } from '@/utils/format'
 import { openTaskDetailPage } from '@/utils/taskRoute'
@@ -24,7 +27,6 @@ interface AppCardEntry {
   name: string
   title: string
   label: string
-  description: string
   logo_url: string | null
   documentation: string
   website: string
@@ -40,14 +42,7 @@ const router = useRouter()
 const { apps, canDisableApps, installedApps, appsLoading, loadApps, reload } = useSite(
   props.siteName,
 )
-const {
-  titleMap,
-  descriptionMap,
-  logoMap,
-  documentationMap,
-  websiteMap,
-  load: loadRegistry,
-} = useAppRegistry()
+const { titleMap, logoMap, documentationMap, websiteMap, load: loadRegistry } = useAppRegistry()
 
 // The list renders `installedApps`, which rides on the site payload - refreshing the
 // app metadata alone would leave a just-disabled app on screen.
@@ -56,6 +51,31 @@ const refresh = async () => {
 }
 
 const appDetailMap = computed(() => Object.fromEntries(apps.value.map((a) => [a.name, a])))
+
+const history = ref<SiteHistory | null>(null)
+const dateFormat = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+
+const installedOn = computed(() =>
+  Object.fromEntries(
+    (history.value?.apps ?? []).map((app) => [
+      app.app,
+      dateFormat.format(new Date(app.installed_at.replace(' ', 'T'))),
+    ]),
+  ),
+)
+
+const columns = [
+  { key: 'app', label: 'App', class: 'w-[36%]' },
+  { key: 'version', label: 'Version', class: 'w-[14%]' },
+  { key: 'branch', label: 'Branch', class: 'w-[20%]' },
+  { key: 'commit', label: 'Commit', class: 'w-[14%]' },
+  { key: 'installed', label: 'Installed', class: 'w-[14%]' },
+  { key: 'actions', label: '', class: 'text-right' },
+]
 
 // Disabling needs a Frappe that supports it, and an app the catalog can reinstall.
 const canDisable = (app: AppCardEntry | null) => {
@@ -78,11 +98,6 @@ const appObjects = computed<AppCardEntry[]>(() =>
           ? 'Install incomplete'
           : (detail?.follow_branch && detail.branch) || detail?.version || '',
       badge: detail?.follow_branch ? 'Latest commits' : '',
-      description: detail?.missing
-        ? 'The site lists this app, but the bench does not have it. Uninstall removes it from the site.'
-        : detail?.install_unfinished
-          ? 'Its install failed after the site listed it. Retry the install to finish it.'
-          : registryValue(descriptionMap.value, name) || detail?.description || '',
       logo_url: registryValue(logoMap.value, name) || null,
       documentation: registryValue(documentationMap.value, name),
       website: registryValue(websiteMap.value, name),
@@ -124,7 +139,8 @@ const setFollowBranch = async (app: AppCardEntry, followBranch: boolean) => {
     const source = followBranch
       ? `the latest commits on ${appDetailMap.value[app.name]?.branch || 'its branch'}`
       : 'marketplace releases'
-    if (result.task_id) toast.success(`${app.title} now updates to ${source}. Checking for updates…`)
+    if (result.task_id)
+      toast.success(`${app.title} now updates to ${source}. Checking for updates…`)
     else toast.error(apiErrorMessage(result, fallback))
   } catch (caught) {
     toast.error(errorMessage(caught, fallback))
@@ -203,42 +219,64 @@ const menuOptions = (app: AppCardEntry): DropdownItem[] => {
 onMounted(() => {
   loadApps()
   loadRegistry()
+  sitesApi
+    .history(props.siteName)
+    .then((data) => (history.value = data))
+    .catch(() => null)
 })
 </script>
 
 <template>
-  <div class="grid md:grid-cols-2 gap-2 mt-1">
-    <template v-if="appsLoading">
-      <MarketplaceAppCardSkeleton v-for="i in 4" :key="i" :index="i - 1" />
-    </template>
-
-    <p
-      v-else-if="!installedApps.length"
-      class="col-span-full py-12 text-ink-gray-5 text-sm text-center"
-    >
-      No apps installed on this site.
-    </p>
-
-    <template v-else>
-      <MarketplaceAppCard v-for="app in appObjects" :key="app.name" :app="app">
-        <template #actions>
-          <Dropdown v-if="menuOptions(app).length" :options="menuOptions(app)">
-            <template #default="{ open }">
-              <Button
-                variant="ghost"
-                :active="open"
-                icon="lucide-ellipsis"
-                label="App actions"
-                tooltip="Actions"
-              />
-            </template>
-          </Dropdown>
-
-          <span v-else class="size-7 shrink-0" />
-        </template>
-      </MarketplaceAppCard>
-    </template>
+  <div v-if="appsLoading" class="flex flex-col gap-2">
+    <Skeleton v-for="i in 4" :key="i" class="rounded-4 h-14" />
   </div>
+
+  <p v-else-if="!installedApps.length" class="py-12 text-ink-gray-5 text-sm text-center">
+    No apps installed on this site.
+  </p>
+
+  <Table v-else :columns="columns" :rows="appObjects" :row-height="36">
+    <template #app="{ row }">
+      <span class="flex items-center gap-2.5 min-w-0">
+        <AppIcon :name="row.name" :label="row.title" :logo="row.logo_url || ''" size="xs" />
+        <span class="text-ink-gray-8 truncate">{{ row.title }}</span>
+      </span>
+    </template>
+
+    <template #version="{ row }">
+      <span :class="row.missing || row.unfinished ? 'text-ink-amber-6' : 'text-ink-gray-7'">
+        {{ row.missing || row.unfinished ? row.label : appDetailMap[row.name]?.version || '-' }}
+      </span>
+    </template>
+
+    <template #branch="{ row }">
+      <span class="text-ink-gray-7">{{ appDetailMap[row.name]?.branch || '-' }}</span>
+    </template>
+
+    <template #commit="{ row }">
+      <span class="font-mono text-ink-gray-6 text-xs">
+        {{ appDetailMap[row.name]?.commit?.slice(0, 7) || '-' }}
+      </span>
+    </template>
+
+    <template #installed="{ row }">
+      <span class="tabular-nums text-ink-gray-7">{{ installedOn[row.name] || '-' }}</span>
+    </template>
+
+    <template #actions="{ row }">
+      <Dropdown v-if="menuOptions(row).length" :options="menuOptions(row)">
+        <template #default="{ open }">
+          <Button
+            variant="ghost"
+            :active="open"
+            icon="lucide-ellipsis"
+            label="App actions"
+            tooltip="Actions"
+          />
+        </template>
+      </Dropdown>
+    </template>
+  </Table>
 
   <SwitchBranchDialog v-model:open="showSwitchBranch" :app="switchBranchTarget" />
 
