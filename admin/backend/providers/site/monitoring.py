@@ -36,6 +36,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
         entries = list(self._entries_in_window())
         request_points = self._points(entries, "request", self.get_non_ping_path)
         job_points = self._points(entries, "job", self._job_method)
+        error_points = self._points(entries, "request", self.get_error_path)
         now_ms = self.now_ms()
         return {
             "window": self.window,
@@ -44,9 +45,16 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "requests_over_time": build_total_timeline(
                 request_points, self._bucket_seconds, "Requests", self._start_ms, now_ms
             ),
+            "errors_over_time": build_total_timeline(
+                error_points, self._bucket_seconds, "Errors", self._start_ms, now_ms
+            ),
             "top_paths": self._timeline(entries, "request", self.get_non_ping_path, "count"),
+            "failed_paths": build_timeline(
+                error_points, self.top_limit, self._bucket_seconds, "count", self._start_ms, now_ms
+            ),
             "slowest_requests": self._timeline(entries, "request", self._request_path, "duration"),
             "avg_request_duration": self._timeline(entries, "request", self.get_non_ping_path, "average"),
+            "response_time": self._timeline(entries, "request", self.get_response_category, "average"),
             "background_jobs_over_time": build_total_timeline(
                 job_points, self._bucket_seconds, "Jobs", self._start_ms, now_ms
             ),
@@ -143,6 +151,17 @@ class SiteMonitoringProvider(WindowedLogProvider):
         """Uptime checks hit /api/method/ping constantly and would drown out real traffic."""
         path = cls._request_path(entry)
         return None if path == PING_PATH else path
+
+    @classmethod
+    def get_response_category(cls, entry: dict) -> str | None:
+        """One bucket for every real request, so the timeline averages them all."""
+        return "Response" if cls.get_non_ping_path(entry) else None
+
+    @classmethod
+    def get_error_path(cls, entry: dict) -> str | None:
+        """The path of a request that failed on the server (5xx)."""
+        status = (entry.get("request") or {}).get("status_code")
+        return cls._request_path(entry) if isinstance(status, int) and status >= 500 else None
 
     @staticmethod
     def _request_ip(entry: dict) -> str | None:

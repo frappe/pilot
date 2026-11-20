@@ -55,6 +55,20 @@ def get_site_storage(name: str):
     )
 
 
+@sites_bp.get("/<name>/storage-history")
+@require_scope(site_name)
+def get_site_storage_history(name: str):
+    """The site's total size on each of the last 30 recorded days, oldest first."""
+    bench_root = ApiRequest.get_bench_root()
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        days = Bench(bench_root).site_storage.get_history(name)
+    except Exception:
+        return internal_error("Could not read site storage history.")
+    return jsonify([asdict(day) for day in days])
+
+
 @sites_bp.post("/<name>/actions/refresh-storage")
 @require_scope(site_name)
 def refresh_storage(name: str):
