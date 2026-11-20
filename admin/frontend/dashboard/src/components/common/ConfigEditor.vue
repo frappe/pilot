@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Button, Dialog, Dropdown, type DropdownItem, ErrorMessage } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 import ConfigEntryDialog from '@/components/common/ConfigEntryDialog.vue'
 import Table from '@/components/common/Table.vue'
@@ -14,7 +14,6 @@ const props = defineProps<{
   config: Config
   fileName: string
   title?: string
-  description?: string
   hiddenKeys?: string[]
   save: (patch: Config) => Promise<unknown>
   reload: () => Promise<unknown>
@@ -94,9 +93,6 @@ const refresh = async () => {
   <div class="space-y-4">
     <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
       <h4 v-if="title" class="text-base-medium text-ink-gray-8">{{ title }}</h4>
-      <p v-else-if="description" class="text-ink-gray-5 text-sm">
-        {{ description }} <code class="font-mono text-ink-gray-7">{{ fileName }}</code>.
-      </p>
 
       <div class="flex items-center gap-2 ml-auto shrink-0">
         <Button
@@ -107,6 +103,7 @@ const refresh = async () => {
           tooltip="Refresh"
           @click="refresh"
         />
+
         <Button @click="openDialog()">
           <template #prefix><span class="size-4 lucide-plus" /></template>
           Add config
@@ -125,9 +122,11 @@ const refresh = async () => {
       <template #label="{ row }">
         <span :title="row.label">{{ row.label }}</span>
       </template>
+
       <template #value="{ row }">
         <span :title="row.value">{{ row.value }}</span>
       </template>
+
       <template #actions="{ row }">
         <Dropdown :options="menuOptions(row)">
           <template #default="{ open }">
@@ -160,12 +159,14 @@ const refresh = async () => {
     </p>
 
     <ErrorMessage v-if="deleteError" :message="deleteError" class="mt-3" />
+
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="showDelete = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete"
-          >Remove</Button
-        >
+
+        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete">
+          Remove
+        </Button>
       </div>
     </template>
   </Dialog>

@@ -11,14 +11,16 @@ import {
 } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiErrorMessage } from '@/api/client'
-import { sitesApi } from '@/api/sites'
-import { tasksApi } from '@/api/tasks'
+
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListSkeleton from '@/components/common/ListSkeleton.vue'
 import Table from '@/components/common/Table.vue'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
 import RestoreBackupDialog from '@/components/sites/RestoreBackupDialog.vue'
+
+import { apiErrorMessage } from '@/api/client'
+import { sitesApi } from '@/api/sites'
+import { tasksApi } from '@/api/tasks'
 import { useObjectStorage } from '@/composables/settings/useObjectStorage'
 import { useSite } from '@/composables/sites/useSite'
 import type { Backup, BackupFile, BackupSchedule } from '@/types/siteBackups'
@@ -237,16 +239,17 @@ onMounted(() => {
     :primary-action="storageAction"
   />
 
-  <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3 mb-4">
+  <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3 mb-3">
     <div>
-      <p class="font-medium text-ink-gray-8">Automated backups</p>
-      <p class="mt-0.5 text-ink-gray-5 text-p-sm">{{ scheduleSummary }}</p>
+      <p class="text-base-medium text-ink-gray-8">Automated backups</p>
+      <p class="mt-1.5 text-ink-gray-5 text-sm">{{ scheduleSummary }}</p>
     </div>
 
     <div class="flex items-center gap-2 shrink-0">
       <Button @click="configRef?.open()">
         {{ enabled ? 'Configure' : 'Enable' }}
       </Button>
+
       <Button :loading="backingUp" @click="backupNow">
         <template #prefix><span class="size-4 lucide-archive" /></template>
         Back up now
@@ -321,12 +324,14 @@ onMounted(() => {
     </p>
 
     <ErrorMessage v-if="deleteError" :message="deleteError" class="mt-2" />
+
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="showDelete = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete"
-          >Delete</Button
-        >
+
+        <Button variant="solid" theme="red" :loading="deleting" @click="confirmDelete">
+          Delete
+        </Button>
       </div>
     </template>
   </Dialog>
