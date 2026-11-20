@@ -11,8 +11,7 @@ import {
 } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { apiErrorMessage, hasApiError } from '@/api/client'
-import { sitesApi } from '@/api/sites'
+
 import CloneDialog from '@/components/common/CloneDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
@@ -20,6 +19,9 @@ import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import Table from '@/components/common/Table.vue'
 import NewSiteDialog from '@/components/sites/NewSiteDialog.vue'
 import SiteSkeleton from '@/components/sites/SiteSkeleton.vue'
+
+import { apiErrorMessage, hasApiError } from '@/api/client'
+import { sitesApi } from '@/api/sites'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { useSites } from '@/composables/sites/useSites'
@@ -257,6 +259,7 @@ onMounted(() => {
         :size="isMobile ? 'md' : 'sm'"
         class="max-w-32 sm:max-w-40"
       />
+
       <TabButtons
         v-model="view"
         :options="viewOptions"
@@ -287,6 +290,7 @@ onMounted(() => {
             <span class="rounded-full size-2 shrink-0" :class="statusInfo(site).dot" />
             <span class="text-base-medium text-ink-gray-8 truncate">{{ site.primary_domain }}</span>
             <span v-if="site.ssl" class="size-3.5 text-ink-gray-4 lucide-lock shrink-0" />
+
             <span v-if="siteStatus(site) !== 'online'" class="ml-auto shrink-0">
               {{ statusInfo(site).label }}
             </span>
@@ -321,7 +325,11 @@ onMounted(() => {
           </div>
 
           <div v-if="site.requests?.length" class="flex flex-col gap-3 mt-1">
-            <Sparkline :values="site.requests || []" unit="request" class="w-full h-8" />
+            <Sparkline
+              :values="site.requests || []"
+              unit="request"
+              class="w-full h-8 text-ink-gray-8"
+            />
 
             <div class="flex justify-between text-ink-gray-5 text-xs tabular-nums">
               <span>
@@ -406,6 +414,7 @@ onMounted(() => {
     :sites="sites"
     @started="(taskId) => openTaskDetailPage(router, taskId)"
   />
+
   <CloneDialog
     v-model="showClone"
     kind="site"

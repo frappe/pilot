@@ -78,7 +78,7 @@ const track = (event: PointerEvent) => {
 </script>
 
 <template>
-  <div class="group relative text-ink-gray-8" @pointermove="track">
+  <div class="group relative" @pointermove="track">
     <svg viewBox="0 0 100 36" preserveAspectRatio="none" class="block size-full">
       <defs>
         <linearGradient :id="gradientId" x1="0" x2="0" y1="0" y2="1">

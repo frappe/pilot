@@ -1,22 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import {
   Badge,
   type BadgeProps,
   Button,
   Dropdown,
   ErrorMessage,
-  Skeleton,
-  TabButtons,
+  TabList,
+  Tabs,
+  TabTrigger,
   toast,
 } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
-import PageHero from '@/components/common/PageHero.vue'
-import StickyToolbar from '@/components/common/StickyToolbar.vue'
+import SiteAnalytics from '@/components/sites/Analytics.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
 import SiteConfig from '@/components/sites/Config.vue'
+import SiteOverview from '@/components/sites/Overview.vue'
 import SiteSettings from '@/components/sites/Settings.vue'
 import Activities from '@/pages/Activities.vue'
 
@@ -26,7 +27,6 @@ import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useSite } from '@/composables/sites/useSite'
-import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { errorMessage } from '@/utils/error'
 import { toSentenceCase } from '@/utils/format'
 import { siteLabel } from '@/utils/taskFormat'
@@ -37,11 +37,7 @@ const router = useRouter()
 const siteName = Array.isArray(route.params.name) ? route.params.name[0] : route.params.name
 
 const { setBreadcrumbs } = useBreadcrumbs()
-const { site, loading, error, status, load, reload, login, backup, apps, loadApps } =
-  useSite(siteName)
-
-const { load: loadStorage, storageLabel } = useSiteStorage()
-const storageUsed = computed(() => storageLabel(siteName))
+const { site, error, status, load, reload, login, backup, apps, loadApps } = useSite(siteName)
 
 setBreadcrumbs([{ label: 'Sites', route: { name: 'Sites' } }, { label: siteName }])
 
@@ -63,16 +59,18 @@ const statusLabel = computed(() => STATUS_LABELS[status.value] ?? status.value)
 const statusBadgeTheme = computed(() => STATUS_THEMES[status.value] ?? 'gray')
 
 const tabs = [
-  { value: 'apps', label: 'Apps' },
-  { value: 'backups', label: 'Backups' },
-  { value: 'config', label: 'Config' },
-  { value: 'activity', label: 'Activity' },
-  { value: 'settings', label: 'Settings' },
+  { value: 'overview', label: 'Overview', icon: 'lucide-layout-dashboard' },
+  { value: 'analytics', label: 'Analytics', icon: 'lucide-chart-line' },
+  { value: 'apps', label: 'Apps', icon: 'lucide-package' },
+  { value: 'backups', label: 'Backups', icon: 'lucide-archive' },
+  { value: 'config', label: 'Config', icon: 'lucide-braces' },
+  { value: 'activity', label: 'Activity', icon: 'lucide-history' },
+  { value: 'settings', label: 'Settings', icon: 'lucide-settings' },
 ]
 
 const VALID_TABS = tabs.map((t) => t.value)
 const tabParam = Array.isArray(route.params.tab) ? route.params.tab[0] : route.params.tab
-const activeTab = ref(VALID_TABS.includes(tabParam) ? tabParam : 'apps')
+const activeTab = ref(VALID_TABS.includes(tabParam) ? tabParam : 'overview')
 
 watch(activeTab, (tab) => {
   router.replace({ name: 'SiteDetail', params: { name: siteName, tab } })
@@ -139,10 +137,6 @@ const goToMarketplace = () => {
   router.push({ path: '/marketplace', query: { site: siteName } })
 }
 
-const goToAnalytics = () => {
-  router.push({ name: 'Analytics', query: { view: 'site', window: '24h', site: siteName } })
-}
-
 const viewJobs = () => router.push({ name: 'Tasks', query: { site: siteName } })
 
 const viewCreateJob = async () => {
@@ -179,10 +173,7 @@ const backupNow = async () => {
 
 const menuOptions = computed(() => [
   ...(isMobile.value
-    ? [
-        { label: 'View analytics', icon: 'lucide-chart-line', onClick: goToAnalytics },
-        { label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace },
-      ]
+    ? [{ label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace }]
     : []),
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: loginAsAdmin },
   { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
@@ -224,81 +215,35 @@ onUnmounted(() => {
 
 onMounted(() => {
   load()
-  loadStorage(true)
 })
 </script>
 
 <template>
-  <template v-if="loading">
-    <PageHero>
-      <template #icon><Skeleton class="rounded-6 size-9 sm:size-10 shrink-0" /></template>
-      <template #title>
-        <Skeleton class="rounded-4 w-40 h-4" />
-        <Skeleton class="rounded-full w-14 h-5 shrink-0" />
-      </template>
+  <ErrorMessage v-if="error" class="px-3 md:px-4 py-12" :message="error" />
 
-      <template #actions>
-        <Skeleton class="hidden sm:block rounded-4 w-28 h-7" />
-        <Skeleton class="hidden sm:block rounded-4 w-24 h-7" />
-        <Skeleton class="rounded-4 size-7" />
-      </template>
-    </PageHero>
+  <template v-else>
+    <Tabs v-model="activeTab" class="overflow-x-auto [scrollbar-width:none]">
+      <TabList variant="underline" size="md" class="px-3 md:px-4 w-max min-w-full">
+        <TabTrigger
+          v-for="tab in tabs"
+          :key="tab.value"
+          :value="tab.value"
+          :label="tab.label"
+          :icon-left="tab.icon"
+          class="py-1.5"
+        />
+      </TabList>
+    </Tabs>
 
-    <div class="px-3 md:px-4 pb-3 md:pb-4 mx-auto w-full max-w-3xl">
-      <StickyToolbar>
-        <Skeleton class="rounded-4 w-64 h-7 sm:h-8" />
-      </StickyToolbar>
-    </div>
-  </template>
+    <div class="p-3 md:p-4 pb-10 md:pb-10">
+      <SiteOverview
+        v-if="activeTab === 'overview'"
+        :site-name="siteName"
+        @open="activeTab = $event"
+      />
 
-  <ErrorMessage v-else-if="error" class="px-3 md:px-4 py-12" :message="error" />
-
-  <template v-else-if="site">
-    <PageHero icon="lucide-globe">
-      <template #title>
-        <h1 class="text-lg-medium truncate">
-          {{ site.primary_domain }}
-        </h1>
-
-        <Badge :label="statusLabel" :theme="statusBadgeTheme" class="shrink-0" />
-      </template>
-
-      <template v-if="storageUsed" #subtitle>{{ storageUsed }} used</template>
-      <template #actions>
-        <Button v-if="status === 'provisioning'" variant="ghost" @click="viewCreateJob">
-          <template #prefix><span class="size-4 lucide-list-checks" /></template>
-          View job
-        </Button>
-
-        <Button v-else variant="ghost" class="hidden sm:flex" @click="goToAnalytics">
-          <template #prefix><span class="size-4 lucide-chart-line" /></template>
-          View analytics
-        </Button>
-
-        <Button class="hidden sm:flex" @click="goToMarketplace">
-          <template #prefix><span class="size-4 lucide-plus" /></template>
-          Install app
-        </Button>
-
-        <Dropdown :options="menuOptions">
-          <template #default="{ open }">
-            <Button
-              :active="open"
-              icon="lucide-ellipsis"
-              label="Site actions"
-              tooltip="Site actions"
-            />
-          </template>
-        </Dropdown>
-      </template>
-    </PageHero>
-
-    <div class="px-4 lg:px-0 pb-3 md:pb-4 mx-auto w-full max-w-3xl">
-      <StickyToolbar>
-        <TabButtons v-model="activeTab" :options="tabs" :size="isMobile ? 'md' : 'sm'" />
-      </StickyToolbar>
-
-      <SiteApps v-if="activeTab === 'apps'" :site-name="siteName" />
+      <SiteAnalytics v-else-if="activeTab === 'analytics'" :site-name="siteName" />
+      <SiteApps v-else-if="activeTab === 'apps'" :site-name="siteName" />
       <SiteBackups v-else-if="activeTab === 'backups'" :site-name="siteName" />
       <SiteConfig v-else-if="activeTab === 'config'" :site-name="siteName" />
       <Activities v-else-if="activeTab === 'activity'" :site-name="siteName" />
@@ -306,7 +251,27 @@ onMounted(() => {
     </div>
   </template>
 
+  <Teleport defer to="#header-badge">
+    <Badge v-if="site" :label="statusLabel" :theme="statusBadgeTheme" />
+  </Teleport>
+
   <Teleport defer to="#header-actions">
+    <Button v-if="site && status === 'provisioning'" @click="viewCreateJob">
+      <template #prefix><span class="size-4 lucide-list-checks" /></template>
+      View job
+    </Button>
+
+    <Button v-if="site" class="hidden sm:flex" @click="goToMarketplace">
+      <template #prefix><span class="size-4 lucide-plus" /></template>
+      Install app
+    </Button>
+
+    <Dropdown v-if="site" :options="menuOptions">
+      <template #default="{ open }">
+        <Button :active="open" icon="lucide-ellipsis" label="Site actions" tooltip="Site actions" />
+      </template>
+    </Dropdown>
+
     <Button
       :variant="site?.setup_complete ? 'subtle' : 'solid'"
       :loading="settingUpSite"
