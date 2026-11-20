@@ -178,6 +178,7 @@ onMounted(() => {
         :options="activityTypeOptions"
         @update:modelValue="reload"
       />
+
       <Combobox
         v-if="!siteName"
         v-model="siteFilterModel"
@@ -185,20 +186,27 @@ onMounted(() => {
         :options="siteOptions"
         placeholder="All sites"
       />
+
       <DateTimePicker
         v-model="sinceFilter"
         class="w-46"
         placeholder="From"
         clearable
         @update:modelValue="reload"
-      />
+      >
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-calendar" /></template>
+      </DateTimePicker>
+
       <DateTimePicker
         v-model="untilFilter"
         class="w-46"
         placeholder="To"
         clearable
         @update:modelValue="reload"
-      />
+      >
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-calendar" /></template>
+      </DateTimePicker>
+
       <Button
         :loading
         icon="lucide-refresh-cw"
@@ -206,6 +214,7 @@ onMounted(() => {
         class="md:ml-auto"
         @click="reload"
       />
+
       <Button :href="exportUrl" icon="lucide-download" tooltip="Download" />
     </div>
 
@@ -256,6 +265,7 @@ onMounted(() => {
 
       <div class="flex flex-col items-center gap-1">
         <p class="text-ink-gray-8 text-base-semibold">No activity yet</p>
+
         <p class="max-w-xs text-ink-gray-5 text-p-sm text-center">
           Actions like logins, backups, and app changes will show up here once they happen.
         </p>
