@@ -123,9 +123,13 @@ class ManagedProcessManager(ProcessManager, ABC):
 
         definitions = self.process_definitions
         realtime = not web_only and self._is_realtime_stale(definitions)
-        self.restart_processes([pd for pd in definitions if self._is_reloaded(pd, web_only, realtime)])
+        self.reload_processes([pd for pd in definitions if self._is_reloaded(pd, web_only, realtime)])
         if not web_only:
             self.bench.processes.save_realtime_folders()
+
+    def reload_processes(self, definitions: list[ProcessDefinition]) -> None:
+        """Reload processes after an app or site-config change."""
+        self.restart_processes(definitions)
 
     def _is_realtime_stale(self, definitions: list[ProcessDefinition]) -> bool:
         """Whether realtime code changed after the running socketio started. Lite runs realtime in web."""

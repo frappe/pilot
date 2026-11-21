@@ -1207,6 +1207,18 @@ def test_web_restarts_after_maintenance_mode_is_turned_off(tmp_path: Path) -> No
     assert events == [{"raises": True}, "lift", {"web_only": True, "raises": True}]
 
 
+def test_code_only_completion_reloads_web_once(tmp_path: Path) -> None:
+    operation, bench = _backing_up_operation(tmp_path)
+    operation.kind = "update"
+    operation.sites.clear()
+    operation.state = get_state("migrating")
+
+    operation.complete()
+
+    bench.reload_workers.assert_called_once_with(raises=True)
+    assert operation.state == "completed"
+
+
 def test_a_failed_web_restart_stops_the_backup(tmp_path: Path, workload) -> None:
     from pilot.core.bench import Bench
 

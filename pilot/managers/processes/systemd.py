@@ -18,6 +18,7 @@ from pilot.managers.processes.base import (
 from pilot.managers.processes.definitions import ProcessState
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer
+from pilot.managers.processes.web_handoff import CONTROL_SOCKET
 from pilot.managers.systemd_user import SystemdUserMixin
 
 # systemd's DefaultTimeoutStopSec: how long a unit without TimeoutStopSec may take to stop.
@@ -101,7 +102,10 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
                     renderer.render_admin_socket(self.bench.config.admin.internal_port)
                 )
                 continue
-            (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(renderer.render(pd))
+            web_handoff = pd.name == "web" and not self.bench.is_lite_mode
+            (self.systemd_conf_dir / self._unit_name(pd.name)).write_text(
+                renderer.render(pd, web_handoff=web_handoff)
+            )
             workload_units.append(self._unit_name(pd.name))
             if socket := renderer.get_socket_name(pd):
                 (self.systemd_conf_dir / socket).write_text(renderer.render_socket(pd))
@@ -314,12 +318,45 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
     @override
     def restart_processes(self, definitions: list[ProcessDefinition]) -> None:
         """Restart the processes."""
+        self._change_processes("restart", definitions)
+
+    @override
+    def reload_processes(self, definitions: list[ProcessDefinition]) -> None:
+        """Hand off web before restarting the other app processes."""
+        web = [pd for pd in definitions if pd.name == "web"]
+        if self.bench.is_lite_mode or not web:
+            self.restart_processes(definitions)
+            return
+        control = self.web_control_path
+        if not control.is_socket():
+            self.install_web_handoff()
+        if not control.is_socket():
+            self.restart_processes(definitions)
+            return
+        self._change_processes("reload", web)
+        if background := [pd for pd in definitions if pd.name != "web"]:
+            self.restart_processes(background)
+
+    def _change_processes(self, action: str, definitions: list[ProcessDefinition]) -> None:
         units = [self._unit_name(definition.name) for definition in definitions]
         # A restart waits for the slowest unit to stop, then for the units to start.
         timeout = self.systemctl_timeout + max(
             (definition.stop_timeout or 90 for definition in definitions), default=0
         )
-        run_command(self._systemctl("restart", *units), env=self._systemctl_env(), timeout=timeout)
+        run_command(self._systemctl(action, *units), env=self._systemctl_env(), timeout=timeout)
+
+    @property
+    def web_control_path(self) -> Path:
+        runtime = Path(self._systemctl_env()["XDG_RUNTIME_DIR"])
+        return runtime / self._unit_name("web").removesuffix(".service") / CONTROL_SOCKET
+
+    def install_web_handoff(self) -> None:
+        unit = self.systemd_conf_dir / self._unit_name("web")
+        if not unit.is_file():
+            return
+        if "web_handoff.py" not in unit.read_text():
+            self.write_config()
+        self.install_config()
 
     def is_configured(self) -> bool:
         """Whether the bench target is enabled."""

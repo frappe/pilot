@@ -417,6 +417,8 @@ class MigrationOperation(MigrationRecovery):
 
     def _lift_maintenance(self) -> None:
         """Restore maintenance settings and refresh web workers."""
+        if not any(site.original_config for site in self.sites):
+            return
         self._restore_maintenance()
         self.bench.reload_workers(web_only=True, raises=True)
 

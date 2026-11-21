@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from pathlib import Path
 
 from pilot.managers.processes.base import ServiceRenderer, override
 from pilot.managers.processes.local import ProcessDefinition
@@ -39,7 +40,7 @@ class SystemdRenderer(ServiceRenderer):
         self.database_service = database_service
 
     @override
-    def render(self, pd: ProcessDefinition) -> str:
+    def render(self, pd: ProcessDefinition, *, web_handoff: bool = False) -> str:
         """The service unit of a process."""
         working_dir = f"WorkingDirectory={pd.working_dir}\n" if pd.working_dir else ""
         env = _render_env(pd.env)
@@ -49,22 +50,36 @@ class SystemdRenderer(ServiceRenderer):
         post = f"ExecStopPost={_exec(pd.post_run)}\n" if pd.post_run else ""
         restart = "on-failure" if pd.restart_on_failure else "no"
         remove_socket = f"ExecStartPre=/bin/rm -f {pd.socket_file}\n" if pd.socket_file else ""
+        service_type = self._web_handoff(pd) if web_handoff else "Type=simple\n"
+        start = "" if web_handoff else f"ExecStart={_exec(pd.argv)}\n"
         return (
             f"[Unit]\n"
             f"Description={self.bench_name} {pd.name}\n"
             f"PartOf={self.bench_name}.target\n"
             f"{self._dependencies(pd)}\n"
             f"[Service]\n"
-            f"Type=simple\n"
+            f"{service_type}"
             f"{working_dir}{env}"
-            f"{remove_socket}{pre}"
-            f"ExecStart={_exec(pd.argv)}\n"
+            f"{remove_socket}{pre}{start}"
             f"{post}"
             f"Restart={restart}\n"
             f"LimitNOFILE=65535\n"
             f"{stop}{kill_mode}"
             f"StandardOutput=append:{pd.log_file}\n"
             f"StandardError=append:{pd.log_file}.error.log\n"
+        )
+
+    @staticmethod
+    def _web_handoff(pd: ProcessDefinition) -> str:
+        python = Path(pd.argv[0]).with_name("python")
+        launcher = [str(python), str(Path(__file__).with_name("web_handoff.py").resolve())]
+        return (
+            f"Type=notify\n"
+            f"RuntimeDirectory=%N\n"
+            f"RuntimeDirectoryMode=0700\n"
+            f"KillMode=mixed\n"
+            f"ExecStart={_exec([*launcher, 'serve', str(pd.working_dir), *pd.argv])}\n"
+            f"ExecReload={_exec([*launcher, 'reload'])}\n"
         )
 
     def _dependencies(self, pd: ProcessDefinition) -> str:

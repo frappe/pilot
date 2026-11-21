@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -300,3 +301,41 @@ def test_systemd_restart_waits_for_the_default_stop_timeout(bench):
     with patch.object(systemd_module, "run_command") as run:
         manager.restart_processes([workers])
     assert run.call_args.kwargs["timeout"] == 210
+
+
+@pytest.mark.parametrize(
+    ("web_only", "lite", "launcher_running", "actions"),
+    [
+        (False, False, True, [["reload", "web"], ["restart", "worker_pool"]]),
+        (False, False, False, [["restart", "web", "worker_pool"]]),
+        (False, True, True, [["restart", "web", "worker_pool"]]),
+        (True, False, True, [["reload", "web"]]),
+        (True, False, False, [["restart", "web"]]),
+    ],
+)
+def test_systemd_workload_reload_uses_the_running_handoff(bench, tmp_path, web_only, lite, launcher_running, actions):
+    from pilot.managers.processes.definitions import ProcessDefinition
+
+    manager = SystemdProcessManager(bench)
+    runtime = tmp_path / "test-bench-web"
+    runtime.mkdir()
+    names = ["web"] if web_only else ["web", "worker_pool"]
+    definitions = [
+        ProcessDefinition(name=name, argv=["true"], log_file=bench.logs_path / f"{name}.log")
+        for name in names
+    ]
+    with (
+        socket.socket(socket.AF_UNIX) as control,
+        patch.object(type(bench), "is_lite_mode", new_callable=PropertyMock, return_value=lite),
+        patch.object(manager, "_systemctl_env", return_value={"XDG_RUNTIME_DIR": str(tmp_path)}),
+        patch.object(manager, "install_web_handoff") as install,
+        patch.object(systemd_module, "run_command") as run,
+    ):
+        if launcher_running:
+            control.bind(str(runtime / "handoff.sock"))
+        manager.reload_processes(definitions)
+
+    assert [call.args[0][2:] for call in run.call_args_list] == [
+        [action, *(f"test-bench-{name}.service" for name in units)] for action, *units in actions
+    ]
+    assert install.called == (not lite and not launcher_running)

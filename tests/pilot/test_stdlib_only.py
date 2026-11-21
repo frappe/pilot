@@ -28,7 +28,15 @@ ADMIN_VENV_IMPORTS = {
 BENCH_PYTHON_IMPORTS = {
     "pilot/core/site/console/jedi_helper.py": {"jedi"},
 }
-NON_CLI_IMPORTS = {**ADMIN_VENV_IMPORTS, **BENCH_PYTHON_IMPORTS}
+# These modules are also imported by the CLI, so the imports must be deferred.
+BENCH_PYTHON_RUNTIME_IMPORTS = {
+    "pilot/managers/processes/web_handoff.py": {"frappe", "gunicorn", "werkzeug"},
+}
+NON_CLI_IMPORTS = {
+    **ADMIN_VENV_IMPORTS,
+    **BENCH_PYTHON_IMPORTS,
+    **BENCH_PYTHON_RUNTIME_IMPORTS,
+}
 FIRST_PARTY = {"pilot", "admin"}
 
 
@@ -69,7 +77,9 @@ def test_pilot_imports_only_the_standard_library() -> None:
 
 def test_cli_modules_import_without_site_packages() -> None:
     """`python -S` drops site-packages, as on a host where only the system Python exists."""
-    skipped_modules = {path.removesuffix(".py").replace("/", ".") for path in NON_CLI_IMPORTS}
+    skipped_modules = {
+        path.removesuffix(".py").replace("/", ".") for path in ADMIN_VENV_IMPORTS.keys() | BENCH_PYTHON_IMPORTS.keys()
+    }
     modules = sorted(admin_modules_used_by_pilot())
     for path in pilot_sources():
         module = ".".join(path.relative_to(ROOT).with_suffix("").parts).removesuffix(".__init__")
