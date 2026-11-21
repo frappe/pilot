@@ -1,10 +1,11 @@
-import { ref } from 'vue'
+import { ref, toValue } from 'vue'
+import type { MaybeRefOrGetter } from 'vue'
 
 import { tasksApi } from '@/api/tasks'
 import type { TaskPayload } from '@/types/tasks'
 import { isTaskActive } from '@/utils/taskFormat'
 
-export const useTaskDetail = (taskId: string) => {
+export const useTaskDetail = (taskId: MaybeRefOrGetter<string>) => {
   const task = ref<TaskPayload | null>(null)
   const rawLines = ref<string[]>([])
   const loading = ref(false)
@@ -14,10 +15,10 @@ export const useTaskDetail = (taskId: string) => {
     loading.value = true
     error.value = ''
     try {
-      task.value = await tasksApi.detail(taskId)
+      task.value = await tasksApi.detail(toValue(taskId))
       rawLines.value = []
       if (!isTaskActive(task.value)) {
-        const output = await tasksApi.output(taskId)
+        const output = await tasksApi.output(toValue(taskId))
         if (output) rawLines.value = output.replace(/\r?\n$/, '').split(/\r?\n/)
       }
     } catch (caught) {
