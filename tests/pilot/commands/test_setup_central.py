@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from pilot.commands.setup.central import SetupCentralCommand
+from pilot.commands.setup.remove_central import RemoveCentralCommand
 from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
+from pilot.config.central import CentralConfig
 from pilot.config.common import CommonConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
@@ -57,7 +59,9 @@ def test_enables_central_and_writes_both_aliases(tmp_path: Path) -> None:
     central = _central(bench)
     assert central.enabled is True
     assert central.bootstrapped is False
-    assert [(alias.type, alias.pattern, alias.target, alias.redirect) for alias in central.hostname_aliases] == [
+    assert [
+        (alias.type, alias.pattern, alias.target, alias.redirect) for alias in central.hostname_aliases
+    ] == [
         ("admin", "admin-vm-*.example.com", "admin.example.com", False),
         ("site", "site-*.example.com", "site1.local", False),
     ]
@@ -149,3 +153,41 @@ def test_skips_the_site_alias_while_the_bench_has_no_site(
     ]
     # The operator asked for a site alias and did not get one, so say so.
     assert "No site to alias yet" in capsys.readouterr().out
+
+
+def test_remove_central_clears_the_central_table(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    bench = _bench(tmp_path)
+    _make_site(bench, "site1.local")
+    _command(bench, admin_pattern="admin-vm-*.example.com", site_pattern="site-*.example.com").run()
+
+    RemoveCentralCommand(bench=bench).run()
+
+    assert _central(bench) == CentralConfig()
+    assert bench.config.central == CentralConfig()
+    assert "[central]" not in CommonConfig.path(bench.path.parent).read_text()
+    assert "Central is disabled" in capsys.readouterr().out
+
+
+def test_remove_central_ends_the_wait_for_a_credential(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _command(bench).run()
+    assert _central(bench).is_awaiting_bootstrap is True
+
+    RemoveCentralCommand(bench=bench).run()
+
+    assert _central(bench).is_awaiting_bootstrap is False
+
+
+def test_remove_central_rebuilds_the_process_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bench = _bench(tmp_path)
+    _command(bench).run()
+    enabled_at_rebuild = []
+    monkeypatch.setattr(
+        Bench,
+        "rebuild_process_set",
+        lambda self, on_progress: enabled_at_rebuild.append(self.config.central.enabled),
+    )
+
+    RemoveCentralCommand(bench=bench).run()
+
+    assert enabled_at_rebuild == [False]

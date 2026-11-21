@@ -734,6 +734,12 @@ class Bench:
 
         CentralSetup(self, admin_pattern, site_pattern, redirect, rebootstrap).run(on_progress)
 
+    def remove_central(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Disable Central management and remove its hostname aliases."""
+        from pilot.core.bench.central import CentralSetup
+
+        CentralSetup(self).disable(on_progress)
+
     def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         """Issue Let's Encrypt certificates for the bench domains."""
         from pilot.core.bench.production import BenchProduction

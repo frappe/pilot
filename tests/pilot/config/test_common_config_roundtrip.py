@@ -21,6 +21,7 @@ def _populated_common() -> CommonConfig:
     common.resource_limits.cpu_usage_limit = 77
     common.jwks_url = "https://issuer.example.com/jwks.json"
     common.jwks_audience = "bench-fleet"
+    common.updates.auto_pilot_update = False
     return common
 
 
@@ -49,6 +50,16 @@ def test_no_shared_section_is_lost_by_an_unrelated_write(tmp_path: Path) -> None
     _touch_unrelated_setting(bench_root)
 
     assert CommonConfig.read(bench_root.parent) == expected
+
+
+def test_auto_update_off_survives_an_unrelated_write(tmp_path: Path) -> None:
+    common = CommonConfig()
+    common.updates.auto_pilot_update = False
+    bench_root = _bench_with_common(tmp_path, common)
+
+    _touch_unrelated_setting(bench_root)
+
+    assert CommonConfig.read(bench_root.parent).updates.auto_pilot_update is False
 
 
 def test_proxy_protocol_survives_an_unrelated_write(tmp_path: Path) -> None:
