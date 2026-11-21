@@ -5,7 +5,7 @@ import sys
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -156,12 +156,17 @@ class Task:
 
     @classmethod
     def get_queued_task(cls, bench: "Bench", args: dict) -> "Task":
-        """The task these queue arguments describe; raise ValueError for a missing argument."""
-        from pilot.internal.tasks.authoring import required_task_args
+        """The task these queue arguments describe; raise ValueError for a missing or unknown argument."""
+        from pilot.internal.tasks.authoring import required_task_args, task_fields
 
         if missing := [name for name in required_task_args(cls) if name not in args]:
             raise ValueError(f"Command {cls.command!r} requires arg {missing[0]!r}")
-        return cls(bench=bench, bench_root=bench.path, **cls._constructor_args(args))
+        names = {field.name for field in task_fields(cls)}
+        if unknown := set(args) - names - set(cls.required_submit_args):
+            raise ValueError(f"Unknown args for {cls.__name__}: {', '.join(sorted(unknown))}")
+        return cls(
+            bench=bench, bench_root=bench.path, **{key: value for key, value in args.items() if key in names}
+        )
 
     def get_callbacks(self, explicit: "TaskCallbacks | None") -> "TaskCallbacks | None":
         """The callbacks this task declares, with explicit ones taking precedence."""
@@ -171,14 +176,6 @@ class Task:
         if not declared:
             return explicit
         return {**declared, **explicit} if explicit else declared
-
-    @classmethod
-    def _constructor_args(cls, args: dict) -> dict:
-        """The arguments the task constructor takes."""
-        valid = {
-            field.name for field in fields(cls) if field.init and field.name not in {"bench", "bench_root"}
-        }
-        return {key: value for key, value in args.items() if key in valid}
 
     def __post_init__(self) -> None:
         self._current_step: str | None = None
@@ -258,7 +255,7 @@ class TaskRunner:
         """Queue a task and return its ID."""
         return self.run(
             task_type.command,
-            self._task_args(task_type, args),
+            {key: value for key, value in args.items() if value is not None},
             callbacks=callbacks,
             idempotency_key=idempotency_key,
             resource_key=resource_key,
@@ -291,20 +288,6 @@ class TaskRunner:
     def kill(self, task_id: str) -> None:
         """Kill a task."""
         self.__engine.kill(task_id)
-
-    def _task_args(self, task_type: type[Task], args: dict) -> dict:
-        """The arguments the task type takes."""
-        valid = {
-            field.name
-            for field in fields(task_type)
-            if field.init and field.name not in {"bench", "bench_root"}
-        }
-        valid.update(task_type.required_submit_args)
-        unknown = set(args) - valid
-        if unknown:
-            names = ", ".join(sorted(unknown))
-            raise ValueError(f"Unknown args for {task_type.__name__}: {names}")
-        return {key: value for key, value in args.items() if value is not None}
 
 
 __all__ = ["Arg", "Task", "TaskRunner", "step"]
