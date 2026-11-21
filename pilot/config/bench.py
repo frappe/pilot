@@ -5,7 +5,7 @@ import re
 import tomllib
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -622,10 +622,11 @@ class BenchConfig:
     def _write_common(self, bench_root: Path) -> None:
         """Persist shared settings to common_config.toml.
 
-        Every shared field has to be listed here: one left out is written back as
-        its default, so an unrelated write silently drops it.
+        Starts from the baseline, so a shared field this view does not carry
+        keeps its value instead of being written back as its default.
         """
-        common = CommonConfig(
+        common = replace(
+            self._common_baseline or CommonConfig(),
             mariadb=self.mariadb,
             postgres=self.postgres,
             letsencrypt=self.letsencrypt,
