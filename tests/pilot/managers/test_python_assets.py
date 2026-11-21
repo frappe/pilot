@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.config.build import BuildConfig
 from pilot.core.app import App
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, CommandError
+from pilot.managers import frappe_asset_command
 from pilot.managers.python_assets import PythonAssetBuilder
 
 
@@ -21,17 +27,22 @@ def make_app(app_path: Path, name: str = "gameplan") -> MagicMock:
     return app
 
 
-def make_builder() -> PythonAssetBuilder:
+def make_builder(tmp_path: Path) -> PythonAssetBuilder:
     manager = MagicMock()
+    manager.bench.config.build = BuildConfig()
+    manager.bench.path = tmp_path
+    manager.bench.apps_path = tmp_path / "apps"
     return PythonAssetBuilder(manager)
 
 
 def build_app(app_path: Path, on_install: Callable[[], None] = lambda: None) -> list[list[str]]:
     """Build `app_path` from source; return every command it ran, installs included."""
     manager = MagicMock()
+    manager.bench.config.build = BuildConfig()
     manager.bench.frappe_call = ["python"]
     manager.bench.sites_path = app_path.parent / "sites"
     manager.bench.apps_path = app_path.parent
+    manager.bench.path = app_path.parent
     builder = PythonAssetBuilder(manager)
     commands: list[list[str]] = []
 
@@ -120,7 +131,7 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
     directories = [app_path, app_path / "frontend", app_path / "roster"]
     for directory in directories:
         write_package(directory)
-    builder = make_builder()
+    builder = make_builder(tmp_path)
     builder.bench.apps.return_value = [make_app(app_path)]
     installed = []
 
@@ -139,8 +150,8 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
     compiler.assert_called_once()
 
 
-def test_full_build_does_not_fingerprint_or_cache_assets():
-    builder = make_builder()
+def test_full_build_does_not_fingerprint_or_cache_assets(tmp_path):
+    builder = make_builder(tmp_path)
     builder.bench.apps.return_value = []
     with (
         patch(
@@ -153,14 +164,119 @@ def test_full_build_does_not_fingerprint_or_cache_assets():
     compiler.assert_called_once()
 
 
+def test_frappe_adapter_preserves_the_bench_import_path(tmp_path: Path) -> None:
+    frappe = tmp_path / "frappe"
+    (frappe / "utils").mkdir(parents=True)
+    (frappe / "__init__.py").touch()
+    (frappe / "bundler.py").write_text("from redis import expected_client\nlink_assets_dir = None\n")
+    (frappe / "utils" / "bench_helper.py").write_text(
+        "from frappe import bundler\ndef main():\n    assert callable(bundler.link_assets_dir)\n"
+    )
+    (tmp_path / "redis.py").write_text("expected_client = True\n")
+
+    subprocess.run(
+        [sys.executable, frappe_asset_command.__file__, "frappe", "build", "--force"],
+        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+        check=True,
+    )
+
+
+def test_page_island_resolver_matches_importers_through_the_staged_apps_link(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is unavailable.")
+    hooks_type = subprocess.check_output([node, "-p", "typeof require('node:module').registerHooks"], text=True)
+    if hooks_type.strip() != "function":
+        pytest.skip("Node module resolution hooks are unavailable.")
+
+    apps = tmp_path / "apps"
+    islands = apps / "frappe" / "ui" / "vite" / "island"
+    islands.mkdir(parents=True)
+    (islands / "package.json").write_text('{"type":"module"}')
+    (islands / "pages.js").write_text(
+        "export function discoverPageIslands(root) { return {dirs: [root + '/apps/frappe']}; }"
+    )
+    script = islands / "build-pages.js"
+    script.write_text(
+        "import { discoverPageIslands } from './pages.js';\n"
+        "console.log(discoverPageIslands(process.env.FRAPPE_BENCH_ROOT).dirs[0]);\n"
+    )
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    (stage / "apps").symlink_to(apps)
+    preload = Path(frappe_asset_command.__file__).with_name("frappe_page_islands.mjs").as_uri()
+
+    result = subprocess.check_output(
+        [node, "--import", preload, str(script)], env={**os.environ, "FRAPPE_BENCH_ROOT": str(stage)}, text=True
+    )
+
+    assert result.strip() == str(apps / "frappe")
+
+
+@pytest.mark.parametrize("compiler_fails", [False, True])
+def test_source_build_keeps_live_assets_until_publication(tmp_path: Path, compiler_fails: bool) -> None:
+    builder = make_builder(tmp_path)
+    bench = builder.bench
+    bench.path = tmp_path
+    bench.apps_path = tmp_path / "apps"
+    bench.sites_path = tmp_path / "sites"
+    builder.manager._build_env.return_value = {}
+    app = make_app(bench.apps_path / "gameplan")
+    app.has_studio_apps = False
+    bench.apps.return_value = [app]
+    esbuild = bench.apps_path / "frappe" / "esbuild"
+    esbuild.mkdir(parents=True)
+    (esbuild / "utils.js").write_text("process.env.FRAPPE_BENCH_ROOT")
+    dist = app.path / "gameplan" / "public" / "dist" / "js"
+    dist.mkdir(parents=True)
+    old_bundle = "gameplan.bundle.AAAAAAAA.js"
+    new_bundle = "gameplan.bundle.BBBBBBBB.js"
+    (dist / old_bundle).write_text("old")
+    assets = bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    manifest = assets / "assets.json"
+    old_map = {"gameplan.bundle.js": f"/assets/gameplan/dist/js/{old_bundle}"}
+    new_map = {"gameplan.bundle.js": f"/assets/gameplan/dist/js/{new_bundle}"}
+    manifest.write_text(json.dumps(old_map))
+
+    def compile_assets(argv, *, env, **kwargs):
+        staged_assets = Path(env["FRAPPE_BENCH_ROOT"]) / "sites" / "assets"
+        output = staged_assets / "gameplan" / "dist" / "js"
+        output.mkdir(parents=True, exist_ok=True)
+        (output / new_bundle).write_text("new")
+        (staged_assets / "assets.json").write_text(json.dumps(new_map))
+        assert (dist / old_bundle).read_text() == "old"
+        assert not (dist / new_bundle).exists()
+        assert json.loads(manifest.read_text()) == old_map
+        if compiler_fails:
+            raise CommandError("build failed")
+
+    with (
+        patch.object(builder, "run_compiler", side_effect=compile_assets),
+        patch.object(builder, "invalidate_asset_manifest") as invalidate,
+    ):
+        if compiler_fails:
+            with pytest.raises(CommandError, match="build failed"):
+                builder.build_assets_for_app(app, force=True)
+            invalidate.assert_not_called()
+        else:
+            builder.build_assets_for_app(app, force=True)
+            invalidate.assert_called_once()
+
+    assert (dist / old_bundle).read_text() == "old"
+    assert (dist / new_bundle).exists() != compiler_fails
+    assert json.loads(manifest.read_text()) == (old_map if compiler_fails else new_map)
+
+
 def test_page_islands_are_built_with_frappe_s_own_script(tmp_path: Path) -> None:
     manager = MagicMock()
+    manager.bench.config.build = BuildConfig()
     manager.bench.apps_path = tmp_path / "apps"
     builder = PythonAssetBuilder(manager)
     script = tmp_path / "apps" / "frappe" / "ui" / "vite" / "island" / "build-pages.js"
 
     with (
-        patch.object(builder, "run_compiler") as compile_islands,
+        patch.object(builder, "run_staged_assets") as compile_islands,
         patch("pilot.managers.python_assets.NodePackages"),
     ):
         builder.build_page_islands()
@@ -219,8 +335,9 @@ def test_studio_apps_are_built_with_frappe_s_own_builder(tmp_path: Path) -> None
 def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them(
     tmp_path: Path, archive_has_studio_apps: bool, builds: int
 ) -> None:
-    builder = make_builder()
+    builder = make_builder(tmp_path)
     app = make_app(tmp_path / "helpdesk", "helpdesk")
+    app.path.mkdir()
     app.has_page_islands = False
     app.has_studio_apps = True
     prebuilt = MagicMock(has_studio_apps=archive_has_studio_apps, has_page_islands=False)
@@ -229,6 +346,7 @@ def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them
     with (
         patch("pilot.core.app.prebuilt_assets.PrebuiltAssets", return_value=prebuilt),
         patch.object(builder, "setup_prebuilt_assets"),
+        patch.object(builder, "invalidate_asset_manifest"),
         patch.object(builder, "build_studio_apps") as build_studio_apps,
     ):
         assert builder.install_prebuilt_assets(app) is True
@@ -238,7 +356,7 @@ def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them
 
 def test_skip_frontend_downloads_prebuilt_assets_without_installing_or_building(tmp_path: Path) -> None:
     """A frontend-skipping run with a published archive touches neither JS installs nor compilers."""
-    builder = make_builder()
+    builder = make_builder(tmp_path)
     app = make_app(tmp_path / "frappe", "frappe")
     app.is_linked = False
     app.has_source_changes = False
@@ -251,6 +369,7 @@ def test_skip_frontend_downloads_prebuilt_assets_without_installing_or_building(
     with (
         patch("pilot.core.app.prebuilt_assets.PrebuiltAssets", return_value=prebuilt),
         patch.object(builder, "setup_prebuilt_assets"),
+        patch.object(builder, "invalidate_asset_manifest"),
         patch.object(builder, "build_page_islands") as build_page_islands,
         patch.object(builder, "build_studio_apps") as build_studio_apps,
         patch.object(builder, "run_compiler") as run_compiler,
@@ -271,9 +390,11 @@ def test_skip_frontend_falls_back_to_a_full_build_without_an_archive(tmp_path: P
     write_package(app_path)
     (app_path / "yarn.lock").write_text("")
     manager = MagicMock()
+    manager.bench.config.build = BuildConfig()
     manager.bench.frappe_call = ["python"]
     manager.bench.sites_path = app_path.parent / "sites"
     manager.bench.apps_path = app_path.parent
+    manager.bench.path = app_path.parent
     builder = PythonAssetBuilder(manager)
     commands: list[list[str]] = []
 

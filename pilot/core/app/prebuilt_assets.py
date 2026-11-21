@@ -58,8 +58,9 @@ class PrebuiltAssets:
 
     download_timeout_seconds = 60
 
-    def __init__(self, app: App) -> None:
+    def __init__(self, app: App, retain_generations: int = 0) -> None:
         self.app = app
+        self.retain_generations = retain_generations
         # The archive's assets.json entries; None for archives without them.
         self.asset_maps: dict[str, dict[str, str]] | None = None
         self.has_page_islands = False
@@ -127,8 +128,17 @@ class PrebuiltAssets:
         self.asset_maps = self._asset_maps(manifest)
         self.has_studio_apps = Path(self.app.config.name, "public", "app_builds") in paths
         self._carry_over_page_islands(extracted, paths)
+        self._publish_paths(extracted, paths)
+
+    def _publish_paths(self, extracted: Path, paths: list[Path]) -> None:
+        from pilot.core.app.dist_assets import DistAssets
+
+        dist = Path(self.app.config.name, "public", "dist")
         for path in paths:
-            self._replace(extracted / path, self.app.path / path)
+            if self.retain_generations and path == dist:
+                DistAssets(self.app.path / path).publish(extracted / path, self.retain_generations)
+            else:
+                self._replace(extracted / path, self.app.path / path)
 
     def _carry_over_page_islands(self, extracted: Path, paths: list[Path]) -> None:
         """Use the archive's islands when only Frappe has pages; else keep the bench's for its rebuild."""
@@ -140,7 +150,10 @@ class PrebuiltAssets:
         shutil.rmtree(extracted / PAGE_ISLAND_DIR, ignore_errors=True)
         current = self.app.path / PAGE_ISLAND_DIR
         if current.is_dir():
-            shutil.copytree(current, extracted / PAGE_ISLAND_DIR, symlinks=True)
+            from pilot.core.app.dist_assets import DistAssets
+
+            ignore = DistAssets(current.parent).get_copy_ignore() if self.retain_generations else None
+            shutil.copytree(current, extracted / PAGE_ISLAND_DIR, symlinks=True, ignore=ignore)
         if self.asset_maps:
             self.asset_maps = {
                 name: {key: url for key, url in entries.items() if not url.startswith(PAGE_ISLAND_URL)}

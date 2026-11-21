@@ -141,6 +141,10 @@ To set a fixed cap instead, add `memory_limit_mb` under `[build]` in `bench.toml
 
 Node.js builds get a heap of 75% of the cap through `NODE_OPTIONS=--max-old-space-size`. A `--max-old-space-size` that you set in `NODE_OPTIONS` takes priority.
 
+## Keep Recent Asset Builds
+
+Pilot builds keep the previous two distinct sets of hashed files in each app's `public/dist`. On Frappe with staged esbuild support, Pilot publishes the new files before switching asset manifests. Direct Frappe builds and watchers can delete retained files.
+
 ## Monitoring
 
 `pilot setup production` installs `pilot-monitor.service`, one user service for the host. It collects host, database and bench metrics every 10 seconds, and it pings every production site once a minute on a separate thread, so a slow metrics tick does not delay the pings. Its output goes to `system/logs/monitor.log` and `system/logs/monitor.error.log`. The service runs for the life of the host, so a Pilot upgrade restarts it to load the new code. Check it with `systemctl --user status pilot-monitor.service`.

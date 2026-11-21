@@ -44,6 +44,9 @@ markers = [
 "pilot.core.database" = [
   "mariadb_variables.json",
 ]
+"pilot.managers" = [
+  "frappe_page_islands.mjs",
+]
 "pilot.managers.nginx" = [
   "templates/*.template",
 ]

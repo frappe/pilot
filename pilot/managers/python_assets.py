@@ -4,14 +4,18 @@ import contextlib
 import json
 import logging
 import re
-import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.core.app.dist_assets import RETAINED_ASSET_BUILDS, DistAssets
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exclusive_file_lock, has_atomic_exchange
 from pilot.internal.command import run_command
+from pilot.managers.frappe_asset_command import link_directory
+from pilot.managers.staged_assets import StagedAssets
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 
 if TYPE_CHECKING:
@@ -79,15 +83,18 @@ class PythonAssetBuilder:
         for app in self.bench.apps():
             for packages in get_app_packages(app.path, self.frontend_dirs(app)):
                 packages.ensure_installed()
-        self.run_compiler(
-            [*self.bench.frappe_call, "frappe", "build", "--force"],
-            cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
-            stream_output=True,
-        )
+        with self.asset_build_lock():
+            self.compile_frappe_assets([app.config.name for app in self.bench.apps()])
+
+    def asset_build_lock(self):
+        return exclusive_file_lock(self.bench.path / "asset-build")
 
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
         """Build one app's assets, from cache, release or source."""
+        with self.asset_build_lock():
+            self.prepare_app_assets(app, force, skip_frontend)
+
+    def prepare_app_assets(self, app: "App", force: bool, skip_frontend: bool) -> None:
         # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
         if app.config.name == "frappe" and not skip_frontend:
             NodePackages(app.path).ensure_installed()
@@ -110,7 +117,9 @@ class PythonAssetBuilder:
         """Install the app's published assets and build what the archive lacks. False when none are published."""
         from pilot.core.app.prebuilt_assets import PrebuiltAssets
 
-        prebuilt = PrebuiltAssets(app)
+        if not has_atomic_exchange(app.path):
+            return False
+        prebuilt = PrebuiltAssets(app, retain_generations=RETAINED_ASSET_BUILDS)
         if not prebuilt.install():
             return False
         app_public_dir = app.path / app.config.name / "public"
@@ -127,6 +136,7 @@ class PythonAssetBuilder:
                 print(f"  Skipping page-island build for {app.config.name} (frontend skipped).")
             if app.has_studio_apps and not prebuilt.has_studio_apps:
                 print(f"  Skipping Studio app build for {app.config.name} (frontend skipped).")
+        self.invalidate_asset_manifest()
         return True
 
     def build_app_from_source(self, app: "App") -> None:
@@ -141,12 +151,7 @@ class PythonAssetBuilder:
 
         print(f"  Building assets for {app.config.name}...")
         sys.stdout.flush()
-        self.run_compiler(
-            [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
-            cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
-            stream_output=True,
-        )
+        self.compile_frappe_assets([app.config.name], single_app=app.config.name)
 
         # Frappe's build already ran the app's own build script, which builds its frontends.
         if NodePackages(app.path).has_script("build"):
@@ -160,6 +165,62 @@ class PythonAssetBuilder:
                 env=self.manager._build_env(),
                 stream_output=True,
             )
+
+    def compile_frappe_assets(self, apps: list[str], single_app: str = "") -> None:
+        arguments = ["frappe", "build", "--force"]
+        if single_app:
+            arguments.extend(("--app", single_app))
+        cwd = self.bench.sites_path
+        esbuild_utils = self.bench.apps_path / "frappe" / "esbuild" / "utils.js"
+        if not (
+            esbuild_utils.is_file()
+            and "process.env.FRAPPE_BENCH_ROOT" in esbuild_utils.read_text()
+            and has_atomic_exchange(self.bench.path)
+        ):
+            with self.retain_direct_build_assets(apps):
+                self.run_compiler(
+                    [*self.bench.frappe_call, *arguments], cwd=cwd, env=self.manager._build_env(), stream_output=True
+                )
+            return
+        script = Path(__file__).with_name("frappe_asset_command.py")
+        self.run_staged_assets([str(self.bench.python), str(script), *arguments], cwd, set(apps))
+
+    @contextlib.contextmanager
+    def retain_direct_build_assets(self, apps: list[str]):
+        """Preserve hashed files when Frappe builds directly into the checkout."""
+        with contextlib.ExitStack() as stack:
+            snapshots = {}
+            for app in self.bench.apps():
+                source = DistAssets(app.path / app.module_name / "public" / "dist")
+                if app.config.name in apps and source.path.is_dir():
+                    folder = stack.enter_context(tempfile.TemporaryDirectory(dir=source.path.parent))
+                    snapshots[source] = source.snapshot(Path(folder))
+            yield
+            for source, snapshot in snapshots.items():
+                if source.path.is_dir():
+                    source.retain(snapshot, RETAINED_ASSET_BUILDS)
+
+    def run_staged_assets(self, argv: list[str], cwd: Path, esbuild_apps: set[str]) -> None:
+        env = self.manager._build_env()
+        with tempfile.TemporaryDirectory(dir=self.bench.path, prefix=".asset-build-") as directory:
+            stage = StagedAssets(self.bench, Path(directory), esbuild_apps)
+            stage.prepare()
+            env.update(FRAPPE_BENCH_ROOT=directory, FRAPPE_BENCH_PATH=directory)
+            page_islands_script = self.bench.apps_path / "frappe" / "ui" / "vite" / "island" / "build-pages.js"
+            if page_islands_script.is_file():
+                preload = Path(__file__).resolve().with_name("frappe_page_islands.mjs").as_uri()
+                env["NODE_OPTIONS"] = f"{env.get('NODE_OPTIONS', '')} --import={preload}".strip()
+            self.run_compiler(argv, cwd=cwd, env=env, stream_output=True)
+            stage.publish()
+        self.invalidate_asset_manifest()
+
+    def invalidate_asset_manifest(self) -> None:
+        command = "import frappe; frappe.init(''); frappe.cache.delete_value('assets_json', shared=True)"
+        run_command(
+            [str(self.bench.python), "-c", command],
+            cwd=self.bench.sites_path,
+            env=self.manager._build_env(),
+        )
 
     @staticmethod
     def frontend_dirs(app: "App") -> list[Path]:
@@ -183,11 +244,7 @@ class PythonAssetBuilder:
         assets_dir.mkdir(exist_ok=True)
 
         app_link = assets_dir / app_name
-        if app_link.is_symlink():
-            app_link.unlink()
-        elif app_link.is_dir():
-            shutil.rmtree(str(app_link))
-        app_link.symlink_to(app_public_dir.resolve())
+        link_directory(app_public_dir, app_link)
 
         # As `bench build` links it: <app>/node_modules is served at /assets/<app>/node_modules.
         node_modules = app_public_dir.parent.parent / "node_modules"
@@ -202,6 +259,7 @@ class PythonAssetBuilder:
 
             # Islands from the archive replace the bench's; otherwise the bench's stay for its rebuild.
             keeping = "" if has_page_islands else PAGE_ISLAND_URL
+            asset_maps = {name: asset_maps.get(name, {}) for name in StagedAssets.manifests}
             for name, entries in asset_maps.items():
                 self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=keeping)
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
@@ -216,7 +274,7 @@ class PythonAssetBuilder:
         NodePackages(script.parent / "toolchain").ensure_installed()
         print("  Building Frappe UI page islands...")
         sys.stdout.flush()
-        self.run_compiler(["node", str(script), "--production"], cwd=frappe_path, stream_output=True)
+        self.run_staged_assets(["node", str(script), "--production"], frappe_path, set())
 
     def build_studio_apps(self, app: "App") -> None:
         """Build the app's exported Studio apps into `public/app_builds`, as Frappe's
@@ -253,9 +311,9 @@ class PythonAssetBuilder:
             key_prefix="rtl_",
         )
 
-        self.merge_json(assets_dir / "assets.json", assets)
-        if rtl_assets:
-            self.merge_json(assets_dir / "assets-rtl.json", rtl_assets)
+        replacing = StagedAssets.get_esbuild_prefixes(app_name)
+        self.merge_json(assets_dir / "assets.json", assets, replacing=replacing)
+        self.merge_json(assets_dir / "assets-rtl.json", rtl_assets, replacing=replacing)
 
     @staticmethod
     def _bundle_manifest(
@@ -271,16 +329,17 @@ class PythonAssetBuilder:
         if not bundle_dir.is_dir():
             return {}
 
+        retired = DistAssets(dist_dir).retained_paths
         entries = {}
         for path in sorted(bundle_dir.iterdir()):
             match = PythonAssetBuilder.bundle_re.match(path.name)
-            if match and match.group(2) == extension:
+            if match and match.group(2) == extension and f"{directory}/{path.name}" not in retired:
                 key = f"{key_prefix}{match.group(1)}.bundle.{extension}"
                 entries[key] = f"/assets/{app_name}/dist/{directory}/{path.name}"
         return entries
 
     @staticmethod
-    def merge_json(path: Path, new_entries: dict, replacing: str = "", keeping: str = "") -> None:
+    def merge_json(path: Path, new_entries: dict, replacing: str | tuple[str, ...] = "", keeping: str = "") -> None:
         """Merge under the lock: several apps' builds write this file at once. Entries under
         `replacing` are dropped first, except those under `keeping`."""
         from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked

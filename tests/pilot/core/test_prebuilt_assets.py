@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from pilot.core.app.dist_assets import DistAssets
 from pilot.core.app.prebuilt_assets import PrebuiltAssets
 from pilot.exceptions import BenchError
 
@@ -70,6 +71,49 @@ def test_published_assets_replace_the_old_build(tmp_path: Path, release: Path) -
     dist = app.path / "myapp" / "public" / "dist" / "js"
     assert [path.name for path in dist.iterdir()] == ["new.bundle.BBBBBBBB.js"]
     assert (app.path / "myapp" / "www" / "x.html").read_text() == "<html>"
+
+
+def test_prebuilt_dist_keeps_previous_hashes(tmp_path: Path, release: Path) -> None:
+    app = _app(tmp_path)
+    _publish(release, app)
+
+    assert PrebuiltAssets(app, retain_generations=2).install()
+
+    dist = app.path / "myapp" / "public" / "dist" / "js"
+    assert (dist / "old.bundle.AAAAAAAA.js").read_text() == "old"
+    assert (dist / "new.bundle.BBBBBBBB.js").read_text() == "new"
+
+
+def test_dist_retires_only_hashes_older_than_two_distinct_builds(tmp_path: Path) -> None:
+    dist = DistAssets(tmp_path / "dist")
+    for index, build in enumerate("ABBCD"):
+        stage = tmp_path / str(index)
+        stage.mkdir()
+        (stage / f"test.bundle.{build * 8}.js").write_text(build)
+        (stage / f"mutable-{build}.js").write_text(build)
+        dist.publish(stage, retain_generations=2)
+
+    assert dist.hashed_paths == {f"test.bundle.{build * 8}.js" for build in "BCD"}
+    assert [path.name for path in dist.path.glob("mutable-*")] == ["mutable-D.js"]
+
+
+def test_dist_recovers_its_history_after_a_direct_build(tmp_path: Path) -> None:
+    dist = DistAssets(tmp_path / "dist")
+    first = tmp_path / "first"
+    first.mkdir()
+    original = "test.bundle.AAAAAAAA.js"
+    direct = "test.bundle.BBBBBBBB.js"
+    (first / original).write_text("pilot")
+    dist.publish(first, retain_generations=2)
+    (dist.path / original).unlink()
+    (dist.path / direct).write_text("direct")
+
+    following = tmp_path / "following"
+    following.mkdir()
+    (following / "test.bundle.CCCCCCCC.js").write_text("new")
+    dist.publish(following, retain_generations=2)
+
+    assert (dist.path / direct).read_text() == "direct"
 
 
 @pytest.mark.parametrize("has_studio_apps", [False, True])
@@ -221,6 +265,21 @@ def test_a_frappe_archive_keeps_the_bench_s_page_islands_for_other_apps(tmp_path
     assert (app.path / "frappe" / "public" / "dist" / "js" / "desk.bundle.CCCCCCCC.js").exists()
     assert prebuilt.has_page_islands is False
     assert prebuilt.asset_maps == {"assets.json": {"desk.bundle.js": "/assets/frappe/dist/js/desk.bundle.CCCCCCCC.js"}}
+
+
+def test_a_frappe_archive_can_expire_retired_page_islands(tmp_path: Path, release: Path) -> None:
+    app = _frappe_with_islands(tmp_path, release, other_app_has_islands=True)
+    dist = app.path / "frappe" / "public" / "dist"
+    active = "page-island/crm.page.board.AAAAAAAA.js"
+    retired = "page-island/crm.page.board.BBBBBBBB.js"
+    (dist / active).write_text("active")
+    (dist / retired).write_text("retired")
+    (dist / DistAssets.history_file).write_text(json.dumps([[active], [retired]]))
+
+    assert PrebuiltAssets(app, retain_generations=1).install()
+
+    assert (dist / active).read_text() == "active"
+    assert not (dist / retired).exists()
 
 
 def test_a_frappe_archive_s_page_islands_serve_a_bench_with_only_frappe_pages(tmp_path: Path, release: Path) -> None:

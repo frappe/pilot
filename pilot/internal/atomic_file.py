@@ -33,6 +33,20 @@ def exchange_paths(first: Path, second: Path) -> None:
         raise OSError(error, os.strerror(error), str(first))
 
 
+def has_atomic_exchange(path: Path) -> bool:
+    with tempfile.TemporaryDirectory(dir=path, prefix=".exchange-") as directory:
+        first, second = Path(directory) / "directory", Path(directory) / "link"
+        first.mkdir()
+        second.symlink_to("directory")
+        try:
+            exchange_paths(first, second)
+        except OSError as error:
+            if error.errno not in {errno.ENOTSUP, errno.ENOSYS, errno.EINVAL, errno.EXDEV}:
+                raise
+            return False
+    return True
+
+
 def _lock_path(path: Path) -> Path:
     """The lock file that guards writes to this path."""
     return path.with_name(f".{path.name}.lock")
