@@ -8,6 +8,42 @@
     />
     <title>Pilot</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      html {
+        background: oklch(100% 0 0);
+        color-scheme: light;
+      }
+      html[data-theme='dark'] {
+        background: oklch(20.5% 0 0);
+        color-scheme: dark;
+      }
+    </style>
+    <script>
+      // Set the theme before the first paint, so the page does not flash white while the app loads.
+      // Central adds `?theme=` to its sign-in link, so Pilot follows the theme chosen there.
+      ;(() => {
+        const schemes = ['light', 'dark', 'system']
+        const url = new URL(window.location.href)
+        const requested = url.searchParams.get('theme')
+        let saved = null
+        try {
+          if (schemes.includes(requested)) localStorage.setItem('theme', requested)
+          saved = localStorage.getItem('theme')
+        } catch {
+          saved = requested
+        }
+        if (url.searchParams.has('theme')) {
+          url.searchParams.delete('theme')
+          window.history.replaceState(window.history.state, '', url)
+        }
+
+        const scheme = schemes.includes(saved) ? saved : 'system'
+        const isDark =
+          scheme === 'dark' ||
+          (scheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
+      })()
+    </script>
   </head>
   <body class="h-full">
     <div id="app" class="h-full"></div>
