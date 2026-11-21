@@ -2,10 +2,13 @@
 import { Button, Checkbox, TextInput } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { apiErrorMessage } from '@/api/client'
-import { sitesApi } from '@/api/sites'
+
 import ActionDialog from '@/components/common/ActionDialog.vue'
 import RestoreSiteDialog from '@/components/sites/RestoreSiteDialog.vue'
+import SettingsCard from '@/components/sites/settings/SettingsCard.vue'
+
+import { apiErrorMessage } from '@/api/client'
+import { sitesApi } from '@/api/sites'
 import { errorMessage } from '@/utils/error'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -101,6 +104,21 @@ const DangerActions = [
   },
 ]
 
+const deletesData = ['reset', 'drop']
+
+const dangerGroups = [
+  {
+    title: 'Advanced',
+    theme: 'gray' as const,
+    actions: DangerActions.filter((action) => !deletesData.includes(action.key)),
+  },
+  {
+    title: 'Deletes data',
+    theme: 'red' as const,
+    actions: DangerActions.filter((action) => deletesData.includes(action.key)),
+  },
+]
+
 // The Restore dialog keeps its tab in ?restore=, so a reload opens it again.
 const showRestore = ref(Boolean(route.query.restore))
 
@@ -173,24 +191,30 @@ const confirmDrop = async () => {
 </script>
 
 <template>
-  <h2 class="mb-3 mt-3 text-base-semibold text-ink-gray-8">Danger</h2>
-
-  <div
-    v-for="d in DangerActions"
-    :key="d.key"
-    class="flex justify-between items-start gap-x-2.5 py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
-  >
-    <div class="flex flex-col gap-1 min-w-0">
-      <p class="font-medium text-ink-gray-8">{{ d.label }}</p>
-      <p class="text-ink-gray-6 text-p-sm line-clamp-2 sm:line-clamp-none">
-        {{ d.description }}
-      </p>
-    </div>
-
-    <Button theme="red" class="ml-4 shrink-0" @click="d.action"
-      >{{ d.buttonLabel || d.label }}</Button
+  <SettingsCard v-for="group in dangerGroups" :key="group.title" :title="group.title">
+    <div
+      v-for="d in group.actions"
+      :key="d.key"
+      class="flex justify-between items-center gap-x-2.5 py-4"
     >
-  </div>
+      <div class="flex flex-col gap-1 min-w-0">
+        <p class="font-medium text-ink-gray-8">{{ d.label }}</p>
+
+        <p class="text-ink-gray-6 text-p-sm line-clamp-2 sm:line-clamp-none">
+          {{ d.description }}
+        </p>
+      </div>
+
+      <Button
+        :theme="group.theme"
+        :variant="group.theme === 'red' ? 'subtle' : undefined"
+        class="ml-4 shrink-0"
+        @click="d.action"
+      >
+        {{ d.buttonLabel || d.label }}
+      </Button>
+    </div>
+  </SettingsCard>
 
   <ActionDialog
     v-model:open="showMigrate"
@@ -215,13 +239,17 @@ const confirmDrop = async () => {
     :disabled="!newName.trim() || newName.trim() === siteName"
     @confirm="confirmRename"
   >
-    <p class="text-ink-gray-6 text-p-sm">The site will be offline for a moment while it is renamed.</p>
+    <p class="text-ink-gray-6 text-p-sm">
+      The site will be offline for a moment while it is renamed.
+    </p>
+
     <div>
       <TextInput v-model="newName" placeholder="prod.example.com" class="w-full">
         <template #label>
           <span class="text-base">New name</span>
         </template>
       </TextInput>
+
       <Checkbox
         v-model="keepOldHostname"
         class="mt-3"
@@ -275,6 +303,7 @@ const confirmDrop = async () => {
           <span class="text-base">Type the site name to confirm</span>
         </template>
       </TextInput>
+
       <Checkbox v-model="takeBackup" label="Take a backup before dropping" />
     </template>
   </ActionDialog>

@@ -24,7 +24,9 @@ if TYPE_CHECKING:
     from pilot.core.site.console.completions import ConsoleCompletions
     from pilot.core.site.console.script import SiteScript
     from pilot.core.site.domains import SiteDomains
+    from pilot.core.site.failed_jobs import SiteFailedJobs
     from pilot.core.site.frappe_cloud import SiteFrappeCloud
+    from pilot.core.site.history import SiteHistoryReader
 
 RELOCATE_RENAMED_BLOBS_METHOD = "frappe.storage.relocate.relocate_renamed_site_blobs"
 
@@ -105,6 +107,20 @@ class Site:
         from pilot.core.site.config.database_state import SiteDatabaseState
 
         return SiteDatabaseState(self.bench.path, self.config.name)
+
+    @property
+    def failed_jobs(self) -> "SiteFailedJobs":
+        """Recent scheduler job failures, read from the site database."""
+        from pilot.core.site.failed_jobs import SiteFailedJobs
+
+        return SiteFailedJobs(self)
+
+    @property
+    def history(self) -> "SiteHistoryReader":
+        """When the site was created, last updated and each app installed."""
+        from pilot.core.site.history import SiteHistoryReader
+
+        return SiteHistoryReader(self)
 
     @property
     def db_type(self) -> str:

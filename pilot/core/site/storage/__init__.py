@@ -16,6 +16,8 @@ if typing.TYPE_CHECKING:
     from pilot.core.site import Site
 
 REPORT_FILE_NAME = "site-storage.json"
+HISTORY_FILE_NAME = "site-storage-history.json"
+HISTORY_DAYS = 30
 
 
 @dataclass
@@ -24,6 +26,12 @@ class SiteStorageUsage:
     private_bytes: int
     public_bytes: int
     database_bytes: int
+    total_bytes: int
+
+
+@dataclass
+class SiteStorageDay:
+    date: str
     total_bytes: int
 
 
@@ -45,6 +53,11 @@ class SiteStorageCollector:
     def path(self) -> Path:
         """The storage report file."""
         return self.bench.logs_path / REPORT_FILE_NAME
+
+    @property
+    def history_path(self) -> Path:
+        """The daily totals file, one entry per day for the last `HISTORY_DAYS` days."""
+        return self.bench.logs_path / HISTORY_FILE_NAME
 
     def get_report(self) -> SiteStorageReport:
         """The stored report, measured once when there is none. Refreshing it
@@ -74,7 +87,31 @@ class SiteStorageCollector:
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_private_text(self.path, json.dumps(asdict(report), indent=1))
+        self.save_history(report)
         return report
+
+    def read_history(self) -> dict[str, dict[str, int]]:
+        """Each day's total per site. A history is a nicety, so an unreadable file starts it over."""
+        try:
+            payload = json.loads(self.history_path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def save_history(self, report: SiteStorageReport) -> None:
+        """Keep the latest total of each site for the report's day, dropping days past the window."""
+        days = self.read_history()
+        days[report.collected_at[:10]] = {site.name: site.total_bytes for site in report.sites}
+        kept = dict(sorted(days.items())[-HISTORY_DAYS:])
+        atomic_write_private_text(self.history_path, json.dumps(kept))
+
+    def get_history(self, site_name: str) -> list[SiteStorageDay]:
+        """The site's total size on each recorded day, oldest first."""
+        return [
+            SiteStorageDay(date=day, total_bytes=sizes[site_name])
+            for day, sizes in sorted(self.read_history().items())
+            if site_name in sizes
+        ]
 
     def get_database_bytes(self, sites: list["Site"]) -> dict[str, int]:
         """One server-wide query covers every site. SQLite has no server to

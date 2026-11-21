@@ -172,3 +172,91 @@ def test_site_storage_reports_zero_database_when_not_measured(tmp_path: Path) ->
 
     assert response.status_code == 200
     assert response.get_json()["database_bytes"] == 0
+
+
+def test_storage_history_lists_the_site_days(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    logs = bench_root / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "site-storage-history.json").write_text(
+        json.dumps({"2026-11-02": {"s.localhost": 600}, "2026-11-01": {"s.localhost": 500, "other": 9}})
+    )
+
+    response = client.get("/api/v1/sites/s.localhost/storage-history")
+
+    assert response.status_code == 200
+    assert response.get_json() == [
+        {"date": "2026-11-01", "total_bytes": 500},
+        {"date": "2026-11-02", "total_bytes": 600},
+    ]
+
+
+def test_storage_history_is_404_for_an_unknown_site(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.get("/api/v1/sites/nope.localhost/storage-history").status_code == 404
+
+
+def test_failed_jobs_lists_grouped_failures(tmp_path: Path) -> None:
+    from pilot.core.site.failed_jobs import FailedJob, SiteFailedJobs
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    jobs = [FailedJob(job="insights.refresh", count=2, last_failed_at="2026-11-18 10:00:00", error="TimeoutError")]
+
+    with patch.object(SiteFailedJobs, "get", return_value=jobs):
+        response = client.get("/api/v1/sites/s.localhost/failed-jobs")
+
+    assert response.status_code == 200
+    assert response.get_json() == [
+        {"job": "insights.refresh", "count": 2, "last_failed_at": "2026-11-18 10:00:00", "error": "TimeoutError"}
+    ]
+
+
+def test_failed_jobs_reports_an_unreadable_site_database(tmp_path: Path) -> None:
+    from pilot.core.site.failed_jobs import SiteFailedJobs
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+
+    with patch.object(SiteFailedJobs, "get", side_effect=RuntimeError("no table")):
+        response = client.get("/api/v1/sites/s.localhost/failed-jobs")
+
+    assert response.status_code == 500
+
+
+def test_failed_jobs_is_404_for_an_unknown_site(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.get("/api/v1/sites/nope.localhost/failed-jobs").status_code == 404
+
+
+def test_site_history_returns_creation_update_and_installs(tmp_path: Path) -> None:
+    from pilot.core.site.history import AppInstall, SiteHistory, SiteHistoryReader
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    history = SiteHistory(
+        created_at="2026-10-06 22:00:38",
+        updated_at="2026-11-18 12:14:59",
+        frappe_version="16.2.1",
+        frappe_branch="version-16",
+        apps=[AppInstall(app="frappe", installed_at="2026-10-06 22:00:38")],
+    )
+
+    with patch.object(SiteHistoryReader, "get", return_value=history):
+        response = client.get("/api/v1/sites/s.localhost/history")
+
+    assert response.status_code == 200
+    assert response.get_json()["apps"] == [{"app": "frappe", "installed_at": "2026-10-06 22:00:38"}]
+
+
+def test_site_history_is_404_for_an_unknown_site(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.get("/api/v1/sites/nope.localhost/history").status_code == 404

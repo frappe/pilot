@@ -2,6 +2,9 @@
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+import SettingsCard from '@/components/sites/settings/SettingsCard.vue'
+
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { useSite } from '@/composables/sites/useSite'
@@ -148,12 +151,11 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
 </script>
 
 <template>
-  <div v-if="rows.length" class="mt-3">
-    <h2 class="mb-3 text-base-semibold text-ink-gray-8">Actions</h2>
+  <SettingsCard v-if="rows.length" title="Maintenance">
     <div
       v-for="row in rows"
       :key="row.key"
-      class="flex justify-between items-start gap-x-2.5 py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
+      class="flex justify-between items-center gap-x-2.5 py-4"
     >
       <div class="flex flex-col gap-1">
         <p class="font-medium text-ink-gray-8">{{ row.label }}</p>
@@ -165,8 +167,8 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
       </Button>
     </div>
 
-    <ErrorMessage v-if="error" :message="error" class="mt-2" />
-  </div>
+    <ErrorMessage v-if="error" :message="error" class="py-3" />
+  </SettingsCard>
 
   <!-- Let's Encrypt email dialog -->
   <Dialog v-model="showSslEmail" title="Enable SSL" size="md">
@@ -187,9 +189,11 @@ const rows = computed(() => Actions.filter((row) => row.condition()))
     </TextInput>
 
     <ErrorMessage v-if="sslEmailError" :message="sslEmailError" class="mt-2" />
+
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="outline" @click="showSslEmail = false">Cancel</Button>
+
         <Button
           variant="solid"
           :loading="sslLoading"

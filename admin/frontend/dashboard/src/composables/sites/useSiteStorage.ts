@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { sitesApi } from '@/api/sites'
 import type { SiteStorageReport } from '@/types/siteStorage'
@@ -36,13 +36,17 @@ export const useSiteStorage = () => {
     return pending
   }
 
+  const storageUsage = (siteName: string) =>
+    (report.value?.sites || []).find((site) => site.name === siteName)
+
   const storageLabel = (siteName: string) => {
-    const usage = (report.value?.sites || []).find((site) => site.name === siteName)
+    const usage = storageUsage(siteName)
     return usage?.total_bytes ? formatBytes(usage.total_bytes) : ''
   }
 
-  const storageBytes = (siteName: string) =>
-    (report.value?.sites || []).find((site) => site.name === siteName)?.total_bytes || 0
+  const storageBytes = (siteName: string) => storageUsage(siteName)?.total_bytes || 0
 
-  return { load, storageLabel, storageBytes }
+  const collectedAt = computed(() => report.value?.collected_at ?? null)
+
+  return { load, storageLabel, storageBytes, storageUsage, collectedAt }
 }

@@ -11,8 +11,10 @@ import type {
 } from '@/types/siteBackups'
 import type { ConsoleDocType } from '@/types/siteConsole'
 import type { DnsRecords, SiteDomains } from '@/types/siteDomains'
+import type { SiteHistory } from '@/types/siteHistory'
+import type { FailedJob } from '@/types/siteJobs'
 import type { SiteAnalytics, SiteUptime } from '@/types/siteMonitoring'
-import type { SiteStorageReport } from '@/types/siteStorage'
+import type { SiteStorageDay, SiteStorageReport } from '@/types/siteStorage'
 import type {
   MigrationStarted,
   SiteDetail,
@@ -48,6 +50,15 @@ export const sitesApi = {
       timeout: false,
       signal,
     }),
+
+  history: (name: string): Promise<SiteHistory> =>
+    request.get(`sites/${encodeURIComponent(name)}/history`).json(),
+
+  failedJobs: (name: string): Promise<FailedJob[]> =>
+    request.get(`sites/${encodeURIComponent(name)}/failed-jobs`).json(),
+
+  storageHistory: (name: string): Promise<SiteStorageDay[]> =>
+    request.get(`sites/${encodeURIComponent(name)}/storage-history`).json(),
 
   refreshStorage: (name: string): Promise<TaskPayload> =>
     request.post(`sites/${encodeURIComponent(name)}/actions/refresh-storage`).json(),
@@ -252,7 +263,9 @@ export const sitesApi = {
       request.get(`sites/${encodeURIComponent(name)}/domains`).json(),
     add: (name: string, domain: string, email = ''): Promise<TaskPayload> =>
       request
-        .post(`sites/${encodeURIComponent(name)}/domains`, { json: email ? { domain, email } : { domain } })
+        .post(`sites/${encodeURIComponent(name)}/domains`, {
+          json: email ? { domain, email } : { domain },
+        })
         .json(),
     remove: (name: string, domain: string): Promise<TaskPayload> =>
       request
