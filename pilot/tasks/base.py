@@ -144,6 +144,16 @@ class Task:
             fields["site"] = safe["site"]
         bench.audit_action("task", fields)
 
+    @staticmethod
+    def get_class(command: str) -> type["Task"]:
+        """The task class that runs a command; raise ValueError for an unknown one."""
+        from pilot.internal.tasks.runner import task_registry
+
+        jobs, _ = task_registry()
+        if command not in jobs:
+            raise ValueError(f"Unknown command: {command!r}")
+        return jobs[command]
+
     @classmethod
     def get_queued_task(cls, bench: "Bench", args: dict) -> "Task":
         """The task these queue arguments describe; raise ValueError for a missing argument."""

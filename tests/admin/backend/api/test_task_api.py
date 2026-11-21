@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -7,10 +8,12 @@ from flask import Flask
 
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
+from pilot.core.bench import Bench
 from pilot.exceptions import TaskNotFoundError
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStore
 from pilot.managers.task.models import TaskStatus
+from tests.pilot.commands.test_commands import make_bench
 
 TASK_ID = "20260715-120000-aabbcc"
 RETRY_TASK_ID = "20260715-120100-ddeeff"
@@ -176,20 +179,61 @@ def test_cancel_rejects_a_task_that_is_no_longer_active(tmp_path: Path) -> None:
     assert response.get_json()["error"]["code"] == "task_not_active"
 
 
+def retry(bench_root: Path, task_id: str = TASK_ID):
+    with patch("admin.backend.api.v1.tasks.ApiRequest.get_bench", return_value=make_bench(bench_root)):
+        return client(bench_root).post(f"/api/v1/tasks/{task_id}/actions/retry")
+
+
 def test_retry_returns_queued_task_and_location(tmp_path: Path) -> None:
     create_task(tmp_path, status=TaskStatus.SUCCESS)
 
-    def retry(*args, **kwargs):
-        create_task(tmp_path, RETRY_TASK_ID)
-        return RETRY_TASK_ID
+    response = retry(tmp_path)
 
-    with patch("admin.backend.api.v1.tasks.TaskRunner.run", side_effect=retry):
-        response = client(tmp_path).post(f"/api/v1/tasks/{TASK_ID}/actions/retry")
-
+    retried_id = response.get_json()["task_id"]
     assert response.status_code == 202
-    assert response.headers["Location"] == f"/api/v1/tasks/{RETRY_TASK_ID}"
-    assert response.get_json()["task_id"] == RETRY_TASK_ID
+    assert retried_id != TASK_ID
+    assert response.headers["Location"] == f"/api/v1/tasks/{retried_id}"
     assert response.get_json()["status"] == "queued"
+    assert TaskStore(tmp_path).read_metadata(retried_id)["args"] == {"app": "frappe"}
+
+
+def test_retry_queues_through_the_task_class(tmp_path: Path) -> None:
+    """A retry gets the callbacks and audit entry that Task.queue gives a new task."""
+    create_task(
+        tmp_path, status=TaskStatus.FAILED, command="setup-letsencrypt", args={"site": "site1.localhost"}
+    )
+
+    with patch.object(Bench, "audit_action") as audit_action:
+        response = retry(tmp_path)
+
+    retried_id = response.get_json()["task_id"]
+    callbacks = json.loads((TaskStore(tmp_path).task_dir(retried_id) / "callbacks.json").read_text())
+    disable_ssl = {"operation": "disable-site-ssl", "args": {"site": "site1.localhost"}}
+    assert callbacks == {"on_failure": disable_ssl, "on_cancel": disable_ssl}
+    audit_action.assert_called_once()
+    assert audit_action.call_args.args[1]["event"] == "queued"
+    assert audit_action.call_args.args[1]["task_id"] == retried_id
+
+
+def test_retry_refuses_a_task_whose_resource_is_held(tmp_path: Path) -> None:
+    create_task(
+        tmp_path, status=TaskStatus.FAILED, command="setup-letsencrypt", args={"site": "site1.localhost"}
+    )
+    assert retry(tmp_path).status_code == 202
+
+    response = retry(tmp_path)
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "task_conflict"
+
+
+def test_retry_rejects_a_task_with_unknown_args(tmp_path: Path) -> None:
+    create_task(tmp_path, status=TaskStatus.FAILED, args={"app": "frappe", "stray": "value"})
+
+    response = retry(tmp_path)
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "invalid_task"
 
 
 def test_retry_rejects_a_task_that_was_given_a_secret(tmp_path: Path) -> None:
