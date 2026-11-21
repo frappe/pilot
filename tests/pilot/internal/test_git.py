@@ -61,6 +61,25 @@ def test_commit_sha_resolves_branches_and_tags_but_not_missing_or_blob_refs(tmp_
     assert repo.get_commit_sha("HEAD:file") == ""
 
 
+def test_get_file_at_revision_reads_blobs_from_the_requested_commit(tmp_path: Path) -> None:
+    repo_path = _init_repo(tmp_path / "repo")
+    _commit(repo_path, "old")
+    repo = GitRepo(repo_path)
+    old = repo.head_sha
+    (repo_path / "file").write_text("new\n")
+    (repo_path / "empty").touch()
+    (repo_path / "binary").write_bytes(b"\xff")
+    _git(repo_path, "add", ".")
+    _git(repo_path, "commit", "-qm", "new")
+
+    assert repo.get_file_at_revision(old, "file") == "old"
+    assert repo.get_file_at_revision("HEAD", "file") == "new\n"
+    assert repo.get_file_at_revision("HEAD", "empty") == ""
+    assert repo.get_file_at_revision("HEAD", "binary") is None
+    assert repo.get_file_at_revision(old, "empty") is None
+    assert repo.get_file_at_revision("missing", "file") is None
+
+
 def test_has_local_changes_tracks_working_tree(tmp_path: Path) -> None:
     repo_path = _init_repo(tmp_path / "repo")
     _commit(repo_path)

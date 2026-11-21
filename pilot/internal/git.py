@@ -109,12 +109,24 @@ class GitRepo:
         commit is missing locally, so callers must fetch before trusting it."""
         return self._run("merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
 
-    def get_changed_files(self, old: str, new: str) -> list[str] | None:
-        """Paths that differ between two commits, or None when either is missing locally."""
-        result = self._run("diff", "--name-only", "--no-renames", "-z", old, new)
+    def get_file_changes(self, old: str, new: str) -> dict[str, str] | None:
+        """Map changed paths to Git statuses, or None when the diff is unavailable."""
+        try:
+            result = self._run("diff", "--name-status", "--no-renames", "-z", old, new, "--")
+        except UnicodeError:
+            return None
         if result.returncode != 0:
             return None
-        return [path for path in result.stdout.split("\0") if path]
+        entries = result.stdout.split("\0")[:-1]
+        return dict(zip(entries[1::2], entries[::2], strict=True))
+
+    def get_file_at_revision(self, revision: str, path: str) -> str | None:
+        """Read a committed blob as text, or return None when it cannot be read."""
+        try:
+            result = self._run("cat-file", "blob", f"{revision}:{path}")
+        except UnicodeError:
+            return None
+        return result.stdout if result.returncode == 0 else None
 
     def tracking_sha(self, branch: str) -> str:
         """SHA of the locally-cached remote branch tip (no network)."""

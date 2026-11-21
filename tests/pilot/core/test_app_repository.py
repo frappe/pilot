@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -324,14 +325,40 @@ def test_has_migrate_changes_assumes_a_migrate_when_the_target_cannot_be_fetched
     path, _ = _repo_with_two_commits(tmp_path / "app")
 
     pin = RevisionPin(kind="commit", ref="f" * 40)
+    assert _repository(path).get_migration_kind(pin) == "maintenance"
     assert _repository(path).has_migrate_changes(pin) is True
+
+
+def test_migration_kind_compares_committed_doctype_files(tmp_path: Path) -> None:
+    path, base = _repo_with_two_commits(tmp_path / "app")
+    doctype = path / "demo/demo/doctype/task/task.json"
+    doctype.parent.mkdir(parents=True)
+    task = {"doctype": "DocType", "name": "Task", "fields": []}
+    doctype.write_text(json.dumps(task))
+    _git(path, "add", ".")
+    _git(path, "commit", "-qm", "add task")
+    original = GitRepo(path).head_sha
+    task["fields"] = [{"fieldname": "title", "fieldtype": "Data"}]
+    doctype.write_text(json.dumps(task))
+    _git(path, "commit", "-qam", "add title")
+    _git(path, "tag", "-a", "release", "-m", "release")
+    app_repo = _repository(path)
+
+    _git(path, "checkout", "-q", base)
+    assert app_repo.get_migration_kind(RevisionPin(kind="commit", ref=original)) == "online"
+
+    _git(path, "checkout", "-q", original)
+    doctype.write_text("uncommitted changes")
+    pin = RevisionPin(kind="tag", ref="release")
+    assert app_repo.get_migration_kind(pin) == "online"
+    assert app_repo.has_migrate_changes(pin) is True
 
 
 def test_has_migrate_changes_sees_a_doctype_moved_out_of_place(tmp_path: Path) -> None:
     path, _ = _repo_with_two_commits(tmp_path / "app")
     doctype = path / "demo/demo/doctype/task/task.json"
     doctype.parent.mkdir(parents=True)
-    doctype.write_text('{"doctype": "DocType", "name": "Task", "fields": []}\n' * 20)
+    doctype.write_text('{"doctype": "DocType", "name": "Task", "fields": []}\n')
     _git(path, "add", ".")
     _git(path, "commit", "-qm", "add task")
     (path / "demo/archive").mkdir(parents=True)
@@ -341,6 +368,7 @@ def test_has_migrate_changes_sees_a_doctype_moved_out_of_place(tmp_path: Path) -
     _git(path, "checkout", "-q", "HEAD~1")
 
     pin = RevisionPin(kind="commit", ref=target)
+    assert _repository(path).get_migration_kind(pin) == "maintenance"
     assert _repository(path).has_migrate_changes(pin) is True
 
 

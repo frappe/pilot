@@ -57,6 +57,7 @@ class MigrationStore:
         exact revision instead of whatever the marketplace/branch tip is by the
         time the update phase actually runs."""
         pin = app.update_target()
+        migration_kind = app.get_migration_kind(pin) if pin else "none"
         return AppRevision(
             app.config.name,
             app.installed_hash,
@@ -64,6 +65,7 @@ class MigrationStore:
             target_sha=pin.ref if pin else None,
             target_kind=pin.kind if pin else "commit",
             has_migrate_changes=pin is not None and app.has_migrate_changes(pin),
+            migration_kind=migration_kind,
         )
 
     def create_site_migrate(

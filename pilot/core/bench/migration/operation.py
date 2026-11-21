@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from pilot.config.monitor import get_update_log
 from pilot.core.app import RevisionPin
+from pilot.core.app.schema_diff import MigrationKind
 from pilot.core.bench.migration.recovery import MigrationRecovery
 from pilot.core.bench.migration.state import (
     MigrationState,
@@ -58,6 +59,7 @@ class AppRevision:
     target_kind: Literal["tag", "commit"] = "commit"  # how to check target_sha out
     branch: str = ""  # branch to return to on revert, set when a branch switch changed it
     has_migrate_changes: bool = True
+    migration_kind: MigrationKind | None = None
 
     @property
     def compare_url(self) -> str | None:

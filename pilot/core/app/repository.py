@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 import shutil
+from functools import partial
 from typing import TYPE_CHECKING
 
 from pilot.core.app.revisions import RevisionPin
+from pilot.core.app.schema_diff import MigrationKind, get_schema_migration_kind
 from pilot.exceptions import BenchError, CommandError
 from pilot.internal.command import run_command
 
@@ -29,6 +31,7 @@ class AppRepository:
             r"\w+/\w+/\w+/(.+)/\1\.json",
         )
     )
+
 
     def __init__(self, app: "App") -> None:
         self.app = app
@@ -79,10 +82,23 @@ class AppRepository:
     def has_migrate_changes(self, pin: RevisionPin) -> bool:
         """Whether moving to `pin` changes anything migrate syncs. True when the diff is unknown."""
         self.fetch_missing_commit(pin.ref)
-        files = self.repo.get_changed_files(self.installed_hash, pin.ref)
+        files = self.repo.get_file_changes(self.installed_hash, pin.ref)
         if files is None:
             return True
         return any(pattern.match(path) for pattern in self.migrate_paths for path in files)
+
+    def get_migration_kind(self, pin: RevisionPin) -> MigrationKind:
+        """Classify migration requirements from the installed commit to `pin`."""
+        self.fetch_missing_commit(pin.ref)
+        repo = self.repo
+        old, new = repo.head_sha, repo.get_commit_sha(pin.ref)
+        if not old or not new:
+            return "maintenance"
+        return get_schema_migration_kind(
+            repo.get_file_changes(old, new),
+            partial(repo.get_file_at_revision, old),
+            partial(repo.get_file_at_revision, new),
+        )
 
     def fetch_missing_commit(self, commit: str) -> None:
         """Fetch `commit` unless it is local. A shallow clone takes it without history,

@@ -15,6 +15,7 @@ from pilot.config import AppConfig
 from pilot.core.app.install_result import AppInstallResult
 from pilot.core.app.repository import AppRepository
 from pilot.core.app.revisions import RevisionPin
+from pilot.core.app.schema_diff import MigrationKind
 from pilot.exceptions import BenchError
 from pilot.internal.command import run_command
 from pilot.internal.host_resources import InstalledPackages
@@ -273,6 +274,9 @@ class App:
     def has_migrate_changes(self, pin: RevisionPin) -> bool:
         """Whether moving to the pin changes what migrate runs."""
         return self._repository.has_migrate_changes(pin)
+
+    def get_migration_kind(self, pin: RevisionPin) -> MigrationKind:
+        return self._repository.get_migration_kind(pin)
 
     @property
     def marketplace_entry(self) -> dict | None:

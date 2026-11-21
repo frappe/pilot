@@ -70,6 +70,7 @@ def _app_needing_migrate() -> MagicMock:
     app.installed_hash = "1111111"
     app.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
     app.has_migrate_changes.return_value = True
+    app.get_migration_kind.return_value = "online"
     return app
 
 
@@ -98,6 +99,7 @@ def test_post_updates_creates_operation(tmp_path: Path) -> None:
     op_data = op_resp.get_json()
     assert op_data["kind"] == "update"
     assert op_data["state"] == "backing_up"
+    assert op_data["apps"][0]["migration_kind"] == "online"
     assert "skip_failing_patches" not in op_data
 
 

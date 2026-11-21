@@ -231,6 +231,7 @@ def test_update_operation_records_app_repository(tmp_path: Path) -> None:
     app.is_linked = False
     app.installed_hash = "1111111"
     app.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
+    app.get_migration_kind.return_value = "online"
     app.has_migrate_changes.return_value = True
     mock_bench.apps.return_value = [app]
     mock_bench.sites.return_value = []
@@ -238,14 +239,16 @@ def test_update_operation_records_app_repository(tmp_path: Path) -> None:
     from pilot.core.bench.migration.store import MigrationStore
 
     with patch.object(Marketplace, "registry", return_value=[]):
-        operation = MigrationStore(mock_bench).create_update()
+        store = MigrationStore(mock_bench)
+        operation = store.create_update()
 
-    assert operation.apps == [
+    assert store.get(operation.id).apps == [
         AppRevision(
             "frappe",
             "1111111",
             repository_url="https://github.com/frappe/frappe.git",
             target_sha="2222222",
+            migration_kind="online",
         )
     ]
 
@@ -260,6 +263,7 @@ def test_update_operation_captures_tag_pinned_target(tmp_path: Path) -> None:
     app.is_linked = False
     app.installed_hash = "aaaaaaa"
     app.update_target.return_value = RevisionPin(kind="tag", ref="v2.0.0")
+    app.get_migration_kind.return_value = "maintenance"
     app.has_migrate_changes.return_value = True
     mock_bench.apps.return_value = [app]
     mock_bench.sites.return_value = []
@@ -276,6 +280,7 @@ def test_update_operation_captures_tag_pinned_target(tmp_path: Path) -> None:
             repository_url="https://github.com/frappe/helpdesk.git",
             target_sha="v2.0.0",
             target_kind="tag",
+            migration_kind="maintenance",
         )
     ]
 
@@ -297,6 +302,7 @@ def test_create_update_only_includes_sites_with_a_selected_app(tmp_path: Path) -
     hrms.is_linked = False
     hrms.installed_hash = "1111111"
     hrms.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
+    hrms.get_migration_kind.return_value = "online"
     hrms.has_migrate_changes.return_value = True
     mock_bench.apps.return_value = [hrms]
     mock_bench.sites.return_value = [
@@ -322,6 +328,7 @@ def test_create_update_includes_a_site_when_its_apps_cannot_be_determined(tmp_pa
     hrms.is_linked = False
     hrms.installed_hash = "1111111"
     hrms.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
+    hrms.get_migration_kind.return_value = "maintenance"
     hrms.has_migrate_changes.return_value = True
     mock_bench.apps.return_value = [hrms]
     mock_bench.sites.return_value = [_site_with_apps("unknown.local", [])]
@@ -343,6 +350,7 @@ def test_create_update_skips_backup_and_migrate_when_no_app_needs_a_migrate(tmp_
     hrms.config.repo = ""
     hrms.installed_hash = "1111111"
     hrms.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
+    hrms.get_migration_kind.return_value = "none"
     hrms.has_migrate_changes.return_value = False
     mock_bench.apps.return_value = [hrms]
     mock_bench.sites.return_value = [_site_with_apps("with-hrms.local", ["frappe", "hrms"])]
@@ -364,14 +372,15 @@ def test_create_update_migrates_every_site_when_one_app_needs_it(tmp_path: Path)
     mock_bench = MagicMock()
     mock_bench.path = tmp_path
     apps = []
-    for name, has_migrate_changes in (("hrms", True), ("crm", False)):
+    for name, migration_kind in (("hrms", "online"), ("crm", "none")):
         app = MagicMock()
         app.config.name = name
         app.is_linked = False
         app.config.repo = ""
         app.installed_hash = "1111111"
         app.update_target.return_value = RevisionPin(kind="commit", ref="2222222")
-        app.has_migrate_changes.return_value = has_migrate_changes
+        app.get_migration_kind.return_value = migration_kind
+        app.has_migrate_changes.return_value = migration_kind != "none"
         apps.append(app)
     mock_bench.apps.return_value = apps
     mock_bench.sites.return_value = [

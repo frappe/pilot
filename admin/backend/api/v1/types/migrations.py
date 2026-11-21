@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal, NotRequired, TypedDict
 
 from admin.backend.api.responses import PageMeta
+from pilot.core.app.schema_diff import MigrationKind
 from pilot.managers.task import TaskStatus
 
 MigrationStateName = Literal[
@@ -30,6 +31,7 @@ class MigrationApp(TypedDict):
     target_sha: str | None
     target_kind: Literal["tag", "commit"]
     has_migrate_changes: bool
+    migration_kind: MigrationKind | None
     compare_url: str | None
 
 
