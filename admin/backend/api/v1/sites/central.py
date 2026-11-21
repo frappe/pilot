@@ -32,6 +32,10 @@ _ALLOWED_EXACT = frozenset(
         "central.api.email_oauth.get_active_providers",
         "central.api.email_oauth.start",
         "central.api.email_oauth.relay_token",
+        "central.api.oauth.get_active_providers",
+        "central.api.oauth.start",
+        "central.api.oauth.relay_token",
+        "central.api.meta_webhook.disconnect",
     }
 )
 
@@ -60,7 +64,9 @@ def central_proxy(name: str, method_path: str):
     if data is not None and not isinstance(data, dict):
         return malformed_body()
     try:
-        return jsonify(CentralClient().forward(method_path, request.method, data))
+        # a provider sign-in can take longer than 10 s; the site waits 30 s
+        timeout = 30 if method_path.startswith("central.api.oauth.") else 10
+        return jsonify(CentralClient().forward(method_path, request.method, data, timeout))
     except CentralClientError as exc:
         # Central rejecting the input is not an outage; relaying a 502 would read
         # as though Central is down.
