@@ -75,9 +75,7 @@ const statusTheme = computed(() => {
             class="shrink-0"
           />
 
-          <h3 class="flex-1 min-w-0 text-lg-semibold text-ink-gray-8">
-            {{ app.title }}
-          </h3>
+          <h3 class="flex-1 min-w-0 text-base-medium text-ink-gray-8 truncate">{{ app.title }}</h3>
 
           <Button
             v-if="app.installed"

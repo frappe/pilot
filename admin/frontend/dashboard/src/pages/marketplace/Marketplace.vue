@@ -123,7 +123,7 @@ onMounted(load)
     </Button>
   </Teleport>
 
-  <div class="flex flex-col gap-4 mx-auto px-3 md:px-8 pt-4 md:pt-8 pb-40 max-w-6xl">
+  <div class="flex flex-col gap-4 p-3 md:p-4 pb-40 md:pb-40">
     <header class="flex flex-wrap gap-2">
       <TextInput
         v-model="search"
@@ -139,7 +139,7 @@ onMounted(load)
         side="bottom"
         class="flex-1 md:flex-none md:w-48"
       >
-        <template #prefix><span class="size-4 text-ink-gray-5 lucide-globe" /></template>
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-pilot-site" /></template>
       </Select>
 
       <Select v-model="sortBy" :options="sortOptions" side="bottom" class="w-36">
@@ -156,7 +156,10 @@ onMounted(load)
       class="mb-2 overflow-x-auto"
     />
 
-    <div v-if="loading" class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+    <div
+      v-if="loading"
+      class="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+    >
       <Skeleton v-for="i in 9" :key="i" class="rounded-6 h-24" />
     </div>
 
@@ -185,12 +188,14 @@ onMounted(load)
 
     <template v-else>
       <section v-if="privateApps.length" class="mb-4">
-        <h2 class="flex items-baseline gap-2 mb-3 text-2xl-semibold text-ink-gray-8">
+        <h2 class="flex items-baseline gap-2 mb-3 text-base-medium text-ink-gray-8">
           Private apps
-          <span class="text-ink-gray-5 text-base">{{ privateApps.length }}</span>
+          <span class="text-ink-gray-5 text-sm">{{ privateApps.length }}</span>
         </h2>
 
-        <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+        <div
+          class="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+        >
           <MarketplaceAppTile
             v-for="app in privateApps"
             :key="app.name"
@@ -202,12 +207,14 @@ onMounted(load)
       </section>
 
       <section v-if="apps.length">
-        <h2 class="flex items-baseline gap-2 mb-3 text-2xl-semibold text-ink-gray-8">
+        <h2 class="flex items-baseline gap-2 mb-3 text-base-medium text-ink-gray-8">
           {{ selectedPill === 'All' ? 'All apps' : selectedPill }}
-          <span class="text-ink-gray-5 text-base">{{ apps.length }}</span>
+          <span class="text-ink-gray-5 text-sm">{{ apps.length }}</span>
         </h2>
 
-        <div class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+        <div
+          class="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+        >
           <MarketplaceAppTile
             v-for="app in apps"
             :key="app.name"
