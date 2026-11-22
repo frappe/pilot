@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -44,6 +45,16 @@ class StorageItem:
 
 
 @dataclass
+class AppStorage:
+    """`bytes` covers the whole app directory, including its git history and node_modules."""
+
+    name: str
+    bytes: int
+    git_bytes: int
+    node_modules_bytes: int
+
+
+@dataclass
 class SiteStorage:
     name: str
     bytes: int
@@ -58,8 +69,9 @@ class SiteStorage:
 @dataclass
 class BenchBreakdown:
     used_bytes: int
-    apps: list[StorageItem]
+    apps: list[AppStorage]
     apps_bytes: int
+    env_bytes: int
     sites: list[SiteStorage]
     sites_bytes: int
     logs_bytes: int
@@ -113,6 +125,16 @@ def _measure_quietly(path: str) -> None:
     # A failure is not cached, so the serial read that follows raises it where it did before.
     with suppress(OSError, CommandError, IndexError, ValueError):
         directory_size_bytes(path)
+
+
+def node_modules_directories(app_path: Path) -> list[Path]:
+    """Every node_modules in an app, including nested frontends like `frontend/node_modules`."""
+    found: list[Path] = []
+    for directory, children, _files in os.walk(app_path):
+        if "node_modules" in children:
+            found.append(Path(directory) / "node_modules")
+        children[:] = [child for child in children if child not in {"node_modules", ".git"}]
+    return found
 
 
 def _storage_entry(path: Path) -> StorageItem:
@@ -181,7 +203,9 @@ class StorageProvider:
 
     def get_bench_directories(self) -> list[Path]:
         """Every directory the breakdown sizes, so they can be measured side by side first."""
-        directories = [self._bench.logs_path, *(app.path for app in self._bench.apps())]
+        directories = [self._bench.logs_path, self._bench.env_path]
+        for app in self._bench.apps():
+            directories.extend([app.path, app.path / ".git", *node_modules_directories(app.path)])
         for site in self._bench.sites():
             directories.extend(site_directories(site.path))
         return directories
@@ -237,21 +261,31 @@ class StorageProvider:
 
     def _bench_breakdown(self) -> BenchBreakdown:
         """The bench storage breakdown."""
-        apps = [
-            StorageItem(name=app.config.name, bytes=directory_size_bytes(str(app.path)))
-            for app in self._bench.apps()
-        ]
+        apps = [self._app_storage(app) for app in self._bench.apps()]
         sites = [self._site_storage(site) for site in self._bench.sites()]
         logs_bytes = directory_size_bytes(str(self._bench.logs_path))
+        env_bytes = directory_size_bytes(str(self._bench.env_path))
         apps_bytes = sum(item.bytes for item in apps)
         sites_bytes = sum(item.bytes for item in sites)
         return BenchBreakdown(
-            used_bytes=apps_bytes + sites_bytes + logs_bytes,
+            used_bytes=apps_bytes + env_bytes + sites_bytes + logs_bytes,
             apps=apps,
             apps_bytes=apps_bytes,
+            env_bytes=env_bytes,
             sites=sites,
             sites_bytes=sites_bytes,
             logs_bytes=logs_bytes,
+        )
+
+    def _app_storage(self, app) -> AppStorage:
+        """The storage of one app, with its git history and node_modules split out."""
+        return AppStorage(
+            name=app.config.name,
+            bytes=directory_size_bytes(str(app.path)),
+            git_bytes=directory_size_bytes(str(app.path / ".git")),
+            node_modules_bytes=sum(
+                directory_size_bytes(str(path)) for path in node_modules_directories(app.path)
+            ),
         )
 
     def _site_storage(self, site) -> SiteStorage:

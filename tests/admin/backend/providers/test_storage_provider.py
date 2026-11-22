@@ -39,14 +39,50 @@ def test_bench_breakdown_sums_apps_sites_and_logs(tmp_path: Path) -> None:
     (tmp_path / "logs").mkdir()
     (tmp_path / "logs" / "web.log").write_bytes(b"c" * 512)
 
+    (tmp_path / "env" / "lib").mkdir(parents=True)
+    (tmp_path / "env" / "lib" / "site.py").write_bytes(b"d" * 4096)
+
     breakdown = StorageProvider(tmp_path)._bench_breakdown()
 
     assert [entry.name for entry in breakdown.apps] == ["frappe"]
     assert [entry.name for entry in breakdown.sites] == ["site1.local"]
     assert breakdown.apps_bytes > 0
+    assert breakdown.env_bytes > 0
     assert breakdown.sites_bytes > 0
     assert breakdown.logs_bytes > 0
-    assert breakdown.used_bytes == (breakdown.apps_bytes + breakdown.sites_bytes + breakdown.logs_bytes)
+    assert breakdown.used_bytes == (
+        breakdown.apps_bytes + breakdown.env_bytes + breakdown.sites_bytes + breakdown.logs_bytes
+    )
+
+
+def test_app_storage_splits_git_and_node_modules(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import StorageProvider
+
+    _write_bench(tmp_path)
+    _make_app(tmp_path, "frappe", b"a" * 4096)
+    app_dir = tmp_path / "apps" / "frappe"
+    (app_dir / ".git" / "pack").write_bytes(b"g" * 8192)
+    (app_dir / "node_modules").mkdir()
+    (app_dir / "node_modules" / "lib.js").write_bytes(b"n" * 16384)
+    (app_dir / "frontend" / "node_modules").mkdir(parents=True)
+    (app_dir / "frontend" / "node_modules" / "vue.js").write_bytes(b"v" * 16384)
+
+    app = StorageProvider(tmp_path)._bench_breakdown().apps[0]
+
+    assert app.git_bytes >= 8192
+    assert app.node_modules_bytes >= 32768
+    assert app.bytes >= app.git_bytes + app.node_modules_bytes + 4096
+
+
+def test_app_without_node_modules_reports_zero(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import StorageProvider
+
+    _write_bench(tmp_path)
+    _make_app(tmp_path, "frappe")
+
+    app = StorageProvider(tmp_path)._bench_breakdown().apps[0]
+
+    assert app.node_modules_bytes == 0
 
 
 def test_site_storage_splits_private_public_and_backups(tmp_path: Path) -> None:
