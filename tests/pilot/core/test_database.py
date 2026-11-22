@@ -475,6 +475,37 @@ def test_mariadb_schema_sizes_count_space_a_rebuild_would_reclaim() -> None:
     assert "data_length + index_length + data_free" in calls[0][0]
 
 
+def test_mariadb_schema_sizes_read_schema_directories_when_readable(tmp_path: Path) -> None:
+    for name in ("site_one", "my@002dsite", "#innodb_temp"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "site_one" / "tabNote.ibd").write_bytes(b"x" * 8192)
+    (tmp_path / "ibdata1").write_bytes(b"x")
+    db = MariaDB(host="localhost", port=3306, user="u", password="p", database="")
+    calls: list = []
+
+    with (
+        patch.object(MariaDB, "get_data_directory", return_value=str(tmp_path)),
+        patch.object(MariaDB, "execute", _canned_execute({}, calls)),
+    ):
+        sizes = db.get_schema_sizes()
+
+    assert set(sizes) == {"site_one", "my-site"}
+    assert sizes["site_one"] >= 8192
+    assert calls == []
+
+
+def test_mariadb_schema_sizes_fall_back_to_the_query_when_unreadable(tmp_path: Path) -> None:
+    db = MariaDB(host="localhost", port=3306, user="u", password="p", database="")
+    responses = {"information_schema.TABLES": ([], [["site_one", 500]])}
+
+    with (
+        patch.object(MariaDB, "get_data_directory", return_value=str(tmp_path)),
+        patch("pilot.core.database.engines.mariadb.os.access", return_value=False),
+        patch.object(MariaDB, "execute", _canned_execute(responses)),
+    ):
+        assert db.get_schema_sizes() == {"site_one": 500}
+
+
 def test_postgres_schema_sizes_skip_template_databases() -> None:
     db = PostgreSQL(host="h", port=5432, user="u", password="p", database="")
     responses = {"pg_database_size": ([], [["site_one", 900], ["postgres", 60]])}

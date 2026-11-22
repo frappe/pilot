@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ from pilot.core.database.engines.mariadb_performance import MariaDBPerformanceRe
 from pilot.core.database.slow_log import SlowLogFile, SlowQueryReport
 from pilot.core.database.slow_queries import slow_row_key
 from pilot.exceptions import DatabaseError
+from pilot.internal.host_resources import DiskUsage
 
 # The monitor collects every minute, so a short tail holds everything new.
 SLOW_LOG_COLLECT_BYTES = 2 * 1024 * 1024
@@ -475,7 +477,27 @@ class MariaDB(Database):
         return str(self.get_scalar("SELECT @@datadir"))
 
     def get_schema_sizes(self) -> dict[str, int]:
-        """The size of each schema."""
+        """The size of each schema: its files on disk when Pilot can read the
+        data directory, otherwise what information_schema reports."""
+        file_sizes = self.get_schema_file_sizes()
+        if file_sizes is not None:
+            return file_sizes
+        return self.get_schema_table_sizes()
+
+    def get_schema_file_sizes(self) -> dict[str, int] | None:
+        """Each schema directory's size on disk, or None when the data directory
+        is remote or not readable by this user (it is usually 0700 mysql)."""
+        data_dir = self.get_data_directory()
+        if not data_dir or not os.access(data_dir, os.R_OK | os.X_OK):
+            return None
+        return {
+            decode_schema_directory(entry.name): DiskUsage(entry.path).bytes
+            for entry in os.scandir(data_dir)
+            if entry.is_dir() and not entry.name.startswith("#")
+        }
+
+    def get_schema_table_sizes(self) -> dict[str, int]:
+        """The size of each schema as information_schema reports it."""
         result = self.execute(
             "SELECT table_schema, COALESCE(SUM(data_length + index_length + data_free), 0) "
             "FROM information_schema.TABLES GROUP BY table_schema"
@@ -520,6 +542,12 @@ class MariaDB(Database):
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")
         return int(result.rows[0][1])
+
+
+def decode_schema_directory(name: str) -> str:
+    """MariaDB writes characters outside [A-Za-z0-9_] in a schema's directory
+    name as @ and four hex digits, so `my-site` lives in `my@002dsite`."""
+    return re.sub(r"@([0-9a-f]{4})", lambda match: chr(int(match[1], 16)), name)
 
 
 def _utc_iso(epoch: SupportsFloat | None) -> str | None:
