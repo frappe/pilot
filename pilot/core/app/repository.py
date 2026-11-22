@@ -18,16 +18,22 @@ if TYPE_CHECKING:
 class AppRepository:
     fetch_timeout_seconds = 30
     history_margin_seconds = 24 * 60 * 60  # committer clocks drift, so history reaches a little further back
-    # Changes `frappe migrate` syncs into the database, as Frappe Cloud decides a migrate deploy.
+    # Frappe's migrate, model.sync, fixtures, customizations and Language sync inputs.
     migrate_paths = tuple(
         re.compile(pattern)
         for pattern in (
-            r"\w+/patches\.txt",
-            r"\w+/hooks\.py",
-            r"\w+/fixtures/",
-            r"\w+/\w+/custom/",
-            r"frappe/geo/languages\.json",
-            r"\w+/\w+/\w+/(.+)/\1\.json",
+            r"[^/]+/(?:hooks\.py|patches\.txt|modules\.txt)",
+            r"[^/]+/fixtures/.*",
+            r"[^/]+/[^/]+/custom/.*",
+            r"frappe/geo/languages\.(?:csv|json)",
+            # Modules can extend the importable document folders via hooks.
+            r"[^/]+/[^/]+/[^/]+/([^/]+)/\1\.json",
+            r"[^/]+/(?:sidebar|dock)/([^/]+)/\1\.json",
+            r"[^/]+/(?:desktop_icon|workspace_sidebar|sidebar_item_group)/[^/]+\.json",
+            r"[^/]+/[^/]+/doctype/[^/]+/(?:list_filter|kanban_board)/[^/]+\.json",
+            r"[^/]+/[^/]+/doctype_settings_map/[^/]+\.json",
+            # The orphan reaper searches these folders recursively.
+            r"[^/]+/(?:.*/)?(?:workspace|[^/]+_dashboard|page|report|notification|sidebar|dock|list_filter|kanban_board)/(?:.*/)?[^/]+\.json",
         )
     )
 
@@ -83,7 +89,7 @@ class AppRepository:
         files = self.repo.get_changed_files(self.installed_hash, pin.ref)
         if files is None:
             return True
-        return any(pattern.match(path) for pattern in self.migrate_paths for path in files)
+        return any(pattern.fullmatch(path) for pattern in self.migrate_paths for path in files)
 
     def fetch_missing_commit(self, commit: str) -> None:
         """Fetch `commit` unless it is local. A shallow clone takes it without history,
