@@ -10,7 +10,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  icon: 'lucide-globe',
+  icon: 'lucide-pilot-site',
   selected: false,
   disabled: false,
   interactive: true,

@@ -13,7 +13,7 @@ interface SidebarSection {
 export const sidebarSections: SidebarSection[] = [
   {
     items: [
-      { label: 'Sites', icon: 'lucide-globe', to: '/sites' },
+      { label: 'Sites', icon: 'lucide-pilot-site', to: '/sites' },
       { label: 'Storage', icon: 'lucide-hard-drive', to: '/storage' },
       { label: 'Marketplace', icon: 'lucide-store', to: '/marketplace' },
     ],

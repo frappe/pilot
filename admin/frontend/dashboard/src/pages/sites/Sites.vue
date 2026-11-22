@@ -270,7 +270,7 @@ onMounted(() => {
     <template v-else-if="showSkeleton || filteredSites.length">
       <div
         v-if="showSkeleton || view === 'grid'"
-        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5"
+        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
       >
         <template v-if="showSkeleton">
           <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />
@@ -378,7 +378,7 @@ onMounted(() => {
     <EmptyState
       v-else
       class="mt-4"
-      icon="lucide-globe"
+      icon="lucide-pilot-site"
       :title="isFiltered ? 'No matching sites' : 'No sites yet'"
       :description="
         isFiltered

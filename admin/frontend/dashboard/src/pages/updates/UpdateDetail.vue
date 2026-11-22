@@ -114,7 +114,7 @@ const facts = computed(() => {
       value: duration.value || '-',
       note: '',
     },
-    { label: 'Sites', icon: 'lucide-globe', value: String(sites.length), note: '' },
+    { label: 'Sites', icon: 'lucide-pilot-site', value: String(sites.length), note: '' },
     {
       label: 'Backups',
       icon: 'lucide-database-backup',
