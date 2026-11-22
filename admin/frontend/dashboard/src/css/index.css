@@ -171,6 +171,11 @@ input:autofill {
 	@apply bg-surface-base;
 }
 
+.dialog-content[data-state] {
+  animation: none;
+  transform: none;
+}
+
 .legend-dot::before {
   content: "";
   flex-shrink: 0;
