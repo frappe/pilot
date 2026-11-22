@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import zlib
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
@@ -14,6 +15,7 @@ from typing import IO, TYPE_CHECKING
 from pilot.exceptions import BenchError
 from pilot.internal.command import run_command
 from pilot.internal.private_files import PrivateDirectory
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
@@ -150,9 +152,25 @@ class SiteMigrationBackup:
         tables = self._list_tables(config, db_name)
         self.previous_tables_path.write_text(json.dumps(tables, indent=2), encoding="utf-8")
         self.config_backup_path.write_text(json.dumps(config, indent=1), encoding="utf-8")
-        for table in tables:
-            self._dump_table(config, db_name, table)
+        self._dump_tables(config, db_name, tables)
         return tables
+
+    @property
+    def dump_worker_count(self) -> int:
+        """Half the CPUs, as other sites keep serving. Uploads stay serial to bound their memory."""
+        if self.offsite:
+            return 1
+        return max(1, min(4, HostPlatform().available_cpu_count // 2))
+
+    def _dump_tables(self, config: dict, db_name: str, tables: list[str]) -> None:
+        """Dump the tables side by side. No dump still runs once this returns or raises."""
+        pool = ThreadPoolExecutor(max_workers=self.dump_worker_count)
+        try:
+            dumps = [pool.submit(self._dump_table, config, db_name, table) for table in tables]
+            for dump in as_completed(dumps):
+                dump.result()
+        finally:
+            pool.shutdown(cancel_futures=True)
 
     def _create_full_database_backup(self) -> None:
         """Take a full database backup with bench backup."""
@@ -300,12 +318,17 @@ class SiteMigrationBackup:
         if location := self.offsite:
             self._upload_dump(argv, table, location)
             return
-        with gzip.open(self._dump_path(table), "wb") as compressed:
-            process = subprocess.Popen(argv, stdout=subprocess.PIPE)
+        with (
+            gzip.open(self._dump_path(table), "wb", compresslevel=6) as compressed,
+            subprocess.Popen(argv, stdout=subprocess.PIPE) as process,
+        ):
             if process.stdout is None:
                 raise BenchError("Database dump output pipe was not created")
-            shutil.copyfileobj(process.stdout, compressed)
-            process.stdout.close()
+            try:
+                shutil.copyfileobj(process.stdout, compressed)
+            except BaseException:
+                process.kill()
+                raise
             if process.wait() != 0:
                 raise BenchError(f"Failed to dump table {table} for {self.site.config.name}")
 

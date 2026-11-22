@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 from subprocess import CompletedProcess, Popen
-from unittest.mock import MagicMock, patch
+from threading import Barrier
+from time import sleep
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -9,6 +11,7 @@ from pilot.core.site.backups.migration import SiteMigrationBackup
 from pilot.core.site.config.file import SiteConfigFile
 from pilot.exceptions import BenchError
 from pilot.integrations.s3.base import S3IntegrationError
+from pilot.managers.platform import HostPlatform
 
 
 @pytest.mark.parametrize("database_engine", ["sqlite", "postgres"])
@@ -373,3 +376,80 @@ def test_discard_deletes_the_objects_and_the_directory(tmp_path: Path) -> None:
 
     assert list(bucket.objects) == ["sites/other.localhost/backups/keep.sql.gz"]
     assert not backup.directory.exists()
+
+
+@pytest.mark.parametrize(
+    ("cpus", "in_s3", "expected"),
+    [(1, False, 1), (2, False, 1), (4, False, 2), (8, False, 4), (64, False, 4), (64, True, 1)],
+)
+def test_dumps_take_half_the_cpus_up_to_four_and_go_to_s3_one_at_a_time(
+    tmp_path: Path, cpus: int, in_s3: bool, expected: int
+) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = in_s3
+    backup = SiteMigrationBackup(site)
+    if in_s3:
+        backup.directory.mkdir()
+        backup.offsite_path.write_text('{"bucket": "recovery", "prefix": "test/"}')
+
+    with patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=cpus):
+        assert backup.dump_worker_count == expected
+
+
+def test_table_dumps_run_side_by_side(tmp_path: Path) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    both_running = Barrier(2, timeout=5)
+
+    with (
+        patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=4),
+        patch.object(backup, "_list_tables", return_value=["tabUser", "tabRole"]),
+        patch.object(backup, "_dump_table", side_effect=lambda *args: both_running.wait()),
+    ):
+        assert backup.create("operation-1") == ["tabUser", "tabRole"]
+
+
+def test_a_failed_dump_waits_for_the_running_ones_and_cancels_the_rest(tmp_path: Path) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    started, finished = set(), set()
+
+    def dump(config: dict, db_name: str, table: str) -> None:
+        started.add(table)
+        if table == "tab1":
+            raise BenchError("Failed to dump table tab1")
+        # The first table outlasts the failure, so a backup that reads results in order starts many more.
+        sleep(1 if table == "tab0" else 0.05)
+        finished.add(table)
+
+    with (
+        patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=4),
+        patch.object(backup, "_list_tables", return_value=[f"tab{number}" for number in range(100)]),
+        patch.object(backup, "_dump_table", side_effect=dump),
+        pytest.raises(BenchError, match="Failed to dump table tab1"),
+    ):
+        backup.create("operation-1")
+
+    assert finished == started - {"tab1"}
+    assert len(started) < 10
+
+
+def test_local_dumps_compress_at_the_level_the_disk_check_expects(tmp_path: Path) -> None:
+    import gzip
+
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+
+    with (
+        patch.object(backup, "_list_tables", return_value=["tabUser"]),
+        patch.object(backup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "INSERT 1;")),
+        patch.object(backup, "_conn_args", return_value=[]),
+        patch("pilot.core.site.backups.migration.gzip.open", wraps=gzip.open) as gzip_open,
+    ):
+        backup.create("operation-1")
+
+    assert gzip_open.call_args.kwargs == {"compresslevel": 6}
+    assert gzip.decompress(backup._dump_path("tabUser").read_bytes()) == b"INSERT 1;"
