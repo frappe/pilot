@@ -143,10 +143,10 @@ def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
             pm.start_admin()
             NginxManager(bench).publish_config()
             server_ip = DomainRouteProvider._server_ip()
-    except Exception:
+    except Exception as exc:
         return error_response(
             "bench_start_failed",
-            "The bench was created but its Admin could not be started.",
+            f"The bench was created but its Admin could not be started: {exc}",
             500,
             {"created": True, "name": name},
         )
