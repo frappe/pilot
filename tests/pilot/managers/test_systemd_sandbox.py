@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -195,7 +196,8 @@ def _sandboxed_manager(
     monkeypatch.setattr(systemd, "AdminEnvManager", MagicMock())
     monkeypatch.setattr(systemd, "get_sandbox_error", lambda _properties: probe_error)
     monkeypatch.setattr(manager, "_prod_process_definitions", lambda: [web])
-    bench.env_path.mkdir(parents=True, exist_ok=True)
+    bench.python.parent.mkdir(parents=True, exist_ok=True)
+    bench.python.touch()
     (bench.env_path / "pyvenv.cfg").write_text("version_info = 3.14.2\n")
     return manager
 
@@ -251,6 +253,14 @@ def test_a_venv_with_an_unknown_python_cannot_run_the_sandbox(
             manager.get_checked_sandbox_properties()
     else:
         assert manager.get_checked_sandbox_properties() == []
+
+
+def test_a_new_bench_without_a_venv_runs_the_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Admin starts before setup builds the venv, so no bench Python runs outside the sandbox yet."""
+    manager = _sandboxed_manager(tmp_path, monkeypatch, probe_error="")
+    shutil.rmtree(manager.bench.env_path)
+
+    assert "NoNewPrivileges=yes" in manager.get_checked_sandbox_properties()
 
 
 def test_a_venv_python_with_safe_path_runs_the_sandbox(
