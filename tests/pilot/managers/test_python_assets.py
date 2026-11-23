@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-import multiprocessing
-import os
 import shutil
-import signal
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -336,6 +333,7 @@ def test_a_declared_build_dir_gets_its_dependencies_when_only_the_root_has_them(
 def test_rebuild_preserves_open_tabs_and_retires_older_bundles(tmp_path: Path) -> None:
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
     app = make_app(tmp_path / "apps/gameplan")
     app.has_source_changes = True
     dist = app.path / "gameplan/public/dist/js"
@@ -358,10 +356,13 @@ def test_rebuild_preserves_open_tabs_and_retires_older_bundles(tmp_path: Path) -
         assert (priority / unchanged).read_text() == "original"
         (dist / unchanged).write_text("rebuilt")
 
-    with patch.object(builder, "build_app_from_source", side_effect=compile_assets):
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=compile_assets),
+    ):
         builder.build_assets_for_app(app)
 
-    assert (dist / old).read_text() == "original"
+    assert (tmp_path / ".previous-bundles/assets/gameplan/dist/js" / old).read_text() == "original"
     assert (dist / unchanged).read_text() == "rebuilt"
     assert not (dist / retired).exists()
     assert not (tmp_path / ".previous-bundles/building/assets/gameplan").exists()
@@ -371,6 +372,7 @@ def test_rebuild_preserves_open_tabs_and_retires_older_bundles(tmp_path: Path) -
 def test_island_builds_keep_the_previous_entry_chunks_and_media(tmp_path: Path, route: str) -> None:
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
     builder.bench.apps_path = tmp_path / "apps"
     app = make_app(builder.bench.apps_path / "gameplan")
     frappe = make_app(builder.bench.apps_path / "frappe", "frappe")
@@ -409,6 +411,7 @@ def test_island_builds_keep_the_previous_entry_chunks_and_media(tmp_path: Path, 
         write_generation({"one": "two", "two": "three"}[generation])
 
     with (
+        patch.object(builder, "prepare_asset_fallback"),
         patch.object(builder, "run_compiler", side_effect=compile_islands),
         patch.object(builder, "build_app_from_source", side_effect=compile_islands),
         patch.object(builder, "build_page_islands", side_effect=compile_islands),
@@ -427,7 +430,7 @@ def test_island_builds_keep_the_previous_entry_chunks_and_media(tmp_path: Path, 
             else:
                 builder.build_assets_for_app(app)
             for filename in names(generation):
-                assert (islands / filename).read_text() == generation
+                assert (fallback / filename).read_text() == generation
             if route != "whole-bench":
                 assert unrelated.read_text() == "old desk"
 
@@ -440,6 +443,7 @@ def test_island_builds_keep_the_previous_entry_chunks_and_media(tmp_path: Path, 
 def test_corrupt_local_manifests_do_not_block_builds_or_rewrites(tmp_path: Path, corrupt: str) -> None:
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
     app = make_app(tmp_path / "apps" / "gameplan")
     public = app.path / "gameplan" / "public"
     app.has_source_changes = True
@@ -455,7 +459,10 @@ def test_corrupt_local_manifests_do_not_block_builds_or_rewrites(tmp_path: Path,
     def compile_assets(app):
         assert json.loads((assets / "assets.json").read_text()) == {}
 
-    with patch.object(builder, "build_app_from_source", side_effect=compile_assets):
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=compile_assets),
+    ):
         builder.build_assets_for_app(app)
 
     assert (tmp_path / ".previous-bundles" / rtl_url.lstrip("/")).read_text() == "rtl"
@@ -480,10 +487,10 @@ def test_a_production_build_requires_a_working_nginx_fallback(tmp_path: Path) ->
         compile_assets.assert_not_called()
 
 
-@pytest.mark.parametrize("interruption", ["error", "killed"])
-def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path, interruption: str) -> None:
+def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path) -> None:
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
     app = make_app(tmp_path / "apps" / "game-plan", "game-plan")
     app.has_source_changes = True
     relative = Path("dist/island")
@@ -501,27 +508,14 @@ def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path
 
     def interrupt_build(app):
         shutil.rmtree(islands)
-        if interruption == "killed":
-            os.kill(os.getpid(), signal.SIGKILL)
         raise BenchError("build failed")
 
-    def build():
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=interrupt_build),
+        pytest.raises(BenchError, match="build failed"),
+    ):
         builder.build_assets_for_app(app)
-
-    with patch.object(builder, "build_app_from_source", side_effect=interrupt_build):
-        if interruption == "killed":
-            child = multiprocessing.get_context("fork").Process(target=build)
-            child.start()
-            child.join(timeout=5)
-            if child.is_alive():
-                child.kill()
-                child.join()
-            assert child.exitcode == -signal.SIGKILL
-            assert not islands.exists()
-        else:
-            with pytest.raises(BenchError, match="build failed"):
-                build()
-            assert all((islands / filename).exists() for filename in files)
 
     # A partially published manifest can reference both recovered and live islands.
     islands.mkdir(parents=True, exist_ok=True)
@@ -540,16 +534,18 @@ def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path
         (islands / "new.js").write_text("new")
         manifest.write_text(json.dumps({"board.island.js": f"/assets/{app.module_name}/{relative}/new.js"}))
 
-    with patch.object(builder, "build_app_from_source", side_effect=complete_build):
-        build()
-
-    assert all((islands / filename).exists() for filename in files)
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=complete_build),
+    ):
+        builder.build_assets_for_app(app)
     assert not (fallback.parents[2] / app.config.name).exists()
 
 
 def test_failed_build_keeps_priority_over_partial_live_file_until_retry(tmp_path: Path) -> None:
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
     app = make_app(tmp_path / "apps/gameplan")
     url = "/assets/gameplan/dist/js/desk.bundle.SAME0000.js"
     live = app.path / "gameplan/public/dist/js/desk.bundle.SAME0000.js"

@@ -194,16 +194,18 @@ class PythonAssetBuilder:
     def keeping_previous_bundles(
         self, name: str, app_path: Path, *, islands_only: bool = False
     ) -> Iterator[None]:
-        """Publish the outgoing build at nginx's fallback root, then restore missing files for dev."""
+        """Keep one outgoing generation available to nginx, including while live files are replaced."""
+        if self.bench.config.production.enabled is not True:
+            yield
+            return
+
         public = (app_path / name / "public").resolve()
         root = previous_bundles_root(self.bench)
         app_snapshot = root / "assets" / name
         scope = PAGE_ISLAND_PATH if islands_only else Path()
         snapshot = app_snapshot / scope
         building = root / "building" / "assets" / name / scope
-        restored_index = root / f".{name}.restored-islands.json"
-        restored = read_json_object(restored_index)
-        outgoing = self.outgoing_bundles(name, public, app_snapshot, restored, islands_only=islands_only)
+        outgoing = self.outgoing_bundles(name, public, islands_only=islands_only)
         # A failed build can leave a live file truncated at the same hashed URL.
         # Keep the protected bytes until a successful retry publishes its output.
         outgoing.update(scope / path.relative_to(building) for path in building.rglob("*") if path.is_file())
@@ -238,35 +240,11 @@ class PythonAssetBuilder:
                     exchange_paths(prepared, destination)
                 else:
                     prepared.rename(destination)
-            try:
-                yield
-            finally:
-                remaining = self.prune_restored_islands(public, scope, restored)
-                remaining.update(self.restore_missing_bundles(public, app_snapshot, scope))
-                if restored != remaining:
-                    atomic_write_private_text(restored_index, json.dumps(remaining))
+            yield
             building.rename(Path(temporary) / "finished")
 
-    def prune_restored_islands(self, public: Path, scope: Path, restored: dict) -> dict:
-        """Remove older compatibility copies that the compiler left in place."""
-        remaining = {}
-        for filename, stamp in restored.items():
-            relative = Path(filename)
-            if not relative.is_relative_to(scope):
-                remaining[filename] = stamp
-                continue
-            path = public / relative
-            if (
-                self.is_in_island_output(relative)
-                and path.resolve() == path
-                and stamp is not None
-                and self.island_file_stamp(path) == stamp
-            ):
-                path.unlink()
-        return remaining
-
     def outgoing_bundles(
-        self, name: str, public: Path, snapshot: Path, restored: dict, *, islands_only: bool
+        self, name: str, public: Path, *, islands_only: bool
     ) -> set[Path]:
         prefix = f"/assets/{name}/"
         files = set()
@@ -279,64 +257,10 @@ class PythonAssetBuilder:
                     not islands_only or relative.is_relative_to(PAGE_ISLAND_PATH)
                 ):
                     files.add(relative)
+        # Island entry points import chunks and media absent from the manifest.
         for directory in (PAGE_ISLAND_PATH,) if islands_only else ISLAND_PATHS:
-            files.update(self.outgoing_islands(public, snapshot, directory, files, restored))
+            files.update(path.relative_to(public) for path in (public / directory).rglob("*") if path.is_file())
         return files
-
-    def outgoing_islands(
-        self, public: Path, snapshot: Path, directory: Path, entries: set[Path], restored: dict
-    ) -> set[Path]:
-        # When the manifest still points at a recovered entry, its unlisted chunks and media
-        # are part of the current build too. Recover them together, including after a killed build.
-        recovering = any(
-            entry.is_relative_to(directory)
-            and (snapshot / entry).is_file()
-            and (
-                not (public / entry).is_file()
-                or restored.get(str(entry)) == self.island_file_stamp(public / entry)
-            )
-            for entry in entries
-        )
-        files = {
-            path.relative_to(public)
-            for path in (public / directory).rglob("*")
-            if path.is_file() and restored.get(str(path.relative_to(public))) != self.island_file_stamp(path)
-        }
-        if recovering:
-            files.update(
-                path.relative_to(snapshot) for path in (snapshot / directory).rglob("*") if path.is_file()
-            )
-        return files
-
-    @staticmethod
-    def is_in_island_output(relative: Path) -> bool:
-        return any(
-            relative.is_relative_to(directory) and ".." not in relative.parts for directory in ISLAND_PATHS
-        )
-
-    def restore_missing_bundles(self, public: Path, snapshot: Path, scope: Path) -> dict:
-        restored = {}
-        for saved in (snapshot / scope).rglob("*"):
-            relative = saved.relative_to(snapshot)
-            dest = public / relative
-            if not saved.is_file() or dest.resolve() != dest or dest.exists():
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(dir=dest.parent) as copy:
-                shutil.copy2(saved, copy.name)
-                dest.hardlink_to(copy.name)
-            if self.is_in_island_output(relative):
-                restored[str(relative)] = self.island_file_stamp(dest)
-        return restored
-
-    @staticmethod
-    def island_file_stamp(path: Path) -> list[int] | None:
-        # copy2 preserves these fields when a Frappe archive carries the bench's islands forward.
-        try:
-            metadata = path.stat()
-        except FileNotFoundError:
-            return None
-        return [metadata.st_mtime_ns, metadata.st_size]
 
     @staticmethod
     def _has_usable_prebuilt(app: "App", force: bool) -> bool:
