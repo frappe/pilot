@@ -281,15 +281,14 @@ class PythonAssetBuilder:
             )
             for entry in entries
         )
-        if recovering:
-            return {
-                path.relative_to(snapshot) for path in (snapshot / directory).rglob("*") if path.is_file()
-            }
-        return {
+        files = {
             path.relative_to(public)
             for path in (public / directory).rglob("*")
             if path.is_file() and restored.get(str(path.relative_to(public))) != self.island_file_stamp(path)
         }
+        if recovering:
+            files.update(path.relative_to(snapshot) for path in (snapshot / directory).rglob("*") if path.is_file())
+        return files
 
     @staticmethod
     def is_in_island_output(relative: Path) -> bool:
