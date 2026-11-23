@@ -131,9 +131,13 @@ class SiteMigrationBackup:
         an empty list because table-level recovery does not apply.
         """
         self._validate_owner(operation_id)
-        self._reset_directory()
         config = self.site.config_file.read()
         database_engine = config.get("db_type", "mariadb")
+        if database_engine == "mariadb" and not self.is_stored_in_s3:
+            level = config.get("migration_backup_gzip_level", 9)
+            if type(level) is not int or not 1 <= level <= 9:
+                raise BenchError("migration_backup_gzip_level must be an integer from 1 to 9")
+        self._reset_directory()
         if database_engine in {"sqlite", "postgres"}:
             self._create_full_database_backup()
             return []
@@ -319,7 +323,7 @@ class SiteMigrationBackup:
             self._upload_dump(argv, table, location)
             return
         with (
-            gzip.open(self._dump_path(table), "wb", compresslevel=6) as compressed,
+            gzip.open(self._dump_path(table), "wb", compresslevel=config.get("migration_backup_gzip_level", 9)) as compressed,
             subprocess.Popen(argv, stdout=subprocess.PIPE) as process,
         ):
             if process.stdout is None:
