@@ -224,3 +224,11 @@ def test_task_callbacks_do_not_read_task_properties(tmp_path) -> None:
     task = ProbeTask(bench=None, bench_root=tmp_path)
 
     assert task_callbacks_for(task) == {"on_success": {"operation": "reload-workers", "args": {}}}
+
+
+def test_task_callback_with_an_unknown_operation_fails_when_defined() -> None:
+    with pytest.raises(ValueError, match="Unknown callback operation: 'refresh-site'"):
+
+        @tasks.on_success
+        def refresh_site(self) -> dict:
+            return {}
