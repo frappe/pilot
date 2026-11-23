@@ -1763,6 +1763,8 @@ def test_scheduler_predrain_interruption_restores_exact_config(update_with_real_
 def test_stop_cancels_the_backup_and_its_callback_ends_the_migration(tmp_path: Path) -> None:
     operation = backing_up_operation(tmp_path)
 
+    operation.bench.reload_workers.side_effect = BenchError("web restart failed")
+
     operation.stop()
 
     operation.bench.tasks.kill.assert_called_once_with("backup-1")
@@ -1771,6 +1773,7 @@ def test_stop_cancels_the_backup_and_its_callback_ends_the_migration(tmp_path: P
     assert stopped.state == "stopped"
     assert stopped.decisions[-1]["action"] == "stop"
     operation.bench.site.return_value.set_maintenance_settings.assert_not_called()
+    operation.bench.reload_workers.assert_not_called()
 
 
 def test_a_stopped_chain_queues_no_next_task(tmp_path: Path) -> None:

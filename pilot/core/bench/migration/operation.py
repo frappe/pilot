@@ -519,6 +519,9 @@ class MigrationOperation(MigrationRecovery):
 
     def _lift_maintenance(self) -> None:
         """Restore maintenance settings and refresh web workers."""
+        if self.maintenance_pending and not any(site.original_config_is_exact for site in self.sites):
+            # The queued update stopped before it captured or changed any site settings.
+            return
         self._restore_maintenance()
         self.bench.reload_workers(web_only=True, raises=True)
 
