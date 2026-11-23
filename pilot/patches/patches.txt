@@ -24,3 +24,4 @@ enable_default_alerts
 update_auto_update_schedule
 use_notify_for_database_units
 write_mariadb_log_files
+size_gunicorn_workers_by_cpu

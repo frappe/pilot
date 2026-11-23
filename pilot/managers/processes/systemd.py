@@ -170,7 +170,10 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
 
     def get_python_error(self) -> str:
         """Why the bench venv's Python cannot run beside the sandbox, or "". Outside the sandbox Pilot runs
-        that Python with -P, so a workload's sites/frappe/ cannot replace Frappe, and -P needs 3.11."""
+        that Python with -P, so a workload's sites/frappe/ cannot replace Frappe, and -P needs 3.11.
+        A new bench has no venv until setup builds it, and setup writes the units again then."""
+        if not self.bench.python.exists():
+            return ""
         version = self.bench.python_version
         if version >= (3, 11):
             return ""
