@@ -100,7 +100,7 @@ def tune_database(config: "BenchConfig") -> None:
     """
     from pilot.managers.database.mariadb import MariaDBManager
 
-    if config.db_type != "mariadb" or config.mariadb.existing:
+    if config.db_type != "mariadb" or config.mariadb.existing or config.mariadb.remote:
         return
     sizing = MariaDBManager.for_config(config.mariadb).tune_to_host()
     logging.info("Sized MariaDB for %s MiB of host memory.", sizing.total_memory_mb)
@@ -114,13 +114,17 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     from pilot.config import BenchConfig
+    from pilot.core.bench import Bench
+    from pilot.integrations.central.database import CentralDatabaseAssignment
 
     config = BenchConfig.read(args.bench_root, validate=False)
     if not config.central.is_awaiting_bootstrap:
         logging.info("This host is not awaiting a Central credential.")
         return
 
-    tune_database(config)
+    bench = Bench(config, args.bench_root)
+    CentralDatabaseAssignment(bench).apply()
+    tune_database(bench.config)
     CentralBootstrapWatcher(args.bench_root).run_until_applied()
     logging.info("Central bootstrap applied; this host is configured.")
 

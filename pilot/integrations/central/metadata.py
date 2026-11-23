@@ -90,6 +90,11 @@ class InstanceMetadata:
                 patches[target] = _parse_object(raw, f"Instance metadata '{name}'")
         return ConfigPatch(**patches)
 
+    def get_object_attribute(self, name: str) -> dict[str, Any] | None:
+        """A JSON object attribute, or None when it is unset. A malformed attribute raises."""
+        raw = self.get_attribute(name)
+        return _parse_object(raw, f"Instance metadata '{name}'") if raw else None
+
     def get_attribute(self, name: str) -> str | None:
         """A metadata attribute, or None when it cannot be read."""
         token = self._token()

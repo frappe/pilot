@@ -14,7 +14,7 @@ from admin.backend.central_bootstrap import (
     tune_database,
 )
 from admin.backend.internal.jwks_cache import JwksCache
-from pilot.config import BenchConfig
+from pilot.config import BenchConfig, MariaDBConfig
 from pilot.config.common import CommonConfig
 from pilot.exceptions import ConfigError, DatabaseError
 from pilot.integrations.central import CentralClientError
@@ -343,3 +343,27 @@ def test_the_watcher_stops_when_another_process_bootstrapped_the_host(tmp_path: 
     with _staged(json.dumps(_ATTRIBUTE)):
         assert apply_central_config(Bench(bench_root)) is True
         assert CentralBootstrapWatcher(bench_root).check_once() is True
+
+
+def test_boot_run_takes_over_the_assigned_database_before_the_credential(tmp_path: Path, mariadb_manager) -> None:
+    bench_root = _awaiting_host(tmp_path)
+    order = []
+
+    def take_over(assignment) -> bool:
+        order.append(BenchConfig.read(bench_root).central.bootstrapped)
+        remote = MariaDBConfig(host="fdaa::3", remote=True, ssh_user="ubuntu", ssh_key_path="/key")
+        with CommonConfig.open(bench_root.parent) as common:
+            common.mariadb = remote
+        assignment.bench.config.mariadb = remote
+        return True
+
+    with (
+        _staged(json.dumps(_ATTRIBUTE)),
+        patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]),
+        patch("pilot.integrations.central.database.CentralDatabaseAssignment.apply", take_over),
+    ):
+        main()
+
+    assert order == [False]
+    mariadb_manager.for_config.assert_not_called()
+    assert BenchConfig.read(bench_root).central.bootstrapped is True
