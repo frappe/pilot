@@ -133,42 +133,51 @@ class SiteMigrationBackup:
         self._validate_owner(operation_id)
         config = self.site.config_file.read()
         database_engine = config.get("db_type", "mariadb")
-        if database_engine == "mariadb" and not self.is_stored_in_s3:
-            level = config.get("migration_backup_gzip_level", 9)
-            if type(level) is not int or not 1 <= level <= 9:
-                raise BenchError("migration_backup_gzip_level must be an integer from 1 to 9")
-        self._reset_directory()
         if database_engine in {"sqlite", "postgres"}:
+            self._reset_directory()
             self._create_full_database_backup()
             return []
         if database_engine != "mariadb":
             raise BenchError(f"Migration backups do not support database engine {database_engine!r}")
 
-        if self.is_stored_in_s3:
+        store_in_s3 = self.site.bench.config.s3.stores_migration_backups
+        workers = 1 if store_in_s3 else self.get_local_dump_worker_count(config)
+        if not store_in_s3:
+            level = config.get("migration_backup_gzip_level", 9)
+            if type(level) is not int or not 1 <= level <= 9:
+                raise BenchError("migration_backup_gzip_level must be an integer from 1 to 9")
+        self._reset_directory()
+        if store_in_s3:
             bucket = self.site.bench.config.s3.bucket
             prefix = f"sites/{self.site.config.name}/migration_backups/{operation_id}/"
             self.offsite_path.write_text(json.dumps({"bucket": bucket, "prefix": prefix}), encoding="utf-8")
-        return self._create_table_backup(config)
+        return self._create_table_backup(config, workers)
 
-    def _create_table_backup(self, config: dict) -> list[str]:
+    def _create_table_backup(self, config: dict, workers: int) -> list[str]:
         """Save the table list and the config, and dump each table; return the tables."""
         db_name = config["db_name"]
         tables = self._list_tables(config, db_name)
         self.previous_tables_path.write_text(json.dumps(tables, indent=2), encoding="utf-8")
         self.config_backup_path.write_text(json.dumps(config, indent=1), encoding="utf-8")
-        self._dump_tables(config, db_name, tables)
+        self._dump_tables(config, db_name, tables, workers)
         return tables
 
-    @property
-    def dump_worker_count(self) -> int:
-        """Half the CPUs, as other sites keep serving. Uploads stay serial to bound their memory."""
-        if self.offsite:
-            return 1
-        return max(1, min(4, HostPlatform().available_cpu_count // 2))
+    @staticmethod
+    def get_local_dump_worker_count(config: dict) -> int:
+        """Use at most half the CPUs and respect the site's connection limits."""
+        limit = config.get("migration_backup_workers", 4)
+        if type(limit) is not int or limit < 1:
+            raise BenchError("migration_backup_workers must be a positive integer")
+        return max(1, min(limit, 4, HostPlatform().available_cpu_count // 2))
 
-    def _dump_tables(self, config: dict, db_name: str, tables: list[str]) -> None:
-        """Dump the tables side by side. No dump still runs once this returns or raises."""
-        pool = ThreadPoolExecutor(max_workers=self.dump_worker_count)
+    def _dump_tables(self, config: dict, db_name: str, tables: list[str], workers: int) -> None:
+        """Dump tables with the given concurrency and wait for all running dumps before leaving."""
+        if workers == 1:
+            for table in tables:
+                self._dump_table(config, db_name, table)
+            return
+
+        pool = ThreadPoolExecutor(max_workers=workers)
         try:
             dumps = [pool.submit(self._dump_table, config, db_name, table) for table in tables]
             for dump in as_completed(dumps):
@@ -323,7 +332,9 @@ class SiteMigrationBackup:
             self._upload_dump(argv, table, location)
             return
         with (
-            gzip.open(self._dump_path(table), "wb", compresslevel=config.get("migration_backup_gzip_level", 9)) as compressed,
+            gzip.open(
+                self._dump_path(table), "wb", compresslevel=config.get("migration_backup_gzip_level", 9)
+            ) as compressed,
             subprocess.Popen(argv, stdout=subprocess.PIPE) as process,
         ):
             if process.stdout is None:

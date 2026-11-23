@@ -251,20 +251,25 @@ def test_table_dumps_stream_to_the_bucket_and_stay_off_the_disk(tmp_path: Path) 
     assert backup.previous_tables == ["tabUser"]
 
 
-def test_a_dump_that_fails_leaves_no_object_behind(tmp_path: Path) -> None:
+def test_an_s3_dump_failure_deletes_its_object_and_stops_the_backup(tmp_path: Path) -> None:
     site, bucket = s3_site(tmp_path)
     backup = SiteMigrationBackup(site)
 
     with (
         patch.object(SiteMigrationBackup, "_s3", return_value=bucket),
-        patch.object(SiteMigrationBackup, "_list_tables", return_value=["tabUser"]),
-        patch.object(SiteMigrationBackup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "partial", 2)),
+        patch.object(SiteMigrationBackup, "_list_tables", return_value=["tabUser", "tabRole"]),
+        patch.object(
+            SiteMigrationBackup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "partial", 2)
+        ) as dump_cli,
         patch.object(SiteMigrationBackup, "_conn_args", return_value=[]),
+        patch("pilot.core.site.backups.migration.ThreadPoolExecutor") as executor,
         pytest.raises(BenchError, match="Failed to dump table tabUser"),
     ):
         backup.create("operation-1")
 
     assert bucket.objects == {}
+    dump_cli.assert_called_once_with()
+    executor.assert_not_called()
 
 
 def _offsite_backup(tmp_path: Path, tables: list[str], stored: list[str]):
@@ -379,21 +384,55 @@ def test_discard_deletes_the_objects_and_the_directory(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("cpus", "in_s3", "expected"),
-    [(1, False, 1), (2, False, 1), (4, False, 2), (8, False, 4), (64, False, 4), (64, True, 1)],
+    ("cpus", "limit", "expected"),
+    [(1, None, 1), (2, None, 1), (4, None, 2), (8, None, 4), (64, None, 4), (64, 2, 2), (64, 8, 4)],
 )
-def test_dumps_take_half_the_cpus_up_to_four_and_go_to_s3_one_at_a_time(
-    tmp_path: Path, cpus: int, in_s3: bool, expected: int
+def test_local_dump_worker_count_respects_cpus_and_site_limit(
+    cpus: int, limit: int | None, expected: int
 ) -> None:
-    site = migration_site(tmp_path, "mariadb")
-    site.bench.config.s3.stores_migration_backups = in_s3
-    backup = SiteMigrationBackup(site)
-    if in_s3:
-        backup.directory.mkdir()
-        backup.offsite_path.write_text('{"bucket": "recovery", "prefix": "test/"}')
-
+    config = {} if limit is None else {"migration_backup_workers": limit}
     with patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=cpus):
-        assert backup.dump_worker_count == expected
+        assert SiteMigrationBackup.get_local_dump_worker_count(config) == expected
+
+
+@pytest.mark.parametrize(("cpus", "limit"), [(2, None), (8, 1)])
+def test_single_worker_local_dumps_run_serially(tmp_path: Path, cpus: int, limit: int | None) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    config = site.config_file.read()
+    if limit is not None:
+        config["migration_backup_workers"] = limit
+        (site.path / "site_config.json").write_text(json.dumps(config))
+    tables = ["tabUser", "tabRole"]
+
+    with (
+        patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=cpus),
+        patch.object(backup, "_list_tables", return_value=tables),
+        patch.object(backup, "_dump_table") as dump,
+        patch("pilot.core.site.backups.migration.ThreadPoolExecutor") as executor,
+    ):
+        assert backup.create("operation-1") == tables
+
+    assert [call.args for call in dump.call_args_list] == [(config, "site_db", table) for table in tables]
+    executor.assert_not_called()
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "1", None])
+def test_local_dump_worker_limit_must_be_a_positive_integer(tmp_path: Path, limit) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    config = {**site.config_file.read(), "migration_backup_workers": limit}
+    (site.path / "site_config.json").write_text(json.dumps(config))
+
+    with (
+        patch.object(backup, "_reset_directory") as reset,
+        pytest.raises(BenchError, match="migration_backup_workers must be a positive integer"),
+    ):
+        backup.create("operation-1")
+
+    reset.assert_not_called()
 
 
 def test_table_dumps_run_side_by_side(tmp_path: Path) -> None:
