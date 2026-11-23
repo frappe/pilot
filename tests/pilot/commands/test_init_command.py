@@ -56,14 +56,32 @@ def test_ensure_database_credentials_generates_for_a_fresh_server() -> None:
     bench = MagicMock()
     bench.config.db_type = "mariadb"
     bench.config.mariadb.existing = False
+    bench.config.mariadb.remote = False
     bench.config.mariadb.root_password = ""
     bench.config.mariadb.port = 3306
 
-    with patch("pilot.internal.host_resources.LocalPort.get_first_free", return_value=3306):
+    with patch("pilot.internal.host_resources.LocalPort.get_first_free", return_value=3311):
         BenchInitializer(bench)._ensure_database_credentials()
 
     assert bench.config.mariadb.root_password
+    assert bench.config.mariadb.port == 3311
     bench.config.write.assert_called_once_with(bench.path)
+
+
+def test_ensure_database_credentials_keeps_the_port_of_a_remote_server() -> None:
+    bench = MagicMock()
+    bench.config.db_type = "mariadb"
+    bench.config.mariadb.existing = False
+    bench.config.mariadb.remote = True
+    bench.config.mariadb.root_password = ""
+    bench.config.mariadb.port = 3306
+
+    with patch("pilot.internal.host_resources.LocalPort.get_first_free") as get_first_free:
+        BenchInitializer(bench)._ensure_database_credentials()
+
+    get_first_free.assert_not_called()
+    assert bench.config.mariadb.port == 3306
+    assert bench.config.mariadb.root_password
 
 
 def test_ensure_database_credentials_skips_when_already_set() -> None:

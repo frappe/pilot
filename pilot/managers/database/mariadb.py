@@ -75,6 +75,10 @@ class MariaDBManager(UserOwnedDBManager):
     @classmethod
     def for_config(cls, config: MariaDBConfig) -> "MariaDBManager":
         """The manager for where the configured server runs."""
+        if config.remote:
+            from pilot.managers.database.remote_mariadb import RemoteMariaDBManager
+
+            return RemoteMariaDBManager(config)
         return cls(config)
 
     @property
@@ -226,6 +230,25 @@ class MariaDBManager(UserOwnedDBManager):
             "log-output = FILE\n"
             "bind-address = 127.0.0.1\n"
             "\n"
+            f"{self._render_tuning_options(sizing, limits)}"
+            "\n"
+            "[client]\n"
+            f"socket = {self.socket_path}\n"
+            f"port = {self.config.port}\n"
+            "default-character-set = utf8mb4\n"
+            "\n"
+            "[mariadb-dump]\n"
+            "max-allowed-packet = 512M\n"
+            "\n"
+            f"{self._managed_include_line}\n"
+        )
+        atomic_write_private_text(self.my_cnf_path, content)
+        return sizing
+
+    @staticmethod
+    def _render_tuning_options(sizing: MariaDBMemorySizing, limits: MariaDBVariableLimits) -> str:
+        """The [mysqld] options Frappe needs and the memory sizing, wherever the server runs."""
+        return (
             "default-storage-engine = InnoDB\n"
             "character-set-server = utf8mb4\n"
             "collation-server = utf8mb4_unicode_ci\n"
@@ -248,19 +271,7 @@ class MariaDBManager(UserOwnedDBManager):
             "slave-connections-needed-for-purge = 0\n"
             "tmp-table-size = 32M\n"
             "max-heap-table-size = 32M\n"
-            "\n"
-            "[client]\n"
-            f"socket = {self.socket_path}\n"
-            f"port = {self.config.port}\n"
-            "default-character-set = utf8mb4\n"
-            "\n"
-            "[mariadb-dump]\n"
-            "max-allowed-packet = 512M\n"
-            "\n"
-            f"{self._managed_include_line}\n"
         )
-        atomic_write_private_text(self.my_cnf_path, content)
-        return sizing
 
     @property
     def _managed_include_line(self) -> str:
