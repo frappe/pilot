@@ -436,11 +436,15 @@ def test_a_failed_dump_waits_for_the_running_ones_and_cancels_the_rest(tmp_path:
     assert len(started) < 10
 
 
-def test_local_dumps_compress_at_the_level_the_disk_check_expects(tmp_path: Path) -> None:
+@pytest.mark.parametrize("level", [None, 1, 6, 9])
+def test_local_dump_compression_level(tmp_path: Path, level: int | None) -> None:
     import gzip
 
     site = migration_site(tmp_path, "mariadb")
     site.bench.config.s3.stores_migration_backups = False
+    if level is not None:
+        path = site.path / "site_config.json"
+        path.write_text(json.dumps({**json.loads(path.read_text()), "migration_backup_gzip_level": level}))
     backup = SiteMigrationBackup(site)
 
     with (
@@ -451,5 +455,5 @@ def test_local_dumps_compress_at_the_level_the_disk_check_expects(tmp_path: Path
     ):
         backup.create("operation-1")
 
-    assert gzip_open.call_args.kwargs == {"compresslevel": 6}
+    assert gzip_open.call_args.kwargs == {"compresslevel": level or 9}
     assert gzip.decompress(backup._dump_path("tabUser").read_bytes()) == b"INSERT 1;"
