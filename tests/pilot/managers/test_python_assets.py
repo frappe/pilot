@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -243,6 +244,7 @@ def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them
 def test_skip_frontend_downloads_prebuilt_assets_without_installing_or_building(tmp_path: Path) -> None:
     """A frontend-skipping run with a published archive touches neither JS installs nor compilers."""
     builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
     app = make_app(tmp_path / "frappe", "frappe")
     app.is_linked = False
     app.has_source_changes = False
@@ -323,3 +325,61 @@ def test_a_declared_build_dir_gets_its_dependencies_when_only_the_root_has_them(
         ["yarn", "install", "--frozen-lockfile"],
         ["python", "frappe", "build", "--force", "--app", "helpdesk"],
     ]
+
+
+def build_replacing_bundles(tmp_path: Path, assets_json: dict[str, str], built: dict[str, str]) -> Path:
+    """Run a build that, like Frappe's, empties dist and writes `built`; return the app's public dir."""
+    app_path = tmp_path / "apps" / "gameplan"
+    public_dir = app_path / "gameplan" / "public"
+    for url in [*assets_json.values(), "/assets/gameplan/dist/js/older.bundle.AAAAAAAA.js"]:
+        bundle = public_dir / url.removeprefix("/assets/gameplan/")
+        bundle.parent.mkdir(parents=True, exist_ok=True)
+        bundle.write_text("old")
+    sites_assets = tmp_path / "sites" / "assets"
+    sites_assets.mkdir(parents=True)
+    (sites_assets / "assets.json").write_text(json.dumps(assets_json))
+
+    def build(app: MagicMock) -> None:
+        shutil.rmtree(public_dir / "dist")
+        for relative, content in built.items():
+            (public_dir / relative).parent.mkdir(parents=True, exist_ok=True)
+            (public_dir / relative).write_text(content)
+
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    app = make_app(app_path)
+    app.has_source_changes = True
+    with patch.object(builder, "build_app_from_source", side_effect=build):
+        builder.build_assets_for_app(app, skip_frontend=True)
+    return public_dir
+
+
+def test_a_build_keeps_the_bundles_open_tabs_still_load(tmp_path: Path) -> None:
+    public_dir = build_replacing_bundles(
+        tmp_path,
+        {"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.OLD00000.js"},
+        {"dist/js/desk.bundle.NEW00000.js": "new"},
+    )
+
+    assert (public_dir / "dist/js/desk.bundle.OLD00000.js").read_text() == "old"
+    assert (public_dir / "dist/js/desk.bundle.NEW00000.js").read_text() == "new"
+
+
+def test_a_build_keeps_its_own_output_over_an_old_bundle_of_the_same_name(tmp_path: Path) -> None:
+    public_dir = build_replacing_bundles(
+        tmp_path,
+        {"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.SAME0000.js"},
+        {"dist/js/desk.bundle.SAME0000.js": "new"},
+    )
+
+    assert (public_dir / "dist/js/desk.bundle.SAME0000.js").read_text() == "new"
+
+
+def test_a_build_drops_bundles_the_old_assets_json_no_longer_names(tmp_path: Path) -> None:
+    public_dir = build_replacing_bundles(
+        tmp_path,
+        {"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.OLD00000.js"},
+        {"dist/js/desk.bundle.NEW00000.js": "new"},
+    )
+
+    assert not (public_dir / "dist/js/older.bundle.AAAAAAAA.js").exists()
