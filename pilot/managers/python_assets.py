@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
+from pilot.internal.atomic_file import exchange_paths, exclusive_file_lock
 from pilot.internal.command import run_command
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 
@@ -78,15 +79,19 @@ class PythonAssetBuilder:
 
     def build_assets(self) -> None:
         """Build the assets of every app."""
-        for app in self.bench.apps():
+        apps = list(self.bench.apps())
+        for app in apps:
             for packages in get_app_packages(app.path, self.frontend_dirs(app)):
                 packages.ensure_installed()
-        self.run_compiler(
-            [*self.bench.frappe_call, "frappe", "build", "--force"],
-            cwd=self.bench.sites_path,
-            env=self.manager._build_env(),
-            stream_output=True,
-        )
+        with contextlib.ExitStack() as stack:
+            for app in sorted(apps, key=lambda item: item.config.name):
+                stack.enter_context(self.keeping_previous_bundles(app))
+            self.run_compiler(
+                [*self.bench.frappe_call, "frappe", "build", "--force"],
+                cwd=self.bench.sites_path,
+                env=self.manager._build_env(),
+                stream_output=True,
+            )
 
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
         """Build one app's assets, from cache, release or source."""
@@ -106,29 +111,48 @@ class PythonAssetBuilder:
 
     @contextlib.contextmanager
     def keeping_previous_bundles(self, app: "App") -> Iterator[None]:
-        """Put back the bundles the old assets.json names once a build deletes them, so open tabs can load them."""
-        public_dir = app.path / app.config.name / "public"
-        url_prefix = f"/assets/{app.config.name}/"
-        bundles = {
-            public_dir / url.removeprefix(url_prefix)
-            for name in ("assets.json", "assets-rtl.json")
-            if (manifest := self.bench.sites_path / "assets" / name).is_file()
-            for url in json.loads(manifest.read_text()).values()
-            if url.startswith(f"{url_prefix}dist/") and ".." not in url
-        }
-        with tempfile.TemporaryDirectory(dir=app.path.parent, prefix=f".{app.config.name}-bundles-") as work:
-            kept = {
-                bundle: Path(work) / str(index) for index, bundle in enumerate(bundles) if bundle.is_file()
-            }
-            for bundle, copy in kept.items():
-                copy.hardlink_to(bundle)
+        """Publish the old manifest's files at nginx's fallback root before replacing dist."""
+        name = app.config.name
+        public = (app.path / name / "public").resolve()
+        root = self.bench.sites_path.parent / ".previous-bundles"
+        root.mkdir(parents=True, exist_ok=True)
+        snapshot = root / "assets" / name
+        snapshot.parent.mkdir(exist_ok=True)
+        prefix = f"/assets/{name}/"
+        with exclusive_file_lock(root / name), tempfile.TemporaryDirectory(dir=root) as temporary:
+            staged = Path(temporary) / "snapshot"
+            staged.mkdir()
+            for manifest_name in ("assets.json", "assets-rtl.json"):
+                manifest = self.bench.sites_path / "assets" / manifest_name
+                if not manifest.is_file():
+                    continue
+                for url in json.loads(manifest.read_text()).values():
+                    if not url.startswith(prefix + "dist/") or ".." in url:
+                        continue
+                    relative = Path(url.removeprefix(prefix))
+                    source = public / relative
+                    if source.resolve() != source:
+                        continue
+                    if not source.is_file():
+                        source = snapshot / relative  # Recover after an interrupted build.
+                    if source.is_file():
+                        target = staged / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source, target)
+            if snapshot.exists():
+                exchange_paths(staged, snapshot)
+            else:
+                staged.rename(snapshot)
             try:
                 yield
             finally:
-                for bundle, copy in kept.items():
-                    if not bundle.exists():
-                        bundle.parent.mkdir(parents=True, exist_ok=True)
-                        copy.replace(bundle)
+                for saved in snapshot.rglob("*"):
+                    dest = public / saved.relative_to(snapshot)
+                    if saved.is_file() and dest.resolve() == dest and not dest.exists():
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        with tempfile.NamedTemporaryFile(dir=dest.parent) as restored:
+                            shutil.copy2(saved, restored.name)
+                            dest.hardlink_to(restored.name)
 
     @staticmethod
     def _has_usable_prebuilt(app: "App", force: bool) -> bool:
@@ -231,6 +255,11 @@ class PythonAssetBuilder:
 
             # Islands from the archive replace the bench's; otherwise the bench's stay for its rebuild.
             keeping = "" if has_page_islands else PAGE_ISLAND_URL
+            for entries in asset_maps.values():
+                for url in entries.values():
+                    target = assets_dir / url.removeprefix("/assets/")
+                    if not target.is_file():
+                        raise BenchError(f"Prebuilt asset manifest references a missing file: {url}")
             for name, entries in asset_maps.items():
                 self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=keeping)
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
