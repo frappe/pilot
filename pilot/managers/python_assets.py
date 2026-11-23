@@ -13,14 +13,49 @@ from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages, get_app_packages
 from pilot.exceptions import BenchError, CommandError
-from pilot.internal.atomic_file import exchange_paths, exclusive_file_lock
+from pilot.internal.atomic_file import atomic_write_private_text, exchange_paths, exclusive_file_lock
 from pilot.internal.command import run_command
 from pilot.managers.systemd_user import can_cap_memory, memory_capped, systemctl_env
 
 if TYPE_CHECKING:
     from pilot.core.app import App
+    from pilot.core.bench import Bench
     from pilot.managers.environment import PythonEnvManager
 
+
+PAGE_ISLAND_PATH = Path("dist/page-island")
+ISLAND_PATHS = (PAGE_ISLAND_PATH, Path("dist/island"))
+ASSET_MANIFEST_NAMES = ("assets.json", "assets-rtl.json")
+
+
+def previous_bundles_root(bench: Bench) -> Path:
+    return bench.sites_path.parent / ".previous-bundles"
+
+
+@contextlib.contextmanager
+def asset_build_lock(bench: Bench) -> Iterator[None]:
+    # A per-app compiler can also mutate Frappe's assets through its build hook.
+    root = previous_bundles_root(bench)
+    root.mkdir(parents=True, exist_ok=True)
+    with exclusive_file_lock(root / "build"):
+        yield
+
+
+def discard_previous_bundles(bench: Bench, name: str) -> None:
+    """Discard a removed app's fallback files while holding the bench asset lock."""
+    root = previous_bundles_root(bench)
+    snapshot = root / "assets" / name
+    if snapshot.exists():
+        shutil.rmtree(snapshot)
+    (root / f".{name}.restored-islands.json").unlink(missing_ok=True)
+
+
+def read_json_object(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 class PythonAssetBuilder:
@@ -80,12 +115,14 @@ class PythonAssetBuilder:
     def build_assets(self) -> None:
         """Build the assets of every app."""
         apps = list(self.bench.apps())
-        for app in apps:
-            for packages in get_app_packages(app.path, self.frontend_dirs(app)):
-                packages.ensure_installed()
-        with contextlib.ExitStack() as stack:
-            for app in sorted(apps, key=lambda item: item.config.name):
-                stack.enter_context(self.keeping_previous_bundles(app))
+        with asset_build_lock(self.bench), contextlib.ExitStack() as stack:
+            self.prepare_asset_fallback()
+            self.repair_local_asset_maps()
+            for app in apps:
+                stack.enter_context(self.keeping_previous_bundles(app.config.name, app.path))
+            for app in apps:
+                for packages in get_app_packages(app.path, self.frontend_dirs(app)):
+                    packages.ensure_installed()
             self.run_compiler(
                 [*self.bench.frappe_call, "frappe", "build", "--force"],
                 cwd=self.bench.sites_path,
@@ -95,50 +132,93 @@ class PythonAssetBuilder:
 
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
         """Build one app's assets, from cache, release or source."""
-        # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
-        if app.config.name == "frappe" and not skip_frontend:
-            NodePackages(app.path).ensure_installed()
+        with asset_build_lock(self.bench):
+            self.prepare_asset_fallback()
+            self.repair_local_asset_maps()
+            with self.keeping_previous_bundles(app.config.name, app.path):
+                # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
+                if app.config.name == "frappe" and not skip_frontend:
+                    NodePackages(app.path).ensure_installed()
 
-        with self.keeping_previous_bundles(app):
-            # A linked checkout is built from its own source, never from a release.
-            if self._has_usable_prebuilt(app, force) and self.install_prebuilt_assets(
-                app, skip_frontend=skip_frontend
-            ):
-                return
+                # A linked checkout is built from its own source, never from a release.
+                if self._has_usable_prebuilt(app, force) and self.install_prebuilt_assets(
+                    app, skip_frontend=skip_frontend
+                ):
+                    return
 
-            with app.record_lockfiles_on_failure():
-                self.build_app_from_source(app)
+                with self.keeping_frappe_page_islands(app), app.record_lockfiles_on_failure():
+                    self.build_app_from_source(app)
+
+    def prepare_asset_fallback(self) -> None:
+        """Load nginx's fallback locations before making the first destructive build."""
+        from pilot.managers.nginx import NginxManager
+
+        if self.bench.config.production.enabled is True:
+            NginxManager(self.bench).prepare_asset_fallback()
+
+    def repair_local_asset_maps(self) -> None:
+        """Ensure Frappe's compiler can read the manifests it merges into."""
+        for name in ASSET_MANIFEST_NAMES:
+            path = self.bench.sites_path / "assets" / name
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                continue
+            except ValueError:
+                existing = None
+            entries = (
+                {key: url for key, url in existing.items() if isinstance(url, str)}
+                if isinstance(existing, dict)
+                else {}
+            )
+            if existing != entries:
+                logging.warning("Rebuilding invalid entries in %s.", path)
+                atomic_write_private_text(path, json.dumps(entries, indent="\t") + "\n")
+
+    @property
+    def page_island_script(self) -> Path:
+        return self.bench.apps_path / "frappe" / "ui" / "vite" / "island" / "build-pages.js"
 
     @contextlib.contextmanager
-    def keeping_previous_bundles(self, app: "App") -> Iterator[None]:
-        """Publish the old manifest's files at nginx's fallback root before replacing dist."""
-        name = app.config.name
-        public = (app.path / name / "public").resolve()
-        root = self.bench.sites_path.parent / ".previous-bundles"
-        root.mkdir(parents=True, exist_ok=True)
-        snapshot = root / "assets" / name
-        snapshot.parent.mkdir(exist_ok=True)
-        prefix = f"/assets/{name}/"
-        with exclusive_file_lock(root / name), tempfile.TemporaryDirectory(dir=root) as temporary:
+    def keeping_frappe_page_islands(self, app: "App") -> Iterator[None]:
+        """A single-app build can run the framework hook that rebuilds every page island."""
+        if app.config.name != "frappe" and self.page_island_script.is_file() is True:
+            with self.keeping_previous_bundles("frappe", self.bench.apps_path / "frappe", islands_only=True):
+                yield
+        else:
+            yield
+
+    @contextlib.contextmanager
+    def keeping_previous_bundles(
+        self, name: str, app_path: Path, *, islands_only: bool = False
+    ) -> Iterator[None]:
+        """Publish the outgoing build at nginx's fallback root, then restore missing files for dev."""
+        public = (app_path / name / "public").resolve()
+        root = previous_bundles_root(self.bench)
+        app_snapshot = root / "assets" / name
+        scope = PAGE_ISLAND_PATH if islands_only else Path()
+        snapshot = app_snapshot / scope
+        restored_index = root / f".{name}.restored-islands.json"
+        restored = read_json_object(restored_index)
+        outgoing = self.outgoing_bundles(name, public, restored, islands_only=islands_only)
+        if not outgoing and not snapshot.exists():
+            yield
+            return
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
             staged = Path(temporary) / "snapshot"
             staged.mkdir()
-            for manifest_name in ("assets.json", "assets-rtl.json"):
-                manifest = self.bench.sites_path / "assets" / manifest_name
-                if not manifest.is_file():
+            for relative in outgoing:
+                source = public / relative
+                if source.resolve() != source:
                     continue
-                for url in json.loads(manifest.read_text()).values():
-                    if not url.startswith(prefix + "dist/") or ".." in url:
-                        continue
-                    relative = Path(url.removeprefix(prefix))
-                    source = public / relative
-                    if source.resolve() != source:
-                        continue
-                    if not source.is_file():
-                        source = snapshot / relative  # Recover after an interrupted build.
-                    if source.is_file():
-                        target = staged / relative
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(source, target)
+                if not source.is_file():
+                    source = app_snapshot / relative  # Recover a manifest entry after an interrupted build.
+                if source.is_file():
+                    target = staged / relative.relative_to(scope)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+
             if snapshot.exists():
                 exchange_paths(staged, snapshot)
             else:
@@ -146,13 +226,78 @@ class PythonAssetBuilder:
             try:
                 yield
             finally:
-                for saved in snapshot.rglob("*"):
-                    dest = public / saved.relative_to(snapshot)
-                    if saved.is_file() and dest.resolve() == dest and not dest.exists():
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        with tempfile.NamedTemporaryFile(dir=dest.parent) as restored:
-                            shutil.copy2(saved, restored.name)
-                            dest.hardlink_to(restored.name)
+                remaining = self.prune_restored_islands(public, scope, restored)
+                remaining.update(self.restore_missing_bundles(public, app_snapshot, scope))
+                if restored != remaining:
+                    atomic_write_private_text(restored_index, json.dumps(remaining))
+
+    def prune_restored_islands(self, public: Path, scope: Path, restored: dict) -> dict:
+        """Remove older compatibility copies that the compiler left in place."""
+        remaining = {}
+        for filename, stamp in restored.items():
+            relative = Path(filename)
+            if not relative.is_relative_to(scope):
+                remaining[filename] = stamp
+                continue
+            path = public / relative
+            if (
+                self.is_in_island_output(relative)
+                and path.resolve() == path
+                and stamp is not None
+                and self.island_file_stamp(path) == stamp
+            ):
+                path.unlink()
+        return remaining
+
+    def outgoing_bundles(self, name: str, public: Path, restored: dict, *, islands_only: bool) -> set[Path]:
+        prefix = f"/assets/{name}/"
+        files = set()
+        for manifest_name in ASSET_MANIFEST_NAMES:
+            for url in read_json_object(self.bench.sites_path / "assets" / manifest_name).values():
+                if not isinstance(url, str) or not url.startswith(f"{prefix}dist/") or "\0" in url:
+                    continue
+                relative = Path(url.removeprefix(prefix))
+                if ".." not in relative.parts and (
+                    not islands_only or relative.is_relative_to(PAGE_ISLAND_PATH)
+                ):
+                    files.add(relative)
+        # Entry points can import shared chunks and load media absent from assets.json.
+        for directory in (PAGE_ISLAND_PATH,) if islands_only else ISLAND_PATHS:
+            for path in (public / directory).rglob("*"):
+                relative = path.relative_to(public)
+                if path.is_file() and restored.get(str(relative)) != self.island_file_stamp(path):
+                    files.add(relative)
+        return files
+
+    @staticmethod
+    def is_in_island_output(relative: Path) -> bool:
+        return any(
+            relative.is_relative_to(directory) and ".." not in relative.parts for directory in ISLAND_PATHS
+        )
+
+    def restore_missing_bundles(self, public: Path, snapshot: Path, scope: Path) -> dict:
+        restored = {}
+        for saved in (snapshot / scope).rglob("*"):
+            relative = saved.relative_to(snapshot)
+            dest = public / relative
+            if not saved.is_file() or dest.resolve() != dest or dest.exists():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=dest.parent) as copy:
+                shutil.copy2(saved, copy.name)
+                dest.hardlink_to(copy.name)
+            if self.is_in_island_output(relative):
+                restored[str(relative)] = self.island_file_stamp(dest)
+        return restored
+
+    @staticmethod
+    def island_file_stamp(path: Path) -> list[int] | None:
+        # copy2 preserves these fields when a Frappe archive carries the bench's islands forward.
+        try:
+            metadata = path.stat()
+        except FileNotFoundError:
+            return None
+        return [metadata.st_mtime_ns, metadata.st_size]
 
     @staticmethod
     def _has_usable_prebuilt(app: "App", force: bool) -> bool:
@@ -172,7 +317,8 @@ class PythonAssetBuilder:
         )
         if not skip_frontend:
             if app.has_page_islands and not prebuilt.has_page_islands:
-                self.build_page_islands()
+                with self.keeping_frappe_page_islands(app):
+                    self.build_page_islands()
             if app.has_studio_apps and not prebuilt.has_studio_apps:
                 self.build_studio_apps(app)
         else:
@@ -255,11 +401,6 @@ class PythonAssetBuilder:
 
             # Islands from the archive replace the bench's; otherwise the bench's stay for its rebuild.
             keeping = "" if has_page_islands else PAGE_ISLAND_URL
-            for entries in asset_maps.values():
-                for url in entries.values():
-                    target = assets_dir / url.removeprefix("/assets/")
-                    if not target.is_file():
-                        raise BenchError(f"Prebuilt asset manifest references a missing file: {url}")
             for name, entries in asset_maps.items():
                 self.merge_json(assets_dir / name, entries, replacing=f"/assets/{app_name}/", keeping=keeping)
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
@@ -268,7 +409,7 @@ class PythonAssetBuilder:
         """Build every app's page islands, as Frappe's `after_app_build` hook does. Frappe
         without them (version-16) has no script."""
         frappe_path = self.bench.apps_path / "frappe"
-        script = frappe_path / "ui" / "vite" / "island" / "build-pages.js"
+        script = self.page_island_script
         if not script.exists():
             return
         NodePackages(script.parent / "toolchain").ensure_installed()
@@ -350,10 +491,7 @@ class PythonAssetBuilder:
         from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
         with exclusive_file_lock(path):
-            existing: dict = {}
-            if path.exists():
-                with contextlib.suppress(json.JSONDecodeError):
-                    existing = json.loads(path.read_text())
+            existing = read_json_object(path)
             if replacing:
                 existing = {
                     key: url

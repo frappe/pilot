@@ -1745,3 +1745,21 @@ def test_nginx_reloads_only_when_an_apps_assets_are_missing(tmp_path: Path, is_c
         manager.reload_for_asset_change()
 
     assert reload.call_count == reloads
+
+
+def test_nginx_loads_the_first_asset_fallback_even_if_the_config_was_already_written(tmp_path: Path) -> None:
+    manager = NginxManager(_make_bench(tmp_path, _SANDBOXED_DATA))
+    _app_folder(manager._renderer)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text(
+        manager._renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
+    )
+
+    with (
+        patch.object(manager, "is_installed", return_value=True),
+        patch.object(manager, "apply_config") as apply,
+    ):
+        manager.prepare_asset_fallback()
+        manager.prepare_asset_fallback()
+
+    apply.assert_called_once()

@@ -56,9 +56,15 @@ def test_removing_a_linked_app_unlinks_it_and_keeps_the_checkout(tmp_path: Path)
     bench = make_linked_bench(tmp_path / "bench", repo)
     (bench.sites_path / "apps.txt").write_text("frappe\ngameplan\n")
 
+    snapshots = bench.path / ".previous-bundles" / "assets"
+    for name in ("gameplan", "frappe"):
+        (snapshots / name / "dist").mkdir(parents=True)
+        (snapshots / name / "dist" / "bundle.js").write_text("old")
     with patch.object(App, "_pip_uninstall"):
         bench.app("gameplan").remove()
 
+    assert not (snapshots / "gameplan").exists()
+    assert (snapshots / "frappe" / "dist" / "bundle.js").read_text() == "old"
     assert not (bench.apps_path / "gameplan").is_symlink()
     assert (repo / "gameplan" / "hooks.py").exists()
     assert bench.registered_apps() == ["frappe"]
