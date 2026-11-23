@@ -109,3 +109,12 @@ def test_an_existing_server_is_left_alone(bench: Bench, key: Path, steps) -> Non
         bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
 
     assert steps.mock_calls == []
+
+
+def test_a_host_already_on_a_remote_server_is_refused(bench: Bench, key: Path, steps) -> None:
+    bench.config.mariadb.host, bench.config.mariadb.remote = "fdaa::9", True
+
+    with pytest.raises(BenchError, match="already uses the MariaDB server on fdaa::9"):
+        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
+
+    assert steps.mock_calls == []

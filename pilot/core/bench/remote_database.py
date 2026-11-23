@@ -55,9 +55,8 @@ class RemoteDatabaseSetup:
             bench.write_common_site_config()
             # The web unit of a production bench must stop depending on the local server before it goes.
             bench.rebuild_process_set(on_progress)
-        if not local.remote:
-            on_progress("Removing the local MariaDB server")
-            MariaDBManager(local).remove_local_server()
+        on_progress("Removing the local MariaDB server")
+        MariaDBManager(local).remove_local_server()
 
     def get_config(self) -> MariaDBConfig:
         """The remote server's settings, with a new admin password."""
@@ -86,6 +85,10 @@ class RemoteDatabaseSetup:
             raise BenchError("A remote database server is supported only for MariaDB benches.")
         if self.bench.config.mariadb.existing:
             raise BenchError("This host uses an existing MariaDB server that Pilot does not manage.")
+        if self.bench.config.mariadb.remote:
+            raise BenchError(
+                f"This host already uses the MariaDB server on {self.bench.config.mariadb.host}."
+            )
         remote.validate()
         if not Path(self.ssh_key_path).is_file():
             raise BenchError(f"SSH key {self.ssh_key_path} does not exist.")
