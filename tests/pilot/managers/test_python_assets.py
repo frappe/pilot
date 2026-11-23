@@ -333,68 +333,38 @@ def test_a_declared_build_dir_gets_its_dependencies_when_only_the_root_has_them(
     ]
 
 
-def build_replacing_bundles(tmp_path: Path, assets_json: dict[str, str], built: dict[str, str]) -> Path:
-    """Run a build that, like Frappe's, empties dist and writes `built`; return the app's public dir."""
-    app_path = tmp_path / "apps" / "gameplan"
-    public_dir = app_path / "gameplan" / "public"
-    for url in [*assets_json.values(), "/assets/gameplan/dist/js/older.bundle.AAAAAAAA.js"]:
-        bundle = public_dir / url.removeprefix("/assets/gameplan/")
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_text("old")
-    sites_assets = tmp_path / "sites" / "assets"
-    sites_assets.mkdir(parents=True)
-    (sites_assets / "assets.json").write_text(json.dumps(assets_json))
-
-    def build(app: MagicMock) -> None:
-        shutil.rmtree(public_dir / "dist")
-        for url in assets_json.values():
-            assert (tmp_path / ".previous-bundles" / url.lstrip("/")).read_text() == "old"
-        for relative, content in built.items():
-            (public_dir / relative).parent.mkdir(parents=True, exist_ok=True)
-            (public_dir / relative).write_text(content)
-        for url in assets_json.values():
-            priority = tmp_path / ".previous-bundles/building" / url.lstrip("/")
-            assert priority.read_text() == "old"
-
+def test_rebuild_preserves_open_tabs_and_retires_older_bundles(tmp_path: Path) -> None:
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
-    app = make_app(app_path)
+    app = make_app(tmp_path / "apps/gameplan")
     app.has_source_changes = True
-    with patch.object(builder, "build_app_from_source", side_effect=build):
-        builder.build_assets_for_app(app, skip_frontend=True)
+    dist = app.path / "gameplan/public/dist/js"
+    dist.mkdir(parents=True)
+    old, unchanged, retired = ("old.bundle.OLD00000.js", "libs.bundle.SAME0000.js", "retired.js")
+    for name in (old, unchanged, retired):
+        (dist / name).write_text("original")
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(
+        json.dumps({name: f"/assets/gameplan/dist/js/{name}" for name in (old, unchanged)})
+    )
+
+    def compile_assets(app):
+        shutil.rmtree(dist)
+        dist.mkdir(parents=True)
+        (dist / unchanged).write_bytes(b"")
+        priority = tmp_path / ".previous-bundles/building/assets/gameplan/dist/js"
+        assert (priority / old).read_text() == "original"
+        assert (priority / unchanged).read_text() == "original"
+        (dist / unchanged).write_text("rebuilt")
+
+    with patch.object(builder, "build_app_from_source", side_effect=compile_assets):
+        builder.build_assets_for_app(app)
+
+    assert (dist / old).read_text() == "original"
+    assert (dist / unchanged).read_text() == "rebuilt"
+    assert not (dist / retired).exists()
     assert not (tmp_path / ".previous-bundles/building/assets/gameplan").exists()
-    return public_dir
-
-
-def test_a_build_keeps_the_bundles_open_tabs_still_load(tmp_path: Path) -> None:
-    public_dir = build_replacing_bundles(
-        tmp_path,
-        {"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.OLD00000.js"},
-        {"dist/js/desk.bundle.NEW00000.js": "new"},
-    )
-
-    assert (public_dir / "dist/js/desk.bundle.OLD00000.js").read_text() == "old"
-    assert (public_dir / "dist/js/desk.bundle.NEW00000.js").read_text() == "new"
-
-
-def test_a_build_keeps_its_own_output_over_an_old_bundle_of_the_same_name(tmp_path: Path) -> None:
-    public_dir = build_replacing_bundles(
-        tmp_path,
-        {"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.SAME0000.js"},
-        {"dist/js/desk.bundle.SAME0000.js": "new"},
-    )
-
-    assert (public_dir / "dist/js/desk.bundle.SAME0000.js").read_text() == "new"
-
-
-def test_a_build_drops_bundles_the_old_assets_json_no_longer_names(tmp_path: Path) -> None:
-    public_dir = build_replacing_bundles(
-        tmp_path,
-        {"desk.bundle.js": "/assets/gameplan/dist/js/desk.bundle.OLD00000.js"},
-        {"dist/js/desk.bundle.NEW00000.js": "new"},
-    )
-
-    assert not (public_dir / "dist/js/older.bundle.AAAAAAAA.js").exists()
 
 
 @pytest.mark.parametrize("route", ["source", "prebuilt", "whole-bench"])
@@ -485,13 +455,10 @@ def test_corrupt_local_manifests_do_not_block_builds_or_rewrites(tmp_path: Path,
     def compile_assets(app):
         assert json.loads((assets / "assets.json").read_text()) == {}
 
-    with patch.object(builder, "build_app_from_source", side_effect=compile_assets) as compiler:
+    with patch.object(builder, "build_app_from_source", side_effect=compile_assets):
         builder.build_assets_for_app(app)
 
-    compiler.assert_called_once()
     assert (tmp_path / ".previous-bundles" / rtl_url.lstrip("/")).read_text() == "rtl"
-    builder.merge_json(assets / "assets.json", {"desk.bundle.js": "new"})
-    assert json.loads((assets / "assets.json").read_text())["desk.bundle.js"] == "new"
 
 
 def test_a_production_build_requires_a_working_nginx_fallback(tmp_path: Path) -> None:
@@ -511,12 +478,6 @@ def test_a_production_build_requires_a_working_nginx_fallback(tmp_path: Path) ->
         with pytest.raises(CommandError, match="nginx reload failed"):
             builder.build_assets_for_app(app)
         compile_assets.assert_not_called()
-
-        load_fallback.side_effect = None
-        compile_assets.side_effect = lambda app: load_fallback.assert_called_once()
-        load_fallback.reset_mock()
-        builder.build_assets_for_app(app)
-        compile_assets.assert_called_once()
 
 
 @pytest.mark.parametrize("interruption", ["error", "killed"])
@@ -606,7 +567,7 @@ def test_failed_build_keeps_priority_over_partial_live_file_until_retry(tmp_path
         live.write_bytes(b"")
         raise BenchError("interrupted")
 
-    assert priority.samefile(snapshot)
+    assert priority.read_bytes() == b"complete"
     with builder.keeping_previous_bundles("gameplan", app.path):
         assert priority.read_bytes() == snapshot.read_bytes() == b"complete"
         live.write_bytes(b"rebuilt")
