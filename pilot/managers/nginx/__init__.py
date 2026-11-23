@@ -229,12 +229,20 @@ class NginxConfigRenderer:
         everything the bench user can. So a bench without it keeps links, such as a storage folder."""
         return self.bench.is_workload_sandboxed
 
+    def asset_snapshot_rule(self) -> str:
+        """Use an internal status to serve a protected URL before nginx opens its live file."""
+        root = self.bench.path / ".previous-bundles" / "building"
+        return (
+            f'        if (-f "{root}$uri") {{ return 418; }}\n'
+            "        error_page 418 404 = @previous_bundles;\n"
+        )
+
     def render_asset_locations(self) -> str:
         rule = "        disable_symlinks on from={unchecked};\n" if self.is_refusing_symlinks else ""
         return "".join(
             f"    location ^~ {url} {{\n"
             f"        alias {folder}/;\n"
-            f"        error_page 404 = @previous_bundles;\n"
+            f"{self.asset_snapshot_rule()}"
             f"{rule.format(unchecked=unchecked)}"
             f"        expires 1y;\n"
             f'        add_header Cache-Control "public, immutable";\n'
@@ -373,6 +381,7 @@ class NginxConfigRenderer:
             "bench_root": str(self.bench.path),
             "refuse_symlinks": self.is_refusing_symlinks,
             "asset_locations": self.render_asset_locations(),
+            "asset_snapshot_rule": self.asset_snapshot_rule(),
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,
@@ -522,7 +531,7 @@ class NginxManager:
         current = self.include_path.read_text() if self.include_path.is_file() else ""
         if "location /assets {" not in current:
             return
-        receipt = self.include_path.with_name(".previous-bundles-loaded")
+        receipt = self.include_path.with_name(".previous-bundles-priority-loaded")
         if (
             receipt.is_file()
             and "location @previous_bundles" in current

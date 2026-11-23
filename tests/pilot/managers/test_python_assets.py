@@ -352,6 +352,9 @@ def build_replacing_bundles(tmp_path: Path, assets_json: dict[str, str], built: 
         for relative, content in built.items():
             (public_dir / relative).parent.mkdir(parents=True, exist_ok=True)
             (public_dir / relative).write_text(content)
+        for url in assets_json.values():
+            priority = tmp_path / ".previous-bundles/building" / url.lstrip("/")
+            assert priority.read_text() == "old"
 
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
@@ -359,6 +362,7 @@ def build_replacing_bundles(tmp_path: Path, assets_json: dict[str, str], built: 
     app.has_source_changes = True
     with patch.object(builder, "build_app_from_source", side_effect=build):
         builder.build_assets_for_app(app, skip_frontend=True)
+    assert not (tmp_path / ".previous-bundles/building/assets/gameplan").exists()
     return public_dir
 
 
@@ -580,3 +584,31 @@ def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path
 
     assert all((islands / filename).exists() for filename in files)
     assert not (fallback.parents[2] / app.config.name).exists()
+
+
+def test_failed_build_keeps_priority_over_partial_live_file_until_retry(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    app = make_app(tmp_path / "apps/gameplan")
+    url = "/assets/gameplan/dist/js/desk.bundle.SAME0000.js"
+    live = app.path / "gameplan/public/dist/js/desk.bundle.SAME0000.js"
+    live.parent.mkdir(parents=True)
+    live.write_bytes(b"complete")
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(json.dumps({"desk.bundle.js": url}))
+    priority = tmp_path / ".previous-bundles/building" / url.lstrip("/")
+    snapshot = tmp_path / ".previous-bundles" / url.lstrip("/")
+    with (
+        pytest.raises(BenchError, match="interrupted"),
+        builder.keeping_previous_bundles("gameplan", app.path),
+    ):
+        live.write_bytes(b"")
+        raise BenchError("interrupted")
+
+    assert priority.samefile(snapshot)
+    with builder.keeping_previous_bundles("gameplan", app.path):
+        assert priority.read_bytes() == snapshot.read_bytes() == b"complete"
+        live.write_bytes(b"rebuilt")
+    assert not priority.exists()
+    assert live.read_bytes() == b"rebuilt"

@@ -82,8 +82,7 @@ server {
     }
 
 {{ asset_locations }}    location /assets {
-        error_page 404 = @previous_bundles;
-        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
+{{ asset_snapshot_rule }}        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
@@ -333,8 +332,7 @@ server {
     }
 
 {{ asset_locations }}    location /assets {
-        error_page 404 = @previous_bundles;
-        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
+{{ asset_snapshot_rule }}        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";

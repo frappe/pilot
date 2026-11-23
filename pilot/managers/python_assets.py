@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -44,9 +45,10 @@ def asset_build_lock(bench: Bench) -> Iterator[None]:
 def discard_previous_bundles(bench: Bench, name: str) -> None:
     """Discard a removed app's fallback files while holding the bench asset lock."""
     root = previous_bundles_root(bench)
-    snapshot = root / "assets" / name
-    if snapshot.exists():
-        shutil.rmtree(snapshot)
+    for base in (root, root / "building"):
+        snapshot = base / "assets" / name
+        if snapshot.exists():
+            shutil.rmtree(snapshot)
     (root / f".{name}.restored-islands.json").unlink(missing_ok=True)
 
 
@@ -198,9 +200,13 @@ class PythonAssetBuilder:
         app_snapshot = root / "assets" / name
         scope = PAGE_ISLAND_PATH if islands_only else Path()
         snapshot = app_snapshot / scope
+        building = root / "building" / "assets" / name / scope
         restored_index = root / f".{name}.restored-islands.json"
         restored = read_json_object(restored_index)
         outgoing = self.outgoing_bundles(name, public, app_snapshot, restored, islands_only=islands_only)
+        # A failed build can leave a live file truncated at the same hashed URL.
+        # Keep the protected bytes until a successful retry publishes its output.
+        outgoing.update(scope / path.relative_to(building) for path in building.rglob("*") if path.is_file())
         if not outgoing and not snapshot.exists():
             yield
             return
@@ -212,17 +218,26 @@ class PythonAssetBuilder:
                 source = public / relative
                 if source.resolve() != source:
                     continue
-                if not source.is_file():
+                protected = building / relative.relative_to(scope)
+                if protected.is_file():
+                    source = protected
+                elif not source.is_file():
                     source = app_snapshot / relative  # Recover a manifest entry after an interrupted build.
                 if source.is_file():
                     target = staged / relative.relative_to(scope)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, target)
 
-            if snapshot.exists():
-                exchange_paths(staged, snapshot)
-            else:
-                staged.rename(snapshot)
+            # Both trees reference the same immutable inodes. The building tree gives
+            # these URLs priority until live output is complete, including during retries.
+            priority = Path(temporary) / "priority"
+            shutil.copytree(staged, priority, copy_function=os.link)
+            building.parent.mkdir(parents=True, exist_ok=True)
+            for prepared, destination in ((staged, snapshot), (priority, building)):
+                if destination.exists():
+                    exchange_paths(prepared, destination)
+                else:
+                    prepared.rename(destination)
             try:
                 yield
             finally:
@@ -230,6 +245,7 @@ class PythonAssetBuilder:
                 remaining.update(self.restore_missing_bundles(public, app_snapshot, scope))
                 if restored != remaining:
                     atomic_write_private_text(restored_index, json.dumps(remaining))
+            building.rename(Path(temporary) / "finished")
 
     def prune_restored_islands(self, public: Path, scope: Path, restored: dict) -> dict:
         """Remove older compatibility copies that the compiler left in place."""
