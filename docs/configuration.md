@@ -270,6 +270,31 @@ Central endpoint and authentication data come from instance metadata. While Cent
 
 Before it applies the Central credential, bootstrap sizes Pilot's MariaDB for the VM's memory, because an image built on another host keeps that host's sizing. It writes `my.cnf` and the unit for the next start, then applies the values to the running server without a restart: the buffer pool and its automatic minimum, `innodb_log_file_size`, `key_buffer_size`, and `max_connections`. An option set in `managed.cnf` keeps its value. The buffer pool cannot grow above the running `innodb_buffer_pool_size_max`, so a larger pool waits for the next start. Higher unit memory limits apply before MariaDB grows. Lower limits apply only after MariaDB uses less than the new `MemoryHigh`. The unit file is written last, after the limits apply; if the usage stays higher or cannot be read for a minute, the old unit stays and a later attempt tries again.
 
+### Remote MariaDB
+
+`[mariadb]` describes one of three servers:
+
+| Server | Keys | What Pilot does |
+|---|---|---|
+| Local (default) | none | Runs its own `pilot-mariadb.service` user unit under `databases/mariadb`, sizes it, restarts it and edits its variables. |
+| Existing | `existing = true`, `host`, `port`, `admin_user`, `root_password` | Only connects. Restart, sizing and variable changes are refused. |
+| Remote | `remote = true`, `host`, `port`, `ssh_user`, `ssh_key_path`, `admin_user`, `root_password` | Manages a packaged MariaDB 11.8 or newer on another host: SQL over TCP, everything else over SSH with `sudo -n`. |
+
+```toml
+[mariadb]
+host = "fdaa:1:2::3"
+port = 3306
+admin_user = "pilot"
+root_password = "..."
+remote = true
+ssh_user = "ubuntu"
+ssh_key_path = "/home/frappe/.ssh/pilot-database"
+```
+
+On a remote host the package keeps its `mariadb.service`, data directory and socket. Pilot writes its options to `/etc/mysql/mariadb.conf.d/90-pilot.cnf` (listen on `::`, `skip-name-resolve`, logs in `/var/log/mysql`, memory sizing for the remote host's RAM) and the variable editor's options to `99-pilot-managed.cnf`, which loads last. The service memory limits are set with `systemctl set-property`. The database host runs nothing else, so `pilot setup remote-database` starts it at the largest memory share, 0.8. The admin account is created through root's socket login and accepts only the address the remote host sees Pilot connect from; setup and cloned-site accounts use the same host. The host's known key is kept in `<ssh_key_path>.known_hosts` and is trusted on first use. Restart, the memory split, the variable editor, slow queries, deadlocks, log sizes and free disk work as for a local server. `pilot setup remote-database` moves a host to a remote server - see [Setup Commands](commands.md#setup-commands).
+
+A Central VM whose database is on another host has the `pilot-database` attribute, `{"remote": true}`. Before it applies the credential, bootstrap asks Central for the database host with `central.api.pilot.get_database_access`, which answers `Pending` until that host runs and then `Ready` with `host`, `port`, `ssh_user` and `ssh_private_key`. Pilot keeps the key at `~/.ssh/pilot-database` and moves the host to the remote server, so the credential never lands on a host without a working database. A `Failed` answer stops the bootstrap.
+
 The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first start in each host boot and stays active for that boot. Pilot records the boot ID and total host RAM in `memory-sizing.json`. On the first allocation, or a new boot with changed RAM, it recalculates the generated settings and clears custom buffer-pool sizes, log-file size, key-buffer size, and connection count. A MariaDB restart or a host reboot with unchanged RAM preserves custom database variables. Service memory limits are recalculated from host RAM and `mariadb.memory_share` at each boot. Other database-variable overrides, including `innodb_snapshot_isolation`, remain unchanged. The upgrade patch records the current host capacity and starts the sizing service outside the database action lock, so installation preserves existing settings and the first MariaDB restart can proceed.
 
 `MemoryHigh` and `MemoryMax` are internal service limits. They are not shown in Database Configurations, and the API rejects manual changes, including previously queued changes. Use the database memory split to change the allocation. Legacy `mariadb.memory_high_mb` and `mariadb.memory_max_mb` values are ignored and cleared at the next host boot. Swap is not editable here.
