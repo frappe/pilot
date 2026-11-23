@@ -189,3 +189,22 @@ def test_systemd_keeps_backslashes_and_quotes_in_hook_arguments() -> None:
     )
 
     assert 'ExecStartPre=/usr/bin/python3 -c "print(\'a\\\\nb\')" "say \\"hi\\"" ""\n' in unit
+
+
+@pytest.mark.parametrize(
+    ("mariadb", "expected"),
+    [
+        ({"existing": False, "remote": False}, "pilot-mariadb.service"),
+        ({"existing": True, "remote": False}, ""),
+        ({"existing": False, "remote": True}, ""),
+    ],
+)
+def test_web_depends_on_the_database_unit_only_when_it_runs_here(mariadb: dict, expected: str) -> None:
+    from types import SimpleNamespace
+
+    from pilot.managers.processes.systemd import SystemdProcessManager
+
+    config = SimpleNamespace(db_type="mariadb", mariadb=SimpleNamespace(**mariadb))
+    manager = SimpleNamespace(bench=SimpleNamespace(config=config))
+
+    assert SystemdProcessManager.database_service.fget(manager) == expected  # type: ignore[attr-defined]

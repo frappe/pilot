@@ -1581,3 +1581,33 @@ def test_a_local_server_is_on_this_host() -> None:
 
 def test_an_existing_server_is_on_another_host() -> None:
     assert MariaDBManager(MariaDBConfig(host="db.example.com", existing=True)).is_on_another_host is True
+
+
+def test_removing_the_local_server_stops_it_and_deletes_its_units_and_data(tmp_path) -> None:
+    units = tmp_path / "units"
+    (units / "pilot-mariadb.service.d").mkdir(parents=True)
+    for name in ("pilot-mariadb.service", "pilot-mariadb-sizing.service"):
+        (units / name).write_text("[Unit]\n")
+    state = tmp_path / "databases" / "mariadb"
+    (state / "data").mkdir(parents=True)
+    manager = _manager()
+
+    with (
+        patch.object(MariaDBManager, "user_unit_dir", new_callable=PropertyMock, return_value=units),
+        patch.object(MariaDBManager, "state_dir", new_callable=PropertyMock, return_value=state),
+        patch(f"{MODULE}.HostPlatform") as platform,
+        patch(f"{MODULE}.subprocess.run") as run,
+        patch(f"{MODULE}.run_command") as run_command,
+    ):
+        platform.return_value.is_macos = False
+        manager.remove_local_server()
+
+    assert run.call_args.args[0][-4:] == [
+        "disable",
+        "--now",
+        "pilot-mariadb.service",
+        "pilot-mariadb-sizing.service",
+    ]
+    assert run_command.call_args.args[0][-1] == "daemon-reload"
+    assert list(units.iterdir()) == []
+    assert not state.exists()

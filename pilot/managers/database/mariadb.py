@@ -2,6 +2,7 @@ import configparser
 import logging
 import os
 import re
+import shutil
 import subprocess
 import time
 from collections.abc import Callable, Iterable
@@ -192,6 +193,25 @@ class MariaDBManager(UserOwnedDBManager):
         self._wait_until_reachable()
         self.secure_installation()
         return None
+
+    def remove_local_server(self) -> None:
+        """Stop Pilot's own server on this host and delete its units and data, after the host moved away from it."""
+        if HostPlatform().is_macos:
+            raise DatabaseError("Pilot does not run its own MariaDB on macOS.")
+        env = self._systemctl_env()
+        sizing_unit = self.user_unit_dir / "pilot-mariadb-sizing.service"
+        # A unit that was never installed makes systemctl fail, and there is nothing to stop.
+        subprocess.run(
+            self._systemctl("disable", "--now", self._UNIT_NAME, sizing_unit.name),
+            env=env,
+            capture_output=True,
+            timeout=self.admin_sql_timeout,
+        )
+        self.unit_path.unlink(missing_ok=True)
+        sizing_unit.unlink(missing_ok=True)
+        shutil.rmtree(self.memory.limits_path.parent, ignore_errors=True)
+        run_command(self._systemctl("daemon-reload"), env=env)
+        shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _initialize_data_dir(self) -> None:
         """Create the data directory with mariadb-install-db."""

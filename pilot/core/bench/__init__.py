@@ -729,6 +729,20 @@ class Bench:
 
         AdminDomainChange(self, domain, tls).run(on_progress)
 
+    def setup_remote_database(
+        self,
+        host: str,
+        ssh_user: str,
+        ssh_key_path: str,
+        port: int = 3306,
+        admin_user: str = "pilot",
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> None:
+        """Move this host's benches to a MariaDB on another host that Pilot manages over SSH."""
+        from pilot.core.bench.remote_database import RemoteDatabaseSetup
+
+        RemoteDatabaseSetup(self, host, ssh_user, ssh_key_path, port, admin_user).run(on_progress)
+
     def setup_central(
         self,
         admin_pattern: str = "",
