@@ -179,6 +179,7 @@ def test_supervisor_shutdown_fails_when_the_daemon_outlives_the_timeout(bench) -
     manager = SupervisorProcessManager(bench)
     clock = iter([0, SupervisorProcessManager.shutdown_timeout + 1])
     with (
+        patch.object(supervisor_module.CronManager, "remove_schedule"),
         patch.object(manager, "is_alive", return_value=True),
         patch.object(supervisor_module, "run_command"),
         patch.object(supervisor_module.time, "monotonic", side_effect=lambda: next(clock)),

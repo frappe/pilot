@@ -5,7 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pilot.managers.cron import CronManager
+
+
+@pytest.fixture(autouse=True)
+def installed_crontab():
+    with patch("shutil.which", return_value="/usr/bin/crontab"):
+        yield
 
 
 def make_manager(bench_root: str = "/benches/test") -> CronManager:
