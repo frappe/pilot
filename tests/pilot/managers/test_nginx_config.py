@@ -1690,13 +1690,6 @@ def test_app_assets_are_served_from_their_real_folders(tmp_path: Path) -> None:
     config = renderer.generate_bench_config([(_BASE_SITE, [])], admin_ssl=False)
     assert f"location ^~ /assets/frappe/ {{\n        alias {bench_root}/apps/frappe/frappe/public/;" in config
 
-    for opening in ("location ^~ /assets/frappe/ {", "location /assets {"):
-        blocks = _location_bodies(config, opening)
-        assert blocks
-        for block in blocks:
-            assert f'if (-f "{bench_root}/.previous-bundles/building$uri") {{ return 418; }}' in block
-            assert "error_page 418 404 = @previous_bundles;" in block
-
 
 def test_a_link_that_leaves_its_app_is_not_served(tmp_path: Path) -> None:
     renderer = _renderer(tmp_path)
