@@ -141,8 +141,9 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
     compiler.assert_called_once()
 
 
-def test_full_build_does_not_fingerprint_or_cache_assets():
+def test_full_build_does_not_fingerprint_or_cache_assets(tmp_path: Path):
     builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
     builder.bench.apps.return_value = []
     with (
         patch(
@@ -386,3 +387,125 @@ def test_a_build_drops_bundles_the_old_assets_json_no_longer_names(tmp_path: Pat
     )
 
     assert not (public_dir / "dist/js/older.bundle.AAAAAAAA.js").exists()
+
+
+@pytest.mark.parametrize("route", ["source", "prebuilt", "whole-bench"])
+def test_island_builds_keep_the_previous_entry_chunks_and_media(tmp_path: Path, route: str) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.apps_path = tmp_path / "apps"
+    app = make_app(builder.bench.apps_path / "gameplan")
+    frappe = make_app(builder.bench.apps_path / "frappe", "frappe")
+    builder.bench.apps.return_value = [app, frappe]
+    builder.page_island_script.parent.mkdir(parents=True)
+    builder.page_island_script.touch()
+    relative = Path("dist/page-island")
+    public = frappe.path / "frappe" / "public"
+    islands = public / relative
+    fallback = tmp_path / ".previous-bundles" / "assets" / "frappe" / relative
+    manifest = builder.bench.sites_path / "assets" / "assets.json"
+    manifest.parent.mkdir(parents=True)
+    unrelated = fallback.parent / "js" / "desk.old.js"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("old desk")
+
+    def names(generation: str) -> set[str]:
+        return {f"board.{generation}.js", f"chunks/shared.{generation}.js", f"media/icon.{generation}.svg"}
+
+    def write_generation(generation: str) -> None:
+        for filename in names(generation):
+            path = islands / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(generation)
+        manifest.write_text(
+            json.dumps({"gameplan.board": f"/assets/frappe/{relative}/board.{generation}.js"})
+        )
+
+    generation = "one"
+    write_generation(generation)
+
+    def compile_islands(*args, **kwargs):
+        shutil.rmtree(islands)
+        for filename in names(generation):
+            assert (fallback / filename).read_text() == generation
+        write_generation({"one": "two", "two": "three"}[generation])
+
+    with (
+        patch.object(builder, "run_compiler", side_effect=compile_islands),
+        patch.object(builder, "build_app_from_source", side_effect=compile_islands),
+        patch.object(builder, "build_page_islands", side_effect=compile_islands),
+        patch.object(builder, "setup_prebuilt_assets"),
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets") as prebuilt,
+    ):
+        prebuilt.return_value.install.return_value = True
+        prebuilt.return_value.has_page_islands = False
+        app.has_page_islands = True
+        app.has_studio_apps = False
+        app.is_linked = False
+        app.has_source_changes = route != "prebuilt"
+        for generation in ("one", "two"):
+            if route == "whole-bench":
+                builder.build_assets()
+            else:
+                builder.build_assets_for_app(app)
+            for filename in names(generation):
+                assert (islands / filename).read_text() == generation
+            if route != "whole-bench":
+                assert unrelated.read_text() == "old desk"
+
+    assert not any(
+        (fallback / filename).exists() or (islands / filename).exists() for filename in names("one")
+    )
+
+
+@pytest.mark.parametrize("corrupt", ["{", "[]", '{"invalid":null,"also-invalid":7}'])
+def test_corrupt_local_manifests_do_not_block_builds_or_rewrites(tmp_path: Path, corrupt: str) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    app = make_app(tmp_path / "apps" / "gameplan")
+    public = app.path / "gameplan" / "public"
+    app.has_source_changes = True
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(corrupt)
+    rtl_url = "/assets/gameplan/dist/css-rtl/desk.AAAAAAAA.css"
+    (assets / "assets-rtl.json").write_text(json.dumps({"rtl_desk.bundle.css": rtl_url}))
+    rtl_file = public / "dist/css-rtl/desk.AAAAAAAA.css"
+    rtl_file.parent.mkdir(parents=True)
+    rtl_file.write_text("rtl")
+
+    def compile_assets(app):
+        assert json.loads((assets / "assets.json").read_text()) == {}
+
+    with patch.object(builder, "build_app_from_source", side_effect=compile_assets) as compiler:
+        builder.build_assets_for_app(app)
+
+    compiler.assert_called_once()
+    assert (tmp_path / ".previous-bundles" / rtl_url.lstrip("/")).read_text() == "rtl"
+    builder.merge_json(assets / "assets.json", {"desk.bundle.js": "new"})
+    assert json.loads((assets / "assets.json").read_text())["desk.bundle.js"] == "new"
+
+
+def test_a_production_build_requires_a_working_nginx_fallback(tmp_path: Path) -> None:
+    from pilot.exceptions import CommandError
+
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps" / "gameplan")
+    app.has_source_changes = True
+
+    with (
+        patch("pilot.managers.nginx.NginxManager.prepare_asset_fallback") as load_fallback,
+        patch.object(builder, "build_app_from_source") as compile_assets,
+    ):
+        load_fallback.side_effect = CommandError("nginx reload failed")
+        with pytest.raises(CommandError, match="nginx reload failed"):
+            builder.build_assets_for_app(app)
+        compile_assets.assert_not_called()
+
+        load_fallback.side_effect = None
+        compile_assets.side_effect = lambda app: load_fallback.assert_called_once()
+        load_fallback.reset_mock()
+        builder.build_assets_for_app(app)
+        compile_assets.assert_called_once()

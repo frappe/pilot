@@ -36,6 +36,7 @@ def _publish(directory: Path, app, manifest: dict | None = None, checksum: str |
         files = {
             "manifest.json": json.dumps(manifest),
             "myapp/public/dist/js/new.bundle.BBBBBBBB.js": "new",
+            "myapp/public/dist/island/dashboard.ABCD1234.js": "island",
             "myapp/www/x.html": "<html>",
             "myapp/public/app_builds/portal/index.js": "portal",
         }
@@ -248,3 +249,25 @@ def test_replacing_frappe_s_entries_keeps_page_island_entries(tmp_path: Path) ->
     )
 
     assert json.loads(assets_json.read_text()) == {"desk.bundle.js": "/assets/frappe/dist/js/new.js", **island}
+
+
+@pytest.mark.parametrize(
+    ("url", "message"),
+    [
+        ("/assets/myapp/dist/js/missing.js", "missing file"),
+        ("/assets/myapp/app_builds/portal/index.js", "missing file"),
+        ("/assets/myapp/../www/x.html", "invalid URL"),
+    ],
+)
+def test_invalid_asset_urls_leave_the_current_build_in_place(
+    tmp_path: Path, release: Path, url: str, message: str
+) -> None:
+    app = _app(tmp_path)
+    _publish(release, app, _manifest(app, **{"assets.json": {"desk.bundle.js": url}}))
+
+    with pytest.raises(BenchError, match=message):
+        PrebuiltAssets(app).install()
+
+    dist = app.path / "myapp" / "public" / "dist" / "js"
+    assert [path.name for path in dist.iterdir()] == ["old.bundle.AAAAAAAA.js"]
+    assert not (app.path / "myapp" / "www" / "x.html").exists()

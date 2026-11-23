@@ -115,20 +115,49 @@ class PrebuiltAssets:
         from pilot.internal.archive import TarArchive
 
         TarArchive(archive).extract_to(extracted)
-        manifest = json.loads((extracted / "manifest.json").read_text())
+        manifest = self._read_manifest(extracted / "manifest.json")
         if manifest.get("app") != self.app.config.name or manifest.get("commit") != commit:
             raise BenchError(f"Prebuilt assets for {self.app.config.name} were built for another commit.")
-        paths = [Path(relative) for relative in manifest.get("paths") or []]
+        published = manifest.get("paths", [])
+        if not isinstance(published, list) or not all(isinstance(relative, str) for relative in published):
+            raise BenchError("The prebuilt asset manifest must list its published paths.")
+        paths = [Path(relative) for relative in published]
         for path in paths:
-            if not path.parts or path.is_absolute() or ".." in path.parts:
+            if not path.parts or path.is_absolute() or ".." in path.parts or "\0" in str(path):
                 raise BenchError(f"Prebuilt assets name a path outside the app: {str(path)!r}")
             if not (extracted / path).exists():
                 raise BenchError(f"Prebuilt assets list {str(path)!r} but do not contain it.")
         self.asset_maps = self._asset_maps(manifest)
+        self._validate_asset_files(extracted, paths)
         self.has_studio_apps = Path(self.app.config.name, "public", "app_builds") in paths
         self._carry_over_page_islands(extracted, paths)
         for path in paths:
             self._replace(extracted / path, self.app.path / path)
+
+    @staticmethod
+    def _read_manifest(path: Path) -> dict:
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError) as error:
+            raise BenchError("Cannot read the prebuilt asset manifest.") from error
+        if not isinstance(manifest, dict):
+            raise BenchError("The prebuilt asset manifest must be a JSON object.")
+        return manifest
+
+    def _validate_asset_files(self, extracted: Path, paths: list[Path]) -> None:
+        """Check each URL against the files the archive is about to publish."""
+        app = self.app.config.name
+        prefix = f"/assets/{app}/"
+        for entries in (self.asset_maps or {}).values():
+            for url in entries.values():
+                relative = Path(url.removeprefix(prefix))
+                if not relative.parts or relative.is_absolute() or ".." in relative.parts or "\0" in url:
+                    raise BenchError(f"Prebuilt asset manifest references an invalid URL: {url}")
+                target = Path(app, "public", relative)
+                if not (extracted / target).is_file() or not any(
+                    target.is_relative_to(path) for path in paths
+                ):
+                    raise BenchError(f"Prebuilt asset manifest references a missing file: {url}")
 
     def _carry_over_page_islands(self, extracted: Path, paths: list[Path]) -> None:
         """Use the archive's islands when only Frappe has pages; else keep the bench's for its rebuild."""

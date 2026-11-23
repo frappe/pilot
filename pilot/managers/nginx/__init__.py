@@ -515,6 +515,23 @@ class NginxManager:
         sys.stdout.flush()
         self.apply_config()
 
+    def prepare_asset_fallback(self) -> None:
+        """Load the fallback before touching assets, including on benches with a config written but not reloaded."""
+        if not self.bench.config.production.enabled or not self.is_installed():
+            return
+        current = self.include_path.read_text() if self.include_path.is_file() else ""
+        if "location /assets" not in current:
+            return
+        receipt = self.include_path.with_name(".previous-bundles-loaded")
+        if (
+            receipt.is_file()
+            and "location @previous_bundles" in current
+            and self._renderer.render_asset_locations() in current
+        ):
+            return
+        self.apply_config()
+        receipt.touch()
+
     def reload_for_asset_change(self) -> None:
         """Write the config again when an app's assets are not in it, such as after an install or an update,
         or when the sandbox was turned on or off since nginx last got it. Asset locations are only in site
