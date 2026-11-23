@@ -208,7 +208,7 @@ onMounted(() => {
 
 <template>
   <div class="grid md:grid-cols-2 gap-2 mt-1">
-    <template v-if="appsLoading">
+    <template v-if="appsLoading && !installedApps.length">
       <MarketplaceAppCardSkeleton v-for="i in 4" :key="i" :index="i - 1" />
     </template>
 

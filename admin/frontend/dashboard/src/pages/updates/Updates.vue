@@ -144,7 +144,7 @@ onMounted(load)
       />
     </StickyToolbar>
 
-    <ListSkeleton v-if="loading" />
+    <ListSkeleton v-if="loading && !operations.length" />
 
     <template v-else-if="error">
       <ErrorMessage :message="error" />
