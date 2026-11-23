@@ -15,12 +15,27 @@ class MariaDBConfig:
     admin_user: str = "root"
     socket_path: str = ""
     existing: bool = False
+    # A server on another host that Pilot manages over SSH. An existing server is only connected to.
+    remote: bool = False
+    ssh_user: str = ""
+    ssh_key_path: str = ""
     memory_share: float = 0.5
     memory_high_mb: int | None = None
     memory_max_mb: int | None = None
 
     def validate(self) -> None:
-        """Raise when the memory share is out of range."""
+        """Raise when the memory share is out of range or the remote server is incomplete."""
         low, high = MEMORY_SHARE_RANGE
         if not low <= self.memory_share <= high:
             raise ConfigError(f"mariadb.memory_share must be between {low} and {high}.")
+        if self.remote:
+            self._validate_remote()
+
+    def _validate_remote(self) -> None:
+        """Raise unless a remote server names its host and SSH login."""
+        if self.existing:
+            raise ConfigError("mariadb.remote and mariadb.existing cannot both be set.")
+        if self.host in ("", "localhost", "127.0.0.1", "::1"):
+            raise ConfigError("mariadb.host must name the remote server.")
+        if not self.ssh_user or not self.ssh_key_path:
+            raise ConfigError("mariadb.ssh_user and mariadb.ssh_key_path are required for a remote server.")

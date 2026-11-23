@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.common import CommonConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.postgres import PostgresConfig
 from pilot.config.telemetry import TelemetryConfig
+from pilot.exceptions import ConfigError
 
 
 def test_path_resolves_next_to_benches_root(tmp_path: Path) -> None:
@@ -93,3 +96,33 @@ def test_telemetry_is_shared_by_every_bench(tmp_path: Path) -> None:
 
     assert config.telemetry.endpoint == "https://datum.internal"
     assert config.telemetry.is_enabled
+
+
+def test_remote_mariadb_round_trips(tmp_path: Path) -> None:
+    config = CommonConfig(
+        mariadb=MariaDBConfig(
+            host="fdaa:1:2::3", port=3306, remote=True, ssh_user="ubuntu", ssh_key_path="/home/pilot/.ssh/db"
+        )
+    )
+    config.write(tmp_path)
+    assert CommonConfig.read(tmp_path) == config
+
+
+def test_local_mariadb_writes_no_remote_keys(tmp_path: Path) -> None:
+    CommonConfig().write(tmp_path)
+    assert "ssh_user" not in CommonConfig.path(tmp_path).read_text()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"existing": True},
+        {"host": "localhost"},
+        {"ssh_user": ""},
+        {"ssh_key_path": ""},
+    ],
+)
+def test_incomplete_remote_mariadb_is_refused(changes: dict) -> None:
+    values = {"host": "fdaa::3", "remote": True, "ssh_user": "ubuntu", "ssh_key_path": "/key"}
+    with pytest.raises(ConfigError):
+        MariaDBConfig(**{**values, **changes}).validate()
