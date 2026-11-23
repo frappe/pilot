@@ -6,6 +6,8 @@ import logging
 import re
 import shutil
 import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -92,14 +94,41 @@ class PythonAssetBuilder:
         if app.config.name == "frappe" and not skip_frontend:
             NodePackages(app.path).ensure_installed()
 
-        # A linked checkout is built from its own source, never from a release.
-        if self._has_usable_prebuilt(app, force) and self.install_prebuilt_assets(
-            app, skip_frontend=skip_frontend
-        ):
-            return
+        with self.keeping_previous_bundles(app):
+            # A linked checkout is built from its own source, never from a release.
+            if self._has_usable_prebuilt(app, force) and self.install_prebuilt_assets(
+                app, skip_frontend=skip_frontend
+            ):
+                return
 
-        with app.record_lockfiles_on_failure():
-            self.build_app_from_source(app)
+            with app.record_lockfiles_on_failure():
+                self.build_app_from_source(app)
+
+    @contextlib.contextmanager
+    def keeping_previous_bundles(self, app: "App") -> Iterator[None]:
+        """Put back the bundles the old assets.json names once a build deletes them, so open tabs can load them."""
+        public_dir = app.path / app.config.name / "public"
+        url_prefix = f"/assets/{app.config.name}/"
+        bundles = {
+            public_dir / url.removeprefix(url_prefix)
+            for name in ("assets.json", "assets-rtl.json")
+            if (manifest := self.bench.sites_path / "assets" / name).is_file()
+            for url in json.loads(manifest.read_text()).values()
+            if url.startswith(f"{url_prefix}dist/") and ".." not in url
+        }
+        with tempfile.TemporaryDirectory(dir=app.path.parent, prefix=f".{app.config.name}-bundles-") as work:
+            kept = {
+                bundle: Path(work) / str(index) for index, bundle in enumerate(bundles) if bundle.is_file()
+            }
+            for bundle, copy in kept.items():
+                copy.hardlink_to(bundle)
+            try:
+                yield
+            finally:
+                for bundle, copy in kept.items():
+                    if not bundle.exists():
+                        bundle.parent.mkdir(parents=True, exist_ok=True)
+                        copy.replace(bundle)
 
     @staticmethod
     def _has_usable_prebuilt(app: "App", force: bool) -> bool:
