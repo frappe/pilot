@@ -63,7 +63,8 @@ class SSHHost:
             stdin_text=stdin_text,
             timeout=timeout or self.command_timeout,
         )
-        return result.stdout.decode() if isinstance(result.stdout, bytes) else result.stdout
+        # A log tail can start inside a multi-byte character.
+        return result.stdout.decode(errors="replace") if isinstance(result.stdout, bytes) else result.stdout
 
     def is_reachable(self) -> bool:
         """Whether this host accepts the login and grants sudo without a password."""

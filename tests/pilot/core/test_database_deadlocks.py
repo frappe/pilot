@@ -10,6 +10,7 @@ import pytest
 from pilot.core.database import QueryResult
 from pilot.core.database.deadlocks import DeadlockLog, DeadlockParser
 from pilot.core.database.engines.mariadb import MariaDB
+from pilot.core.database.log_file import LogFile
 
 DUMP = (Path(__file__).parents[2] / "fixtures" / "mariadb_deadlock.txt").read_text()
 NOISE = "2026-11-12 12:00:00 0 [Note] InnoDB: Buffer pool(s) load completed\n"
@@ -48,12 +49,12 @@ def test_the_log_lists_newest_first_and_filters_by_database(tmp_path: Path) -> N
     log = tmp_path / "error.log"
     log.write_text(DUMP + DUMP.replace("12:28:11", "13:00:00").replace("_b55b229d4134569a", "other"))
 
-    deadlocks = DeadlockLog(log).get_deadlocks()
+    deadlocks = DeadlockLog(LogFile(log)).get_deadlocks()
     assert [deadlock.time for deadlock in deadlocks] == [
         "2026-11-12T07:30:00+00:00",
         "2026-11-12T06:58:11+00:00",
     ]
-    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks("other")] == [
+    assert [deadlock.time for deadlock in DeadlockLog(LogFile(log)).get_deadlocks("other")] == [
         "2026-11-12T07:30:00+00:00"
     ]
 
@@ -63,10 +64,10 @@ def test_the_log_filters_by_a_utc_range(tmp_path: Path) -> None:
     log.write_text(DUMP + DUMP.replace("12:28:11", "13:00:00"))
     since = datetime(2026, 11, 12, 7, 0, tzinfo=UTC)
 
-    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks(since=since)] == [
+    assert [deadlock.time for deadlock in DeadlockLog(LogFile(log)).get_deadlocks(since=since)] == [
         "2026-11-12T07:30:00+00:00"
     ]
-    assert [deadlock.time for deadlock in DeadlockLog(log).get_deadlocks(until=since)] == [
+    assert [deadlock.time for deadlock in DeadlockLog(LogFile(log)).get_deadlocks(until=since)] == [
         "2026-11-12T06:58:11+00:00"
     ]
 
