@@ -520,7 +520,7 @@ class NginxManager:
         if not self.bench.config.production.enabled or not self.is_installed():
             return
         current = self.include_path.read_text() if self.include_path.is_file() else ""
-        if "location /assets" not in current:
+        if "location /assets {" not in current:
             return
         receipt = self.include_path.with_name(".previous-bundles-loaded")
         if (
@@ -537,7 +537,7 @@ class NginxManager:
         or when the sandbox was turned on or off since nginx last got it. Asset locations are only in site
         blocks, so a config without them has nothing to update."""
         current = self.include_path.read_text() if self.include_path.is_file() else ""
-        if "location /assets" not in current:
+        if "location /assets {" not in current:
             return
         is_stale = self._renderer.render_asset_locations() not in current
         if is_stale or ("disable_symlinks" in current) != self._renderer.is_refusing_symlinks:

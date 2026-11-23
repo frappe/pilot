@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
+import os
 import shutil
+import signal
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -19,6 +22,7 @@ def make_app(app_path: Path, name: str = "gameplan") -> MagicMock:
     app = MagicMock()
     app.path = app_path
     app.config.name = name
+    app.module_name = name.replace("-", "_")
     return app
 
 
@@ -509,3 +513,61 @@ def test_a_production_build_requires_a_working_nginx_fallback(tmp_path: Path) ->
         load_fallback.reset_mock()
         builder.build_assets_for_app(app)
         compile_assets.assert_called_once()
+
+
+@pytest.mark.parametrize("interruption", ["error", "killed"])
+def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path, interruption: str) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    app = make_app(tmp_path / "apps" / "game-plan", "game-plan")
+    app.has_source_changes = True
+    relative = Path("dist/island")
+    public = app.path / app.module_name / "public"
+    islands = public / relative
+    fallback = tmp_path / ".previous-bundles" / "assets" / app.module_name / relative
+    manifest = builder.bench.sites_path / "assets" / "assets.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"board.island.js": f"/assets/{app.module_name}/{relative}/board.js"}))
+    files = ("board.js", "chunks/shared.js", "media/icon.svg")
+    for filename in files:
+        path = islands / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(filename)
+
+    def interrupt_build(app):
+        shutil.rmtree(islands)
+        if interruption == "killed":
+            os.kill(os.getpid(), signal.SIGKILL)
+        raise BenchError("build failed")
+
+    def build():
+        builder.build_assets_for_app(app)
+
+    with patch.object(builder, "build_app_from_source", side_effect=interrupt_build):
+        if interruption == "killed":
+            child = multiprocessing.get_context("fork").Process(target=build)
+            child.start()
+            child.join(timeout=5)
+            if child.is_alive():
+                child.kill()
+                child.join()
+            assert child.exitcode == -signal.SIGKILL
+            assert not islands.exists()
+        else:
+            with pytest.raises(BenchError, match="build failed"):
+                build()
+            assert all((islands / filename).exists() for filename in files)
+
+    def complete_build(app):
+        for filename in files:
+            assert (fallback / filename).read_text() == filename
+        shutil.rmtree(islands, ignore_errors=True)
+        islands.mkdir(parents=True)
+        (islands / "new.js").write_text("new")
+        manifest.write_text(json.dumps({"board.island.js": f"/assets/{app.module_name}/{relative}/new.js"}))
+
+    with patch.object(builder, "build_app_from_source", side_effect=complete_build):
+        build()
+
+    assert all((islands / filename).exists() for filename in files)
+    assert not (fallback.parents[2] / app.config.name).exists()

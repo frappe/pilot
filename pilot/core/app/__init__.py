@@ -621,6 +621,7 @@ class App:
         self.ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
         with asset_build_lock(self.bench):
+            module = self.module_name
             self._deregister()
             on_progress(f"Removing '{self.config.name}' from Python environment...")
             self._pip_uninstall()
@@ -630,7 +631,8 @@ class App:
             else:
                 on_progress(f"Deleting {self.path}...")
                 shutil.rmtree(self.path)
-            discard_previous_bundles(self.bench, self.config.name)
+            for name in {module, self.config.name}:
+                discard_previous_bundles(self.bench, name)
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:

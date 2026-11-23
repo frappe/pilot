@@ -1763,3 +1763,21 @@ def test_nginx_loads_the_first_asset_fallback_even_if_the_config_was_already_wri
         manager.prepare_asset_fallback()
 
     apply.assert_called_once()
+
+
+def test_nginx_skips_asset_reload_for_an_admin_only_vhost(tmp_path: Path) -> None:
+    manager = NginxManager(_make_bench(tmp_path, _SANDBOXED_DATA))
+    _app_folder(manager._renderer)
+    manager.include_path.parent.mkdir(parents=True)
+    manager.include_path.write_text("server { location /assets/ { proxy_pass http://localhost; } }")
+
+    with (
+        patch.object(manager, "is_installed", return_value=True),
+        patch.object(manager, "apply_config") as apply,
+        patch.object(manager, "reload_for_site_change") as reload,
+    ):
+        manager.prepare_asset_fallback()
+        manager.reload_for_asset_change()
+
+    apply.assert_not_called()
+    reload.assert_not_called()

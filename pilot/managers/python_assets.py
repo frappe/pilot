@@ -114,12 +114,12 @@ class PythonAssetBuilder:
 
     def build_assets(self) -> None:
         """Build the assets of every app."""
-        apps = list(self.bench.apps())
         with asset_build_lock(self.bench), contextlib.ExitStack() as stack:
+            apps = self.bench.apps()
             self.prepare_asset_fallback()
             self.repair_local_asset_maps()
             for app in apps:
-                stack.enter_context(self.keeping_previous_bundles(app.config.name, app.path))
+                stack.enter_context(self.keeping_previous_bundles(app.module_name, app.path))
             for app in apps:
                 for packages in get_app_packages(app.path, self.frontend_dirs(app)):
                     packages.ensure_installed()
@@ -135,9 +135,9 @@ class PythonAssetBuilder:
         with asset_build_lock(self.bench):
             self.prepare_asset_fallback()
             self.repair_local_asset_maps()
-            with self.keeping_previous_bundles(app.config.name, app.path):
+            with self.keeping_previous_bundles(app.module_name, app.path):
                 # Desk serves /assets/frappe/node_modules, and every server build runs Frappe's esbuild.
-                if app.config.name == "frappe" and not skip_frontend:
+                if app.module_name == "frappe" and not skip_frontend:
                     NodePackages(app.path).ensure_installed()
 
                 # A linked checkout is built from its own source, never from a release.
@@ -182,7 +182,7 @@ class PythonAssetBuilder:
     @contextlib.contextmanager
     def keeping_frappe_page_islands(self, app: "App") -> Iterator[None]:
         """A single-app build can run the framework hook that rebuilds every page island."""
-        if app.config.name != "frappe" and self.page_island_script.is_file() is True:
+        if app.module_name != "frappe" and self.page_island_script.is_file() is True:
             with self.keeping_previous_bundles("frappe", self.bench.apps_path / "frappe", islands_only=True):
                 yield
         else:
@@ -200,7 +200,7 @@ class PythonAssetBuilder:
         snapshot = app_snapshot / scope
         restored_index = root / f".{name}.restored-islands.json"
         restored = read_json_object(restored_index)
-        outgoing = self.outgoing_bundles(name, public, restored, islands_only=islands_only)
+        outgoing = self.outgoing_bundles(name, public, app_snapshot, restored, islands_only=islands_only)
         if not outgoing and not snapshot.exists():
             yield
             return
@@ -249,7 +249,9 @@ class PythonAssetBuilder:
                 path.unlink()
         return remaining
 
-    def outgoing_bundles(self, name: str, public: Path, restored: dict, *, islands_only: bool) -> set[Path]:
+    def outgoing_bundles(
+        self, name: str, public: Path, snapshot: Path, restored: dict, *, islands_only: bool
+    ) -> set[Path]:
         prefix = f"/assets/{name}/"
         files = set()
         for manifest_name in ASSET_MANIFEST_NAMES:
@@ -261,13 +263,33 @@ class PythonAssetBuilder:
                     not islands_only or relative.is_relative_to(PAGE_ISLAND_PATH)
                 ):
                     files.add(relative)
-        # Entry points can import shared chunks and load media absent from assets.json.
         for directory in (PAGE_ISLAND_PATH,) if islands_only else ISLAND_PATHS:
-            for path in (public / directory).rglob("*"):
-                relative = path.relative_to(public)
-                if path.is_file() and restored.get(str(relative)) != self.island_file_stamp(path):
-                    files.add(relative)
+            files.update(self.outgoing_islands(public, snapshot, directory, files, restored))
         return files
+
+    def outgoing_islands(
+        self, public: Path, snapshot: Path, directory: Path, entries: set[Path], restored: dict
+    ) -> set[Path]:
+        # When the manifest still points at a recovered entry, its unlisted chunks and media
+        # are part of the current build too. Recover them together, including after a killed build.
+        recovering = any(
+            entry.is_relative_to(directory)
+            and (snapshot / entry).is_file()
+            and (
+                not (public / entry).is_file()
+                or restored.get(str(entry)) == self.island_file_stamp(public / entry)
+            )
+            for entry in entries
+        )
+        if recovering:
+            return {
+                path.relative_to(snapshot) for path in (snapshot / directory).rglob("*") if path.is_file()
+            }
+        return {
+            path.relative_to(public)
+            for path in (public / directory).rglob("*")
+            if path.is_file() and restored.get(str(path.relative_to(public))) != self.island_file_stamp(path)
+        }
 
     @staticmethod
     def is_in_island_output(relative: Path) -> bool:
@@ -311,9 +333,10 @@ class PythonAssetBuilder:
         prebuilt = PrebuiltAssets(app)
         if not prebuilt.install():
             return False
-        app_public_dir = app.path / app.config.name / "public"
+        name = app.module_name
+        app_public_dir = app.path / name / "public"
         self.setup_prebuilt_assets(
-            app.config.name, app_public_dir, app_public_dir / "dist", prebuilt.asset_maps, prebuilt.has_page_islands
+            name, app_public_dir, app_public_dir / "dist", prebuilt.asset_maps, prebuilt.has_page_islands
         )
         if not skip_frontend:
             if app.has_page_islands and not prebuilt.has_page_islands:
