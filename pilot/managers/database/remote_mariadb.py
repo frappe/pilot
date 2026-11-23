@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from functools import cached_property
 from pathlib import Path
 
@@ -25,6 +26,8 @@ class RemoteMariaDBManager(MariaDBManager):
     service_timeout = 15 * 60
     remote_config_dir = Path("/etc/mysql/mariadb.conf.d")
     remote_log_dir = Path("/var/log/mysql")
+    # Pilot's option file uses options that older servers refuse to start with.
+    minimum_version = (11, 8)
 
     @cached_property
     def ssh_host(self) -> SSHHost:
@@ -68,14 +71,19 @@ class RemoteMariaDBManager(MariaDBManager):
 
     def provision(self) -> None:
         """Take over the remote server: write Pilot's options, size it for its host and create the admin account."""
+        if not self.config.root_password:
+            raise DatabaseError("Set mariadb.root_password before Pilot takes over the remote server.")
         if not self.ssh_host.is_reachable():
             raise DatabaseError(
                 f"Pilot cannot log in to {self.config.host} as {self.config.ssh_user} with passwordless sudo."
             )
         if not self.is_installed():
             raise DatabaseError(f"MariaDB is not installed on {self.config.host}.")
-        if not self.config.root_password:
-            raise DatabaseError("Set mariadb.root_password before Pilot takes over the remote server.")
+        if (version := self.get_server_version()) < self.minimum_version:
+            raise DatabaseError(
+                f"Pilot needs MariaDB {'.'.join(map(str, self.minimum_version))} or newer on "
+                f"{self.config.host}, which runs {'.'.join(map(str, version))}."
+            )
 
         with self.database_action_lock():
             sizing = self._write_config()
@@ -84,6 +92,13 @@ class RemoteMariaDBManager(MariaDBManager):
             self.restart()
             self.secure_installation()
             self._wait_until_healthy()
+
+    def get_server_version(self) -> tuple[int, int]:
+        """The major and minor version of the remote server binary."""
+        output = self.ssh_host.run(["/usr/sbin/mariadbd", "--version"])
+        if not (match := re.search(r"Ver (\d+)\.(\d+)", output)):
+            raise DatabaseError(f"Could not read the MariaDB version on {self.config.host}.")
+        return int(match.group(1)), int(match.group(2))
 
     def _write_config(self) -> MariaDBMemorySizing:
         """Write Pilot's options into the remote conf.d, sized for the remote host's memory."""

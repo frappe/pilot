@@ -21,7 +21,9 @@ class FakeSSHHost:
         self.total_memory_mb = memory_mb
         self.commands: list[list[str]] = []
         self.stdin: list[str] = []
-        self.outputs: dict[str, str] = {}
+        self.outputs: dict[str, str] = {
+            "/usr/sbin/mariadbd --version": "/usr/sbin/mariadbd  Ver 11.8.3-MariaDB-ubu2404 for debian-linux-gnu"
+        }
         self.reachable = True
 
     def is_reachable(self) -> bool:
@@ -154,6 +156,7 @@ def test_provision_writes_options_restarts_and_creates_an_admin_for_this_host_on
         manager.provision()
 
     written = [command[1] for command in host.commands if command[0] == "write"]
+    assert host.commands[0] == ["/usr/sbin/mariadbd", "--version"]
     assert written == [MANAGED_CNF, PILOT_CNF]
     restart = host.commands.index(["systemctl", "restart", "mariadb.service"])
     assert host.commands.index(["mariadb"]) > restart
@@ -216,3 +219,13 @@ def test_a_remote_server_is_ready_when_the_admin_can_query_it() -> None:
     with patch.object(RemoteMariaDBManager, "is_healthy", return_value=False):
         assert manager.is_reachable() is False
     assert host.commands == []
+
+
+def test_provision_refuses_a_server_older_than_pilot_supports() -> None:
+    host = FakeSSHHost()
+    host.outputs["/usr/sbin/mariadbd --version"] = "/usr/sbin/mariadbd  Ver 10.11.13-MariaDB-0ubuntu0.24.04.1"
+    manager, _ = _manager(host)
+
+    with pytest.raises(DatabaseError, match="11.8 or newer.*runs 10.11"):
+        manager.provision()
+    assert [command for command in host.commands if command[0] == "write"] == []
