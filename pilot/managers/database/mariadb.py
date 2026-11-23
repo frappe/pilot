@@ -1182,9 +1182,9 @@ class MariaDBManager(UserOwnedDBManager):
             cmd += ["-h", self.config.host, "-P", str(self.config.port)]
         return cmd
 
-    def run_admin_sql(self, sql: str) -> None:
-        """Run statements as the admin account, with the password in MYSQL_PWD."""
-        subprocess.run(
+    def run_admin_sql(self, sql: str) -> str:
+        """Run statements as the admin account, with the password in MYSQL_PWD, and return the client's output."""
+        return subprocess.run(
             self._client_command(),
             input=sql,
             text=True,
@@ -1192,7 +1192,7 @@ class MariaDBManager(UserOwnedDBManager):
             capture_output=True,
             timeout=self.admin_sql_timeout,
             env={**os.environ, "MYSQL_PWD": self.config.root_password},
-        )
+        ).stdout
 
     def recreate_database(self, db_name: str) -> None:
         """Drop and create an empty database. Grants name the database, so they survive."""

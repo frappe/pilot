@@ -91,7 +91,7 @@ class RemoteMariaDBManager(MariaDBManager):
             self._reset_failed_state()
             self.restart()
             self.secure_installation()
-            self._wait_until_healthy()
+            self._wait_until_reachable()
 
     def get_server_version(self) -> tuple[int, int]:
         """The major and minor version of the remote server binary."""
@@ -183,8 +183,9 @@ class RemoteMariaDBManager(MariaDBManager):
         return self.ssh_host.run(["sh", "-c", script, "sh", self._UNIT_NAME]).strip() == "yes"
 
     def is_reachable(self) -> bool:
-        """Whether Pilot can log in to the remote server and run a query."""
-        return self.is_healthy()
+        """Whether the admin can log in to the remote server and run a query. The CLI's Python has no
+        MySQL driver, so this goes through the client, unlike `is_healthy`."""
+        return self.has_valid_credentials()
 
     def _control(self, action: str) -> None:
         """Run a service action on the remote host."""
@@ -208,13 +209,8 @@ class RemoteMariaDBManager(MariaDBManager):
 
     def get_account_host(self) -> str:
         """The host the admin connection comes from, so Pilot's accounts are no wider than the admin."""
-        connection = self.connect()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT SUBSTRING_INDEX(USER(), '@', -1)")
-                row = cursor.fetchone()
-        finally:
-            connection.close()
-        if not row or not row[0]:
+        # --batch prints the column name on the first line.
+        lines = self.run_admin_sql("SELECT SUBSTRING_INDEX(USER(), '@', -1);").strip().splitlines()
+        if len(lines) < 2 or not lines[-1]:
             raise DatabaseError("MariaDB did not report the host of Pilot's connection.")
-        return str(row[0])
+        return lines[-1]

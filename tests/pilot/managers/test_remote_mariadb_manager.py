@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -150,8 +150,8 @@ def test_provision_writes_options_restarts_and_creates_an_admin_for_this_host_on
     manager, host = _manager()
 
     with (
-        patch.object(RemoteMariaDBManager, "has_valid_credentials", return_value=False),
-        patch.object(RemoteMariaDBManager, "is_healthy", return_value=True),
+        patch.object(RemoteMariaDBManager, "has_valid_credentials", side_effect=[False, True]),
+        patch.object(RemoteMariaDBManager, "is_healthy", side_effect=AssertionError("needs PyMySQL")),
     ):
         manager.provision()
 
@@ -190,19 +190,22 @@ def test_provision_needs_an_admin_password() -> None:
 
 def test_setup_accounts_name_the_host_the_admin_connects_from() -> None:
     manager, _ = _manager()
-    connection = MagicMock()
-    connection.cursor.return_value.__enter__.return_value.fetchone.return_value = ("fdaa:1:2::7",)
     statements: list[str] = []
 
+    def run_admin_sql(self, sql: str) -> str:
+        statements.append(sql)
+        return "SUBSTRING_INDEX(USER(), '@', -1)\nfdaa:1:2::7\n" if sql.startswith("SELECT") else ""
+
     with (
-        patch.object(RemoteMariaDBManager, "connect", return_value=connection),
-        patch.object(RemoteMariaDBManager, "run_admin_sql", lambda self, sql: statements.append(sql)),
+        patch.object(RemoteMariaDBManager, "run_admin_sql", run_admin_sql),
         manager.temporary_setup_user("_abc") as (user, _),
     ):
         pass
 
-    assert f"CREATE USER '{user}'@'fdaa:1:2::7'" in statements[0]
-    assert f"DROP USER IF EXISTS '{user}'@'fdaa:1:2::7'" in statements[1]
+    # The CLI's Python has no MySQL driver, so the host is read with the client.
+    assert statements[0] == "SELECT SUBSTRING_INDEX(USER(), '@', -1);"
+    assert f"CREATE USER '{user}'@'fdaa:1:2::7'" in statements[1]
+    assert f"DROP USER IF EXISTS '{user}'@'fdaa:1:2::7'" in statements[-1]
 
 
 def test_configuration_changes_need_no_local_linux() -> None:
@@ -216,7 +219,7 @@ def test_configuration_changes_need_no_local_linux() -> None:
 def test_a_remote_server_is_ready_when_the_admin_can_query_it() -> None:
     manager, host = _manager()
 
-    with patch.object(RemoteMariaDBManager, "is_healthy", return_value=False):
+    with patch.object(RemoteMariaDBManager, "has_valid_credentials", return_value=False):
         assert manager.is_reachable() is False
     assert host.commands == []
 
