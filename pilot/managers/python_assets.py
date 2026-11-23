@@ -287,7 +287,9 @@ class PythonAssetBuilder:
             if path.is_file() and restored.get(str(path.relative_to(public))) != self.island_file_stamp(path)
         }
         if recovering:
-            files.update(path.relative_to(snapshot) for path in (snapshot / directory).rglob("*") if path.is_file())
+            files.update(
+                path.relative_to(snapshot) for path in (snapshot / directory).rglob("*") if path.is_file()
+            )
         return files
 
     @staticmethod
