@@ -277,7 +277,7 @@ def test_boot_run_sizes_mariadb_before_applying_the_credential(tmp_path: Path, m
     with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
         main()
 
-    mariadb_manager.return_value.tune_to_host.assert_called_once()
+    mariadb_manager.for_config.return_value.tune_to_host.assert_called_once()
     assert BenchConfig.read(bench_root).central.bootstrapped is True
 
 
@@ -287,7 +287,7 @@ def test_boot_run_leaves_mariadb_alone_once_bootstrapped(tmp_path: Path, mariadb
     with _staged(None), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench.path)]):
         main()
 
-    mariadb_manager.return_value.tune_to_host.assert_not_called()
+    mariadb_manager.for_config.return_value.tune_to_host.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -299,7 +299,7 @@ def test_boot_run_leaves_mariadb_alone_once_bootstrapped(tmp_path: Path, mariadb
 )
 def test_a_failed_sizing_blocks_the_credential(tmp_path: Path, mariadb_manager, error: Exception) -> None:
     bench_root = _awaiting_host(tmp_path)
-    mariadb_manager.return_value.tune_to_host.side_effect = error
+    mariadb_manager.for_config.return_value.tune_to_host.side_effect = error
 
     with (
         _staged(json.dumps(_ATTRIBUTE)),
@@ -318,7 +318,7 @@ def test_a_postgres_bench_needs_no_sizing(tmp_path: Path, mariadb_manager) -> No
 
     tune_database(config)
 
-    mariadb_manager.assert_not_called()
+    mariadb_manager.for_config.assert_not_called()
 
 
 def test_an_external_mariadb_does_not_block_the_credential(tmp_path: Path, mariadb_manager) -> None:
@@ -330,7 +330,7 @@ def test_an_external_mariadb_does_not_block_the_credential(tmp_path: Path, maria
     with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
         main()
 
-    mariadb_manager.assert_not_called()
+    mariadb_manager.for_config.assert_not_called()
     assert BenchConfig.read(bench_root).central.bootstrapped is True
 
 

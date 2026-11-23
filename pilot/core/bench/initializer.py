@@ -260,4 +260,4 @@ class BenchInitializer:
         """The MariaDB manager for this bench."""
         from pilot.managers.database import MariaDBManager
 
-        return MariaDBManager(self.bench.config.mariadb)
+        return MariaDBManager.for_config(self.bench.config.mariadb)

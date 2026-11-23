@@ -1569,3 +1569,15 @@ def test_sites_reach_pilots_server_on_the_loopback_address(existing: bool, is_ma
     manager = MariaDBManager(MariaDBConfig(host="db.example.com", existing=existing))
     with patch.object(HostPlatform, "is_macos", new_callable=PropertyMock, return_value=is_macos):
         assert manager.site_host == host
+
+
+def test_a_local_server_is_on_this_host() -> None:
+    manager = MariaDBManager.for_config(MariaDBConfig())
+    assert type(manager) is MariaDBManager
+    assert manager.is_on_another_host is False
+    assert manager.get_admin_host() == "localhost"
+    assert manager.get_setup_user_host() == "%"
+
+
+def test_an_existing_server_is_on_another_host() -> None:
+    assert MariaDBManager(MariaDBConfig(host="db.example.com", existing=True)).is_on_another_host is True

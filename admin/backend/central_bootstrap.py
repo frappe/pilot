@@ -102,7 +102,7 @@ def tune_database(config: "BenchConfig") -> None:
 
     if config.db_type != "mariadb" or config.mariadb.existing:
         return
-    sizing = MariaDBManager(config.mariadb).tune_to_host()
+    sizing = MariaDBManager.for_config(config.mariadb).tune_to_host()
     logging.info("Sized MariaDB for %s MiB of host memory.", sizing.total_memory_mb)
 
 

@@ -162,7 +162,7 @@ class SiteCommands:
                 f"Cannot determine the database for site '{self.site.config.name}'; refusing to "
                 "run frappe with the root database password on the command line."
             )
-        manager = MariaDBManager(self.site.bench.config.mariadb)
+        manager = MariaDBManager.for_config(self.site.bench.config.mariadb)
         with manager.temporary_setup_user(database) as (user, password):
             yield ["--db-root-username", user, "--db-root-password", password]
 
@@ -176,7 +176,7 @@ class SiteCommands:
         from pilot.managers.database import MariaDBManager
 
         # TCP, not the socket: the sandbox hides the socket, whose unix_socket login needs no password.
-        mariadb = MariaDBManager(self.site.bench.config.mariadb)
+        mariadb = MariaDBManager.for_config(self.site.bench.config.mariadb)
         return ["--db-host", mariadb.site_host, "--db-port", str(mariadb.config.port)]
 
     def postgres_db_args(self) -> list[str]:

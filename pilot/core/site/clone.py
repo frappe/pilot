@@ -180,7 +180,7 @@ class SiteClone:
         if engine == "mariadb":
             from pilot.managers.database import MariaDBManager
 
-            config["db_host"] = MariaDBManager(settings).site_host
+            config["db_host"] = MariaDBManager.for_config(settings).site_host
         return config
 
     def copy_files(self, site) -> None:

@@ -35,7 +35,7 @@ class DatabaseQuickActions:
         self.manager = (
             manager
             if manager is not None
-            else (MariaDBManager(config.mariadb) if config.db_type == "mariadb" else None)
+            else (MariaDBManager.for_config(config.mariadb) if config.db_type == "mariadb" else None)
         )
 
     def capabilities(self) -> dict:

@@ -72,6 +72,16 @@ class MariaDBManager(UserOwnedDBManager):
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
 
+    @classmethod
+    def for_config(cls, config: MariaDBConfig) -> "MariaDBManager":
+        """The manager for where the configured server runs."""
+        return cls(config)
+
+    @property
+    def is_on_another_host(self) -> bool:
+        """Whether the server runs on another host, so this host has no Pilot-owned unit or files for it."""
+        return self.config.existing or self.config.remote
+
     @property
     def memory(self) -> MariaDBMemory:
         """The MariaDB memory sizing."""
@@ -276,9 +286,21 @@ class MariaDBManager(UserOwnedDBManager):
 
     def _ensure_managed_cnf(self) -> None:
         """Create an empty managed config if it is missing."""
-        if self.managed_cnf_path.exists():
+        if self.has_managed_config():
             return
-        atomic_write_private_text(self.managed_cnf_path, self._render_managed_options({}))
+        self.write_managed_config(self._render_managed_options({}))
+
+    def has_managed_config(self) -> bool:
+        """Whether the variable-editor option file exists."""
+        return self.managed_cnf_path.exists()
+
+    def read_managed_config(self) -> str:
+        """The text of the variable-editor option file."""
+        return self.managed_cnf_path.read_text(encoding="utf-8")
+
+    def write_managed_config(self, content: str) -> None:
+        """Replace the variable-editor option file."""
+        atomic_write_private_text(self.managed_cnf_path, content)
 
     @staticmethod
     def _render_managed_options(options: dict[str, str]) -> str:
@@ -296,7 +318,7 @@ class MariaDBManager(UserOwnedDBManager):
             comment_prefixes=("#", ";"),
         )
         try:
-            parser.read_string(self.managed_cnf_path.read_text(encoding="utf-8"))
+            parser.read_string(self.read_managed_config())
         except (OSError, configparser.Error) as exc:
             raise DatabaseError("Pilot's managed MariaDB configuration is invalid.") from exc
         if parser.sections() != ["mysqld"]:
@@ -321,7 +343,7 @@ class MariaDBManager(UserOwnedDBManager):
         """Save managed options."""
         options = self._read_managed_options()
         options.update(changes)
-        atomic_write_private_text(self.managed_cnf_path, self._render_managed_options(options))
+        self.write_managed_config(self._render_managed_options(options))
 
     @contextmanager
     def database_action_lock(self):
@@ -380,7 +402,7 @@ class MariaDBManager(UserOwnedDBManager):
     def size_for_host(self) -> MariaDBMemorySizing | None:
         """Size the server again before it starts when the host memory or the unit limits no
         longer match the sizing. Run by the sizing unit."""
-        if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
+        if HostPlatform().is_macos or self.is_on_another_host or not self.my_cnf_path.exists():
             return None
         sized_for = self.sized_for_memory_mb
         if sized_for is not None and abs(self._total_memory_mb() - sized_for) < 100:
@@ -403,7 +425,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def _drop_oversized_buffer_pool_override(self) -> None:
         """A buffer pool size saved on a larger host does not fit this one, so the sizing takes over."""
-        options = self._read_managed_options() if self.managed_cnf_path.exists() else {}
+        options = self._read_managed_options() if self.has_managed_config() else {}
         saved = options.get("innodb-buffer-pool-size", "")
         limit_mb = self.variable_limits().innodb_buffer_pool_max_mb
         if not saved.removesuffix("M").isdigit() or int(saved.removesuffix("M")) <= limit_mb:
@@ -414,7 +436,7 @@ class MariaDBManager(UserOwnedDBManager):
             "innodb-buffer-pool-size-max",
         ):
             options.pop(name, None)
-        atomic_write_private_text(self.managed_cnf_path, self._render_managed_options(options))
+        self.write_managed_config(self._render_managed_options(options))
 
     def _apply_live_sizing(self, sizing: MariaDBMemorySizing) -> None:
         """Apply the memory sizing to the running server."""
@@ -449,7 +471,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def size_aria_pagecache(self) -> None:
         """Write the sized Aria cache for the next start."""
-        if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
+        if HostPlatform().is_macos or self.is_on_another_host or not self.my_cnf_path.exists():
             return
         if "aria-pagecache-buffer-size" in self.my_cnf_path.read_text():
             return
@@ -458,7 +480,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def write_log_files(self) -> None:
         """Write the error and slow log settings for the next start. Deadlocks and slow queries are read from those files."""
-        if HostPlatform().is_macos or self.config.existing or not self.my_cnf_path.exists():
+        if HostPlatform().is_macos or self.is_on_another_host or not self.my_cnf_path.exists():
             return
         if "slow-query-log-file" in self.my_cnf_path.read_text():
             return
@@ -467,7 +489,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     def keep_out_of_swap(self) -> None:
         """Set MemorySwapMax to 0, live first and then in the unit file, so a failed attempt can retry."""
-        if HostPlatform().is_macos or self.config.existing or not self.unit_path.exists():
+        if HostPlatform().is_macos or self.is_on_another_host or not self.unit_path.exists():
             return
         env = self._systemctl_env()
         run_command(self._systemctl("set-property", "--runtime", self._UNIT_NAME, "MemorySwapMax=0"), env=env)
@@ -480,7 +502,7 @@ class MariaDBManager(UserOwnedDBManager):
     def raise_memory_high(self) -> bool:
         """Raise the unit's MemoryHigh to `memory_high_for` its MemoryMax, on disk and live.
         Never lowers a limit or restarts the server. Returns whether anything changed."""
-        if HostPlatform().is_macos or self.config.existing or not self.unit_path.exists():
+        if HostPlatform().is_macos or self.is_on_another_host or not self.unit_path.exists():
             return False
         current_high = self._unit_memory_mb("MemoryHigh")
         current_max = self._unit_memory_mb("MemoryMax")
@@ -563,7 +585,7 @@ class MariaDBManager(UserOwnedDBManager):
                 return False
 
             self.ensure_managed_config()
-            previous_content = self.managed_cnf_path.read_text(encoding="utf-8")
+            previous_content = self.read_managed_config()
             self._write_managed_option("performance-schema", "ON" if enabled else "OFF")
 
             try:
@@ -627,7 +649,7 @@ class MariaDBManager(UserOwnedDBManager):
             dynamic_max_mb = self.innodb_buffer_pool_size_max_mb()
 
             self.ensure_managed_config()
-            previous_content = self.managed_cnf_path.read_text(encoding="utf-8")
+            previous_content = self.read_managed_config()
             changes = {
                 "innodb-buffer-pool-size": f"{size_mb}M",
                 "innodb-buffer-pool-size-auto-min": f"{limits.innodb_buffer_pool_min_mb}M",
@@ -678,7 +700,7 @@ class MariaDBManager(UserOwnedDBManager):
             previous_max_connections = self.max_connections()
 
             self.ensure_managed_config()
-            previous_content = self.managed_cnf_path.read_text(encoding="utf-8")
+            previous_content = self.read_managed_config()
             current_options = self._read_managed_options()
             requested_value = str(max_connections)
             if (
@@ -754,7 +776,7 @@ class MariaDBManager(UserOwnedDBManager):
                 return False
 
             self.ensure_managed_config()
-            previous_content = self.managed_cnf_path.read_text(encoding="utf-8")
+            previous_content = self.read_managed_config()
             self._write_managed_option(
                 spec.option_name, MariaDBVariableValidator(spec).option_value(requested)
             )
@@ -814,7 +836,7 @@ class MariaDBManager(UserOwnedDBManager):
     ) -> NoReturn:
         """Restore the previous config and value after a failed change."""
         try:
-            atomic_write_private_text(self.managed_cnf_path, previous_content)
+            self.write_managed_config(previous_content)
             self._set_configuration_variable(name, previous_value)
             self._verify_configuration_variable(name, previous_value)
         except Exception as rollback_error:
@@ -881,7 +903,7 @@ class MariaDBManager(UserOwnedDBManager):
     ) -> NoReturn:
         """Restore the previous config and value after a failed change."""
         try:
-            atomic_write_private_text(self.managed_cnf_path, previous_content)
+            self.write_managed_config(previous_content)
             if restart_required:
                 self._restart_and_wait_healthy()
             if self._read_global_integer(variable) != previous_value:
@@ -961,7 +983,7 @@ class MariaDBManager(UserOwnedDBManager):
     ) -> NoReturn:
         """Restore the previous config after a failed Performance Schema change."""
         try:
-            atomic_write_private_text(self.managed_cnf_path, previous_content)
+            self.write_managed_config(previous_content)
             self._restart_and_wait_healthy()
             self._verify_performance_schema(previous_enabled, "restore the previous")
         except Exception as rollback_error:
@@ -1125,7 +1147,7 @@ class MariaDBManager(UserOwnedDBManager):
         socket_path = self.client_socket
         if socket_path:
             cmd.append(f"--socket={socket_path}")
-        elif self.config.existing or not HostPlatform().is_macos:
+        elif self.is_on_another_host or not HostPlatform().is_macos:
             cmd += ["-h", self.config.host, "-P", str(self.config.port)]
         return cmd
 
@@ -1175,7 +1197,7 @@ class MariaDBManager(UserOwnedDBManager):
 
         frappe takes its database credential on the command line, where every local
         process can read it, so the long-lived admin password must not go there. The
-        host is '%' because the client may reach the server over a socket, over
+        host is '%' by default because the client may reach the server over a socket, over
         loopback, or from another host, and the account lives for one command.
         """
         import secrets
@@ -1183,13 +1205,14 @@ class MariaDBManager(UserOwnedDBManager):
         user = f"pilot_setup_{secrets.token_hex(4)}"
         password = secrets.token_urlsafe(24)
         quoted_user = self._sql_quote(user)
+        host = self._sql_quote(self.get_setup_user_host())
         database = db_name.replace("`", "")
         self.run_admin_sql(
             "\n".join(
                 [
-                    f"CREATE USER {quoted_user}@'%' IDENTIFIED BY {self._sql_quote(password)};",
-                    f"GRANT RELOAD, CREATE USER ON *.* TO {quoted_user}@'%';",
-                    f"GRANT ALL PRIVILEGES ON `{database}`.* TO {quoted_user}@'%' WITH GRANT OPTION;",
+                    f"CREATE USER {quoted_user}@{host} IDENTIFIED BY {self._sql_quote(password)};",
+                    f"GRANT RELOAD, CREATE USER ON *.* TO {quoted_user}@{host};",
+                    f"GRANT ALL PRIVILEGES ON `{database}`.* TO {quoted_user}@{host} WITH GRANT OPTION;",
                     "FLUSH PRIVILEGES;",
                 ]
             )
@@ -1197,7 +1220,7 @@ class MariaDBManager(UserOwnedDBManager):
         try:
             yield user, password
         finally:
-            self.run_admin_sql(f"DROP USER IF EXISTS {quoted_user}@'%';\nFLUSH PRIVILEGES;")
+            self.run_admin_sql(f"DROP USER IF EXISTS {quoted_user}@{host};\nFLUSH PRIVILEGES;")
 
     def secure_installation(self) -> None:
         """Create/update the admin account and apply basic hardening."""
@@ -1206,11 +1229,12 @@ class MariaDBManager(UserOwnedDBManager):
         # admin_user can come from setup wizard input; quote it like a value.
         user = self._sql_quote(self.config.admin_user)
         password = self._sql_quote(self.config.root_password)
+        host = self._sql_quote(self.get_admin_host())
         statements = [
             # Covers fresh installs and siblings that secured a different password.
-            f"CREATE USER IF NOT EXISTS {user}@'localhost' IDENTIFIED BY {password};",
-            f"ALTER USER {user}@'localhost' IDENTIFIED BY {password};",
-            f"GRANT ALL PRIVILEGES ON *.* TO {user}@'localhost' WITH GRANT OPTION;",
+            f"CREATE USER IF NOT EXISTS {user}@{host} IDENTIFIED BY {password};",
+            f"ALTER USER {user}@{host} IDENTIFIED BY {password};",
+            f"GRANT ALL PRIVILEGES ON *.* TO {user}@{host} WITH GRANT OPTION;",
             "DROP USER IF EXISTS ''@'localhost';",
             "DROP USER IF EXISTS ''@'%';",
             "DROP DATABASE IF EXISTS test;",
@@ -1226,6 +1250,14 @@ class MariaDBManager(UserOwnedDBManager):
             cmd.append(f"--socket={self.socket_path}")
         # macOS uses Homebrew's default socket, not our Linux state dir.
         subprocess.run(cmd, input=sql, text=True, check=True)
+
+    def get_admin_host(self) -> str:
+        """The host part of the admin account. Pilot reaches its own server over the socket or loopback."""
+        return "localhost"
+
+    def get_setup_user_host(self) -> str:
+        """The host part of a temporary setup account."""
+        return "%"
 
     @staticmethod
     def _sql_quote(value: str) -> str:
@@ -1269,7 +1301,7 @@ class MariaDBManager(UserOwnedDBManager):
     def site_host(self) -> str:
         """The host sites reach the server on over TCP. Pilot's server listens on 127.0.0.1, and MySQL clients
         take `localhost` to mean the default socket. macOS reaches Homebrew's server through that socket."""
-        if self.config.existing or HostPlatform().is_macos:
+        if self.is_on_another_host or HostPlatform().is_macos:
             return self.config.host
         return "127.0.0.1"
 
@@ -1278,7 +1310,7 @@ class MariaDBManager(UserOwnedDBManager):
         """The socket clients should use, or an empty string for TCP."""
         if self.config.socket_path:
             return self.config.socket_path
-        if self.config.existing:
+        if self.is_on_another_host:
             return ""
         if not HostPlatform().is_macos and Path(self.socket_path).exists():
             return self.socket_path

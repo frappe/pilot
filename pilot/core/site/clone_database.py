@@ -60,7 +60,7 @@ class SiteDatabaseClone:
         else:
             from pilot.managers.database import MariaDBManager
 
-            MariaDBManager(self.destination.bench.config.mariadb).run_admin_sql(
+            MariaDBManager.for_config(self.destination.bench.config.mariadb).run_admin_sql(
                 f"DROP DATABASE IF EXISTS `{name}`;\nDROP USER IF EXISTS '{name}'@'%';"
             )
 
@@ -76,7 +76,7 @@ class SiteDatabaseClone:
         """Create the MariaDB database and user, and stream the data."""
         from pilot.managers.database import MariaDBManager
 
-        manager = MariaDBManager(self.destination.bench.config.mariadb)
+        manager = MariaDBManager.for_config(self.destination.bench.config.mariadb)
         name = self.generated_database_name
         password = manager._sql_quote(self.config["db_password"])
         manager.run_admin_sql(
