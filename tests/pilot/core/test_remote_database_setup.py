@@ -53,6 +53,7 @@ def test_the_host_moves_to_the_remote_server_and_drops_the_local_one(bench: Benc
     assert (remote.host, remote.port, remote.admin_user) == ("fdaa:1:2::3", 3306, "pilot")
     assert (remote.remote, remote.ssh_user, remote.ssh_key_path) == (True, "ubuntu", str(key))
     assert len(remote.root_password) >= 24
+    assert remote.memory_share == 0.8
     assert [call[0] for call in steps.mock_calls] == [
         "provision",
         "rebuild_process_set",

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import MariaDBConfig
+from pilot.config.mariadb import MEMORY_SHARE_RANGE
 from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
 
@@ -59,7 +60,7 @@ class RemoteDatabaseSetup:
             MariaDBManager(local).remove_local_server()
 
     def get_config(self) -> MariaDBConfig:
-        """The remote server's settings, with this host's memory share and a new admin password."""
+        """The remote server's settings, with a new admin password."""
         return MariaDBConfig(
             host=self.host,
             port=self.port,
@@ -68,7 +69,8 @@ class RemoteDatabaseSetup:
             remote=True,
             ssh_user=self.ssh_user,
             ssh_key_path=self.ssh_key_path,
-            memory_share=self.bench.config.mariadb.memory_share,
+            # The database host runs nothing else, so the server may take the largest share.
+            memory_share=MEMORY_SHARE_RANGE[1],
         )
 
     def get_benches(self) -> list[Bench]:
