@@ -232,3 +232,21 @@ def test_mariadb_clone_parallel_schema_then_single_snapshot_or_full_fallback(
         assert all("--no-data" in dump for dump in streams[:4])
         assert len(streams) == 6 and streams[4][-1] == "source_db"
         assert streams[5][-1] == "counter" and "--no-data" in streams[5]
+
+
+def test_a_clone_on_a_remote_server_scopes_its_login_to_pilot(source, monkeypatch):
+    from pilot.managers.database.remote_mariadb import RemoteMariaDBManager
+
+    statements = []
+    monkeypatch.setattr(RemoteMariaDBManager, "run_admin_sql", lambda self, sql: statements.append(sql))
+    monkeypatch.setattr(RemoteMariaDBManager, "get_account_host", lambda self: "fdaa::7")
+    destination = source.site("copy.localhost")
+    mariadb = destination.bench.config.mariadb
+    mariadb.host, mariadb.remote, mariadb.ssh_user, mariadb.ssh_key_path = "fdaa::3", True, "ubuntu", "/key"
+    clone = SiteDatabaseClone(
+        source.site("source.localhost"), destination, {"db_name": "_0123456789abcdef", "db_type": "mariadb"}
+    )
+
+    clone.cleanup()
+
+    assert "DROP USER IF EXISTS '_0123456789abcdef'@'fdaa::7';" in statements[0]

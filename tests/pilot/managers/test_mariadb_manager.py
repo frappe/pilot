@@ -1576,7 +1576,7 @@ def test_a_local_server_is_on_this_host() -> None:
     assert type(manager) is MariaDBManager
     assert manager.is_on_another_host is False
     assert manager.get_admin_host() == "localhost"
-    assert manager.get_setup_user_host() == "%"
+    assert manager.get_account_host() == "%"
 
 
 def test_an_existing_server_is_on_another_host() -> None:

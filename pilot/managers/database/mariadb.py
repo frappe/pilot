@@ -1216,7 +1216,7 @@ class MariaDBManager(UserOwnedDBManager):
         user = f"pilot_setup_{secrets.token_hex(4)}"
         password = secrets.token_urlsafe(24)
         quoted_user = self._sql_quote(user)
-        host = self._sql_quote(self.get_setup_user_host())
+        host = self._sql_quote(self.get_account_host())
         database = db_name.replace("`", "")
         self.run_admin_sql(
             "\n".join(
@@ -1266,8 +1266,8 @@ class MariaDBManager(UserOwnedDBManager):
         """The host part of the admin account. Pilot reaches its own server over the socket or loopback."""
         return "localhost"
 
-    def get_setup_user_host(self) -> str:
-        """The host part of a temporary setup account."""
+    def get_account_host(self) -> str:
+        """The host part of the setup and site accounts Pilot creates."""
         return "%"
 
     @staticmethod

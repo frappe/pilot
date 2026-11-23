@@ -208,3 +208,11 @@ def test_configuration_changes_need_no_local_linux() -> None:
     with patch("pilot.managers.database.mariadb.HostPlatform") as platform:
         platform.return_value.is_macos = True
         manager._require_linux_managed_server()
+
+
+def test_a_remote_server_is_ready_when_the_admin_can_query_it() -> None:
+    manager, host = _manager()
+
+    with patch.object(RemoteMariaDBManager, "is_healthy", return_value=False):
+        assert manager.is_reachable() is False
+    assert host.commands == []

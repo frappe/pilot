@@ -60,9 +60,9 @@ class SiteDatabaseClone:
         else:
             from pilot.managers.database import MariaDBManager
 
-            MariaDBManager.for_config(self.destination.bench.config.mariadb).run_admin_sql(
-                f"DROP DATABASE IF EXISTS `{name}`;\nDROP USER IF EXISTS '{name}'@'%';"
-            )
+            manager = MariaDBManager.for_config(self.destination.bench.config.mariadb)
+            host = manager._sql_quote(manager.get_account_host())
+            manager.run_admin_sql(f"DROP DATABASE IF EXISTS `{name}`;\nDROP USER IF EXISTS '{name}'@{host};")
 
     @property
     def generated_database_name(self) -> str:
@@ -79,10 +79,11 @@ class SiteDatabaseClone:
         manager = MariaDBManager.for_config(self.destination.bench.config.mariadb)
         name = self.generated_database_name
         password = manager._sql_quote(self.config["db_password"])
+        host = manager._sql_quote(manager.get_account_host())
         manager.run_admin_sql(
             f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n"
-            f"CREATE USER '{name}'@'%' IDENTIFIED BY {password};\n"
-            f"GRANT ALL PRIVILEGES ON `{name}`.* TO '{name}'@'%';"
+            f"CREATE USER '{name}'@{host} IDENTIFIED BY {password};\n"
+            f"GRANT ALL PRIVILEGES ON `{name}`.* TO '{name}'@{host};"
         )
         source = self.mysql_args(original, self.source.bench)
         target = self.mysql_args(self.config, self.destination.bench)

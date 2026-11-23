@@ -191,8 +191,8 @@ class RemoteMariaDBManager(MariaDBManager):
         """Pilot's address as the remote host sees it, so the admin account accepts only this host."""
         return self.ssh_host.get_client_address()
 
-    def get_setup_user_host(self) -> str:
-        """The host the admin connection comes from, so a setup account is no wider than the admin."""
+    def get_account_host(self) -> str:
+        """The host the admin connection comes from, so Pilot's accounts are no wider than the admin."""
         connection = self.connect()
         try:
             with connection.cursor() as cursor:
