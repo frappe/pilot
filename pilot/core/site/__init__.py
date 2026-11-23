@@ -127,12 +127,10 @@ class Site:
 
     @property
     def maintenance_config(self) -> dict:
-        """The maintenance flags present in site_config.json, with their raw values."""
         config = self.config_file.read()
         return {key: config[key] for key in ("maintenance_mode", "pause_scheduler") if key in config}
 
     def restore_maintenance_config(self, original: dict) -> None:
-        """Restore the flags and remove any that were originally absent."""
         with self.config_file.updating() as config:
             config.pop("maintenance_mode", None)
             config.pop("pause_scheduler", None)
@@ -322,7 +320,6 @@ class Site:
         return self.check_pending_background_jobs()
 
     def check_pending_background_jobs(self, *, timeout: float = 120) -> bool:
-        """Check for queued or running jobs within the given command timeout."""
         from pilot.core.site.commands import SiteCommands
 
         return SiteCommands(self).has_pending_background_jobs(timeout=timeout)
