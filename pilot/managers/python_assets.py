@@ -216,19 +216,7 @@ class PythonAssetBuilder:
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             staged = Path(temporary) / "snapshot"
             staged.mkdir()
-            for relative in outgoing:
-                source = public / relative
-                if source.resolve() != source:
-                    continue
-                protected = building / relative.relative_to(scope)
-                if protected.is_file():
-                    source = protected
-                elif not source.is_file():
-                    source = app_snapshot / relative  # Recover a manifest entry after an interrupted build.
-                if source.is_file():
-                    target = staged / relative.relative_to(scope)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source, target)
+            self.stage_bundles(outgoing, public, app_snapshot, building, staged, scope)
 
             # Both trees reference the same immutable inodes. The building tree gives
             # these URLs priority until live output is complete, including during retries.
@@ -242,6 +230,25 @@ class PythonAssetBuilder:
                     prepared.rename(destination)
             yield
             building.rename(Path(temporary) / "finished")
+
+    @staticmethod
+    def stage_bundles(
+        outgoing: set[Path], public: Path, snapshot: Path, building: Path, staged: Path, scope: Path
+    ) -> None:
+        """Copy complete bundle bytes from live output or the saved generation."""
+        for relative in outgoing:
+            source = public / relative
+            if source.resolve() != source:
+                continue
+            protected = building / relative.relative_to(scope)
+            if protected.is_file():
+                source = protected
+            elif not source.is_file():
+                source = snapshot / relative  # Recover a manifest entry after an interrupted build.
+            if source.is_file():
+                target = staged / relative.relative_to(scope)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
 
     def outgoing_bundles(
         self, name: str, public: Path, *, islands_only: bool
