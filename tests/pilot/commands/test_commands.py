@@ -1340,10 +1340,14 @@ def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None
     run.assert_not_called()
 
 
-def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> None:
+def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A leftover ZFS-era bind mount must be unmounted and its fstab line
     dropped, without depending on any ZFS/volume code being present."""
-    from pilot.managers.platform import LegacyBindMount
+    from pilot.managers.platform import HostPlatform, LegacyBindMount
+
+    monkeypatch.setattr(HostPlatform, "is_root", property(lambda self: False))
 
     target = tmp_path / "old-bench"
     target.mkdir()
