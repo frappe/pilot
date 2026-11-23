@@ -156,7 +156,10 @@ onMounted(load)
       class="mb-2 overflow-x-auto"
     />
 
-    <div v-if="loading" class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+    <div
+      v-if="loading && !apps.length && !privateApps.length"
+      class="gap-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+    >
       <Skeleton v-for="i in 9" :key="i" class="rounded-6 h-24" />
     </div>
 

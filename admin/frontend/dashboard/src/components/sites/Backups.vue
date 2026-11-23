@@ -258,7 +258,7 @@ onMounted(() => {
 
   <ErrorMessage v-if="error" :message="error" class="mb-4" />
 
-  <ListSkeleton v-if="backupsLoading" :rows="5" />
+  <ListSkeleton v-if="backupsLoading && !backups.length" :rows="5" />
 
   <EmptyState
     v-else-if="!backups.length"
@@ -303,13 +303,14 @@ onMounted(() => {
         side="bottom"
         size="sm"
         :model-value="backupsLimit"
+        :disabled="backupsLoading"
         :options="pageLengths"
         @update:model-value="(value) => setBackupsPageLength(Number(value))"
       />
 
       <span class="text-ink-gray-5 text-sm">{{ backups.length }} backups</span>
 
-      <Button v-if="backupsHasMore" class="ml-auto" @click="loadMoreBackups">Load more</Button>
+      <Button v-if="backupsHasMore" class="ml-auto" :loading="backupsLoading" @click="loadMoreBackups">Load more</Button>
     </div>
   </template>
 
