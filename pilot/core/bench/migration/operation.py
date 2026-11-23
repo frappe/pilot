@@ -10,6 +10,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
+from pilot.config.common_site_config import read_common_site_config
 from pilot.config.monitor import get_update_log
 from pilot.core.app import RevisionPin
 from pilot.core.bench.migration.recovery import MigrationRecovery
@@ -25,6 +26,7 @@ from pilot.internal.jsonl_log import utc_now
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.bench.migration.store import MigrationStore
+    from pilot.core.site import Site
 
 OnStep = Callable[[str, str], object]
 OnProgress = Callable[[str], None]
@@ -89,6 +91,7 @@ class SiteProgress:
     touched_tables: list[str] = field(default_factory=list)  # cumulative across attempts
     touched_tables_trusted: bool = True
     migration_status: str = "pending"  # pending | running | success | failed | recovering | recovered
+    original_config_is_exact: bool = False
 
 
 @dataclass
@@ -96,6 +99,7 @@ class MigrationOperation(MigrationRecovery):
     """Durable owner of an update/site-migrate workflow, advanced one task at a time via `enqueue_next`."""
 
     jobs_wait_seconds = 300
+    scheduler_predrain_seconds = 40
 
     id: str
     kind: str  # update | site_migrate
@@ -117,6 +121,7 @@ class MigrationOperation(MigrationRecovery):
     revert_checkpoints: dict = field(default_factory=dict)
     decisions: list = field(default_factory=list)  # user decisions, e.g. patch skips
     is_web_restarted_in_maintenance: bool = False
+    maintenance_pending: bool = False
 
     bench: "Bench" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
     store: "MigrationStore" = field(default=None, repr=False, compare=False)  # type: ignore[assignment]
@@ -160,17 +165,18 @@ class MigrationOperation(MigrationRecovery):
         deletes the record: left unresolved, it would own the sites and block their next backup."""
         try:
             self.ensure_disk_space()
-            self._prepare_sites()
+            if self.kind == "update" and self.sites:
+                self.maintenance_pending = True
+            else:
+                self._prepare_sites()
             self._enter_first_phase()
-            task_id = self.enqueue_next(handoff_from=handoff_from)
+            task_id = self.enqueue_next(handoff_from=handoff_from, is_first_step=True)
             if task_id is None:
                 raise BenchError(f"Migration {self.id} has no work to do.")
         except Exception:
             self._restore_maintenance()
             self.store.delete(self.id)
             raise
-        self.root_task_id = task_id
-        self._save()
         return task_id
 
     def ensure_disk_space(self) -> None:
@@ -187,7 +193,7 @@ class MigrationOperation(MigrationRecovery):
         )
         ensure_free_space(self.bench.sites_path, needed, "the backups this migration takes first")
 
-    def enqueue_next(self, handoff_from: str | None = None) -> str | None:
+    def enqueue_next(self, handoff_from: str | None = None, *, is_first_step: bool = False) -> str | None:
         """Queue the task the current state asks for, or nothing if the chain pauses or was stopped."""
         if self.is_stop_requested:
             self.finish_stop()
@@ -205,6 +211,8 @@ class MigrationOperation(MigrationRecovery):
             **args,
         )
         self.chain.append({"command": command, "task_id": task_id, **args})
+        if is_first_step:
+            self.root_task_id = task_id
         self._save()
         return task_id
 
@@ -221,6 +229,10 @@ class MigrationOperation(MigrationRecovery):
     ) -> None:
         """Back up one site before the migrate and record the result."""
         site = self.site(name)
+        if self.maintenance_pending:
+            self._close_update_sites(on_progress)
+            if self.is_stop_requested:
+                return
         on_step("backup", f"Backing up {name}")
         self.wait_for_background_jobs("backing_up", [name], on_progress)
         site.backup_status = "backing_up"
@@ -252,6 +264,10 @@ class MigrationOperation(MigrationRecovery):
         """
         on_step("validate", "Validating apps")
         filter_set = set(self.apps_filter) if self.apps_filter else None
+        if self.maintenance_pending:
+            self._close_update_sites(on_progress)
+            if self.maintenance_pending:
+                return
         self.wait_for_background_jobs("updating", [site.name for site in self.sites], on_progress)
         for revision in self.apps:
             revision.validate_status = revision.update_status = "pending"
@@ -377,7 +393,7 @@ class MigrationOperation(MigrationRecovery):
             "output_excerpt": "",
         }
         self._enter_needs_attention(phase, site_name)
-        if phase == "backing_up":
+        if phase == "backing_up" or self.maintenance_pending:
             self.lift_maintenance_if_code_unchanged()
 
     def _fail_site_step(self, phase: str, site_name: str) -> None:
@@ -425,18 +441,73 @@ class MigrationOperation(MigrationRecovery):
         """Save each site's maintenance settings and turn maintenance on."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
-            if not site.original_config:
+            if not site.original_config and not site.original_config_is_exact:
                 site.original_config = site_obj.maintenance_settings
             site_obj.set_maintenance_mode(True)
+        self.maintenance_pending = False
         self.is_web_restarted_in_maintenance = False
         self._save()
+
+    def _close_update_sites(self, on_progress: OnProgress) -> None:
+        """Pause scheduling, give current jobs a head start, then close all sites."""
+        if self.is_stop_requested:
+            return
+        for site in self.sites:
+            if not site.original_config and not site.original_config_is_exact:
+                site.original_config = self.bench.site(site.name).maintenance_config
+                site.original_config_is_exact = True
+        self._save()
+        self._predrain_update_sites(on_progress)
+        if self.is_stop_requested:
+            return
+        self._prepare_sites()
+
+    def _predrain_update_sites(self, on_progress: OnProgress) -> None:
+        """Spend one shared deadline across all open sites and their readiness probes."""
+        from pilot.managers.processes.local import ProcessManager
+
+        if not ProcessManager.for_bench(self.bench).is_running():
+            return
+        common_config = read_common_site_config(self.bench.sites_path)
+        deadline = time.monotonic() + self.scheduler_predrain_seconds
+        open_sites = []
+        for progress in self.sites:
+            site = self.bench.site(progress.name)
+            config = common_config | site.maintenance_config
+            if config.get("maintenance_mode"):
+                continue
+            if not config.get("pause_scheduler"):
+                site.set_maintenance_settings({"pause_scheduler": 1})
+            open_sites.append(site)
+        for site in open_sites:
+            self._wait_before_maintenance(site, deadline, on_progress)
+
+    def _wait_before_maintenance(self, site: Site, deadline: float, on_progress: OnProgress) -> None:
+        on_progress(f"Waiting for background jobs before closing {site.config.name}...")
+        while not self.is_stop_requested:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            try:
+                if not site.check_pending_background_jobs(timeout=remaining):
+                    return
+            except BenchError as error:
+                on_progress(f"{error} Checking again in maintenance.")
+                return
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(2, remaining))
 
     def _restore_maintenance(self) -> None:
         """Restore each site's maintenance settings."""
         for site in self.sites:
             site_obj = self.bench.site(site.name)
             # A site dropped after the failure has no config left to restore.
-            if site.original_config and site_obj.exists:
+            if not site_obj.exists:
+                continue
+            if site.original_config_is_exact:
+                site_obj.restore_maintenance_config(site.original_config)
+            elif site.original_config:
                 site_obj.set_maintenance_settings(site.original_config)
 
     def _discard_snapshots(self) -> None:
@@ -578,6 +649,7 @@ class MigrationOperation(MigrationRecovery):
             "revert_checkpoints": self.revert_checkpoints,
             "decisions": self.decisions,
             "is_web_restarted_in_maintenance": self.is_web_restarted_in_maintenance,
+            "maintenance_pending": self.maintenance_pending,
         }
 
     @classmethod
@@ -604,6 +676,7 @@ class MigrationOperation(MigrationRecovery):
             revert_checkpoints=data.get("revert_checkpoints", {}),
             decisions=data.get("decisions", []),
             is_web_restarted_in_maintenance=data.get("is_web_restarted_in_maintenance", False),
+            maintenance_pending=data.get("maintenance_pending", False),
         )
         operation.bench = bench
         operation.store = store

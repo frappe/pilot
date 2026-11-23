@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
 
+from pilot.config import SiteConfig
 from pilot.core.app import RevisionPin
 from pilot.core.bench.migration.diagnosis import diagnose
 from pilot.core.bench.migration.operation import AppRevision, MigrationOperation, SiteProgress
 from pilot.core.bench.migration.state import MigrationStateError, get_state, validate_transition
+from pilot.core.site import Site
 from pilot.core.site.backups import SYSTEM_RESERVED_BYTES
 from pilot.exceptions import BenchError, InsufficientDiskSpaceError, MigrateError
 from pilot.integrations.marketplace import Marketplace
@@ -613,7 +616,7 @@ def test_backup_failure_restores_every_sites_original_settings(tmp_path: Path) -
     sites = {}
     for name, scheduler in (("one.local", 1), ("two.local", 0)):
         site = MagicMock()
-        site.maintenance_settings = {"maintenance_mode": 0, "pause_scheduler": scheduler}
+        site.maintenance_config = {"maintenance_mode": 0, "pause_scheduler": scheduler}
         site.migration_backup.create.return_value = []
         sites[name] = site
     sites["two.local"].migration_backup.create.side_effect = RuntimeError("dump failed")
@@ -640,7 +643,7 @@ def test_backup_failure_restores_every_sites_original_settings(tmp_path: Path) -
     assert operation.state == "needs_attention"
 
     for name, scheduler in (("one.local", 1), ("two.local", 0)):
-        sites[name].set_maintenance_settings.assert_called_with(
+        sites[name].restore_maintenance_config.assert_called_with(
             {"maintenance_mode": 0, "pause_scheduler": scheduler}
         )
 
@@ -1619,9 +1622,142 @@ def backing_up_operation(tmp_path: Path):
     operation = MigrationStore(bench)._create(
         "update", apps=[AppRevision("frappe", "abc")], apps_filter=None, sites=["one.local", "two.local"]
     )
-    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="backup-1"):
+    with patch("pilot.tasks.migration_backup.MigrationBackupTask.queue", return_value="backup-1") as queue:
         operation.begin()
+    assert queue.call_args.kwargs["resource_key"] == ["bench:update", "site:one.local", "site:two.local"]
     return operation
+
+
+@pytest.fixture
+def update_with_real_site_configs(tmp_path, workload):
+    operation = backing_up_operation(tmp_path)
+    bench = operation.bench
+    bench.sites_path = tmp_path / "sites"
+    workload.is_running.return_value = True
+    configs = {
+        "one.local": {"custom": "keep"},
+        "two.local": {"maintenance_mode": False, "pause_scheduler": 2},
+    }
+    sites = {}
+    for name, config in configs.items():
+        site = Site(SiteConfig(name=name, apps=["frappe"]), bench)
+        site.path.mkdir(parents=True)
+        site.config_file.path.write_text(json.dumps(config))
+        site.migration_backup = MagicMock()
+        sites[name] = site
+    bench.site.side_effect = sites.__getitem__
+    return operation, sites, configs
+
+
+@pytest.mark.parametrize("precheck", ["ready", "cap", "error"])
+def test_scheduler_predrain_keeps_sites_open_then_runs_full_post_close_checks(
+    update_with_real_site_configs, precheck
+):
+    operation, sites, configs = update_with_real_site_configs
+    assert operation.root_task_id == "backup-1"
+    assert operation.store.get(operation.id).maintenance_pending
+    assert {name: site.config_file.read() for name, site in sites.items()} == configs
+    now = 100.0
+    probes = []
+
+    def check(site, *, timeout=120):
+        nonlocal now
+        probes.append((site.config.name, timeout))
+        if timeout == 120:
+            assert all(target.maintenance_mode for target in sites.values())
+            operation.bench.reload_workers.assert_called_once_with(web_only=True, raises=True)
+            return probes.count((site.config.name, 120)) == 1
+        assert all(not target.maintenance_mode for target in sites.values())
+        assert sites["one.local"].maintenance_config == {"pause_scheduler": 1}
+        assert sites["two.local"].maintenance_config == configs["two.local"]
+        operation.bench.reload_workers.assert_not_called()
+        if precheck == "cap":
+            now += timeout
+            return True
+        if precheck == "error":
+            raise BenchError("Could not check jobs")
+        return False
+
+    with (
+        patch.object(Site, "check_pending_background_jobs", autospec=True, side_effect=check),
+        patch("pilot.core.bench.migration.operation.time.monotonic", side_effect=lambda: now),
+        patch("pilot.core.bench.migration.operation.time.sleep") as sleep,
+    ):
+        operation = operation.store.get_for_chain_task(operation.id, "backup-1", "migration-backup", {})
+        operation.back_up_site("one.local")
+        operation.back_up_site("two.local")
+
+    predrain_probes = [probe for probe in probes if probe[1] != 120]
+    assert predrain_probes == (
+        [("one.local", 40)] if precheck == "cap" else [("one.local", 40), ("two.local", 40)]
+    )
+    assert [probe for probe in probes if probe[1] == 120] == [
+        ("one.local", 120),
+        ("one.local", 120),
+        ("two.local", 120),
+        ("two.local", 120),
+    ]
+    assert sleep.call_args_list == [call(2), call(2)]
+    assert operation.state == "updating"
+
+
+def test_update_without_backups_restores_config_if_interrupted_before_maintenance(
+    update_with_real_site_configs,
+):
+    operation, sites, configs = update_with_real_site_configs
+    operation.safeguards_disabled = True
+    operation.state = get_state("updating")
+    operation.chain = [{"command": "update", "task_id": "update-1"}]
+    operation._save()
+
+    with (
+        patch.object(Site, "check_pending_background_jobs", side_effect=SystemExit),
+        pytest.raises(SystemExit),
+    ):
+        operation.update_apps()
+
+    assert sites["one.local"].maintenance_config == {"pause_scheduler": 1}
+    recovered = operation.store.get(operation.id)
+    recovered.fail_stopped_step("update-1", "updating", None)
+    assert recovered.state == "needs_attention"
+    assert {name: site.config_file.read() for name, site in sites.items()} == configs
+    operation.bench._update_apps.assert_not_called()
+    recovered.retry()
+    assert recovered.state == "updating"
+    assert recovered.maintenance_pending
+
+
+@pytest.mark.parametrize("cancel", [True, False])
+def test_scheduler_predrain_interruption_restores_exact_config(update_with_real_site_configs, cancel):
+    operation, sites, configs = update_with_real_site_configs
+
+    def interrupt(site, *, timeout):
+        assert sites["one.local"].maintenance_config == {"pause_scheduler": 1}
+        if cancel:
+            operation.stop()
+        raise SystemExit(1)
+
+    with (
+        patch.object(Site, "check_pending_background_jobs", autospec=True, side_effect=interrupt),
+        pytest.raises(SystemExit),
+    ):
+        operation.back_up_site("one.local")
+
+    recovered = operation.store.get(operation.id)
+    recovered.fail_stopped_step("backup-1", "backing_up", "one.local")
+
+    assert recovered.state == ("stopped" if cancel else "needs_attention")
+    assert {name: site.config_file.read() for name, site in sites.items()} == configs
+    sites["one.local"].migration_backup.create.assert_not_called()
+    if not cancel:
+        recovered.retry()
+        assert recovered.state == "backing_up"
+        assert recovered.maintenance_pending
+        assert all(not site.maintenance_mode for site in sites.values())
+        with patch.object(Site, "check_pending_background_jobs", return_value=False):
+            recovered.back_up_site("one.local")
+        assert all(site.maintenance_mode for site in sites.values())
+        sites["one.local"].migration_backup.create.assert_called_once_with(recovered.id)
 
 
 def test_stop_cancels_the_backup_and_its_callback_ends_the_migration(tmp_path: Path) -> None:
@@ -1634,9 +1770,7 @@ def test_stop_cancels_the_backup_and_its_callback_ends_the_migration(tmp_path: P
     stopped.fail_stopped_step("backup-1", "backing_up", "one.local")
     assert stopped.state == "stopped"
     assert stopped.decisions[-1]["action"] == "stop"
-    operation.bench.site.return_value.set_maintenance_settings.assert_called_with(
-        {"maintenance_mode": 0, "pause_scheduler": 0}
-    )
+    operation.bench.site.return_value.set_maintenance_settings.assert_not_called()
 
 
 def test_a_stopped_chain_queues_no_next_task(tmp_path: Path) -> None:
@@ -1649,7 +1783,7 @@ def test_a_stopped_chain_queues_no_next_task(tmp_path: Path) -> None:
 
     queue.assert_not_called()
     assert operation.state == "stopped"
-    operation.bench.site.return_value.migration_backup.discard.assert_called()
+    operation.bench.site.return_value.migration_backup.create.assert_not_called()
 
 
 def test_stop_is_refused_once_the_update_has_started(tmp_path: Path) -> None:

@@ -36,6 +36,8 @@ class MigrationRecovery:
         decisions: list
         chain: list[dict]
         apps_updated: bool
+        kind: str
+        maintenance_pending: bool
         bench: Bench
         store: MigrationStore
 
@@ -114,7 +116,10 @@ class MigrationRecovery:
         if self.state != "needs_attention":
             raise MigrationStateError(f"Retry is not allowed from state {self.state}")
         phase = self.return_state or "migrating"
-        self._prepare_sites()
+        if self.kind == "update" and phase == "backing_up":
+            self.maintenance_pending = True
+        if not self.maintenance_pending:
+            self._prepare_sites()
         self.diagnosis = None
         self._transition("retrying")
         if phase == "backing_up":

@@ -328,8 +328,10 @@ def test_pending_background_jobs_come_from_ready_for_migration(
     error = CommandError(stdout, returncode=returncode) if returncode else None
     with patch("pilot.core.site.commands.run_command", side_effect=error) as run:
         assert site.has_pending_background_jobs is expected
+        assert site.check_pending_background_jobs(timeout=3.5) is expected
 
     assert run.call_args.args[0][-3:] == ["--site", "site1.example.com", "ready-for-migration"]
+    assert [call.kwargs["timeout"] for call in run.call_args_list] == [120, 3.5]
 
 
 def test_a_failed_background_job_check_fails_loudly(tmp_path: Path) -> None:

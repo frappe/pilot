@@ -112,11 +112,11 @@ class SiteCommands:
             )
         return result.stdout
 
-    def has_pending_background_jobs(self) -> bool:
+    def has_pending_background_jobs(self, *, timeout: float = 120) -> bool:
         """Frappe's `ready-for-migration`: whether the site has a queued or running job."""
         cmd = self.site._frappe_call("frappe", "--site", self.site.config.name, "ready-for-migration")
         try:
-            run_command(cmd, cwd=self.site.bench.sites_path, timeout=120)
+            run_command(cmd, cwd=self.site.bench.sites_path, timeout=timeout)
         except CommandError as error:
             if "NOT READY for migration" in str(error):
                 return True
