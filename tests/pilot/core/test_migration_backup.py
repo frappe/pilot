@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
+from pilot.config.migration_backup import MigrationBackupConfig
 from pilot.core.site.backups.migration import SiteMigrationBackup
 from pilot.core.site.config.file import SiteConfigFile
 from pilot.exceptions import BenchError
@@ -73,6 +74,7 @@ def migration_site(tmp_path: Path, database_engine: str) -> MagicMock:
     site.config_file = SiteConfigFile(site.path.parent, site.path.name)
     site.config.name = "site1.localhost"
     site.bench.sites_path = tmp_path / "sites"
+    site.bench.config.migration_backup = MigrationBackupConfig()
     site.bench.migrations.unresolved_for_site.return_value = [MagicMock(id="operation-1")]
     site._frappe_call.side_effect = lambda *args: ["bench", *args]
     return site
@@ -387,12 +389,11 @@ def test_discard_deletes_the_objects_and_the_directory(tmp_path: Path) -> None:
     ("cpus", "limit", "expected"),
     [(1, None, 1), (2, None, 1), (4, None, 2), (8, None, 4), (64, None, 4), (64, 2, 2), (64, 8, 4)],
 )
-def test_local_dump_worker_count_respects_cpus_and_site_limit(
+def test_local_dump_worker_count_respects_cpus_and_bench_limit(
     cpus: int, limit: int | None, expected: int
 ) -> None:
-    config = {} if limit is None else {"migration_backup_workers": limit}
     with patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=cpus):
-        assert SiteMigrationBackup.get_local_dump_worker_count(config) == expected
+        assert SiteMigrationBackup.get_local_dump_worker_count(limit or MigrationBackupConfig().workers) == expected
 
 
 @pytest.mark.parametrize(("cpus", "limit"), [(2, None), (8, 1)])
@@ -402,8 +403,7 @@ def test_single_worker_local_dumps_run_serially(tmp_path: Path, cpus: int, limit
     backup = SiteMigrationBackup(site)
     config = site.config_file.read()
     if limit is not None:
-        config["migration_backup_workers"] = limit
-        (site.path / "site_config.json").write_text(json.dumps(config))
+        site.bench.config.migration_backup.workers = limit
     tables = ["tabUser", "tabRole"]
 
     with (
@@ -416,23 +416,6 @@ def test_single_worker_local_dumps_run_serially(tmp_path: Path, cpus: int, limit
 
     assert [call.args for call in dump.call_args_list] == [(config, "site_db", table) for table in tables]
     executor.assert_not_called()
-
-
-@pytest.mark.parametrize("limit", [0, -1, True, 1.5, "1", None])
-def test_local_dump_worker_limit_must_be_a_positive_integer(tmp_path: Path, limit) -> None:
-    site = migration_site(tmp_path, "mariadb")
-    site.bench.config.s3.stores_migration_backups = False
-    backup = SiteMigrationBackup(site)
-    config = {**site.config_file.read(), "migration_backup_workers": limit}
-    (site.path / "site_config.json").write_text(json.dumps(config))
-
-    with (
-        patch.object(backup, "_reset_directory") as reset,
-        pytest.raises(BenchError, match="migration_backup_workers must be a positive integer"),
-    ):
-        backup.create("operation-1")
-
-    reset.assert_not_called()
 
 
 def test_table_dumps_run_side_by_side(tmp_path: Path) -> None:
@@ -482,8 +465,7 @@ def test_local_dump_compression_level(tmp_path: Path, level: int | None) -> None
     site = migration_site(tmp_path, "mariadb")
     site.bench.config.s3.stores_migration_backups = False
     if level is not None:
-        path = site.path / "site_config.json"
-        path.write_text(json.dumps({**json.loads(path.read_text()), "migration_backup_gzip_level": level}))
+        site.bench.config.migration_backup.gzip_level = level
     backup = SiteMigrationBackup(site)
 
     with (
