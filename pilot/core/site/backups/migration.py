@@ -141,11 +141,8 @@ class SiteMigrationBackup:
             raise BenchError(f"Migration backups do not support database engine {database_engine!r}")
 
         store_in_s3 = self.site.bench.config.s3.stores_migration_backups
-        workers = 1 if store_in_s3 else self.get_local_dump_worker_count(config)
-        if not store_in_s3:
-            level = config.get("migration_backup_gzip_level", 9)
-            if type(level) is not int or not 1 <= level <= 9:
-                raise BenchError("migration_backup_gzip_level must be an integer from 1 to 9")
+        settings = self.site.bench.config.migration_backup
+        workers = 1 if store_in_s3 else self.get_local_dump_worker_count(settings.workers)
         self._reset_directory()
         if store_in_s3:
             bucket = self.site.bench.config.s3.bucket
@@ -163,11 +160,8 @@ class SiteMigrationBackup:
         return tables
 
     @staticmethod
-    def get_local_dump_worker_count(config: dict) -> int:
-        """Use at most half the CPUs and respect the site's connection limits."""
-        limit = config.get("migration_backup_workers", 4)
-        if type(limit) is not int or limit < 1:
-            raise BenchError("migration_backup_workers must be a positive integer")
+    def get_local_dump_worker_count(limit: int) -> int:
+        """Use at most half the CPUs and respect the bench's dump worker limit."""
         return max(1, min(limit, 4, HostPlatform().available_cpu_count // 2))
 
     def _dump_tables(self, config: dict, db_name: str, tables: list[str], workers: int) -> None:
@@ -333,7 +327,7 @@ class SiteMigrationBackup:
             return
         with (
             gzip.open(
-                self._dump_path(table), "wb", compresslevel=config.get("migration_backup_gzip_level", 9)
+                self._dump_path(table), "wb", compresslevel=self.site.bench.config.migration_backup.gzip_level
             ) as compressed,
             subprocess.Popen(argv, stdout=subprocess.PIPE) as process,
         ):

@@ -339,3 +339,25 @@ def test_write_flat_can_clear_a_managed_optional_key(tmp_path: Path) -> None:
     BenchConfig.write_flat(bench_root, "custom", {"admin_jwks_url": ""})
 
     assert "jwks_url" not in BenchConfig.read_raw(bench_root)["admin"]
+
+
+def test_migration_backup_settings_survive_bench_toml_rewrite(tmp_path: Path) -> None:
+    _write_bench(tmp_path)
+    path = tmp_path / "bench.toml"
+    path.write_text(path.read_text() + "\n[migration_backup]\ngzip_level = 6\nworkers = 1\n")
+
+    config = BenchConfig.read(tmp_path, strict=True)
+    config.write(tmp_path)
+
+    settings = BenchConfig.read(tmp_path, strict=True).migration_backup
+    assert (settings.gzip_level, settings.workers) == (6, 1)
+
+
+@pytest.mark.parametrize("setting", ["gzip_level = 0", "gzip_level = 10", "workers = 0", "workers = true"])
+def test_invalid_migration_backup_settings_are_rejected(tmp_path: Path, setting: str) -> None:
+    _write_bench(tmp_path)
+    path = tmp_path / "bench.toml"
+    path.write_text(path.read_text() + f"\n[migration_backup]\n{setting}\n")
+
+    with pytest.raises(ConfigError, match=r"migration_backup\."):
+        BenchConfig.read(tmp_path)
