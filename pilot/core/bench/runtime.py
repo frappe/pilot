@@ -275,6 +275,7 @@ class BenchRuntime:
                 "--wizard",
             ],
             env=env,
+            cwd=root,
         )
 
         if self.bench.is_initialized:

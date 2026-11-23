@@ -228,6 +228,17 @@ def test_admin_runs_dev_server_on_admin_port_in_dev(tmp_path: Path) -> None:
     assert "--dev" not in command_line
 
 
+@pytest.mark.parametrize("watch_admin_js", [False, True])
+def test_admin_dev_server_runs_from_installed_root(tmp_path: Path, watch_admin_js: bool) -> None:
+    bench = make_bench(tmp_path)
+    definitions = _definitions(bench, watch_admin_js=watch_admin_js)
+
+    with patch("pilot.core.server.Server.root", tmp_path / "installed"):
+        pd = definitions.to_dev(definitions.admin_definition())
+
+    assert pd.working_dir == tmp_path / "installed"
+
+
 def test_admin_dev_server_enables_reload_when_watching(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     definitions = _definitions(bench, watch_admin_js=True)

@@ -1164,6 +1164,28 @@ def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
     rebuild.assert_not_called()
 
 
+def test_start_wizard_runs_server_from_installed_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pilot.core.bench.runtime import BenchRuntime
+
+    bench = make_bench(tmp_path)
+    installed_root = tmp_path / "installed"
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.chdir(checkout)
+    with (
+        patch("pilot.core.server.Server.root", installed_root),
+        patch("pilot.managers.environment.AdminEnvManager"),
+        patch("admin.backend.frontend.is_admin_frontend_built", return_value=True),
+        patch.object(Bench, "issue_setup_link", return_value="sid"),
+        patch("pilot.core.bench.runtime.subprocess.run") as run,
+    ):
+        BenchRuntime(bench)._start_wizard(lambda _message: None)
+
+    assert run.call_args.kwargs["cwd"] == installed_root
+
+
 def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 
