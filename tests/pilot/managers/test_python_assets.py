@@ -122,6 +122,7 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
     for directory in directories:
         write_package(directory)
     builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
     builder.bench.apps.return_value = [make_app(app_path)]
     installed = []
 
@@ -341,6 +342,8 @@ def build_replacing_bundles(tmp_path: Path, assets_json: dict[str, str], built: 
 
     def build(app: MagicMock) -> None:
         shutil.rmtree(public_dir / "dist")
+        for url in assets_json.values():
+            assert (tmp_path / ".previous-bundles" / url.lstrip("/")).read_text() == "old"
         for relative, content in built.items():
             (public_dir / relative).parent.mkdir(parents=True, exist_ok=True)
             (public_dir / relative).write_text(content)

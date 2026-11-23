@@ -234,6 +234,7 @@ class NginxConfigRenderer:
         return "".join(
             f"    location ^~ {url} {{\n"
             f"        alias {folder}/;\n"
+            f"        error_page 404 = @previous_bundles;\n"
             f"{rule.format(unchecked=unchecked)}"
             f"        expires 1y;\n"
             f'        add_header Cache-Control "public, immutable";\n'

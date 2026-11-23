@@ -73,7 +73,16 @@ server {
     {# on a sandboxed bench a workload can write below sites/, so a link there must not reach a file it
        cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
        outside the bench. #}
+    location @previous_bundles {
+        root {{ bench_root }}/.previous-bundles;
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
 {{ asset_locations }}    location /assets {
+        error_page 404 = @previous_bundles;
         {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
@@ -315,7 +324,16 @@ server {
     {# on a sandboxed bench a workload can write below sites/, so a link there must not reach a file it
        cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
        outside the bench. #}
+    location @previous_bundles {
+        root {{ bench_root }}/.previous-bundles;
+        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
 {{ asset_locations }}    location /assets {
+        error_page 404 = @previous_bundles;
         {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
