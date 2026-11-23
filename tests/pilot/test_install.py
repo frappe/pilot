@@ -77,13 +77,16 @@ EXPECTED_PACKAGES = {
 }
 
 
+def write_executable(path: Path, script: str) -> None:
+    path.write_text(f"#!/bin/sh\n{script}\n")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
 def run_installer_functions(body: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for executable in ("node", "sudo"):
-        path = bin_dir / executable
-        path.write_text("#!/bin/sh\nexit 0\n")
-        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    for executable, script in (("node", "echo v24.0.0"), ("sudo", "exit 0")):
+        write_executable(bin_dir / executable, script)
 
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
@@ -124,6 +127,22 @@ DISTRO={distro}
 base_tools_present() {{ return 0; }}
 pkg_available() {{ return 1; }}
 pkg_installed() {{ [ "$1" != "{missing}" ]; }}
+system_packages_present
+""",
+        tmp_path,
+    )
+
+    assert result.returncode != 0
+
+
+def test_system_packages_present_fails_when_node_is_older_than_24(tmp_path: Path) -> None:
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+base_tools_present() { return 0; }
+pkg_available() { return 0; }
+pkg_installed() { return 0; }
+node() { echo v22.14.0; }
 system_packages_present
 """,
         tmp_path,
@@ -472,6 +491,16 @@ echo reached_the_end
     )
     assert ("reached_the_end" in result.stdout) is is_accepted
     assert ("Node.js 24 or later" in result.stdout) is not is_accepted
+
+
+def test_old_node_error_names_the_node_found_first_on_path(tmp_path: Path) -> None:
+    old_node_dir = tmp_path / "old"
+    old_node_dir.mkdir()
+    write_executable(old_node_dir / "node", "echo v22.14.0")
+    result = run_installer_functions(f'PATH="{old_node_dir}:$PATH"\ninstall_node', tmp_path)
+
+    assert result.returncode == 1
+    assert f"found v22.14.0 at {old_node_dir / 'node'}" in result.stdout
 
 
 @pytest.mark.parametrize(

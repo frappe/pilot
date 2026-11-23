@@ -348,15 +348,18 @@ waf_packages() {
     return 0
 }
 
+has_supported_node() {
+    command -v node >/dev/null 2>&1 || return 1
+    node_major=$(node -v | tr -d 'v' | cut -d'.' -f1)
+    [ "$node_major" -ge 24 ] 2>/dev/null
+}
+
 # NodeSource pins Node 24 on deb/rpm distros; Arch ships a current Node itself.
 install_node() {
     if command -v node >/dev/null 2>&1; then
-        NODE_VERSION=$(node -v | tr -d 'v' | cut -d'.' -f1)
-        if [ "$NODE_VERSION" -ge 24 ] 2>/dev/null; then
-            return 0
-        fi
-        echo "❌ Error: Pilot needs Node.js 24 or later, but found $(node -v)."
-        echo "Please install Node.js 24 or later and retry."
+        has_supported_node && return 0
+        echo "❌ Error: Pilot needs Node.js 24 or later, but found $(node -v) at $(command -v node)."
+        echo "Install Node.js 24 or later, or put it first on PATH, and retry."
         exit 1
     fi
     # An unknown distro only gets Node when apt is there to install it.
@@ -461,7 +464,7 @@ system_packages_present() {
     for package in $packages; do
         pkg_installed "$package" || return 1
     done
-    command -v node >/dev/null 2>&1 || return 1
+    has_supported_node || return 1
     return 0
 }
 
