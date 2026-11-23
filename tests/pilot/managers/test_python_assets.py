@@ -558,7 +558,16 @@ def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path
                 build()
             assert all((islands / filename).exists() for filename in files)
 
+    # A partially published manifest can reference both recovered and live islands.
+    islands.mkdir(parents=True, exist_ok=True)
+    (islands / "live.js").write_text("live")
+    (islands / "live-chunk.js").write_text("chunk")
+    entries = json.loads(manifest.read_text())
+    entries["live.island.js"] = f"/assets/{app.module_name}/{relative}/live.js"
+    manifest.write_text(json.dumps(entries))
+
     def complete_build(app):
+        assert (fallback / "live-chunk.js").read_text() == "chunk"
         for filename in files:
             assert (fallback / filename).read_text() == filename
         shutil.rmtree(islands, ignore_errors=True)
