@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pilot.config import MariaDBConfig
 from pilot.core.database import make_database
 from pilot.core.database.engines.remote_mariadb import RemoteMariaDB
@@ -56,33 +58,33 @@ def test_a_missing_remote_log_reports_no_file() -> None:
     assert _database(agent).get_error_log_file() is None
 
 
-def test_relative_files_are_sized_inside_the_remote_data_directory() -> None:
+@pytest.mark.parametrize(
+    ("answer", "size_bytes"),
+    [
+        pytest.param({"exists": True, "size_bytes": 4096, "text": ""}, 4096, id="sized"),
+        pytest.param(DatabaseError("refused"), 0, id="refused"),
+    ],
+)
+def test_relative_files_are_sized_inside_the_remote_data_directory(answer: object, size_bytes: int) -> None:
     agent = MagicMock()
-    agent.get_file.return_value = {"exists": True, "size_bytes": 4096, "text": ""}
+    agent.get_file.side_effect = [answer]
 
-    assert _database(agent)._variable_file_size("@@log_bin_index") == 4096
+    assert _database(agent)._variable_file_size("@@log_bin_index") == size_bytes
     agent.get_file.assert_called_once_with("/var/lib/mysql/mysql-bin.index")
 
 
-def test_a_file_the_agent_refuses_has_no_size() -> None:
+@pytest.mark.parametrize(
+    ("answer", "free_bytes"),
+    [
+        pytest.param(10 * 1024**3, 10 * 1024**3, id="reachable"),
+        pytest.param(DatabaseError("unreachable"), None, id="unreachable"),
+    ],
+)
+def test_free_disk_comes_from_the_agent(answer: object, free_bytes: int | None) -> None:
     agent = MagicMock()
-    agent.get_file.side_effect = DatabaseError("refused")
+    agent.get_free_disk_bytes.side_effect = [answer]
 
-    assert _database(agent)._variable_file_size("@@log_error") == 0
-
-
-def test_free_disk_comes_from_the_agent() -> None:
-    agent = MagicMock()
-    agent.get_free_disk_bytes.return_value = 10 * 1024**3
-
-    assert _database(agent).get_free_disk_bytes() == 10 * 1024**3
-
-
-def test_free_disk_is_unknown_when_the_agent_cannot_be_reached() -> None:
-    agent = MagicMock()
-    agent.get_free_disk_bytes.side_effect = DatabaseError("unreachable")
-
-    assert _database(agent).get_free_disk_bytes() is None
+    assert _database(agent).get_free_disk_bytes() == free_bytes
 
 
 def test_local_files_still_resolve_against_the_data_directory(tmp_path: Path) -> None:

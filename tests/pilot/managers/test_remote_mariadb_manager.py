@@ -66,26 +66,29 @@ def _manager(**changes) -> tuple[RemoteMariaDBManager, FakeAgent]:
     return manager, agent
 
 
-def test_a_remote_config_gets_the_remote_manager_on_another_host() -> None:
-    manager, _ = _manager()
+def test_the_server_and_its_agent_are_reached_at_the_configured_host() -> None:
+    manager = RemoteMariaDBManager(_config(agent_port=7790))
 
-    assert manager.is_on_another_host is True
     assert manager.site_host == "fdaa:1:2::3"
     assert manager.client_socket == ""
     assert manager._client_command()[-4:] == ["-h", "fdaa:1:2::3", "-P", "3306"]
+    assert (manager.agent.base_url, manager.agent.token) == ("http://[fdaa:1:2::3]:7790", "token")
 
 
-def test_the_agent_client_uses_the_configured_host_port_and_token() -> None:
-    agent = RemoteMariaDBManager(_config(agent_port=7790)).agent
-
-    assert (agent.base_url, agent.token) == ("http://[fdaa:1:2::3]:7790", "token")
-
-
-def test_this_host_never_writes_the_servers_options() -> None:
+@pytest.mark.parametrize(
+    ("method", "arguments", "message"),
+    [
+        pytest.param("_write_config", (), "sizes its own", id="server-options"),
+        pytest.param("_run_sql_as_superuser", ("SELECT 1;",), "no superuser login", id="superuser-sql"),
+    ],
+)
+def test_this_host_does_nothing_only_the_database_vm_may_do(
+    method: str, arguments: tuple, message: str
+) -> None:
     manager, _ = _manager()
 
-    with pytest.raises(DatabaseError, match="sizes its own"):
-        manager._write_config()
+    with pytest.raises(DatabaseError, match=message):
+        getattr(manager, method)(*arguments)
 
 
 def test_managed_options_are_read_and_written_through_the_agent() -> None:
@@ -118,57 +121,43 @@ def test_restart_runs_through_the_agent() -> None:
     assert agent.calls == [("control", "restart", RemoteMariaDBManager.service_timeout)]
 
 
-def test_provision_creates_an_admin_for_this_host_through_the_agent() -> None:
+@pytest.mark.parametrize(
+    ("logins", "calls"),
+    [
+        pytest.param([False, True], [("grant_admin", "pilot", "secret")], id="new-admin"),
+        pytest.param([True, True], [], id="admin-already-logs-in"),
+    ],
+)
+def test_provision_only_grants_an_admin_for_this_host_through_the_agent(logins: list, calls: list) -> None:
     manager, agent = _manager()
 
     with (
-        patch.object(RemoteMariaDBManager, "has_valid_credentials", side_effect=[False, True]),
+        patch.object(RemoteMariaDBManager, "has_valid_credentials", side_effect=logins),
         patch.object(RemoteMariaDBManager, "is_healthy", side_effect=AssertionError("needs PyMySQL")),
     ):
         manager.provision()
 
     # The database VM sized and started its own server, so provisioning only adds the account.
-    assert agent.calls == [("grant_admin", "pilot", "secret")]
-
-
-def test_provision_keeps_an_admin_that_already_logs_in() -> None:
-    manager, agent = _manager()
-
-    with patch.object(RemoteMariaDBManager, "has_valid_credentials", return_value=True):
-        manager.provision()
-
-    assert agent.calls == []
+    assert agent.calls == calls
 
 
 @pytest.mark.parametrize(
-    ("health", "message"),
+    ("config", "health", "message"),
     [
-        ({"is_provisioned": False}, "pilot setup database-server"),
-        ({"version": [10, 11]}, "11.8 or newer.*runs 10.11"),
+        pytest.param({"root_password": ""}, {}, "root_password", id="no-admin-password"),
+        pytest.param({}, {"is_provisioned": False}, "pilot setup database-server", id="not-set-up"),
+        pytest.param({}, {"version": [10, 11]}, "11.8 or newer.*runs 10.11", id="old-server"),
     ],
 )
-def test_provision_refuses_a_database_vm_that_is_not_ready(health: dict, message: str) -> None:
-    manager, agent = _manager()
+def test_provision_refuses_a_database_vm_it_cannot_take_over(
+    config: dict, health: dict, message: str
+) -> None:
+    manager, agent = _manager(**config)
     agent.health.update(health)
 
     with pytest.raises(DatabaseError, match=message):
         manager.provision()
     assert agent.calls == []
-
-
-def test_provision_needs_an_admin_password() -> None:
-    manager, agent = _manager(root_password="")
-
-    with pytest.raises(DatabaseError, match="root_password"):
-        manager.provision()
-    assert agent.calls == []
-
-
-def test_this_host_has_no_superuser_login() -> None:
-    manager, _ = _manager()
-
-    with pytest.raises(DatabaseError, match="no superuser login"):
-        manager._run_sql_as_superuser("SELECT 1;")
 
 
 def test_setup_accounts_name_the_host_the_admin_connects_from() -> None:

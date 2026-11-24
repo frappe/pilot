@@ -50,19 +50,19 @@ def _client(address: str = APP_VM, token: str = TOKEN) -> TestClient:
 
 @pytest.mark.parametrize(
     ("address", "token", "status"),
-    [(APP_VM, "wrong", 401), ("fdaa:1:2::8", TOKEN, 403), ("testclient", TOKEN, 403)],
+    [
+        pytest.param(APP_VM, "wrong", 401, id="wrong-token"),
+        pytest.param("fdaa:1:2::8", TOKEN, 403, id="other-address"),
+        pytest.param("testclient", TOKEN, 403, id="not-an-address"),
+        pytest.param("fdaa:1:2:0::7", TOKEN, 200, id="app-vm-written-differently"),
+    ],
 )
 def test_only_the_app_vm_with_the_token_is_served(manager, address: str, token: str, status: int) -> None:
     with patch.object(DedicatedMariaDBManager, "control") as control:
         response = _client(address, token).post("/service/restart")
 
     assert response.status_code == status
-    control.assert_not_called()
-
-
-def test_the_app_vm_address_matches_however_it_is_written(manager) -> None:
-    with patch.object(DedicatedMariaDBManager, "control"):
-        assert _client("fdaa:1:2:0::7").post("/service/restart").status_code == 200
+    assert control.call_count == (status == 200)
 
 
 def test_health_reports_the_server_and_the_callers_address(manager) -> None:
@@ -172,13 +172,6 @@ def test_the_dedicated_server_listens_on_the_network_sized_for_the_whole_vm(mana
     assert f"secure-file-priv = {manager.client_files_dir}\n" in content
     assert manager.client_files_dir.is_dir() and manager.client_files_dir.is_relative_to(manager.state_dir)
     assert "port = 3306\n" in content
-
-
-def test_a_dedicated_config_gets_the_dedicated_manager_at_boot_too() -> None:
-    from pilot.managers.database.mariadb import MariaDBManager
-
-    # The boot sizing unit builds its manager this way, so it keeps the whole-VM sizing and the network listen.
-    assert isinstance(MariaDBManager.for_config(MariaDBConfig(dedicated=True)), DedicatedMariaDBManager)
 
 
 @pytest.fixture

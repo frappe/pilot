@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import contextlib
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -45,7 +45,14 @@ def steps():
         yield calls
 
 
-def test_the_host_moves_to_the_remote_server_and_drops_the_local_one(bench: Bench, steps) -> None:
+def test_every_bench_on_the_host_moves_to_the_remote_server_and_the_local_one_goes(
+    bench: Bench, steps
+) -> None:
+    other = make_bench(bench.path.parent / "other-bench")
+    other.config.name = "other-bench"
+    (other.path / "sites").mkdir(parents=True)
+    other.config.write(other.path)
+
     bench.setup_remote_database("fdaa:1:2::3", "token")
 
     remote = CommonConfig.read(bench.path.parent).mariadb
@@ -55,25 +62,19 @@ def test_the_host_moves_to_the_remote_server_and_drops_the_local_one(bench: Benc
     assert [call[0] for call in steps.mock_calls] == [
         "provision",
         "rebuild_process_set",
+        "rebuild_process_set",
         "remove_local_server",
     ]
     assert steps.provision.call_args.args[0] == remote
+    assert {call.args[0] for call in steps.rebuild_process_set.call_args_list} == {bench.path, other.path}
     assert steps.remove_local_server.call_args.args[0].remote is False
     assert steps.remove_local_server.call_args.kwargs == {"keep_data": False}
-    common_site_config = json.loads((bench.sites_path / "common_site_config.json").read_text())
-    assert (common_site_config["db_host"], common_site_config["db_port"]) == ("fdaa:1:2::3", 3306)
-
-
-def test_every_bench_on_the_host_moves_together(bench: Bench, steps) -> None:
-    other = make_bench(bench.path.parent / "other-bench")
-    other.config.name = "other-bench"
-    (other.path / "sites").mkdir(parents=True)
-    other.config.write(other.path)
-
-    bench.setup_remote_database("fdaa:1:2::3", "token")
-
-    assert {call.args[0] for call in steps.rebuild_process_set.call_args_list} == {bench.path, other.path}
-    assert "fdaa:1:2::3" in (other.sites_path / "common_site_config.json").read_text()
+    for sites_path in (bench.sites_path, other.sites_path):
+        common_site_config = json.loads((sites_path / "common_site_config.json").read_text())
+        assert (common_site_config["db_host"], common_site_config["db_port"]) == (
+            "fdaa:1:2::3",
+            3306,
+        ), sites_path
 
 
 def test_a_host_with_sites_is_refused_before_any_change(bench: Bench, steps) -> None:
@@ -89,32 +90,27 @@ def test_a_host_with_sites_is_refused_before_any_change(bench: Bench, steps) -> 
 
 
 @pytest.mark.parametrize(
-    ("host", "token", "message"),
-    [("fdaa:1:2::3", "", "agent_token"), ("localhost", "token", "remote server")],
+    ("mariadb", "arguments", "message"),
+    [
+        pytest.param({}, {"agent_token": ""}, "agent_token", id="no-agent-token"),
+        pytest.param({}, {"host": "localhost"}, "remote server", id="local-host"),
+        pytest.param({"existing": True}, {}, "existing", id="existing-server"),
+        pytest.param(
+            {"host": "fdaa::9", "remote": True},
+            {},
+            "already uses the MariaDB server on fdaa::9",
+            id="already-remote",
+        ),
+        pytest.param({}, {"delete_local_data": True}, "only with --migrate", id="delete-without-migrate"),
+    ],
 )
-def test_an_unusable_server_is_refused_before_any_change(
-    bench: Bench, steps, host: str, token: str, message: str
+def test_a_move_pilot_cannot_make_is_refused_before_any_change(
+    bench: Bench, steps, mariadb: dict, arguments: dict, message: str
 ) -> None:
-    with pytest.raises(Exception, match=message):
-        bench.setup_remote_database(host, token)
+    bench.config.mariadb = replace(bench.config.mariadb, **mariadb)
 
-    assert steps.mock_calls == []
-
-
-def test_an_existing_server_is_left_alone(bench: Bench, steps) -> None:
-    bench.config.mariadb.existing = True
-
-    with pytest.raises(BenchError, match="existing"):
-        bench.setup_remote_database("fdaa:1:2::3", "token")
-
-    assert steps.mock_calls == []
-
-
-def test_a_host_already_on_a_remote_server_is_refused(bench: Bench, steps) -> None:
-    bench.config.mariadb.host, bench.config.mariadb.remote = "fdaa::9", True
-
-    with pytest.raises(BenchError, match="already uses the MariaDB server on fdaa::9"):
-        bench.setup_remote_database("fdaa:1:2::3", "token")
+    with pytest.raises(BenchError, match=message):
+        bench.setup_remote_database(**{"host": "fdaa:1:2::3", "agent_token": "token", **arguments})
 
     assert steps.mock_calls == []
 
@@ -127,6 +123,8 @@ class FakeServer:
         self.databases = databases
         self.accounts = accounts
         self.net_write_timeout = 60
+        self.accepts_login = True
+        self.definer_objects: list[str] = []
 
     def run_admin_sql(self, sql: str) -> str:
         if match := re.match(r"SET GLOBAL net_write_timeout = (\d+)", sql):
@@ -152,7 +150,9 @@ class FakeServer:
         if "SCHEMATA" in sql:
             names = [f"database {name}" for name in self.databases if f"'{name}'" in sql]
             return names + [f"account {account}" for account in self.accounts if account.split("@")[0] in sql]
-        if "SECURITY_TYPE" not in sql and (match := re.search(r"TABLE_SCHEMA = '([^']+)'", sql)):
+        if "SECURITY_TYPE" in sql:
+            return self.definer_objects
+        if match := re.search(r"TABLE_SCHEMA = '([^']+)'", sql):
             return sorted(self.databases.get(match[1], ()))
         return []
 
@@ -180,6 +180,7 @@ def migration(bench: Bench, steps):
     workload.stop.side_effect = lambda: (setattr(workload, "running", False), steps.stop())
     workload.start_workload.side_effect = lambda: (setattr(workload, "running", True), steps.start())
     agent = MagicMock(**{"get_free_disk_bytes.return_value": 100 * 1024**3})
+    health = {"version": [11, 8]}
 
     def stream(dump, restore, source_env, target_env):
         steps.stream(dump, restore, source_env["MYSQL_PWD"], target_env["MYSQL_PWD"])
@@ -191,8 +192,8 @@ def migration(bench: Bench, steps):
             "run_admin_sql",
             lambda self, sql: (remote if self.config.remote else local).run_admin_sql(sql),
         ),
-        patch.object(MariaDBManager, "has_valid_credentials", lambda self: True),
-        patch.object(RemoteMariaDBManager, "get_health", lambda self: {"version": [11, 8]}),
+        patch.object(MariaDBManager, "has_valid_credentials", lambda self: local.accepts_login),
+        patch.object(RemoteMariaDBManager, "get_health", lambda self: health),
         patch.object(RemoteMariaDBManager, "get_account_host", lambda self: "fdaa::7"),
         patch.object(RemoteMariaDBManager, "agent", agent),
         patch.object(ProcessManager, "for_bench", staticmethod(lambda bench: workload)),
@@ -200,7 +201,7 @@ def migration(bench: Bench, steps):
             "pilot.core.bench.remote_database.site_database.stream_database", side_effect=stream
         ) as streamer,
     ):
-        yield SimpleNamespace(local=local, remote=remote, agent=agent, streamer=streamer)
+        yield SimpleNamespace(local=local, remote=remote, agent=agent, health=health, streamer=streamer)
 
 
 @pytest.mark.parametrize("delete_local_data", [False, True])
@@ -244,38 +245,73 @@ def test_migrate_copies_each_site_database_then_switches_the_host(
     assert any("rm -rf" in message for message in messages) is not delete_local_data
 
 
+def _queue_a_task(migration: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    activity = SimpleNamespace(queued_tasks=["backup"], running_tasks=[])
+    monkeypatch.setattr("pilot.managers.task.TaskActivityReader.read", lambda self: activity)
+
+
 @pytest.mark.parametrize(
-    ("server", "change", "message"),
+    ("prevent", "message"),
     [
-        ("health", {"version": [11, 4]}, "older than the local server's 11.8"),
-        ("names", {"_site": set()}, "already has database _site"),
-        ("disk", 10 * 1024**3, "Not enough disk space"),
+        pytest.param(_queue_a_task, "has queued or running tasks", id="queued-task"),
+        pytest.param(
+            lambda migration, monkeypatch: setattr(migration.local, "accepts_login", False),
+            "cannot log in to its local MariaDB server",
+            id="local-login",
+        ),
+        pytest.param(
+            lambda migration, monkeypatch: migration.local.definer_objects.append("_site view tabReport"),
+            "run as their definer.*_site view tabReport",
+            id="definer-object",
+        ),
+        pytest.param(
+            lambda migration, monkeypatch: migration.health.update(version=[11, 4]),
+            "older than the local server's 11.8",
+            id="older-server",
+        ),
+        pytest.param(
+            lambda migration, monkeypatch: migration.remote.databases.update(_site=set()),
+            "already has database _site",
+            id="name-taken",
+        ),
+        pytest.param(
+            lambda migration, monkeypatch: migration.agent.get_free_disk_bytes.configure_mock(
+                return_value=10 * 1024**3
+            ),
+            "Not enough disk space",
+            id="small-disk",
+        ),
     ],
 )
-def test_migrate_refuses_a_remote_server_that_cannot_take_the_copy(
-    bench: Bench, steps, migration, server: str, change, message: str
+def test_migrate_refuses_before_anything_stops_or_is_copied(
+    bench: Bench, steps, migration, monkeypatch: pytest.MonkeyPatch, prevent, message: str
 ) -> None:
-    if server == "health":
-        patcher = patch.object(RemoteMariaDBManager, "get_health", lambda self: change)
-    elif server == "disk":
-        patcher = patch.object(migration.agent, "get_free_disk_bytes", return_value=change)
-    else:
-        migration.remote.databases.update(change)
-        patcher = contextlib.nullcontext()
+    prevent(migration, monkeypatch)
 
-    with patcher, pytest.raises(BenchError, match=message):
+    with pytest.raises(BenchError, match=message):
         bench.setup_remote_database("fdaa:1:2::3", "token", migrate=True)
 
     assert not {"stop", "create", "remove_local_server"} & {call[0] for call in steps.mock_calls}
     assert CommonConfig.read(bench.path.parent).mariadb.remote is False
 
 
+def _failing_copy(migration: SimpleNamespace) -> BenchError:
+    return BenchError("dump exit 2, import exit 1")
+
+
+def _copy_with_a_stray_table(migration: SimpleNamespace):
+    return lambda *args: migration.remote.databases["_site"].add("BASE TABLE stray")
+
+
 @pytest.mark.parametrize(
-    ("failure", "message"),
-    [("copy", "Copying the database of test-bench/site.local failed"), ("verify", "does not match")],
+    ("broken_copy", "message"),
+    [
+        pytest.param(_failing_copy, "Copying the database of test-bench/site.local failed", id="copy"),
+        pytest.param(_copy_with_a_stray_table, "does not match", id="verify"),
+    ],
 )
 def test_a_failed_copy_drops_only_its_copies_and_restarts_on_the_local_server(
-    bench: Bench, steps, migration, failure: str, message: str
+    bench: Bench, steps, migration, broken_copy, message: str
 ) -> None:
     common_site_config = bench.sites_path / "common_site_config.json"
     bench.write_common_site_config()
@@ -283,12 +319,7 @@ def test_a_failed_copy_drops_only_its_copies_and_restarts_on_the_local_server(
         path: path.read_text() for path in [common_site_config, *bench.sites_path.glob("*/site_config.json")]
     }
     copy = migration.streamer.side_effect
-    if failure == "copy":
-        migration.streamer.side_effect = BenchError("dump exit 2, import exit 1")
-    else:
-        migration.streamer.side_effect = lambda *args: migration.remote.databases["_site"].add(
-            "BASE TABLE stray"
-        )
+    migration.streamer.side_effect = broken_copy(migration)
 
     with pytest.raises(BenchError, match=message):
         bench.setup_remote_database("fdaa:1:2::3", "token", migrate=True)

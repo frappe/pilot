@@ -62,18 +62,24 @@ def test_a_second_run_keeps_the_server_password_and_changes_the_token(root: Path
     assert CommonConfig.read(root / "benches").mariadb.root_password == password
 
 
-def test_a_client_that_is_not_an_address_is_refused(root: Path, steps) -> None:
-    with pytest.raises(BenchError, match="not an IP address"):
-        DatabaseServerSetup("app-vm").run()
-    assert steps.mock_calls == []
-
-
-def test_a_vm_with_benches_is_refused(root: Path, steps) -> None:
+@pytest.mark.parametrize(
+    ("client_address", "benches", "message"),
+    [
+        pytest.param("app-vm", [], "not an IP address", id="client-not-an-address"),
+        pytest.param("fdaa:1:2::7", ["main"], "runs benches", id="vm-with-benches"),
+    ],
+)
+def test_an_unusable_client_or_vm_is_refused_before_any_step(
+    root: Path, steps, client_address: str, benches: list[str], message: str
+) -> None:
     with (
-        patch("pilot.core.bench.directory.BenchDirectory.iter_configs", return_value=[(root / "main", None)]),
-        pytest.raises(BenchError, match="runs benches"),
+        patch(
+            "pilot.core.bench.directory.BenchDirectory.iter_configs",
+            return_value=[(root / name, None) for name in benches],
+        ),
+        pytest.raises(BenchError, match=message),
     ):
-        DatabaseServerSetup("fdaa:1:2::7").run()
+        DatabaseServerSetup(client_address).run()
     assert steps.mock_calls == []
 
 

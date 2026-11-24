@@ -99,21 +99,27 @@ def test_telemetry_is_shared_by_every_bench(tmp_path: Path) -> None:
     assert config.telemetry.is_enabled
 
 
-def test_remote_mariadb_round_trips(tmp_path: Path) -> None:
-    config = CommonConfig(
-        mariadb=MariaDBConfig(
-            host="fdaa:1:2::3", port=3306, remote=True, agent_port=7790, agent_token="token"
-        )
-    )
-    config.write(tmp_path)
-    assert CommonConfig.read(tmp_path) == config
-
-
-def test_dedicated_mariadb_and_its_agent_round_trip(tmp_path: Path) -> None:
-    config = CommonConfig(
-        mariadb=MariaDBConfig(port=3306, dedicated=True),
-        database_agent=DatabaseAgentConfig(token_hash="hash", client_address="fdaa:1:2::4"),
-    )
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param(
+            CommonConfig(
+                mariadb=MariaDBConfig(
+                    host="fdaa:1:2::3", port=3306, remote=True, agent_port=7790, agent_token="token"
+                )
+            ),
+            id="remote",
+        ),
+        pytest.param(
+            CommonConfig(
+                mariadb=MariaDBConfig(port=3306, dedicated=True),
+                database_agent=DatabaseAgentConfig(token_hash="hash", client_address="fdaa:1:2::4"),
+            ),
+            id="dedicated-with-agent",
+        ),
+    ],
+)
+def test_a_mariadb_on_its_own_vm_round_trips(tmp_path: Path, config: CommonConfig) -> None:
     config.write(tmp_path)
     assert CommonConfig.read(tmp_path) == config
 

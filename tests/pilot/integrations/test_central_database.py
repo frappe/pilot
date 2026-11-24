@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,7 +25,7 @@ def _metadata(database: str | None, credentials: list | None = None) -> MagicMoc
     return metadata
 
 
-def _assignment(tmp_path: Path, database: str | None, *answers: dict, remote: bool = False):
+def _assignment(database: str | None, *answers: dict, remote: bool = False):
     bench = MagicMock()
     bench.config.mariadb.remote = remote
     client = MagicMock()
@@ -36,8 +35,8 @@ def _assignment(tmp_path: Path, database: str | None, *answers: dict, remote: bo
     return assignment, bench, client
 
 
-def test_an_assigned_database_host_is_taken_over_with_the_agent_token_central_gives(tmp_path: Path) -> None:
-    assignment, bench, client = _assignment(tmp_path, '{"remote": true}', {"status": "Pending"}, READY)
+def test_an_assigned_database_host_is_taken_over_with_the_agent_token_central_gives() -> None:
+    assignment, bench, client = _assignment('{"remote": true}', {"status": "Pending"}, READY)
 
     assert assignment.apply() is True
 
@@ -52,9 +51,16 @@ def test_an_assigned_database_host_is_taken_over_with_the_agent_token_central_gi
     }
 
 
-@pytest.mark.parametrize("database", [None, '{"remote": false}'])
-def test_a_vm_without_a_database_host_keeps_its_local_server(tmp_path: Path, database: str | None) -> None:
-    assignment, bench, client = _assignment(tmp_path, database)
+@pytest.mark.parametrize(
+    ("database", "remote"),
+    [
+        pytest.param(None, False, id="no-attribute"),
+        pytest.param('{"remote": false}', False, id="not-assigned"),
+        pytest.param('{"remote": true}', True, id="already-remote"),
+    ],
+)
+def test_a_vm_without_a_new_database_host_is_left_alone(database: str | None, remote: bool) -> None:
+    assignment, bench, client = _assignment(database, READY, remote=remote)
 
     assert assignment.apply() is False
 
@@ -62,7 +68,7 @@ def test_a_vm_without_a_database_host_keeps_its_local_server(tmp_path: Path, dat
     bench.setup_remote_database.assert_not_called()
 
 
-def test_the_flag_is_read_only_once_the_metadata_service_answers(tmp_path: Path) -> None:
+def test_the_flag_is_read_only_once_the_metadata_service_answers() -> None:
     assignment = CentralDatabaseAssignment(
         MagicMock(), _metadata('{"remote": true}', [None, None, {}]), MagicMock()
     )
@@ -70,13 +76,6 @@ def test_the_flag_is_read_only_once_the_metadata_service_answers(tmp_path: Path)
 
     assert assignment.is_assigned() is True
     assert assignment.metadata.get_credentials.call_count == 3
-
-
-def test_a_host_already_on_a_remote_server_is_left_alone(tmp_path: Path) -> None:
-    assignment, bench, client = _assignment(tmp_path, '{"remote": true}', READY, remote=True)
-
-    assert assignment.apply() is False
-    client.get_database_access.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -87,8 +86,8 @@ def test_a_host_already_on_a_remote_server_is_left_alone(tmp_path: Path) -> None
         ({key: value for key, value in READY.items() if key != "agent_port"}, "missing: agent_port"),
     ],
 )
-def test_a_failed_or_incomplete_answer_stops_the_boot(tmp_path: Path, answer: dict, message: str) -> None:
-    assignment, bench, _ = _assignment(tmp_path, '{"remote": true}', answer)
+def test_a_failed_or_incomplete_answer_stops_the_boot(answer: dict, message: str) -> None:
+    assignment, bench, _ = _assignment('{"remote": true}', answer)
 
     with pytest.raises(CentralClientError, match=message):
         assignment.apply()

@@ -5,8 +5,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from admin.backend.providers.server import os as os_provider
 from admin.backend.providers.server.os import OSProvider
+from pilot.exceptions import DatabaseError
 
 
 def _provider(bench_root: Path) -> OSProvider:
@@ -46,21 +49,19 @@ def test_a_binary_version_is_probed_once_until_the_binary_changes(tmp_path: Path
         assert run.call_count == 2
 
 
-def test_a_remote_mariadb_reports_the_version_the_server_gives() -> None:
+@pytest.mark.parametrize(
+    ("answer", "version"),
+    [
+        pytest.param("11.8.3-MariaDB-ubu2404", "11.8.3", id="reachable"),
+        pytest.param(DatabaseError("refused"), "", id="unreachable"),
+    ],
+)
+def test_a_remote_mariadb_reports_the_version_the_server_gives(answer: object, version: str) -> None:
     config = SimpleNamespace(mariadb=SimpleNamespace(remote=True, existing=False))
     with patch("pilot.core.database.make_database") as make_database:
-        make_database.return_value.get_scalar.return_value = "11.8.3-MariaDB-ubu2404"
-        assert OSProvider(Path("/bench"), config).mariadb_version == "11.8.3"  # type: ignore[arg-type]
+        make_database.return_value.get_scalar.side_effect = [answer]
+        assert OSProvider(Path("/bench"), config).mariadb_version == version  # type: ignore[arg-type]
     make_database.return_value.get_scalar.assert_called_once_with("SELECT VERSION()")
-
-
-def test_an_unreachable_remote_mariadb_has_no_version() -> None:
-    from pilot.exceptions import DatabaseError
-
-    config = SimpleNamespace(mariadb=SimpleNamespace(remote=True, existing=False))
-    with patch("pilot.core.database.make_database") as make_database:
-        make_database.return_value.get_scalar.side_effect = DatabaseError("refused")
-        assert OSProvider(Path("/bench"), config).mariadb_version == ""  # type: ignore[arg-type]
 
 
 def test_a_local_mariadb_version_comes_from_its_binary(tmp_path: Path) -> None:
