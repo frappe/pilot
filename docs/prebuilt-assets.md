@@ -52,6 +52,9 @@ Declare where each SPA is built, in `pyproject.toml`. These are the keys that Fr
 | `build_dir` | The directory that has the SPA's `package.json`. |
 | `out_dir` | The directory where the SPA build writes its files. |
 | `index_html_path` | The HTML file that the SPA build writes. |
+| `build_apps` | Optional. The apps that the SPA imports source from but that the app does not require, such as `["whatsapp"]`. A name without `/` is a `frappe/` repository. |
+
+The build checks out each app in the `required_apps` of `hooks.py` and in `build_apps` next to the app, so a frontend can import from `../../<app>`. Use `build_apps` for an app that is optional on a bench. Without it, the build does not have that app's source, and the published files do not include the frontend that imports from it.
 
 An app with one SPA uses one table:
 

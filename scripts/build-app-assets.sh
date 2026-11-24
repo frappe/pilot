@@ -72,21 +72,35 @@ if [ "$app" != frappe ]; then
     git clone --quiet --depth 1 --branch "$frappe_branch" "$github_url/frappe/frappe" "$bench/apps/frappe"
     apps+=("$app")
 fi
-# The hooks.py `required_apps` as GitHub slugs; a bare name is a frappe/ repository.
+# The hooks.py `required_apps` and each SPA's `build_apps` as GitHub slugs; a bare name is a
+# frappe/ repository. `build_apps` are apps a frontend imports from but does not need installed.
 required_apps() {
-    python3 - "$hooks" <<'EOF'
+    python3 - "$hooks" "$app_dir/pyproject.toml" <<'EOF'
 import ast
 import sys
+import tomllib
 
+names = []
 for node in ast.parse(open(sys.argv[1]).read()).body:
     if isinstance(node, ast.Assign) and any(getattr(target, "id", "") == "required_apps" for target in node.targets):
-        for name in ast.literal_eval(node.value):
-            print(name if "/" in name else f"frappe/{name}")
+        names += ast.literal_eval(node.value)
+try:
+    with open(sys.argv[2], "rb") as f:
+        assets = tomllib.load(f).get("tool", {}).get("bench", {}).get("assets", [])
+except FileNotFoundError:
+    assets = []
+for spa in [assets] if isinstance(assets, dict) else assets:
+    build_apps = spa.get("build_apps", [])
+    if not isinstance(build_apps, list):
+        sys.exit(f"error: build_apps must be a list of app names, not {build_apps!r}")
+    names += build_apps
+for slug in dict.fromkeys(name if "/" in name else f"frappe/{name}" for name in names):
+    print(slug)
 EOF
 }
-# A substitution, so a malformed hooks.py stops the build.
+# A substitution, so a malformed hooks.py or pyproject.toml stops the build.
 required_output=$(required_apps)
-# Frontends import from sibling checkouts of the apps they require, such as CRM's @whatsapp/ui.
+# Frontends import from sibling checkouts of these apps, such as CRM's @whatsapp/ui.
 for slug in $required_output; do
     [ "${slug##*/}" = frappe ] && continue
     branch_args=()

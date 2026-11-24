@@ -232,3 +232,57 @@ def test_script_checks_out_required_apps_next_to_the_app(tmp_path: Path, environ
     )
 
     assert read_calls(environment)[-1] == "whatsapp develop, telephony main"
+
+
+def test_script_checks_out_build_apps_that_the_app_does_not_require(
+    tmp_path: Path, environment: dict[str, str]
+) -> None:
+    github = tmp_path / "github"
+    write_package(github / "frappe" / "frappe")
+    (github / "frappe" / "frappe" / "yarn.lock").write_text("")
+    make_repository(github / "frappe" / "frappe", ["develop"])
+    make_repository(github / "frappe" / "whatsapp", ["main", "develop"])
+    app = tmp_path / "crm"
+    (app / "crm").mkdir(parents=True)
+    (app / "crm" / "hooks.py").write_text("")
+    write_package(app / "frontend")
+    (app / "pyproject.toml").write_text(
+        '[tool.bench.assets]\nbuild_dir = "frontend"\nbuild_apps = ["whatsapp", "frappe/whatsapp"]\n'
+    )
+    make_repository(app, ["develop"])
+    write_executable(
+        tmp_path / "bin" / "yarn",
+        YARN_STUB + 'echo "whatsapp $(git -C ../whatsapp branch --show-current)" >> "$LOG"\n',
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), str(app), "develop", str(tmp_path / "out")],
+        env={**environment, "PILOT_GITHUB_URL": str(github)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert read_calls(environment)[-1] == "whatsapp develop"
+    assert result.stdout.count("Checking out required app frappe/whatsapp") == 1
+
+
+def test_script_stops_when_build_apps_is_not_a_list(tmp_path: Path, environment: dict[str, str]) -> None:
+    app = tmp_path / "crm"
+    (app / "crm").mkdir(parents=True)
+    (app / "crm" / "hooks.py").write_text("")
+    (app / "pyproject.toml").write_text(
+        '[tool.bench.assets]\nbuild_dir = "frontend"\nbuild_apps = "whatsapp"\n'
+    )
+    make_repository(app, ["develop"])
+    make_repository(tmp_path / "github" / "frappe" / "frappe", ["develop"])
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), str(app), "develop", str(tmp_path / "out")],
+        env={**environment, "PILOT_GITHUB_URL": str(tmp_path / "github")},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "build_apps" in result.stderr
