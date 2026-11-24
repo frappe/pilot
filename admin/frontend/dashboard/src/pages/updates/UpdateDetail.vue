@@ -307,7 +307,6 @@ onUnmounted(() => clearTimeout(timer))
         <FloatingConsole
           v-if="isConsoleOpen"
           :site="op.failed_site || op.sites[0]?.name || ''"
-          :sites="op.sites.map((site) => site.name)"
           @close="isConsoleOpen = false"
         />
 
