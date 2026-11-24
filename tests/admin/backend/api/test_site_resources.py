@@ -174,10 +174,11 @@ def test_list_sites_includes_uptime_and_requests_from_the_hourly_rollups(tmp_pat
     assert client.get("/api/v1/sites").get_json()[0]["uptime_percent"] is None
 
     from pilot.core.bench import Bench
-    from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
+    from pilot.core.site.activity_rollup import SiteActivityRollup
+    from pilot.core.site.hourly_rollup import UptimeRollup
 
     UptimeRollup(Bench(bench_root)).update()
-    RequestRollup(Bench(bench_root)).update()
+    SiteActivityRollup(Bench(bench_root)).update()
     site = client.get("/api/v1/sites").get_json()[0]
 
     assert site["uptime_percent"] == 75.0

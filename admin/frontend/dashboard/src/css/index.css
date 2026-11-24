@@ -1,16 +1,17 @@
-@import './status-ring.css';
-@import './step-thread.css';
+@import "./status-ring.css";
+@import "./step-thread.css";
 
 :root {
   /* Strong UI easing curves (built-in CSS easings are too weak) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 50%, transparent);
-  --outline-gray-1-5: color-mix(in srgb, var(--outline-gray-1) 50%, var(--outline-gray-2));
+  --surface-gray-0: color-mix(in oklab, var(--surface-gray-1) 50%, transparent);
+  --outline-gray-1-5: color-mix(in oklab, var(--outline-gray-1) 60%, var(--outline-gray-2));
 }
 
-[data-theme='dark'] {
-  --surface-gray-0: color-mix(in srgb, var(--surface-gray-1) 35%, transparent);
+[data-theme="dark"] {
+  --surface-gray-0: color-mix(in oklab, var(--surface-gray-1) 35%, transparent);
+  --outline-gray-1-5: color-mix(in oklab, var(--outline-gray-1) 80%, var(--outline-gray-2));
 }
 
 body {
@@ -39,13 +40,13 @@ body {
    rows' parent; rows qualify by carrying a hover background, not by tag. First
    pair covers `divide-y`, second covers rows wrapping a bordered body.
    `!important` breaks a specificity tie with Tailwind's divide rule. */
-.hover-merges-dividers > [class*='hover:bg-']:hover,
-.hover-merges-dividers > [class*='hover:bg-']:hover + * {
+.hover-merges-dividers > [class*="hover:bg-"]:hover,
+.hover-merges-dividers > [class*="hover:bg-"]:hover + * {
   border-top-color: transparent !important;
 }
 
-.hover-merges-dividers > [class*='hover:bg-']:hover > *,
-.hover-merges-dividers > *:has(+ [class*='hover:bg-']:hover) > * {
+.hover-merges-dividers > [class*="hover:bg-"]:hover > *,
+.hover-merges-dividers > *:has(+ [class*="hover:bg-"]:hover) > * {
   border-bottom-color: transparent;
 }
 
@@ -54,15 +55,15 @@ body {
 }
 
 .inset-dividers > * + *::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   inset-inline: 0.75rem;
   border-top: 1px solid var(--outline-gray-1);
 }
 
-.inset-dividers > [class*='hover:bg-']:hover::before,
-.inset-dividers > [class*='hover:bg-']:hover + *::before {
+.inset-dividers > [class*="hover:bg-"]:hover::before,
+.inset-dividers > [class*="hover:bg-"]:hover + *::before {
   border-top-color: transparent;
 }
 
@@ -115,7 +116,8 @@ body {
   }
 }
 
-.fade-in {
+.fade-in,
+.fade-in-children > * {
   animation: fade-in 0.25s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
@@ -168,7 +170,7 @@ input:autofill {
 
 .dialog-content,
 .dialog-content .bg-surface-elevation-1 {
-	@apply bg-surface-base;
+  @apply bg-surface-base;
 }
 
 .dialog-content[data-state] {

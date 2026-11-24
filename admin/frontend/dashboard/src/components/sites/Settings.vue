@@ -12,8 +12,10 @@ defineProps<Props>()
 </script>
 
 <template>
-  <SettingsGeneral :site-name="siteName" />
-  <SettingsDomains :site-name="siteName" />
-  <SettingsActions :site-name="siteName" />
-  <SettingsDanger :site-name="siteName" />
+  <div class="flex flex-col gap-8 mx-auto max-w-[860px]">
+    <SettingsDomains :site-name="siteName" />
+    <SettingsGeneral :site-name="siteName" />
+    <SettingsActions :site-name="siteName" />
+    <SettingsDanger :site-name="siteName" />
+  </div>
 </template>

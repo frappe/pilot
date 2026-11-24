@@ -13,7 +13,6 @@ const { site, reload } = useSite(props.siteName)
   <ConfigEditor
     :config="site?.site_config || {}"
     file-name="site_config.json"
-    description="Keys passed to this site's"
     :save="(patch) => sitesApi.configuration.update(props.siteName, patch)"
     :reload="reload"
   />

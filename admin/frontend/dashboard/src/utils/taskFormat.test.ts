@@ -71,7 +71,7 @@ test('site-creating and app tasks redirect to the site page on success', () => {
     redirectRouteOnSuccess({ command: 'install-app', args: { site: 'a.local', app: 'erpnext' } }),
     {
       name: 'SiteDetail',
-      params: { name: 'a.local' },
+      params: { name: 'a.local', tab: 'apps' },
       query: { app: 'erpnext', action: 'install-app' },
     },
   )
@@ -82,7 +82,7 @@ test('site-creating and app tasks redirect to the site page on success', () => {
     }),
     {
       name: 'SiteDetail',
-      params: { name: 'a.local' },
+      params: { name: 'a.local', tab: 'apps' },
       query: { app: 'erpnext', action: 'uninstall-app' },
     },
   )
@@ -93,7 +93,7 @@ test('site-creating and app tasks redirect to the site page on success', () => {
     }),
     {
       name: 'SiteDetail',
-      params: { name: 'a.local' },
+      params: { name: 'a.local', tab: 'apps' },
       query: { app: 'erpnext', action: 'install-app' },
     },
   )

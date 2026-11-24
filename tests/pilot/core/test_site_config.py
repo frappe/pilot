@@ -69,7 +69,7 @@ def _stub_database(
     makes every other query fail, modelling a table or column this Frappe lacks."""
     executed: list[str] = []
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params=()) -> QueryResult:
         executed.append(query)
         if only_for and only_for not in query:
             raise DatabaseError("no such column")
@@ -365,3 +365,32 @@ def test_bench_query_runs_read_only_and_rolls_back(
     assert [call.args[0] for call in cursor.execute.call_args_list] == [read_only, "SELECT app_name"]
     connection.rollback.assert_called_once()
     connection.close.assert_called_once()
+
+
+def test_a_dead_database_costs_one_connection_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.exceptions import DatabaseConnectError
+
+    attempts: list[str] = []
+
+    def execute(self, query: str, read_only: bool = True, *, params=()) -> QueryResult:
+        attempts.append(query)
+        raise DatabaseConnectError("Could not connect")
+
+    engine = _mariadb()
+    monkeypatch.setattr(type(engine), "execute", execute)
+    monkeypatch.setattr(database_state, "make_site_database", lambda *args, **kwargs: engine)
+    state = SiteDatabaseState(_BENCH_ROOT, "site.localhost")
+
+    assert state.disabled_apps == []
+    assert state.is_setup_complete is None
+    assert state.installed_apps is None
+    assert len(attempts) == 1
+
+
+def test_a_failing_query_does_not_skip_the_next_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed = _stub_database(monkeypatch, _mariadb(), [["1"]], only_for="tabSingles")
+    state = SiteDatabaseState(_BENCH_ROOT, "site.localhost")
+
+    assert state.is_setup_complete is True
+    assert any("tabInstalled Application" in query for query in executed)
+    assert any("tabSingles" in query for query in executed)

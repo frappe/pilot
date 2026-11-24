@@ -66,12 +66,18 @@ from pilot.core.database.configurations import DatabaseConfigurationEditor
 from pilot.core.database.deadlocks import DeadlockReport
 from pilot.core.database.slow_log import SlowQueryReport
 from pilot.core.notification import Notification
-from pilot.core.site.storage import SiteStorageReport
+from pilot.core.site.activity_rollup import NamedValue, SiteActivity
+from pilot.core.site.failed_jobs import FailedJob
+from pilot.core.site.history import AppInstall, SiteHistory
+from pilot.core.site.storage import SiteStorageDay, SiteStorageReport
 from pilot.managers.task.reader import DoneEvent, OutputEvent, StatusEvent
 
 _TARGETS = (
     ((StorageBreakdown,), "storage.ts"),
-    ((SiteStorageReport,), "siteStorage.ts"),
+    ((SiteStorageReport, SiteStorageDay), "siteStorage.ts"),
+    ((FailedJob,), "siteJobs.ts"),
+    ((SiteActivity, NamedValue), "siteActivity.ts"),
+    ((SiteHistory, AppInstall), "siteHistory.ts"),
     ((AuditEntry,), "audit.ts"),
     ((Notification, notifications), "notification.ts"),
     ((responses,), "common.ts"),
