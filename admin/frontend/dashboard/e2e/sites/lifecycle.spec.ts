@@ -100,7 +100,11 @@ test('Install an app', async ({ page }) => {
 
 test('Uninstall the app', async ({ page }) => {
   await page.goto(`/sites/${site}/apps`)
-  await appRow(page, 'Blog', 'App actions').getByRole('button', { name: 'App actions' }).click()
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'Blog' })
+    .getByRole('button', { name: 'App actions' })
+    .click()
   const action = page.getByRole('menuitem', { name: /^(Remove|Uninstall)$/ })
   await expect(action).toBeVisible()
   await action.click()
