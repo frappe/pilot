@@ -35,7 +35,7 @@ def connect_postgres(settings):
     )
 
 
-def run(settings, query):
+def run(settings, query, params=()):
     """The rows of one read-only query."""
     connect = connect_mariadb if settings["engine"] == "mariadb" else connect_postgres
     connection = connect(settings)
@@ -45,7 +45,7 @@ def run(settings, query):
                 cursor.execute("START TRANSACTION READ ONLY")
             else:
                 cursor.execute("SET TRANSACTION READ ONLY")
-            cursor.execute(query)
+            cursor.execute(query, tuple(params) or None)
             rows = [list(row) for row in cursor.fetchall()] if cursor.description else []
         connection.rollback()
         return rows
@@ -57,7 +57,7 @@ def main():
     """Run a query sent on stdin with the bench's database driver, for the stdlib-only CLI."""
     request = json.load(sys.stdin)
     try:
-        rows = run(request["settings"], request["query"])
+        rows = run(request["settings"], request["query"], request.get("params", []))
     except ImportError as exc:
         sys.stderr.write(str(exc))
         sys.exit(MISSING_DRIVER)

@@ -734,17 +734,17 @@ def test_site_rollups_update_every_bench_and_survive_one_failure(tmp_path) -> No
         patch("pilot.core.bench.directory.BenchDirectory.iter_configs", return_value=benches),
         patch("pilot.core.bench.Bench", side_effect=lambda config, path: SimpleNamespace(path=path)),
         patch.object(monitoring.UptimeRollup, "__init__", _remember_bench),
-        patch.object(monitoring.RequestRollup, "__init__", _remember_bench),
         patch.object(monitoring.UptimeRollup, "update", update),
-        patch.object(monitoring.RequestRollup, "update", update),
+        patch.object(monitoring.SiteActivityRollup, "__init__", _remember_bench),
+        patch.object(monitoring.SiteActivityRollup, "update", update),
     ):
         monitoring.update_site_rollups()
 
     assert updated == [
         ("UptimeRollup", tmp_path / "a"),
-        ("RequestRollup", tmp_path / "a"),
+        ("SiteActivityRollup", tmp_path / "a"),
         ("UptimeRollup", tmp_path / "b"),
-        ("RequestRollup", tmp_path / "b"),
+        ("SiteActivityRollup", tmp_path / "b"),
     ]
 
 

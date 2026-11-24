@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import {
   Button,
   Checkbox,
@@ -12,6 +10,8 @@ import {
   TextInput,
   toast,
 } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 import CircularProgress from '@/components/common/CircularProgress.vue'
@@ -280,6 +280,7 @@ onMounted(refresh)
                 class="size-3.5"
                 :class="nodeStyles[nodeState(index)].icon"
               />
+
               <template v-else>{{ index + 1 }}</template>
             </span>
 
@@ -307,6 +308,7 @@ onMounted(refresh)
           <template v-if="currentStep.id === 'storage'">
             <div class="gap-3 grid sm:grid-cols-2">
               <TextInput v-model="storage.bucket" label="Bucket" placeholder="pilot-backups" />
+
               <Select
                 v-model="storage.region"
                 side="bottom"
@@ -518,6 +520,7 @@ onMounted(refresh)
             label="Back"
             @click="current--"
           />
+
           <Button v-else class="mr-auto" variant="ghost" label="Finish later" @click="minimize" />
 
           <Button
@@ -551,7 +554,7 @@ onMounted(refresh)
     </template>
 
     <template #prefix>
-      <CircularProgress :value="progress" />
+      <CircularProgress :value="progress" class="size-4" />
     </template>
 
     <template #description>{{ doneCount }} of {{ steps.length }} done</template>

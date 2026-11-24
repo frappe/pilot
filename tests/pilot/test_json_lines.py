@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from pilot.internal.jsonl_log import JsonLines
 
@@ -70,3 +73,32 @@ def test_first_record_is_the_oldest_line(tmp_path: Path) -> None:
     path.write_text('{"n": 1}\n{"n": 2}\n')
 
     assert JsonLines(path).first_record == {"n": 1}
+
+
+def _time_log(path: Path, minutes: int, garbage_every: int = 0) -> None:
+    lines = []
+    for minute in range(minutes):
+        lines.append(json.dumps({"minute": minute, "pad": "x" * 40}))
+        if garbage_every and minute % garbage_every == 0:
+            lines.append("not json")
+    path.write_text("\n".join(lines) + "\n")
+
+
+@pytest.mark.parametrize("target", [0, 1, 500, 2999, 3000])
+def test_find_offset_lands_on_the_first_line_not_before(tmp_path: Path, target: int) -> None:
+    path = tmp_path / "log.jsonl"
+    _time_log(path, 3000, garbage_every=7)
+
+    offset = JsonLines(path, block_size=256).find_offset(lambda record: record["minute"] < target)
+
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        rest = [json.loads(line) for line in handle if line.startswith(b"{")]
+    assert [record["minute"] for record in rest] == list(range(target, 3000))
+
+
+def test_find_offset_of_an_empty_file_is_zero(tmp_path: Path) -> None:
+    path = tmp_path / "log.jsonl"
+    path.write_text("")
+
+    assert JsonLines(path).find_offset(lambda record: True) == 0

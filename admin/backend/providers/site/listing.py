@@ -77,9 +77,10 @@ class SiteProvider:
         setup_complete = False
 
         if exists:
-            active, broken = self._read_active_apps(site_config, site_name, is_provisioning)
+            state = SiteDatabaseState(self._bench_root, site_name)
+            active, broken = self._read_active_apps(site_config, state, is_provisioning)
             if not is_provisioning and not broken:
-                setup_complete = bool(SiteDatabaseState(self._bench_root, site_name).is_setup_complete)
+                setup_complete = bool(state.is_setup_complete)
 
         return SiteInfo(
             name=site_name,
@@ -95,14 +96,13 @@ class SiteProvider:
         )
 
     def _read_active_apps(
-        self, site_config: dict, site_name: str, is_provisioning: bool
+        self, site_config: dict, state: SiteDatabaseState, is_provisioning: bool
     ) -> tuple[list, bool]:
         """Apps in use on the site, and whether it looks broken. A provisioning site is
         never probed - its database is not up yet."""
         apps = site_config.get("installed_apps")
         if is_provisioning:
             return apps if isinstance(apps, list) else [], False
-        state = SiteDatabaseState(self._bench_root, site_name)
         if not isinstance(apps, list):
             apps = state.installed_apps
             if apps is None:

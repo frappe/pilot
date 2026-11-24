@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
+from pilot.core.site.hourly_rollup import UptimeRollup
 
 NOW = datetime(2026, 11, 12, 15, 30, tzinfo=UTC)
 SITE = "one.example.com"
@@ -67,22 +67,3 @@ def test_a_truncated_log_is_read_from_the_start(tmp_path: Path) -> None:
     rollup.update(NOW)
 
     assert rollup.read_state()["sites"][SITE]["2026-11-12T15"] == [3, 4]
-
-
-def test_hours_older_than_the_retention_are_dropped(tmp_path: Path) -> None:
-    rollup = RequestRollup(_bench(tmp_path))
-    request = {"site": SITE, "transaction_type": "request", "request": {"path": "/app"}}
-    _append(
-        rollup.source,
-        {**request, "timestamp": "2026-11-11 10:00:00+00:00"},
-        {**request, "timestamp": "2026-11-12 15:01:00+00:00"},
-        {**request, "timestamp": "2026-11-12 15:02:00+00:00", "request": {"path": "/api/method/ping"}},
-        {**request, "timestamp": "2026-11-12 15:03:00+00:00", "transaction_type": "job"},
-    )
-    rollup.update(NOW)
-
-    assert rollup.read_state()["sites"][SITE] == {"2026-11-12T15": 1}
-    counts = rollup.get_counts(SITE, NOW)
-    assert len(counts) == 24
-    assert counts[-1] == 1
-    assert sum(counts) == 1

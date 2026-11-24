@@ -189,3 +189,43 @@ def test_a_timer_pass_removes_abandoned_backup_uploads(tmp_path: Path) -> None:
 
     assert not abandoned.exists()
     assert recent.exists()
+
+
+def test_collect_keeps_one_total_per_site_per_day(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _make_site(bench, "site1.local")
+    collector = _collector(bench, {"site1_db": 500})
+
+    collector.collect()
+    bench._db.get_schema_sizes.return_value = {"site1_db": 900}
+    report = collector.collect()
+
+    history = collector.get_history("site1.local")
+    assert [day.date for day in history] == [report.collected_at[:10]]
+    assert history[0].total_bytes == report.sites[0].total_bytes
+
+
+def test_history_drops_days_past_the_window(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    _make_site(bench, "site1.local")
+    collector = _collector(bench, {"site1_db": 500})
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    bench.logs_path.mkdir(parents=True, exist_ok=True)
+    old_days = {
+        (start + timedelta(days=index)).date().isoformat(): {"site1.local": index} for index in range(40)
+    }
+    collector.history_path.write_text(json.dumps(old_days))
+
+    report = collector.collect()
+
+    history = collector.get_history("site1.local")
+    assert len(history) == 30
+    assert history[-1].date == report.collected_at[:10]
+
+
+def test_history_is_empty_for_an_unreadable_file(tmp_path: Path) -> None:
+    bench = _bench(tmp_path)
+    bench.logs_path.mkdir(parents=True, exist_ok=True)
+    bench.site_storage.history_path.write_text("not json")
+
+    assert bench.site_storage.get_history("site1.local") == []

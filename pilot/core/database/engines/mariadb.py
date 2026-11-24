@@ -4,6 +4,7 @@ import importlib.util
 import os
 import re
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import SupportsFloat
@@ -33,7 +34,7 @@ from pilot.core.database.engines.helpers import (
 from pilot.core.database.engines.mariadb_performance import MariaDBPerformanceReport
 from pilot.core.database.slow_log import SlowLogFile, SlowQueryReport
 from pilot.core.database.slow_queries import slow_row_key
-from pilot.exceptions import DatabaseError
+from pilot.exceptions import DatabaseConnectError, DatabaseError
 
 # The monitor collects every minute, so a short tail holds everything new.
 SLOW_LOG_COLLECT_BYTES = 2 * 1024 * 1024
@@ -82,24 +83,27 @@ class MariaDB(Database):
         import pymysql
         import pymysql.cursors
 
-        return pymysql.connect(
-            host=self._host,
-            port=self._port,
-            user=self._user,
-            password=self._password,
-            database=self._database or None,
-            unix_socket=self._socket,
-            connect_timeout=self._connect_timeout,
-            cursorclass=pymysql.cursors.DictCursor,
-            # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
-            ssl_disabled=is_local_host(self._host, self._socket),
-        )
+        try:
+            return pymysql.connect(
+                host=self._host,
+                port=self._port,
+                user=self._user,
+                password=self._password,
+                database=self._database or None,
+                unix_socket=self._socket,
+                connect_timeout=self._connect_timeout,
+                cursorclass=pymysql.cursors.DictCursor,
+                # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
+                ssl_disabled=is_local_host(self._host, self._socket),
+            )
+        except pymysql.err.OperationalError as exc:
+            raise DatabaseConnectError(f"Could not connect to MariaDB: {exc}") from exc
 
     def quote_identifier(self, name: str) -> str:
         """The name quoted as an identifier."""
         return "`{}`".format(name.replace("`", ""))
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
         """Run the query, read-only by default, and return its result."""
         import pymysql
         import pymysql.cursors
@@ -111,7 +115,7 @@ class MariaDB(Database):
             with conn.cursor(pymysql.cursors.Cursor) as cursor:
                 if read_only:
                     cursor.execute("START TRANSACTION READ ONLY")
-                cursor.execute(query)
+                cursor.execute(query, tuple(params) or None)
                 if cursor.description:
                     columns = [d[0] for d in cursor.description]
                     raw = list(cursor.fetchmany(MAX_ROWS + 1))
@@ -519,7 +523,7 @@ class MariaDB(Database):
 
     def get_status_value(self, variable: str) -> int:
         """One global status value; raise for an unknown one."""
-        result = self.execute(f"SHOW GLOBAL STATUS LIKE '{variable}'")
+        result = self.execute("SHOW GLOBAL STATUS LIKE %s", params=[variable])
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")
         return int(result.rows[0][1])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 from pilot.core.database.base import Database, QueryResult
 from pilot.core.database.engines.helpers import MAX_ROWS
@@ -8,6 +9,8 @@ from pilot.exceptions import DatabaseError
 
 
 class SQLite(Database):
+    placeholder = "?"
+
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
 
@@ -19,7 +22,7 @@ class SQLite(Database):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
         """Run the query and return its result."""
         import sqlite3
 
@@ -28,7 +31,7 @@ class SQLite(Database):
         try:
             if read_only:
                 conn.execute("PRAGMA query_only = 1")
-            cursor = conn.execute(query)
+            cursor = conn.execute(query, tuple(params))
             if cursor.description:
                 columns = [d[0] for d in cursor.description]
                 raw = cursor.fetchmany(MAX_ROWS + 1)

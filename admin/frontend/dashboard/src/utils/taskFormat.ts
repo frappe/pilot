@@ -241,7 +241,11 @@ export const redirectRouteOnSuccess = (task: ScopedTask) => {
 
   if (typeof app !== 'string' || !app) return route
 
-  return { ...route, query: { app, action: APP_ACTION_FOR_COMMAND[task.command] } }
+  return {
+    ...route,
+    params: { ...route.params, tab: 'apps' },
+    query: { app, action: APP_ACTION_FOR_COMMAND[task.command] },
+  }
 }
 
 /**

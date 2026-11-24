@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
@@ -49,6 +49,39 @@ class JsonLines:
                 yield from (line for line in reversed(lines) if line.strip())
             if remainder.strip():
                 yield remainder
+
+    def find_offset(self, is_before: Callable[[dict], bool]) -> int:
+        """The start of the first line whose record is not before a point, by binary search, so a
+        reader of a time-ordered file can skip old lines without reading them. Lines that do not
+        parse are passed over to the next record."""
+        with self.path.open("rb") as handle:
+            low, high = 0, handle.seek(0, 2)
+            while high - low > self.block_size:
+                middle = (low + high) // 2
+                handle.seek(middle)
+                handle.readline()
+                record = self.read_next_record(handle, high)
+                if record is not None and is_before(record):
+                    low = middle
+                else:
+                    high = middle
+            handle.seek(low)
+            if low:
+                handle.readline()
+            start = handle.tell()
+            for line in handle:
+                record = self.parse(line)
+                if record is not None and not is_before(record):
+                    return start
+                start += len(line)
+            return start
+
+    def read_next_record(self, handle: BinaryIO, end: int) -> dict | None:
+        """The next record that parses before `end`, or None."""
+        while handle.tell() < end:
+            if (record := self.parse(handle.readline())) is not None:
+                return record
+        return None
 
     def read_tail_text(self, min_lines: int) -> str:
         """The end of the file as text, at least min_lines lines long when the file has them."""

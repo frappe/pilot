@@ -17,11 +17,12 @@ class _FakeDatabase:
         self._rows = rows
 
     has_driver = True
+    placeholder = "%s"
 
     def quote_identifier(self, name: str) -> str:
         return f'"{name}"'
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params=()) -> QueryResult:
         if "tabSingles" not in query:
             raise DatabaseError("no such table")
         return QueryResult(columns=["value"], rows=self._rows, duration_ms=0.0)

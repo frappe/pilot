@@ -11,13 +11,19 @@ test.beforeEach(async ({ page }) => {
   await expect(page).toHaveURL(/\/sites\/.+/)
 })
 
+test('Opens on the overview', async ({ page }) => {
+  await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+})
+
 test('Shows the site apps', async ({ page }) => {
-  await expect(page.getByRole('radio', { name: 'Apps' })).toBeChecked()
+  await page.getByRole('tab', { name: 'Apps' }).click()
+
+  await expect(page).toHaveURL(/\/apps$/)
   await expect(page.getByText('Frappe', { exact: true })).toBeVisible()
 })
 
 test('Switches tabs', async ({ page }) => {
-  await page.getByRole('radio', { name: 'Backups' }).click()
+  await page.getByRole('tab', { name: 'Backups' }).click()
 
   await expect(page).toHaveURL(/\/backups$/)
 })
