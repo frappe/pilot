@@ -260,6 +260,8 @@ const runSizingAction = async () => {
 }
 
 const memoryShare = computed(() => capabilities.value?.actions.memory_share ?? null)
+// A remote server has MariaDB on its own VM, so there is no split to show.
+const isMemorySplitApplicable = computed(() => memoryShare.value?.applicable !== false)
 const memorySplitOpen = ref(false)
 const memorySplitPercent = ref(50)
 const memorySplitIdempotencyKey = ref('')
@@ -298,7 +300,7 @@ const stats = computed(() => {
 
   const total = memoryShare.value?.total_memory_mb ?? 0
 
-  return [
+  const all = [
     {
       key: 'memory_share',
       label: 'Database memory',
@@ -345,6 +347,8 @@ const stats = computed(() => {
       edit: () => openSizingAction('max_connections'),
     },
   ]
+
+  return isMemorySplitApplicable.value ? all : all.filter((stat) => stat.key !== 'memory_share')
 })
 
 const memoryPercent = computed(() => memoryBreakdown.value?.database ?? 0)
@@ -489,7 +493,10 @@ onMounted(load)
     />
 
     <template v-if="capabilities">
-      <div class="gap-4 grid lg:grid-cols-3">
+      <div
+        class="gap-4 grid"
+        :class="isMemorySplitApplicable ? 'lg:grid-cols-3' : 'lg:grid-cols-2'"
+      >
         <section
           v-for="stat in stats"
           :key="stat.key"
@@ -648,7 +655,7 @@ onMounted(load)
 
   <BinlogSettingsDialog v-model="binlogsOpen" />
 
-  <Dialog v-model="memorySplitOpen" title="Memory split" size="lg">
+  <Dialog v-if="isMemorySplitApplicable" v-model="memorySplitOpen" title="Memory split" size="lg">
     <div v-if="memoryShare?.total_memory_mb" class="flex flex-col gap-5">
       <p class="-mt-2 text-ink-gray-6 text-p-sm">
         Share {{ formatGB(memoryShare.total_memory_mb) }} of server memory between MariaDB and your

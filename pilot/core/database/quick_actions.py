@@ -285,7 +285,7 @@ class DatabaseQuickActions:
     def _memory_share_capability(self, configuration: dict | None = None) -> dict:
         """Whether the memory share can be changed, with its range."""
         if self.config.mariadb.remote:
-            return self._unavailable_memory_share(self.dedicated_server)
+            return self._remote_memory_share()
         configuration = configuration or self._configuration_capability()
         if not configuration["available"]:
             return self._unavailable_memory_share(configuration["reason"])
@@ -305,6 +305,7 @@ class DatabaseQuickActions:
             )
         return {
             **self._capability(True),
+            "applicable": True,
             "current": self.config.mariadb.memory_share,
             "min": low,
             "max": high,
@@ -312,6 +313,16 @@ class DatabaseQuickActions:
             "steps": steps,
             "requires_restart": False,
         }
+
+    def _remote_memory_share(self) -> dict:
+        """No split to show or change: MariaDB has the database VM's memory to itself."""
+        capability = {**self._unavailable_memory_share(self.dedicated_server), "applicable": False}
+        manager = self._manager()
+        try:
+            total_mb = manager.host_memory_mb
+        except DatabaseError:
+            return capability
+        return {**capability, "current": manager.memory_share, "total_memory_mb": total_mb}
 
     def _managed_server_reason(self) -> str:
         """Why the managed server is not usable, or an empty string."""
@@ -395,6 +406,7 @@ class DatabaseQuickActions:
         """The memory share capability as unavailable."""
         return {
             **cls._capability(False, reason),
+            "applicable": True,
             "current": None,
             "min": None,
             "max": None,

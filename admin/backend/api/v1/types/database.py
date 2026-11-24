@@ -86,6 +86,7 @@ class MemoryShareStep(TypedDict):
 
 
 class MemoryShareCapability(DatabaseActionCapability):
+    applicable: bool
     current: float | None
     min: float | None
     max: float | None

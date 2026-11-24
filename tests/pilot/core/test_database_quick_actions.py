@@ -252,6 +252,7 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
     with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         capability = DatabaseQuickActions(_config(), _manager()).capabilities()["actions"]["memory_share"]
 
+    assert capability["applicable"] is True
     assert (capability["current"], capability["min"], capability["max"]) == (0.5, 0.2, 0.8)
     assert capability["total_memory_mb"] == 4096
     shares = [step["share"] for step in capability["steps"]]
@@ -261,14 +262,35 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
 
 
 def test_a_dedicated_database_server_has_no_memory_split() -> None:
-    actions = DatabaseQuickActions(_config(remote=True), _manager())
+    manager = _manager()
+    manager.memory_share = 1.0
+    actions = DatabaseQuickActions(_config(remote=True), manager)
 
     with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         capability = actions.capabilities()["actions"]["memory_share"]
         with pytest.raises(DatabaseError, match="its own VM"):
             actions.require_memory_share(0.5)
 
-    assert (capability["available"], capability["steps"]) == (False, [])
+    assert (capability["available"], capability["applicable"], capability["steps"]) == (False, False, [])
+    # MariaDB has all of the database VM's memory, which the buffer pool view measures against.
+    assert (capability["current"], capability["total_memory_mb"]) == (1.0, 4096)
+
+
+def test_a_dedicated_database_server_without_its_memory_still_has_no_memory_split() -> None:
+    manager = _manager()
+    type(manager).host_memory_mb = PropertyMock(
+        side_effect=DatabaseError("Pilot cannot reach the database agent.")
+    )
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
+        capability = DatabaseQuickActions(_config(remote=True), manager).capabilities()["actions"][
+            "memory_share"
+        ]
+
+    assert (capability["applicable"], capability["current"], capability["total_memory_mb"]) == (
+        False,
+        None,
+        None,
+    )
 
 
 @pytest.mark.parametrize("share", [0.1, 0.9, "0.5"])
