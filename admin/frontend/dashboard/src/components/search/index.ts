@@ -41,7 +41,7 @@ export const useSearchIndex = () => {
       groups.Sites = {
         items: sites.value.map((site) => ({
           name: site.name,
-          icon: 'lucide-globe',
+          icon: 'lucide-pilot-site',
           route: `/sites/${encodeURIComponent(site.name)}`,
         })),
       }
