@@ -34,7 +34,7 @@ from pilot.core.database.engines.helpers import (
 from pilot.core.database.engines.mariadb_performance import MariaDBPerformanceReport
 from pilot.core.database.slow_log import SlowLogFile, SlowQueryReport
 from pilot.core.database.slow_queries import slow_row_key
-from pilot.exceptions import DatabaseError
+from pilot.exceptions import DatabaseConnectError, DatabaseError
 
 # The monitor collects every minute, so a short tail holds everything new.
 SLOW_LOG_COLLECT_BYTES = 2 * 1024 * 1024
@@ -83,18 +83,21 @@ class MariaDB(Database):
         import pymysql
         import pymysql.cursors
 
-        return pymysql.connect(
-            host=self._host,
-            port=self._port,
-            user=self._user,
-            password=self._password,
-            database=self._database or None,
-            unix_socket=self._socket,
-            connect_timeout=self._connect_timeout,
-            cursorclass=pymysql.cursors.DictCursor,
-            # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
-            ssl_disabled=is_local_host(self._host, self._socket),
-        )
+        try:
+            return pymysql.connect(
+                host=self._host,
+                port=self._port,
+                user=self._user,
+                password=self._password,
+                database=self._database or None,
+                unix_socket=self._socket,
+                connect_timeout=self._connect_timeout,
+                cursorclass=pymysql.cursors.DictCursor,
+                # PyMySQL 1.2 negotiates TLS by default; on loopback it only adds ~13 ms per connect.
+                ssl_disabled=is_local_host(self._host, self._socket),
+            )
+        except pymysql.err.OperationalError as exc:
+            raise DatabaseConnectError(f"Could not connect to MariaDB: {exc}") from exc
 
     def quote_identifier(self, name: str) -> str:
         """The name quoted as an identifier."""

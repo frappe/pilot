@@ -1060,3 +1060,12 @@ def test_mariadb_skips_tls_only_on_loopback(host: str, socket: str | None, disab
         engine._connect()
 
     assert connect.call_args.kwargs["ssl_disabled"] is disabled
+
+
+def test_mariadb_reports_a_refused_connection_as_a_connect_error() -> None:
+    from pilot.exceptions import DatabaseConnectError
+
+    db = MariaDB(host="127.0.0.1", port=1, user="u", password="p", database="d", connect_timeout=1)
+
+    with pytest.raises(DatabaseConnectError):
+        db.execute("SELECT 1")

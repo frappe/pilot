@@ -7,10 +7,11 @@ from flask import jsonify, request
 
 from admin.backend.api.requests import ApiRequest
 from admin.backend.api.v1.sites import sites_bp
-from admin.backend.api.v1.sites.shared import internal_error, site_name, site_not_found
+from admin.backend.api.v1.sites.shared import database_unreachable, internal_error, site_name, site_not_found
 from admin.backend.middleware import require_scope
 from admin.backend.providers.site.monitoring import SiteMonitoringProvider
 from pilot.core.bench import Bench
+from pilot.exceptions import DatabaseConnectError
 from pilot.internal.site_paths import site_exists
 
 
@@ -62,6 +63,8 @@ def get_failed_jobs(name: str):
         return site_not_found()
     try:
         jobs = Bench(bench_root).site(name).failed_jobs.get()
+    except DatabaseConnectError:
+        return database_unreachable()
     except Exception:
         return internal_error("Could not read failed jobs from the site.")
     return jsonify([asdict(job) for job in jobs])
@@ -90,6 +93,8 @@ def get_site_history(name: str):
         return site_not_found()
     try:
         history = Bench(bench_root).site(name).history.get()
+    except DatabaseConnectError:
+        return database_unreachable()
     except Exception:
         return internal_error("Could not read the site history.")
     return jsonify(asdict(history))

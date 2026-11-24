@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from pilot.core.database import Database, bench_query, make_site_database
-from pilot.exceptions import DatabaseError
+from pilot.exceptions import DatabaseConnectError, DatabaseError
 
 
 class SiteDatabaseState:
@@ -22,6 +22,7 @@ class SiteDatabaseState:
     def __init__(self, bench_root: Path, site_name: str) -> None:
         self.bench_root = bench_root
         self.site_name = site_name
+        self.is_unreachable = False
 
     @property
     def installed_apps(self) -> list[str] | None:
@@ -138,8 +139,11 @@ class SiteDatabaseState:
         return [app for app in apps if isinstance(app, str)] if isinstance(apps, list) else None
 
     def query(self, build_query: Callable[[Database], str], params: Sequence = ()) -> list[list] | None:
-        """Run one read-only query; None when the database cannot be reached.
-        `build_query` receives the engine so identifiers and placeholders follow its syntax."""
+        """Run one read-only query; None when the database cannot be reached. After one failed
+        connection the rest return None at once, so a dead server costs one timeout, not one per
+        query. `build_query` receives the engine so identifiers and placeholders follow its syntax."""
+        if self.is_unreachable:
+            return None
         try:
             database = make_site_database(
                 self.bench_root, self.site_name, connect_timeout=self.connect_timeout
@@ -147,6 +151,9 @@ class SiteDatabaseState:
             query = build_query(database)
             if database.has_driver:
                 return database.execute(query, params=params).rows
+        except DatabaseConnectError:
+            self.is_unreachable = True
+            return None
         except Exception:
             return None
         return self.get_rows_from_bench_env(database, query, params)
@@ -170,6 +177,7 @@ class SiteDatabaseState:
                 timeout=self.connect_timeout * 6,
             )
         except subprocess.TimeoutExpired:
+            self.is_unreachable = True
             return None
         if result.returncode == bench_query.MISSING_DRIVER:
             raise DatabaseError(

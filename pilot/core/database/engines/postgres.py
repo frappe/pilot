@@ -20,7 +20,7 @@ from pilot.core.database.engines.helpers import (
     is_local_host,
     validated_process_id,
 )
-from pilot.exceptions import DatabaseError
+from pilot.exceptions import DatabaseConnectError, DatabaseError
 
 
 class PostgreSQL(Database):
@@ -75,7 +75,7 @@ class PostgreSQL(Database):
                 connect_timeout=self._connect_timeout,
             )
         except psycopg2.Error as exc:
-            raise DatabaseError(f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}") from exc
+            raise DatabaseConnectError(f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}") from exc
 
     def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
         """Run the query, read-only by default, and return its result."""

@@ -23,6 +23,7 @@ class SiteFailedJobs:
     Frappe keeps these in the site database, not in monitor.json.log."""
 
     job_limit = 50
+    connect_timeout = 2  # the Overview card should fail fast when the database is down
     default_time_zone = "Asia/Kolkata"  # Frappe's own fallback when System Settings has none
 
     def __init__(self, site: "Site") -> None:
@@ -33,7 +34,9 @@ class SiteFailedJobs:
         groups the rows, so a job that fails every minute cannot hide the others."""
         from pilot.core.database import make_site_database
 
-        database = make_site_database(self.site.bench.path, self.site.config.name)
+        database = make_site_database(
+            self.site.bench.path, self.site.config.name, connect_timeout=self.connect_timeout
+        )
         cutoff = self.get_cutoff(database, hours)
         mark = database.placeholder
         log = database.quote_identifier("tabScheduled Job Log")

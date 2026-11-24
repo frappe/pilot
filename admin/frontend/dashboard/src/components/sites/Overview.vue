@@ -3,6 +3,7 @@ import { Button, Dialog, Skeleton, Tooltip } from 'frappe-ui'
 import { computed, onMounted, reactive, ref, useId } from 'vue'
 import { RouterLink } from 'vue-router'
 import { auditApi } from '@/api/audit'
+import { unwrap } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { updatesApi } from '@/api/updates'
 import AppIcon from '@/components/apps/AppIcon.vue'
@@ -23,6 +24,7 @@ import type { SiteUptime, UptimeBucket } from '@/types/siteMonitoring'
 import type { SiteStorageDay } from '@/types/siteStorage'
 import { activityLabel, activityTypeIcon } from '@/utils/activity'
 import { cronToLabel } from '@/utils/backup'
+import { errorMessage } from '@/utils/error'
 import { formatBytes } from '@/utils/format'
 import { relativeTime } from '@/utils/time'
 
@@ -46,6 +48,7 @@ const ready = reactive({
   info: false,
   lastRun: false,
 })
+const failures = reactive<Partial<Record<keyof typeof ready, string>>>({})
 const uptime = ref<SiteUptime | null>(null)
 const activity = ref<SiteActivity | null>(null)
 const backups = ref<Backup[]>([])
@@ -234,17 +237,15 @@ const certificate = computed(() => {
 const siteFacts = computed(() => {
   const info = siteHistory.value
 
-  if (!info) return []
-
   return [
     {
       label: 'Primary domain',
       value: domains.value.find((domain) => domain.is_primary)?.domain ?? '-',
     },
-    { label: 'Frappe version', value: info.frappe_version.split(' ')[0] },
-    { label: 'Apps', value: '' },
-    { label: 'Users', value: `${info.users}` },
-    { label: 'Created', value: info.created_at ? dayFormat.format(toTime(info.created_at)) : '-' },
+    { label: 'Frappe version', value: info?.frappe_version.split(' ')[0] || '-' },
+    ...(info ? [{ label: 'Apps', value: '' }] : []),
+    { label: 'Users', value: info ? `${info.users}` : '-' },
+    { label: 'Created', value: info?.created_at ? dayFormat.format(toTime(info.created_at)) : '-' },
     { label: 'Certificate', value: certificate.value.value, tone: certificate.value.tone },
     { label: 'Last update', value: lastUpdateLabel.value, tone: lastUpdateTone.value },
   ]
@@ -324,51 +325,26 @@ const eventIcon = (entry: AuditEntry) => [
 
 const load = () => {
   const name = props.siteName
-  const track = (key: keyof typeof ready, request: Promise<unknown>) =>
-    request.catch(() => null).finally(() => (ready[key] = true))
+  const track = <T>(key: keyof typeof ready, request: Promise<T>, save: (data: T) => void) =>
+    unwrap(request)
+      .then(save)
+      .catch((caught) => (failures[key] = errorMessage(caught, 'Could not load this.')))
+      .finally(() => (ready[key] = true))
 
-  track('storage', loadStorage())
-  track(
-    'uptime',
-    sitesApi.uptime.get(name, '1w').then((data) => (uptime.value = data)),
-  )
-  track(
-    'activity',
-    sitesApi.activity(name).then((data) => (activity.value = data)),
-  )
-  track(
-    'backups',
-    sitesApi.backups.list(name).then((data) => (backups.value = data)),
-  )
-  track(
-    'schedule',
-    sitesApi.backups.schedule.get(name).then((data) => (schedule.value = data)),
-  )
-  track(
-    'domains',
-    sitesApi.domains.list(name).then((data) => (domains.value = data.domains)),
-  )
-  track(
-    'recent',
-    auditApi.list({ site: name, limit: 7 }).then((page) => (recent.value = page.data)),
-  )
-  track(
-    'history',
-    sitesApi.storageHistory(name).then((data) => (history.value = data)),
-  )
-  track(
-    'failedJobs',
-    sitesApi.failedJobs(name).then((data) => (allFailedJobs.value = data)),
-  )
-  track(
-    'info',
-    sitesApi.history(name).then((data) => (siteHistory.value = data)),
-  )
+  loadStorage().finally(() => (ready.storage = true))
+  track('uptime', sitesApi.uptime.get(name, '1w'), (data) => (uptime.value = data))
+  track('activity', sitesApi.activity(name), (data) => (activity.value = data))
+  track('backups', sitesApi.backups.list(name), (data) => (backups.value = data))
+  track('schedule', sitesApi.backups.schedule.get(name), (data) => (schedule.value = data))
+  track('domains', sitesApi.domains.list(name), (data) => (domains.value = data.domains))
+  track('recent', auditApi.list({ site: name, limit: 7 }), (page) => (recent.value = page.data))
+  track('history', sitesApi.storageHistory(name), (data) => (history.value = data))
+  track('failedJobs', sitesApi.failedJobs(name), (data) => (allFailedJobs.value = data))
+  track('info', sitesApi.history(name), (data) => (siteHistory.value = data))
   track(
     'lastRun',
-    updatesApi
-      .list({ site: name, limit: 1 })
-      .then((page) => (lastRun.value = page.data[0] ?? null)),
+    updatesApi.list({ site: name, limit: 1 }),
+    (page) => (lastRun.value = page.data[0] ?? null),
   )
 }
 
@@ -684,8 +660,15 @@ onMounted(load)
           </span>
 
           <template v-if="ready.activity && ready.failedJobs">
+            <OverviewEmpty
+              v-if="failures.failedJobs"
+              class="mt-3"
+              icon="lucide-database-zap"
+              :text="failures.failedJobs"
+            />
+
             <div
-              v-if="jobRunTotal || allFailedJobs.length"
+              v-else-if="jobRunTotal || allFailedJobs.length"
               class="items-center grid grid-cols-2 mt-3"
             >
               <div class="flex justify-center items-center gap-4 pr-5">
@@ -875,6 +858,11 @@ onMounted(load)
                 </dd>
               </div>
             </dl>
+
+            <p v-if="failures.info" class="flex items-center gap-1.5 mt-2 text-ink-gray-5 text-sm">
+              <span class="size-3.5 lucide-database-zap" />
+              {{ failures.info }}
+            </p>
           </template>
 
           <OverviewSkeleton v-else :rows="7" />

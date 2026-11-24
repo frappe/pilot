@@ -28,6 +28,8 @@ class SiteHistoryReader:
     Frappe rewrites Installed Application rows on every migrate, so their time is the last update.
     An app's Module Def rows are written once at install, so their oldest time is the install time."""
 
+    connect_timeout = 2  # the Overview card should fail fast when the database is down
+
     def __init__(self, site: "Site") -> None:
         self.site = site
 
@@ -35,7 +37,9 @@ class SiteHistoryReader:
         """The site history from its database."""
         from pilot.core.database import make_site_database
 
-        database = make_site_database(self.site.bench.path, self.site.config.name)
+        database = make_site_database(
+            self.site.bench.path, self.site.config.name, connect_timeout=self.connect_timeout
+        )
         user = database.quote_identifier("tabUser")
         installed = database.quote_identifier("tabInstalled Application")
         mark = database.placeholder

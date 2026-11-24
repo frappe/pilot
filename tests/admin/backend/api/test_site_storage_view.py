@@ -297,3 +297,23 @@ def test_site_activity_is_404_for_an_unknown_site(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     assert client.get("/api/v1/sites/nope.localhost/activity").status_code == 404
+
+
+def test_site_database_reads_say_when_the_database_is_unreachable(tmp_path: Path) -> None:
+    from pilot.core.site.failed_jobs import SiteFailedJobs
+    from pilot.core.site.history import SiteHistoryReader
+    from pilot.exceptions import DatabaseConnectError
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+
+    with (
+        patch.object(SiteFailedJobs, "get", side_effect=DatabaseConnectError("refused")),
+        patch.object(SiteHistoryReader, "get", side_effect=DatabaseConnectError("refused")),
+    ):
+        for path in ("failed-jobs", "history"):
+            response = client.get(f"/api/v1/sites/s.localhost/{path}")
+
+            assert response.status_code == 503
+            assert response.get_json()["error"]["message"] == "Cannot connect to the site database."
