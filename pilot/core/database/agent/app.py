@@ -97,6 +97,11 @@ def disk(manager: Manager) -> dict:
     return {"free_bytes": manager.free_disk_bytes}
 
 
+@router.get("/metrics")
+def metrics(manager: Manager) -> dict:
+    return manager.get_host_metrics()
+
+
 @router.post("/accounts/admin")
 def grant_admin(manager: Manager, client_address: ClientAddress, body: AdminAccount) -> dict:
     manager.grant_client_admin(body.user, body.password, client_address)

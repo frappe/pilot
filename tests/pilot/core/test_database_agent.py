@@ -115,6 +115,36 @@ def test_server_files_are_read_and_other_files_refused(manager) -> None:
     assert refused.status_code == 422
 
 
+def test_metrics_is_one_system_log_record_with_the_data_directory_disk(manager) -> None:
+    from pilot.core.server.monitoring_proc import ProcMetricsReader
+
+    disk = {"total_bytes": 100, "used_bytes": 40, "free_bytes": 60, "percent": 40.0}
+    with (
+        patch("pilot.core.server.monitoring_proc.time.sleep") as sleep,
+        patch.object(ProcMetricsReader, "disk_usage", return_value=disk) as disk_usage,
+    ):
+        record = _client().get("/metrics").json()
+
+    sleep.assert_called_once()
+    disk_usage.assert_called_once_with(manager.data_dir)
+    assert set(record) == {
+        "time",
+        "load_avg",
+        "cpu_percent",
+        "cpu_breakdown",
+        "memory",
+        "storage",
+        "network",
+        "disk_io",
+    }
+    assert record["storage"] == {"disk": disk}
+    assert len(record["load_avg"]) == 3
+    assert set(record["cpu_breakdown"]) == {"user", "system", "iowait", "irq", "other", "idle"}
+    assert set(record["network"]) == {"rx_bytes_per_sec", "tx_bytes_per_sec"}
+    assert set(record["disk_io"]) == {"read_bytes_per_sec", "write_bytes_per_sec"}
+    assert record["memory"]["total_bytes"] > 0
+
+
 def test_the_admin_account_is_granted_to_the_callers_address(manager) -> None:
     with patch.object(DedicatedMariaDBManager, "_run_sql_as_superuser") as run_sql:
         response = _client().post("/accounts/admin", json={"user": "pilot", "password": "secret"})

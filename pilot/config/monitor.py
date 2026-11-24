@@ -20,6 +20,11 @@ def db_log_path() -> Path:
     return monitor_log_dir() / "db-stats.log"
 
 
+def database_server_log_path() -> Path:
+    """The system metrics log of a remote MariaDB server's VM."""
+    return monitor_log_dir() / "database-server-stats.log"
+
+
 def slow_query_log_path() -> Path:
     """The slow query log."""
     return monitor_log_dir() / "slow-queries.json"

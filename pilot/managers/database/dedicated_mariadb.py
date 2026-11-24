@@ -69,6 +69,13 @@ class DedicatedMariaDBManager(MariaDBManager):
         """Free bytes on the file system that holds the data directory."""
         return shutil.disk_usage(self.data_dir).free
 
+    def get_host_metrics(self) -> dict:
+        """One system metrics record of this VM, with the disk that holds the data directory."""
+        # psutil is in the agent's venv only, and the CLI imports this module.
+        from pilot.core.server.monitoring_proc import HostSampler
+
+        return HostSampler(self.data_dir).get_sampled_record()
+
     def grant_client_admin(self, user: str, password: str, host: str) -> None:
         """Create or reset the admin account the app VM's Pilot logs in with, from its address only."""
         self._run_sql_as_superuser(self.get_admin_account_sql(user, password, host))

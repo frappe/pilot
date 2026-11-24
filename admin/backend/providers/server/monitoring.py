@@ -18,12 +18,14 @@ class SystemMonitoringProvider(WindowedLogProvider):
         self._bench_root = bench_root
 
     def get_history(self) -> dict:
-        """The system and process metrics history."""
+        """The system and process metrics history, and the system metrics of a remote MariaDB server's VM."""
         from pilot.config import BenchConfig
-        from pilot.config.monitor import bench_log_path, system_log_path
+        from pilot.config.monitor import bench_log_path, database_server_log_path, system_log_path
 
         config = BenchConfig.read(self._bench_root)
         app_log = bench_log_path(config.name)
+        is_database_remote = config.db_type == "mariadb" and config.mariadb.remote
+        database_server = self.get_system_metrics(database_server_log_path()) if is_database_remote else None
         return {
             "window": self.window,
             "window_seconds": self.window_seconds,
@@ -31,6 +33,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
             "now": self.now_ms(),
             "system": self.get_system_metrics(system_log_path()),
             "application": self.get_application_metrics(app_log, config.name),
+            "database_server": database_server,
         }
 
     def get_system_metrics(self, path: Path) -> dict:

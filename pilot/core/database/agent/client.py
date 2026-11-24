@@ -19,6 +19,8 @@ class DatabaseAgentClient:
     """The database agent on a remote MariaDB's VM, which runs the operations on it that SQL cannot."""
 
     request_timeout = 30
+    # The agent spends 1 s sampling, and an unreachable VM must not hold up the monitor's tick.
+    metrics_timeout = 3
 
     def __init__(self, host: str, port: int, token: str) -> None:
         self.host = host
@@ -82,6 +84,10 @@ class DatabaseAgentClient:
     def get_free_disk_bytes(self) -> int:
         """Free bytes on the disk that holds the data directory."""
         return self.request("GET", "/disk")["free_bytes"]
+
+    def get_host_metrics(self) -> dict[str, Any]:
+        """One system metrics record of the database VM, in the shape of the monitor's system log."""
+        return self.request("GET", "/metrics", timeout=self.metrics_timeout)
 
     def grant_admin(self, user: str, password: str) -> str:
         """Create or reset the admin account for this host's address; return that address."""

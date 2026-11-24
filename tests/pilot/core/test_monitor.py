@@ -1,9 +1,11 @@
+import io
 import json
 import urllib.error
 from contextlib import contextmanager
+from email.message import Message
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import psutil
 import pytest
@@ -11,6 +13,7 @@ import pytest
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
 from pilot.core.bench import Bench
+from pilot.core.database.agent.client import DatabaseAgentClient
 from pilot.core.notification.notifier import Notifier
 from pilot.core.notification.webhooks import WEBHOOK_TIMEOUT_SECONDS, WebhookDelivery, send_webhook
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
@@ -43,15 +46,16 @@ def _make_monitor(bench: Bench) -> Monitor:
 
 def _fake_proc_reads(monitor: Monitor) -> None:
     """Stub out /proc reads so tests don't depend on the host machine state."""
-    monitor._load_average = lambda: (0.5, 0.4, 0.3)  # type: ignore[method-assign]
-    monitor._system_cpu = 12.5
-    monitor._memory_usage = lambda: {
+    reader = monitor.host.reader
+    reader.load_average = lambda: (0.5, 0.4, 0.3)  # type: ignore[method-assign]
+    monitor.host.cpu_percent = 12.5
+    reader.memory_usage = lambda: {
         "total_bytes": 8192 * 1024**2,
         "used_bytes": 4096 * 1024**2,
         "available_bytes": 4096 * 1024**2,
         "percent": 50.0,
     }  # type: ignore[method-assign]
-    monitor._storage_usage = lambda: {
+    reader.storage_usage = lambda: {
         "disk": {
             "total_bytes": 51200 * 1024**2,
             "used_bytes": 20480 * 1024**2,
@@ -66,7 +70,9 @@ def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> Non
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     _fake_proc_reads(monitor)
 
-    with patch.object(type(monitor), "system_log_path", new_callable=PropertyMock, return_value=system_log_file):
+    with patch.object(
+        type(monitor), "system_log_path", new_callable=PropertyMock, return_value=system_log_file
+    ):
         monitor.collect_system_metrics()
 
     assert system_log_file.exists()
@@ -82,7 +88,9 @@ def test_collect_system_metrics_does_not_write_app_log(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     _fake_proc_reads(monitor)
 
-    with patch.object(type(monitor), "system_log_path", new_callable=PropertyMock, return_value=system_log_file):
+    with patch.object(
+        type(monitor), "system_log_path", new_callable=PropertyMock, return_value=system_log_file
+    ):
         monitor.collect_system_metrics()
 
     assert not monitor.log_path.exists()
@@ -93,7 +101,9 @@ def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
     _fake_proc_reads(monitor)
 
-    with patch.object(type(monitor), "system_log_path", new_callable=PropertyMock, return_value=system_log_file):
+    with patch.object(
+        type(monitor), "system_log_path", new_callable=PropertyMock, return_value=system_log_file
+    ):
         monitor.collect_system_metrics()
 
     entry = json.loads(system_log_file.read_text().splitlines()[-1])
@@ -104,7 +114,7 @@ def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
 
 def test_disk_usage_returns_expected_fields(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
-    result = monitor._disk_usage(tmp_path)
+    result = monitor.host.reader.disk_usage(tmp_path)
     assert result["total_bytes"] > 0
     assert result["used_bytes"] >= 0
     assert result["free_bytes"] >= 0
@@ -114,7 +124,7 @@ def test_disk_usage_returns_expected_fields(tmp_path: Path) -> None:
 
 def test_storage_usage_always_includes_disk(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
-    result = monitor._storage_usage()
+    result = monitor.host.reader.storage_usage()
     assert "disk" in result
     assert result["disk"]["total_bytes"] > 0
 
@@ -145,14 +155,14 @@ def test_compute_cpu_breakdown_sums_to_100_percent(tmp_path: Path) -> None:
             },
         ]
     )
-    monitor._cpu_fields = lambda: next(readings)  # type: ignore[method-assign]
-    monitor.sample_cpu()
-    monitor.compute_cpu()
+    monitor.host.reader.cpu_fields = lambda: next(readings)  # type: ignore[method-assign]
+    monitor.sample()
+    monitor.compute()
 
-    breakdown = monitor._cpu_breakdown
+    breakdown = monitor.host.cpu_breakdown
     assert set(breakdown) == {"user", "system", "iowait", "irq", "other", "idle"}
     assert abs(sum(breakdown.values()) - 100.0) < 0.5
-    assert monitor._system_cpu == round(100 - breakdown["idle"], 2)
+    assert monitor.host.cpu_percent == round(100 - breakdown["idle"], 2)
 
 
 def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
@@ -168,17 +178,17 @@ def test_compute_cpu_breakdown_zero_delta_reports_idle(tmp_path: Path) -> None:
         "softirq": 10,
         "steal": 10,
     }
-    monitor._cpu_fields = lambda: dict(fields)  # type: ignore[method-assign]
-    monitor.sample_cpu()
-    monitor.compute_cpu()
+    monitor.host.reader.cpu_fields = lambda: dict(fields)  # type: ignore[method-assign]
+    monitor.sample()
+    monitor.compute()
 
-    assert monitor._cpu_breakdown["idle"] == 100.0
-    assert monitor._system_cpu == 0.0
+    assert monitor.host.cpu_breakdown["idle"] == 100.0
+    assert monitor.host.cpu_percent == 0.0
 
 
 def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
-    result = monitor._memory_usage()
+    result = monitor.host.reader.memory_usage()
 
     assert set(result) >= {
         "total_bytes",
@@ -188,9 +198,7 @@ def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
         "swap_used_bytes",
         "percent",
     }
-    assert (
-        result["total_bytes"] == result["used_bytes"] + result["cached_bytes"] + result["free_bytes"]
-    )
+    assert result["total_bytes"] == result["used_bytes"] + result["cached_bytes"] + result["free_bytes"]
 
 
 def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
@@ -199,14 +207,14 @@ def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:
     disk_readings = iter(
         [{"read_bytes": 5000, "write_bytes": 1000}, {"read_bytes": 6000, "write_bytes": 1500}]
     )
-    monitor._net_fields = lambda: next(net_readings)  # type: ignore[method-assign]
-    monitor._disk_io_fields = lambda: next(disk_readings)  # type: ignore[method-assign]
+    monitor.host.reader.net_fields = lambda: next(net_readings)  # type: ignore[method-assign]
+    monitor.host.reader.disk_io_fields = lambda: next(disk_readings)  # type: ignore[method-assign]
 
-    monitor.sample_io()
-    monitor.compute_io()
+    monitor.sample()
+    monitor.compute()
 
-    assert monitor._network == {"rx_bytes_per_sec": 2000.0, "tx_bytes_per_sec": 500.0}
-    assert monitor._disk_io == {"read_bytes_per_sec": 1000.0, "write_bytes_per_sec": 500.0}
+    assert monitor.host.network == {"rx_bytes_per_sec": 2000.0, "tx_bytes_per_sec": 500.0}
+    assert monitor.host.disk_io == {"read_bytes_per_sec": 1000.0, "write_bytes_per_sec": 500.0}
 
 
 def _disk_counter(read_bytes: int, write_bytes: int) -> SimpleNamespace:
@@ -228,7 +236,7 @@ def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:
         "loop0": _disk_counter(5555, 5555),
     }
     with patch("psutil.disk_io_counters", return_value=counters):
-        result = monitor._disk_io_fields()
+        result = monitor.host.reader.disk_io_fields()
 
     assert result == {"read_bytes": 2000 + 200, "write_bytes": 1000 + 100}
 
@@ -241,7 +249,7 @@ def test_net_fields_excludes_loopback(tmp_path: Path) -> None:
         "lo0": _net_counter(8888, 8888),
     }
     with patch("psutil.net_io_counters", return_value=counters):
-        result = monitor._net_fields()
+        result = monitor.host.reader.net_fields()
 
     assert result == {"rx_bytes": 1000, "tx_bytes": 200}
 
@@ -251,7 +259,7 @@ def test_cpu_fields_defaults_absent_states_to_zero(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path))
     times = SimpleNamespace(user=100.0, nice=1.0, system=50.0, idle=800.0)
     with patch("psutil.cpu_times", return_value=times):
-        fields = monitor._cpu_fields()
+        fields = monitor.host.reader.cpu_fields()
 
     assert set(fields) == set(CPU_STAT_FIELDS)
     assert fields["user"] == 100.0
@@ -278,9 +286,7 @@ def test_io_bytes_is_zero_where_the_platform_has_no_counters(tmp_path: Path) -> 
     with patch("psutil.Process", return_value=SimpleNamespace()):
         assert monitor._io_bytes(1234) == (0, 0)
 
-    process = SimpleNamespace(
-        io_counters=lambda: SimpleNamespace(read_bytes=500, write_bytes=250)
-    )
+    process = SimpleNamespace(io_counters=lambda: SimpleNamespace(read_bytes=500, write_bytes=250))
     with patch("psutil.Process", return_value=process):
         assert monitor._io_bytes(1234) == (500, 250)
 
@@ -301,9 +307,88 @@ def test_collect_application_metrics_marks_a_vanished_process_missing(tmp_path: 
     assert entry["processes"] == [{"service": "web", "pid": 4242, "missing": True}]
 
 
+DATABASE_VM_RECORD = {"time": "2026-11-24T10:00:00+00:00", "memory": {"total_bytes": 16 * 1024**3}}
+
+
+def _database_monitor(tmp_path: Path, remote: bool) -> Monitor:
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
+    if remote:
+        monitor.bench.config.mariadb = MariaDBConfig(remote=True, host="fdaa:1:2::9", agent_token="token")
+    monitor.db_log_path.parent.mkdir(parents=True, exist_ok=True)
+    return monitor
+
+
+@contextmanager
+def _mariadb_status():
+    from pilot.core.database.engines import MariaDB
+
+    database = MagicMock(spec=MariaDB)
+    database.get_global_status.return_value = {"Questions": "5"}
+    database.get_global_variables.return_value = {"innodb_buffer_pool_size": "1024"}
+    with patch("pilot.core.database.make_database", return_value=database):
+        yield
+
+
+def _collect_database_tick(monitor: Monitor) -> None:
+    monitor.collect_database_metrics(monitor.collect_database_server_metrics())
+
+
+def _last_record(path: Path) -> dict:
+    return json.loads(path.read_text().splitlines()[-1])
+
+
+def test_a_remote_server_logs_its_vm_and_records_the_vm_memory(tmp_path: Path) -> None:
+    monitor = _database_monitor(tmp_path, remote=True)
+
+    with (
+        patch.object(DatabaseAgentClient, "request", return_value=DATABASE_VM_RECORD) as request,
+        _mariadb_status(),
+    ):
+        _collect_database_tick(monitor)
+
+    request.assert_called_once_with("GET", "/metrics", timeout=DatabaseAgentClient.metrics_timeout)
+    assert _last_record(monitor.database_server_log_path) == DATABASE_VM_RECORD
+    assert _last_record(monitor.db_log_path)["total_ram_bytes"] == 16 * 1024**3
+
+
+def test_a_local_server_asks_no_agent_and_records_this_host_memory(tmp_path: Path) -> None:
+    monitor = _database_monitor(tmp_path, remote=False)
+
+    with patch.object(DatabaseAgentClient, "request") as request, _mariadb_status():
+        _collect_database_tick(monitor)
+
+    request.assert_not_called()
+    assert not monitor.database_server_log_path.exists()
+    assert _last_record(monitor.db_log_path)["total_ram_bytes"] == psutil.virtual_memory().total
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.URLError("timed out"),
+        # An older Pilot on the database VM does not know the request.
+        urllib.error.HTTPError("http://agent/metrics", 404, "Not Found", Message(), io.BytesIO()),
+    ],
+)
+def test_an_unreachable_or_older_agent_is_skipped(tmp_path: Path, error: Exception) -> None:
+    monitor = _database_monitor(tmp_path, remote=True)
+
+    with patch("urllib.request.urlopen", side_effect=error), _mariadb_status():
+        _collect_database_tick(monitor)
+
+    assert not monitor.database_server_log_path.exists()
+    # The app VM's memory would make the buffer pool share wrong, so the tick records none.
+    assert _last_record(monitor.db_log_path)["total_ram_bytes"] is None
+
+
 def _alerting_monitor(tmp_path: Path, **limits: int) -> Monitor:
     bench = _make_bench(tmp_path / "my-bench")
-    for name, value in {"cpu_usage_limit": 0, "memory_usage_limit": 0, "disk_space_limit": 0, **limits}.items():
+    for name, value in {
+        "cpu_usage_limit": 0,
+        "memory_usage_limit": 0,
+        "disk_space_limit": 0,
+        **limits,
+    }.items():
         setattr(bench.config.resource_limits, name, value)
     monitor = _make_monitor(bench)
     # MonitorConfigurator.setup() makes this directory on a real host, and it
@@ -359,9 +444,7 @@ def test_alert_fires_once_the_breach_outlives_the_window(tmp_path: Path) -> None
         monitor.send_alert_if_required(_system_record(cpu=95.0))
         monitor.send_alert_if_required(_system_record(cpu=95.0))
 
-    assert _breached(payloads) == [["cpu_usage_limit"]], (
-        "a sustained breach alerts once, not every tick"
-    )
+    assert _breached(payloads) == [["cpu_usage_limit"]], "a sustained breach alerts once, not every tick"
 
 
 def test_alert_covers_only_the_limits_the_operator_set(tmp_path: Path) -> None:
@@ -414,7 +497,10 @@ def test_usage_back_under_the_limit_after_an_alert_sends_a_recovery(tmp_path: Pa
         _age_alerts(monitor)
         monitor.send_alert_if_required(_system_record(cpu=10.0))
 
-    assert [payload["event"] for payload in payloads] == ["resource_limit_breached", "resource_limit_recovered"]
+    assert [payload["event"] for payload in payloads] == [
+        "resource_limit_breached",
+        "resource_limit_recovered",
+    ]
     assert payloads[1]["context"]["recovered_limits"] == ["cpu_usage_limit"]
     assert payloads[1]["severity"] == "Info"
 
@@ -484,7 +570,11 @@ def test_alert_body_matches_centrals_event_schema(tmp_path: Path) -> None:
 
     assert set(payload) == {"event", "title", "category", "severity", "action_route", "message", "context"}
     assert payload["event"] == "resource_limit_breached"
-    assert (payload["title"], payload["category"], payload["severity"]) == ("Resource limit breached", "Server", "Warning")
+    assert (payload["title"], payload["category"], payload["severity"]) == (
+        "Resource limit breached",
+        "Server",
+        "Warning",
+    )
     assert payload["message"] == "my-bench: cpu_usage_limit at 95.0%"
     assert payload["context"]["breached_limits"] == [
         {"limit": "cpu_usage_limit", "threshold": 80, "reading": 95.0}
