@@ -272,29 +272,44 @@ Before it applies the Central credential, bootstrap sizes Pilot's MariaDB for th
 
 ### Remote MariaDB
 
-`[mariadb]` describes one of three servers:
+`[mariadb]` describes one of four servers:
 
 | Server | Keys | What Pilot does |
 |---|---|---|
 | Local (default) | none | Runs its own `pilot-mariadb.service` user unit under `databases/mariadb`, sizes it, restarts it and edits its variables. |
 | Existing | `existing = true`, `host`, `port`, `admin_user`, `root_password` | Only connects. Restart, sizing and variable changes are refused. |
-| Remote | `remote = true`, `host`, `port`, `ssh_user`, `ssh_key_path`, `memory_mb`, `admin_user`, `root_password` | Manages a packaged MariaDB 11.8 or newer on its own VM: SQL over TCP, everything else over SSH with `sudo -n`. |
+| Remote | `remote = true`, `host`, `port`, `agent_port`, `agent_token`, `admin_user`, `root_password` | Manages the MariaDB on a database VM: SQL over TCP, everything else through the database agent on that VM. |
+| Dedicated | `dedicated = true`, `port`, `root_password` | On the database VM: runs the local user unit for the whole VM and serves the app VM on the network. |
 
 ```toml
+# The app VM
 [mariadb]
 host = "fdaa:1:2::3"
 port = 3306
 admin_user = "pilot"
 root_password = "..."
 remote = true
-ssh_user = "ubuntu"
-ssh_key_path = "/home/frappe/.ssh/pilot-database"
-memory_mb = 8192
+agent_port = 7781
+agent_token = "..."
 ```
 
-On a remote VM the package keeps its `mariadb.service`, data directory and socket. Pilot writes its options to `/etc/mysql/mariadb.conf.d/90-pilot.cnf` (listen on `::`, `skip-name-resolve`, logs in `/var/log/mysql`, memory sizing) and the variable editor's options to `99-pilot-managed.cnf`, which loads last. `memory_mb` is the database VM's memory from the spec Central creates it with. The VM runs nothing else, so Pilot sizes MariaDB for all of that memory: the memory split, `memory_share`, the boot sizing unit and the service memory limits below apply only to a local server. The admin account is created through root's socket login and accepts only the address the remote host sees Pilot connect from; setup and cloned-site accounts use the same host. The host's known key is kept in `<ssh_key_path>.known_hosts` and is trusted on first use. Restart, the variable editor, slow queries, deadlocks, log sizes and free disk work as for a local server. `pilot setup remote-database` moves a host to a remote server - see [Setup Commands](commands.md#setup-commands).
+```toml
+# The database VM
+[mariadb]
+port = 3306
+root_password = "..."
+dedicated = true
 
-A Central VM whose database is on another host has the `pilot-database` attribute, `{"remote": true}`. Before it applies the credential, bootstrap asks Central for the database host with `central.api.pilot.get_database_access`, which answers `Pending` until that host runs and then `Ready` with `host`, `port`, `ssh_user`, `ssh_private_key` and `memory_mib`, the database VM's memory. Pilot keeps the key at `~/.ssh/pilot-database` and moves the host to the remote server, so the credential never lands on a host without a working database. A `Failed` answer stops the bootstrap.
+[database_agent]
+address = "::"
+port = 7781
+token_hash = "<sha256 of agent_token>"
+client_address = "fdaa:1:2::7"
+```
+
+The database VM runs Pilot's MariaDB as the `pilot-mariadb.service` user unit, like a local server, with `bind-address = ::`, `skip-name-resolve` and `secure-file-priv` set to the empty `databases/mariadb/client-files` directory, so the app VM's admin account cannot read or write other files through SQL. The VM runs nothing else, so Pilot sizes MariaDB for all of its memory, and the boot sizing unit sizes it again after Central resizes the VM. The memory split and `memory_share` apply only to a local server. The database agent, `pilot-database-agent.service`, is a FastAPI user unit in the admin venv. It runs as the same user as MariaDB, never as root, and serves only the address in `client_address` with the token whose SHA-256 is `token_hash`. It answers a fixed set of requests: server health, the variable editor's option file, start, stop and restart, the tail and size of the logs and of files in the data directory, free disk, and the admin account. It takes only options that the variable editor and the memory quick actions write, so an option such as `init-file` or `plugin-load` is refused. It has no request that runs a command or reads another file. The admin account accepts only the address the agent sees the app VM connect from, and setup and cloned-site accounts use the same host. Restart, the variable editor, slow queries, deadlocks, log sizes and free disk work as for a local server. The agent and the app VM's Pilot must speak the same API version. Each refuses the other when they do not. The agent uses plain HTTP, so the network between the VMs must be private. `pilot setup database-server` sets up the database VM, and `pilot setup remote-database` moves an app VM to it - see [Setup Commands](commands.md#setup-commands).
+
+A Central VM whose database is on another host has the `pilot-database` attribute, `{"remote": true}`. Before it applies the credential, bootstrap asks Central for the database host with `central.api.pilot.get_database_access`, which answers `Pending` until that host runs and then `Ready` with `host`, `port`, `agent_port` and `agent_token`. Pilot moves the host to the remote server, so the credential never lands on a host without a working database. A `Failed` answer stops the bootstrap.
 
 The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first start in each host boot and stays active for that boot. Pilot records the boot ID and total host RAM in `memory-sizing.json`. On the first allocation, or a new boot with changed RAM, it recalculates the generated settings and clears custom buffer-pool sizes, log-file size, key-buffer size, and connection count. A MariaDB restart or a host reboot with unchanged RAM preserves custom database variables. Service memory limits are recalculated from host RAM and `mariadb.memory_share` at each boot. Other database-variable overrides, including `innodb_snapshot_isolation`, remain unchanged. The upgrade patch records the current host capacity and starts the sizing service outside the database action lock, so installation preserves existing settings and the first MariaDB restart can proceed.
 
