@@ -71,8 +71,15 @@ def test_site_clone_overlaps_database_and_uploads_and_waits_before_cleanup(sourc
 @pytest.mark.parametrize("dump_exit,import_exit", [(1, 0), (0, 1), (1, 1)])
 def test_stream_reports_failure_of_either_process(dump_exit, import_exit):
     dump = [sys.executable, "-c", f"import sys; print('sql'); sys.exit({dump_exit})"]
-    restore = [sys.executable, "-c", f"import sys; sys.stdin.read(); sys.exit({import_exit})"]
-    with pytest.raises(BenchError, match="Database clone failed"):
+    restore = [
+        sys.executable,
+        "-c",
+        f"import sys; sys.stdin.read(); print('warning\\nERROR 1146: no table', file=sys.stderr); sys.exit({import_exit})",
+    ]
+    message = (
+        rf"Database copy failed \(dump exit {dump_exit}, import exit {import_exit}\): ERROR 1146: no table"
+    )
+    with pytest.raises(BenchError, match=message):
         stream_database(dump, restore, os.environ.copy(), os.environ.copy())
 
 

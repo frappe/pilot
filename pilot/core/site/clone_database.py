@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from typing import IO
 
 from pilot.exceptions import BenchError, CommandError
 from pilot.internal.command import run_command
@@ -12,28 +14,38 @@ from pilot.internal.command import run_command
 def stream_database(dump: list[str], restore: list[str], source_env: dict, target_env: dict) -> None:
     """Stream SQL without a dump file; neither side may fail silently."""
     processes = []
-    try:
-        producer = subprocess.Popen(dump, stdout=subprocess.PIPE, env=source_env)
-        processes.append(producer)
-        assert producer.stdout is not None
+    with tempfile.TemporaryFile() as errors:
         try:
-            consumer = subprocess.Popen(restore, stdin=producer.stdout, env=target_env)
-            processes.append(consumer)
+            producer = subprocess.Popen(dump, stdout=subprocess.PIPE, stderr=errors, env=source_env)
+            processes.append(producer)
+            assert producer.stdout is not None
+            try:
+                consumer = subprocess.Popen(restore, stdin=producer.stdout, stderr=errors, env=target_env)
+                processes.append(consumer)
+            finally:
+                producer.stdout.close()
+            imported = consumer.wait()
+            dumped = producer.wait()
+            if dumped or imported:
+                raise BenchError(
+                    f"Database copy failed (dump exit {dumped}, import exit {imported}){_last_error(errors)}"
+                )
         finally:
-            producer.stdout.close()
-        imported = consumer.wait()
-        dumped = producer.wait()
-        if dumped or imported:
-            raise BenchError(f"Database clone failed (dump exit {dumped}, import exit {imported}).")
-    finally:
-        for process in processes:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+            for process in processes:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+
+
+def _last_error(errors: IO[bytes]) -> str:
+    """What the clients last wrote to standard error, so the failure names its cause."""
+    errors.seek(0)
+    lines = errors.read().decode(errors="replace").strip().splitlines()
+    return f": {lines[-1]}" if lines else "."
 
 
 class SiteDatabaseClone:

@@ -83,7 +83,7 @@ class RemoteDatabaseMigration:
             activity = TaskActivityReader(bench.path).read()
             if activity.queued_tasks or activity.running_tasks:
                 raise BenchError(
-                    f"Bench {name} has queued or running tasks. Run the move again after they end."
+                    f"Bench {name} has queued or running tasks. Run the move again after they end, or cancel them."
                 )
 
     def check_version(self) -> None:
@@ -99,8 +99,8 @@ class RemoteDatabaseMigration:
             )
 
     def check_definers(self) -> None:
-        """Refuse objects that run as their definer. The definer is an account of the local server, which the remote
-        server does not have, so they would fail there."""
+        """Refuse objects that run as their definer. The definer is an account of the local server, which the copy
+        does not create on the remote server, so they would fail there."""
         schemas = self.schema_list
         rows = get_rows(
             self.local,
@@ -115,9 +115,9 @@ class RemoteDatabaseMigration:
         )
         if rows:
             raise BenchError(
-                f"These objects run as an account of the local server, which the remote server does not have: "
-                f"{', '.join(rows)}. Drop them or make the views and routines SQL SECURITY INVOKER, then run the "
-                "move again."
+                f"These objects run as their definer, an account of the local server that the copy does not create "
+                f"on the remote server: {', '.join(rows)}. Drop them or make the views and routines SQL SECURITY "
+                "INVOKER, then run the move again."
             )
 
     def check_disk(self) -> None:
@@ -139,7 +139,8 @@ class RemoteDatabaseMigration:
 
     def check_remote_names(self) -> None:
         """Refuse when the remote server has a database or an account with a site database's name. A copy must
-        never write into, or a cleanup drop, what was there before."""
+        never write into, or a cleanup drop, what was there before. It needs the admin login, so it runs after the
+        takeover and before anything is stopped or copied."""
         if not self.databases:
             return
         names = sorted(
