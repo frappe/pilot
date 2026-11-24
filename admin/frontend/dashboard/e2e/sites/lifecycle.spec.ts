@@ -85,7 +85,7 @@ test('Create a site', async ({ page }) => {
   await page.getByRole('button', { name: 'Create Site' }).click()
 
   await waitForTask(page, new RegExp(`/sites/${site}$`))
-  await expect(page.getByRole('heading', { name: site })).toBeVisible()
+  await expect(page.getByRole('banner')).toContainText(site)
 })
 
 test('Install an app', async ({ page }) => {
@@ -99,7 +99,7 @@ test('Install an app', async ({ page }) => {
 })
 
 test('Uninstall the app', async ({ page }) => {
-  await page.goto(`/sites/${site}`)
+  await page.goto(`/sites/${site}/apps`)
   await appRow(page, 'Blog', 'App actions').getByRole('button', { name: 'App actions' }).click()
   const action = page.getByRole('menuitem', { name: /^(Remove|Uninstall)$/ })
   await expect(action).toBeVisible()
