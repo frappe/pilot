@@ -13,7 +13,7 @@ import { apiErrorMessage } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 import { useAppRegistry } from '@/composables/apps/useAppRegistry'
 import { useSession } from '@/composables/auth/useSession'
-import type { StorageBreakdown } from '@/types/storage'
+import type { StorageBreakdown, StorageItem } from '@/types/storage'
 import { formatBytes } from '@/utils/format'
 
 const { session, centralServerUrl } = useSession()
@@ -27,10 +27,10 @@ const hero = ref<HTMLElement | null>(null)
 const ring = ref<{ $el: HTMLElement } | null>(null)
 const tileElements = new Map<string, HTMLElement>()
 const lines = ref<{ key: string; path: string }[]>([])
-const showAllDatabases = ref(false)
 const purger = ref<InstanceType<typeof BinlogPurgeAlert> | null>(null)
 const openSite = ref('')
 const openApp = ref('')
+const openOtherDatabases = ref(false)
 
 const colors = {
   node_modules: 'var(--ink-purple-6)',
@@ -40,16 +40,28 @@ const colors = {
   logs: 'var(--ink-red-4)',
   sites: 'var(--ink-cyan-6)',
   database: 'var(--ink-pink-6)',
+  others: 'var(--ink-gray-4)',
 }
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
 
+const othersNote = (others: StorageItem[]) => {
+  const names = others.slice(0, 2).map((item) => item.name)
+  const rest = others.length - names.length
+
+  return rest > 0 ? `${names.join(', ')} +${rest}` : names.join(', ')
+}
+
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+
 const load = async () => {
+  clearTimeout(pollTimer)
   loading.value = true
   error.value = ''
 
   try {
     storageData.value = await monitorApi.storage()
+    if (storageData.value.bench_task) pollTimer = setTimeout(load, 2000)
   } catch (e) {
     error.value = apiErrorMessage(e, 'Could not load storage breakdown.')
   } finally {
@@ -60,7 +72,7 @@ const load = async () => {
 const sites = computed(() => {
   const data = storageData.value
 
-  if (!data) return []
+  if (!data?.bench) return []
 
   const databaseOf = Object.fromEntries(
     data.database.databases.filter((row) => row.site).map((row) => [row.site, row.bytes]),
@@ -104,7 +116,7 @@ const sites = computed(() => {
 })
 
 const apps = computed(() =>
-  [...(storageData.value?.bench.apps ?? [])]
+  [...(storageData.value?.bench?.apps ?? [])]
     .map((app) => ({
       ...app,
       code: Math.max(app.bytes - app.git_bytes - app.node_modules_bytes, 0),
@@ -148,7 +160,7 @@ const databaseOther = computed(() => {
 const segments = computed(() => {
   const data = storageData.value
 
-  if (!data) return []
+  if (!data?.bench) return []
 
   const git = sum(apps.value.map((app) => app.git_bytes))
   const nodeModules = sum(apps.value.map((app) => app.node_modules_bytes))
@@ -205,10 +217,35 @@ const segments = computed(() => {
       note: 'Not tied to a site',
       bytes: databaseBytes,
     },
+    {
+      key: 'others',
+      icon: 'lucide-folder',
+      label: 'Others',
+      note: othersNote(data.bench.others),
+      bytes: data.bench.others_bytes,
+    },
   ]
     .map((segment) => ({ ...segment, color: colors[segment.key as keyof typeof colors] }))
     .filter((segment) => segment.bytes > 0)
     .sort((left, right) => right.bytes - left.bytes)
+})
+
+const refresh = async () => {
+  try {
+    await monitorApi.refreshBench()
+  } catch (e) {
+    error.value = apiErrorMessage(e, 'Could not start the storage measure.')
+
+    return
+  }
+
+  load()
+}
+
+const refreshTooltip = computed(() => {
+  const measuredAt = storageData.value?.bench?.measured_at
+
+  return measuredAt ? `Measure again (last measured ${new Date(measuredAt).toLocaleTimeString()})` : 'Measure again'
 })
 
 const usedPercent = computed(() => {
@@ -415,7 +452,10 @@ watch(hero, (element) => {
 
 watch([segments, isOrbit, ringLayout], () => nextTick(drawLines))
 
-onBeforeUnmount(() => resizeObserver.disconnect())
+onBeforeUnmount(() => {
+  resizeObserver.disconnect()
+  clearTimeout(pollTimer)
+})
 
 const sitesBytes = computed(() => sum(sites.value.map((site) => site.bytes)))
 
@@ -426,9 +466,10 @@ const databases = computed(() =>
   ),
 )
 
-const visibleDatabases = computed(() =>
-  showAllDatabases.value ? databases.value : databases.value.slice(0, 8),
-)
+const siteDatabases = computed(() => databases.value.filter((row) => row.site))
+
+const otherDatabases = computed(() => databases.value.filter((row) => !row.site))
+
 
 const engineFiles = computed(() => {
   const database = storageData.value?.database
@@ -455,9 +496,9 @@ onMounted(() => {
     <Button
       variant="ghost"
       icon="lucide-refresh-cw"
-      tooltip="Refresh"
-      :loading="loading"
-      @click="load"
+      :tooltip="refreshTooltip"
+      :loading="loading || Boolean(storageData?.bench_task)"
+      @click="refresh"
     />
 
     <Button
@@ -468,7 +509,9 @@ onMounted(() => {
     />
   </Teleport>
 
-  <div v-if="loading && !storageData" class="flex flex-col gap-4 p-3 md:p-4">
+  <ErrorMessage v-if="error" :message="error" class="m-3 md:m-4" />
+
+  <div v-else-if="!storageData?.bench" class="flex flex-col gap-4 p-3 md:p-4">
     <Skeleton class="rounded-7 h-[17rem]" />
 
     <div class="gap-4 grid lg:grid-cols-3">
@@ -476,9 +519,7 @@ onMounted(() => {
     </div>
   </div>
 
-  <ErrorMessage v-else-if="error" :message="error" class="m-3 md:m-4" />
-
-  <div v-else-if="storageData" class="flex flex-col gap-4 p-3 md:p-4 fade-in">
+  <div v-else-if="storageData?.bench" class="flex flex-col gap-4 p-3 md:p-4 fade-in">
     <section
       ref="hero"
       class="relative md:-mx-4 md:-mt-4"
@@ -570,7 +611,7 @@ onMounted(() => {
                 {{ formatBytes(segment.bytes) }}
               </span>
             </span>
-            <span class="text-ink-gray-5 text-xs">{{ segment.note }}</span>
+            <span class="text-ink-gray-5 text-xs truncate" :title="segment.note">{{ segment.note }}</span>
           </span>
         </li>
       </ul>
@@ -710,11 +751,11 @@ onMounted(() => {
           />
         </span>
 
-        <Scrollbar class="-ml-2 -mr-4" :class="{ 'h-80': showAllDatabases }">
+        <Scrollbar class="-ml-2 -mr-4">
           <div class="flex flex-col pr-4 pl-2">
             <component
               :is="row.site ? 'router-link' : 'div'"
-              v-for="row in visibleDatabases"
+              v-for="row in siteDatabases"
               :key="row.schema"
               :to="row.site ? { name: 'DB analyzer', query: { site: row.site } } : undefined"
               class="group flex items-center gap-2 hover:bg-surface-gray-1 -mx-2 px-2 rounded-4 h-9 text-base transition-colors duration-150"
@@ -738,17 +779,51 @@ onMounted(() => {
                 {{ formatBytes(row.bytes) }}
               </span>
             </component>
+
+            <Collapsable
+              v-if="otherDatabases.length"
+              :opened="openOtherDatabases"
+              @update:opened="openOtherDatabases = $event"
+            >
+              <template #header="{ opened, toggle }">
+                <button
+                  type="button"
+                  :aria-expanded="opened"
+                  class="group flex items-center gap-2 hover:bg-surface-gray-1 -mx-2 px-2 rounded-4 w-[calc(100%+1rem)] h-9 text-base text-left transition-colors duration-150"
+                  @click="toggle"
+                >
+                  <span class="size-4 text-ink-gray-4 lucide-folder shrink-0" />
+                  <span class="text-ink-gray-7 group-hover:text-ink-gray-9 transition-colors duration-150">
+                    Others
+                  </span>
+                  <span class="text-ink-gray-5 text-sm">{{ otherDatabases.length }}</span>
+                  <span
+                    class="size-3.5 text-ink-gray-4 transition-transform duration-150 lucide-chevron-right shrink-0"
+                    :class="{ 'rotate-90': opened }"
+                  />
+                  <span class="ml-auto tabular-nums text-ink-gray-8 whitespace-nowrap">
+                    {{ formatBytes(sum(otherDatabases.map((row) => row.bytes))) }}
+                  </span>
+                </button>
+              </template>
+
+              <div class="flex flex-col ml-[7px] pl-4 border-outline-gray-2 border-l">
+                <span
+                  v-for="row in otherDatabases"
+                  :key="row.schema"
+                  class="flex items-center gap-2 h-7 text-sm"
+                >
+                  <span class="size-3.5 text-ink-gray-4 lucide-database shrink-0" />
+                  <span class="text-ink-gray-5 truncate">{{ row.schema }}</span>
+                  <Badge v-if="row.system" label="system" size="sm" />
+                  <span class="ml-auto tabular-nums text-ink-gray-6 whitespace-nowrap">
+                    {{ formatBytes(row.bytes) }}
+                  </span>
+                </span>
+              </div>
+            </Collapsable>
           </div>
         </Scrollbar>
-
-        <Button
-          v-if="databases.length > 8"
-          variant="ghost"
-          class="self-start"
-          :icon-left="showAllDatabases ? 'lucide-chevron-up' : 'lucide-chevron-down'"
-          :label="showAllDatabases ? 'Show less' : `Show ${databases.length - 8} more`"
-          @click="showAllDatabases = !showAllDatabases"
-        />
 
         <div class="flex flex-col mt-auto pt-3 border-outline-gray-1 border-t">
           <span
@@ -776,7 +851,7 @@ onMounted(() => {
       ref="purger"
       v-if="storageData.database.engine === 'mariadb'"
       :bytes="storageData.database.binlog_bytes"
-      @purged="load"
+      @purged="load()"
     />
   </div>
 </template>
