@@ -124,9 +124,10 @@ def test_an_update_skips_when_another_holds_the_lock(tmp_path: Path) -> None:
     rollup.directory.mkdir(parents=True)
 
     with exclusive_file_lock(rollup.directory / "update"):
-        assert rollup.update(NOW) is False
+        rollup.update(NOW)
+        assert rollup.get_activity(SITE, NOW).requests[-1] == 0
 
-    assert rollup.update(NOW) is True
+    rollup.update(NOW)
     assert rollup.get_activity(SITE, NOW).requests[-1] == 1
 
 

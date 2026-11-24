@@ -57,12 +57,12 @@ class SiteActivityRollup(HourlyRollup):
         super().__init__(bench)
         self.directory = self.state_path.parent
 
-    def update(self, now: datetime | None = None, catch_up: bool = True) -> bool:
+    def update(self, now: datetime | None = None, catch_up: bool = True) -> None:
         """Fold new log lines into the site files, `step_bytes` at a time so memory stays flat
-        however far behind it is: until caught up, or one step to keep a request quick.
-        False when another update holds the lock."""
+        however far behind it is: until caught up, or one step to keep a request quick. Skips
+        when another update holds the lock, as that one folds the same lines."""
         if not self.source.exists():
-            return True
+            return
         now = now or datetime.now(UTC)
         self.directory.mkdir(parents=True, exist_ok=True)
         try:
@@ -72,8 +72,7 @@ class SiteActivityRollup(HourlyRollup):
                 if catch_up:
                     self.remove_idle_sites(now)
         except BlockingIOError:
-            return False
-        return True
+            return
 
     def fold(self, now: datetime) -> int:
         """Add up to `step_bytes` of new lines to each site's hours, save the read position, and

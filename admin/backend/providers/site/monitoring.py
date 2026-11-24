@@ -79,7 +79,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
             duration = entry.get("duration")
             if not isinstance(duration, (int, float)):
                 continue
-            for key, category in categories.get(entry.get("transaction_type"), {}).items():
+            for key, category in categories.get(entry.get("transaction_type") or "", {}).items():
                 if name := category(entry):
                     points[key].append(TimelinePoint(time_ms, name, duration))
         return points
