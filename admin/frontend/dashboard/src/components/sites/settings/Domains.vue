@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  Alert,
   Badge,
   Button,
   Dropdown,
@@ -246,14 +245,6 @@ onUnmounted(() => {
           </template>
         </article>
       </div>
-
-      <Alert v-if="!nginxEnabled">
-        <template #title>
-          Custom domains need production. Run
-          <span class="font-mono text-xs">pilot setup production</span>
-          on the server.
-        </template>
-      </Alert>
 
       <ErrorMessage v-if="error" :message="error" />
     </template>
