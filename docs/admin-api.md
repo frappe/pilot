@@ -137,6 +137,14 @@ Measuring means a `du` per site directory and one schema-size query, so the rout
 
 `POST /sites/<name>/actions/refresh-storage` queues `refresh-storage-usage` to measure again on demand. One report covers every site on the bench, so the task re-measures all of them and concurrent requests fold into one run.
 
+### Bench Storage
+
+`GET /storage` returns the root disk, the database breakdown and the bench folder breakdown. The database part comes from a few queries on each request; the size of the database data directory comes from the bench report, so no request walks the disk. The bench part is `logs/bench-storage.json` (`pilot.core.bench.storage`), or `null` before the first measure. `bench_task` is the `refresh-bench-storage` task that measures it now, with its status, if any.
+
+`GET /storage?refresh_if_stale=1` also queues that task when the report is missing or older than 10 minutes and no measure runs. The page sends it on every load and polls every 2 seconds while `bench_task` is set, so a measure that fails or never starts is queued again after it ends. `POST /storage/actions/refresh` queues the task on demand, or returns the task that already runs.
+
+The task scans the bench folder once with `DiskScan` (`pilot/internal/disk_scan.py`). It splits the folder into about 256 parts, runs `du -k` on 4 parts at a time, and keeps only the sizes the page shows. It never follows symlinks, and a folder it cannot read counts as empty. The bench total equals `du -sk` of the bench folder. Anything that no labeled part counts is listed under `others`. Four workers suit an IOPS-capped disk such as gp3; more workers only queue at the disk and take IOPS from the database.
+
 ### Backups And Restore
 
 Pilot writes backup runs to `sites/<site>/backups`. Frappe prunes `private/backups` on every backup and every hour, so Pilot keeps its runs out of that directory and its retention policy is the only pruner. `POST /sites/<name>/backups` returns `409` while another task owns the site, such as a restore, rename or drop.

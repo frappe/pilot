@@ -58,8 +58,13 @@ def _set_callback(callbacks: TaskCallbacks, trigger: TaskCallbackTrigger, callba
 
 
 def _callback_decorator(trigger: TaskCallbackTrigger, func):
-    """Record a callback trigger on the method."""
+    """Record a callback trigger on the method; raise ValueError when no callback operation has its name."""
+    from pilot.internal.tasks.callbacks import CallbackOperations
+
+    operation = func.__name__.replace("_", "-")
+    if operation not in CallbackOperations.operations:
+        raise ValueError(f"Unknown callback operation: {operation!r}")
     callbacks = list(getattr(func, "_task_callbacks", ()))
-    callbacks.append((trigger, func.__name__.replace("_", "-")))
+    callbacks.append((trigger, operation))
     func._task_callbacks = tuple(callbacks)
     return func

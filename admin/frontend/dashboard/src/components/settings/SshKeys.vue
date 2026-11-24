@@ -103,7 +103,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div v-if="loading" class="flex justify-center items-center h-40">
+  <div v-if="loading && !keys.length" class="flex justify-center items-center h-40">
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 

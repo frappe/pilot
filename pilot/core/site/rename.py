@@ -21,7 +21,12 @@ class SiteRename:
     """Rename a site without dropping requests."""
 
     def __init__(
-        self, site: "Site", new_name: str, keep_old_hostname: bool = True, make_primary: bool = False
+        self,
+        site: "Site",
+        new_name: str,
+        keep_old_hostname: bool = True,
+        make_primary: bool = False,
+        resource_handoff_from: str | None = None,
     ) -> None:
         self.site = site
         self.bench = site.bench
@@ -32,6 +37,8 @@ class SiteRename:
                 raise BenchError("Site names must stay within the bench's sites directory.")
         self.keep_old_hostname = keep_old_hostname
         self.make_primary = make_primary
+        # The running rename task, which holds the new site's key the relocation task needs.
+        self.resource_handoff_from = resource_handoff_from
         self._original_site_config: str | None = None
         self._old_pilot_auth_token = ""
         self._new_route: RoutePolicy | None = None
@@ -130,6 +137,7 @@ class SiteRename:
             self.bench.site(self.new_name).backups.move_schedule(self.old_name)
         except CronError as error:
             on_progress(f"Could not move the backup schedule to the new name: {error}")
+        self._queue_blob_relocation(on_progress)
         # Release the old route only after nginx has switched.
         if not self.keep_old_hostname:
             self._release_route(self.old_name)
@@ -139,6 +147,23 @@ class SiteRename:
         self._report_reserved_hostname(on_progress)
         self.bench.site_aliases.record(self.old_name)
         self.progress_path.unlink()
+
+    def _queue_blob_relocation(self, on_progress: Callable[[str], None]) -> None:
+        """Move stored files in their own task, outside this rename's timeout and site lock."""
+        from pilot.tasks.relocate_renamed_blobs import RelocateRenamedBlobsTask
+
+        if not self.bench.site(self.new_name).has_s3_storage:
+            return
+        if not self.bench.has_renamed_blob_relocation:
+            on_progress("Stored files stay under the old name: this bench's Frappe cannot move them yet.")
+            return
+        RelocateRenamedBlobsTask.queue(
+            self.bench,
+            site=self.new_name,
+            idempotency_key=f"relocate-renamed-blobs:{self.new_name}",
+            resource_handoff_from=self.resource_handoff_from,
+        )
+        on_progress("Queued a task to move stored files to the new name.")
 
     def validate(self) -> None:
         """Raise when the new name is invalid or taken."""

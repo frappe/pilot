@@ -1,17 +1,27 @@
 <script setup lang="ts">
 import { Button, Select } from 'frappe-ui'
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import PythonConsole from '@/components/console/PythonConsole.vue'
 
-const props = defineProps<{ site: string; sites: string[] }>()
+import { databaseApi } from '@/api/database'
+
+const props = defineProps<{ site: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const consoleSite = ref(props.site)
 const isSmall = ref(false)
 const offset = reactive({ x: 0, y: 0 })
 
-const siteOptions = computed(() => props.sites.map((name) => ({ label: name, value: name })))
+const sites = ref<string[]>([])
+
+const siteOptions = computed(() => sites.value.map((name) => ({ label: name, value: name })))
+
+onMounted(async () => {
+  sites.value = (await databaseApi.sites()).map((site) => site.name)
+
+  if (!consoleSite.value) consoleSite.value = sites.value[0] ?? ''
+})
 
 const grab = (event: PointerEvent) => {
   if (event.button !== 0) return

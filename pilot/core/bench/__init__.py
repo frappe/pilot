@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
     from pilot.core.bench.site_aliases import SiteAliases
+    from pilot.core.bench.storage import BenchStorage
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
     from pilot.core.notification.notifier import Notifier
@@ -169,6 +170,13 @@ class Bench:
         from pilot.core.bench.hostname_aliases import HostnameAliases
 
         return HostnameAliases(self)
+
+    @cached_property
+    def storage(self) -> "BenchStorage":
+        """The bench folder's storage breakdown."""
+        from pilot.core.bench.storage import BenchStorage
+
+        return BenchStorage(self)
 
     @cached_property
     def site_storage(self) -> "SiteStorageCollector":
@@ -456,6 +464,12 @@ class Bench:
     def supports_lite_mode(self) -> bool:
         """Whether this bench's frappe ships the one process lite mode runs."""
         return (self.apps_path / "frappe" / "frappe" / "runner.py").is_file()
+
+    @property
+    def has_renamed_blob_relocation(self) -> bool:
+        """Whether this bench's Frappe can move a renamed site's stored files."""
+        relocate = self.apps_path / "frappe" / "frappe" / "storage" / "relocate.py"
+        return relocate.is_file() and "def relocate_renamed_site_blobs(" in relocate.read_text()
 
     @property
     def has_runner_socket_support(self) -> bool:

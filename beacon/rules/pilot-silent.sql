@@ -1,7 +1,8 @@
 -- title: Pilot stopped sending metrics
 -- description: Pilot or one of its threads stopped. The Sites SLI has no data for this server.
--- severity: Medium
+-- severity: High
 -- resource_type: Virtual Machine
+-- runbook_url: https://github.com/frappe/pilot/blob/develop/beacon/runbooks/pilot-silent.md
 -- interval: 60
 -- pending_for: 300
 -- resolve_after: 120

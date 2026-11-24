@@ -12,6 +12,7 @@ from tests.pilot.commands.test_commands import make_bench
 
 def _runtime(tmp_path: Path, production: bool = True, existing: bool = False) -> BenchRuntime:
     bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
     bench.config.production.enabled = production
     bench.config.mariadb.existing = existing
     return BenchRuntime(bench)

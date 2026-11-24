@@ -9,7 +9,7 @@ import psutil
 from flask import Blueprint, jsonify, request
 
 from admin.backend.api.requests import ApiRequest
-from admin.backend.api.responses import error_response
+from admin.backend.api.responses import accepted_task_response, error_response
 from pilot.config import BenchConfig
 
 stats_bp = Blueprint("stats", __name__)
@@ -206,7 +206,7 @@ def stats():
 
 @stats_bp.get("/storage")
 def storage_breakdown():
-    """Show the storage breakdown."""
+    """Show the storage breakdown. `refresh_if_stale=1` queues a measure of a missing or old bench report."""
     from dataclasses import asdict
 
     from admin.backend.providers.server.storage import StorageProvider
@@ -214,7 +214,22 @@ def storage_breakdown():
     bench_root = ApiRequest.get_bench_root()
     disk = psutil.disk_usage("/")
     try:
-        breakdown = StorageProvider(bench_root).get_breakdown(disk.total, disk.used)
+        breakdown = StorageProvider(bench_root).get_breakdown(
+            disk.total, disk.used, refresh_if_stale=request.args.get("refresh_if_stale") == "1"
+        )
     except Exception:
         return error_response("storage_unavailable", "Could not read storage breakdown.", 500)
     return jsonify(asdict(breakdown))
+
+
+@stats_bp.post("/storage/actions/refresh")
+def refresh_storage_breakdown():
+    """Measure the bench folder again in a task; a measure already running is returned instead."""
+    from admin.backend.providers.server.storage import StorageProvider
+
+    bench_root = ApiRequest.get_bench_root()
+    try:
+        task_id = StorageProvider(bench_root).refresh_bench()
+    except Exception:
+        return error_response("storage_unavailable", "Could not start the storage measure.", 500)
+    return accepted_task_response(bench_root, task_id)

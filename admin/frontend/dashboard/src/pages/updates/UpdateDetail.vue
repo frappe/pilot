@@ -114,7 +114,7 @@ const facts = computed(() => {
       value: duration.value || '-',
       note: '',
     },
-    { label: 'Sites', icon: 'lucide-globe', value: String(sites.length), note: '' },
+    { label: 'Sites', icon: 'lucide-pilot-site', value: String(sites.length), note: '' },
     {
       label: 'Backups',
       icon: 'lucide-database-backup',
@@ -307,7 +307,6 @@ onUnmounted(() => clearTimeout(timer))
         <FloatingConsole
           v-if="isConsoleOpen"
           :site="op.failed_site || op.sites[0]?.name || ''"
-          :sites="op.sites.map((site) => site.name)"
           @close="isConsoleOpen = false"
         />
 

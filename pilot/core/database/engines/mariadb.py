@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -475,12 +476,14 @@ class MariaDB(Database):
         return str(self.get_scalar("SELECT @@datadir"))
 
     def get_schema_sizes(self) -> dict[str, int]:
-        """The size of each schema."""
+        """The disk space each schema's InnoDB tablespace files take. InnoDB keeps
+        these sizes itself, so this needs no read access to the 0700 data directory
+        and does not open every table as information_schema.TABLES does."""
         result = self.execute(
-            "SELECT table_schema, COALESCE(SUM(data_length + index_length + data_free), 0) "
-            "FROM information_schema.TABLES GROUP BY table_schema"
+            "SELECT SUBSTRING_INDEX(name, '/', 1), SUM(allocated_size) "
+            "FROM information_schema.INNODB_SYS_TABLESPACES WHERE name LIKE '%/%' GROUP BY 1"
         )
-        return {row[0]: int(row[1]) for row in result.rows if row[0] is not None}
+        return {decode_schema_directory(row[0]): int(row[1] or 0) for row in result.rows}
 
     def get_storage_components(self) -> list[StorageComponent]:
         """The disk use of the binary logs, logs and other server files."""
@@ -520,6 +523,12 @@ class MariaDB(Database):
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")
         return int(result.rows[0][1])
+
+
+def decode_schema_directory(name: str) -> str:
+    """MariaDB writes characters outside [A-Za-z0-9_] in a schema's file names
+    as @ and four hex digits, so `my-site` lives in `my@002dsite`."""
+    return re.sub(r"@([0-9a-f]{4})", lambda match: chr(int(match[1], 16)), name)
 
 
 def _utc_iso(epoch: SupportsFloat | None) -> str | None:

@@ -132,7 +132,7 @@ onUnmounted(() => {
 <template>
   <div v-if="nginxEnabled">
     <h2 class="mb-3 text-base-semibold text-ink-gray-8">Domains</h2>
-    <LoadingText v-if="loading" class="justify-center py-8" />
+    <LoadingText v-if="loading && !domains.length" class="justify-center py-8" />
 
     <template v-else>
       <div
