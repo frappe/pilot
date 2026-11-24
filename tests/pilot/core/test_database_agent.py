@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +11,9 @@ from pilot.config import MariaDBConfig
 from pilot.config.common import CommonConfig
 from pilot.config.database_agent import DatabaseAgentConfig
 from pilot.core.database.agent.app import create_app
-from pilot.core.database.agent.client import API_VERSION
+from pilot.core.database.agent.client import API_VERSION, DatabaseAgentClient, DatabaseAgentRefusedError
+from pilot.core.database.agent.update import DatabaseServerUpdate
+from pilot.exceptions import CommandError, DatabaseError
 from pilot.managers.database.dedicated_mariadb import DedicatedMariaDBManager
 
 APP_VM = "fdaa:1:2::7"
@@ -70,6 +72,7 @@ def test_health_reports_the_server_and_the_callers_address(manager) -> None:
         patch.object(DedicatedMariaDBManager, "is_running", return_value=True),
         patch.object(DedicatedMariaDBManager, "get_server_version", return_value=(11, 8)),
         patch.object(DedicatedMariaDBManager, "_total_memory_mb", return_value=8192),
+        patch("pilot.core.database.agent.app.get_installed_version", return_value="v0.1.0"),
     ):
         health = _client().get("/health").json()
 
@@ -81,6 +84,7 @@ def test_health_reports_the_server_and_the_callers_address(manager) -> None:
         "version": [11, 8],
         "memory_mb": 8192,
         "client_address": APP_VM,
+        "pilot_version": "v0.1.0",
     }
 
 
@@ -175,3 +179,103 @@ def test_a_dedicated_config_gets_the_dedicated_manager_at_boot_too() -> None:
 
     # The boot sizing unit builds its manager this way, so it keeps the whole-VM sizing and the network listen.
     assert isinstance(MariaDBManager.for_config(MariaDBConfig(dedicated=True)), DedicatedMariaDBManager)
+
+
+@pytest.fixture
+def pilot_update(root: Path):
+    """The update's launch and unit state, recorded instead of run."""
+    with (
+        patch("pilot.core.database.agent.update.run_command") as launch,
+        patch.object(
+            DatabaseServerUpdate, "is_unit_active", new_callable=PropertyMock, return_value=True
+        ) as active,
+        patch("pilot.core.database.agent.update.get_installed_version", return_value="dev 1111111"),
+    ):
+        yield launch, active
+
+
+def test_a_pilot_update_runs_outside_the_agent_and_a_second_start_joins_it(manager, pilot_update) -> None:
+    launch, active = pilot_update
+    client = _client()
+
+    first = client.post("/pilot/update").json()
+    second = client.post("/pilot/update").json()
+
+    assert first == second == client.get("/pilot/update").json()
+    assert (first["status"], first["version_before"]) == ("running", "dev 1111111")
+    launch.assert_called_once()
+    command = launch.call_args.args[0]
+    assert command[:3] == ["systemd-run", "--user", "--unit=pilot-database-update.service"]
+    assert command[-3:] == ["-P", "-m", "pilot.core.database.agent.update"]
+
+    # A run whose unit is gone, for example after a reboot, has failed and does not block a new one.
+    active.return_value = False
+    assert "stopped before it finished" in client.get("/pilot/update").json()["error"]
+    launch.side_effect = CommandError("systemd-run failed")
+    refused = client.post("/pilot/update")
+    assert refused.status_code == 422
+    assert client.get("/pilot/update").json()["error"] == "systemd-run failed"
+
+
+def test_the_update_records_its_result_for_the_app_vm(manager, pilot_update) -> None:
+    update = DatabaseServerUpdate()
+    update.start()
+    with patch("pilot.core.database.agent.update.perform_upgrade"):
+        update.run()
+    assert update.get_state()["status"] == "succeeded"
+
+    update.start()
+    with (
+        patch(
+            "pilot.core.database.agent.update.perform_upgrade", side_effect=CommandError("git pull failed.")
+        ),
+        pytest.raises(CommandError),
+    ):
+        update.run()
+    state = _client().get("/pilot/update").json()
+    assert (state["status"], state["version_after"]) == ("failed", "dev 1111111")
+    assert state["error"] == f"git pull failed. See {update.log_path} on the database VM."
+
+
+def _answers(*answers):
+    """An agent client whose requests return or raise these answers in order."""
+    agent = DatabaseAgentClient("fdaa:1:2::9", 7781, TOKEN)
+    agent.pilot_update_poll_interval = 0
+    return agent, patch.object(DatabaseAgentClient, "request", side_effect=answers)
+
+
+def test_the_app_vm_waits_for_the_update_through_the_agent_restart() -> None:
+    running = {"status": "running", "error": ""}
+    done = {"status": "succeeded", "error": "", "version_before": "dev 1", "version_after": "dev 2"}
+    agent, requests = _answers(running, DatabaseError("Pilot cannot reach the database agent"), done)
+    progress = []
+
+    with requests as request:
+        assert agent.update_pilot(on_progress=progress.append) == done
+
+    assert [call.args for call in request.call_args_list] == [
+        ("POST", "/pilot/update"),
+        ("GET", "/pilot/update"),
+        ("GET", "/pilot/update"),
+    ]
+    assert progress[-1] == "Pilot on fdaa:1:2::9 updated: dev 1 -> dev 2."
+
+
+@pytest.mark.parametrize(
+    ("answers", "timeout", "message"),
+    [
+        (
+            ({"status": "running"}, {"status": "failed", "error": "git pull failed."}),
+            60,
+            "update: git pull failed.",
+        ),
+        ((DatabaseAgentRefusedError("refused: Not Found", 404),), 60, "too old to update itself"),
+        (({"status": "running"},), 0, "did not finish updating in 0 minutes"),
+    ],
+)
+def test_the_app_vm_fails_with_the_reason_when_the_update_does_not_succeed(answers, timeout, message) -> None:
+    agent, requests = _answers(*answers)
+    agent.pilot_update_timeout = timeout
+
+    with requests, pytest.raises(DatabaseError, match=message):
+        agent.update_pilot()

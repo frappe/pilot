@@ -100,3 +100,9 @@ class DatabaseServerSetup:
         run_command(systemctl("daemon-reload"), env=env)
         run_command(systemctl("enable", self.unit_name), env=env)
         run_command(systemctl("restart", self.unit_name), env=env)
+
+
+# An older Pilot runs this module after it updates, so keep this command line stable.
+if __name__ == "__main__":
+    agent = CommonConfig.read(Server().benches_dir).database_agent
+    DatabaseServerSetup(agent.client_address, agent_port=agent.port).install_agent_unit()

@@ -75,3 +75,24 @@ def test_a_vm_with_benches_is_refused(root: Path, steps) -> None:
     ):
         DatabaseServerSetup("fdaa:1:2::7").run()
     assert steps.mock_calls == []
+
+
+# runpy warns that the package already imported this module, as the test needs.
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_an_update_reinstalls_and_restarts_the_agent_from_the_saved_config(root: Path, steps) -> None:
+    import runpy
+
+    DatabaseServerSetup("fdaa:1:2::7", agent_port=7790).run()
+    unit = root / "units" / DatabaseServerSetup.unit_name
+    unit.unlink()
+
+    with (
+        patch("pilot.internal.command.run_command", steps.rerun),
+        patch("pilot.managers.systemd_user.user_unit_dir", return_value=root / "units"),
+    ):
+        # The updater runs this module in a new process, which holds the new code.
+        runpy.run_module("pilot.core.database.agent.setup", run_name="__main__")
+
+    assert unit.is_file()
+    assert steps.rerun.call_args.args[0][-2:] == ["restart", DatabaseServerSetup.unit_name]
+    steps.provision.assert_called_once()

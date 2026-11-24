@@ -11,8 +11,10 @@ from pydantic import BaseModel
 
 from pilot.config.common import CommonConfig
 from pilot.core.database.agent.client import API_VERSION
+from pilot.core.database.agent.update import DatabaseServerUpdate
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.dedicated_mariadb import DedicatedMariaDBManager
+from pilot.updater import get_installed_version
 
 
 class ManagedConfig(BaseModel):
@@ -63,6 +65,7 @@ def health(manager: Manager, client_address: ClientAddress) -> dict:
         "version": manager.get_server_version() if is_installed else None,
         "memory_mb": manager.host_memory_mb,
         "client_address": client_address,
+        "pilot_version": get_installed_version(),
     }
 
 
@@ -100,6 +103,16 @@ def disk(manager: Manager) -> dict:
 @router.get("/metrics")
 def metrics(manager: Manager) -> dict:
     return manager.get_host_metrics()
+
+
+@router.post("/pilot/update")
+def start_pilot_update() -> dict:
+    return DatabaseServerUpdate().start()
+
+
+@router.get("/pilot/update")
+def read_pilot_update() -> dict:
+    return DatabaseServerUpdate().get_state()
 
 
 @router.post("/accounts/admin")

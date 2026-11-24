@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
 from pilot import updater
+from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
 
 
@@ -14,6 +15,7 @@ from pilot.core.server.monitoring_config import MonitorConfigurator
 def _keep_the_host_monitor_running(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     restarts: list[str] = []
     monkeypatch.setattr(MonitorConfigurator, "restart", lambda self: restarts.append("restart monitor"))
+    monkeypatch.setattr(Server, "is_database_server", False)
     return restarts
 
 
@@ -109,7 +111,9 @@ def test_perform_upgrade_runs_patches_in_order_then_restarts_the_monitor(
     calls = _keep_the_host_monitor_running
     with (
         patch.object(updater.pilot, "is_dev_build", True),
-        patch.object(updater, "_upgrade_dev", side_effect=lambda _on_progress: calls.append("upgrade")),
+        patch.object(
+            updater, "_upgrade_dev", side_effect=lambda _on_progress, has_admin: calls.append("upgrade")
+        ),
         patch(
             "pilot.internal.patch_runner.run_patches",
             side_effect=lambda phase, on_progress=None: calls.append(phase),
@@ -118,6 +122,38 @@ def test_perform_upgrade_runs_patches_in_order_then_restarts_the_monitor(
         updater.perform_upgrade()
 
     assert calls == ["pre_update", "upgrade", "post_update", "restart monitor"]
+
+
+def test_a_database_server_upgrade_builds_no_admin_and_restarts_the_agent_with_new_code(
+    _keep_the_host_monitor_running: list[str],
+) -> None:
+    calls = _keep_the_host_monitor_running
+    with (
+        patch.object(Server, "is_database_server", new_callable=PropertyMock, return_value=True),
+        patch.object(updater.pilot, "is_dev_build", True),
+        patch("pilot.internal.command.run_command", side_effect=lambda argv, **_: calls.append(argv[-1])),
+        patch(
+            "pilot.managers.environment.AdminEnvManager.install_python_deps",
+            lambda self: calls.append("deps"),
+        ),
+        patch("admin.backend.frontend.ensure_admin_frontend") as build_frontend,
+        patch(
+            "pilot.internal.patch_runner.run_patches",
+            side_effect=lambda phase, on_progress: calls.append(phase),
+        ),
+        patch.object(updater.subprocess, "run", side_effect=lambda argv, **_: calls.append(argv[1:])),
+    ):
+        updater.perform_upgrade()
+
+    build_frontend.assert_not_called()
+    assert calls == [
+        "pre_update",
+        "pull",
+        "deps",
+        "post_update",
+        "restart monitor",
+        ["-P", "-m", "pilot.core.database.agent.setup"],
+    ]
 
 
 def test_perform_upgrade_skips_post_update_patches_when_upgrade_fails() -> None:

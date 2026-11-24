@@ -143,7 +143,7 @@ These commands control the task worker, not individual Frappe workers.
 
 - `pilot admin build`: rebuild Admin frontend assets from source.
 - `pilot admin api-reference`: write the [Admin API reference](admin-api-reference.md) from the routes.
-- `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service.
+- `pilot admin upgrade`: update Pilot to the latest version, run pending upgrade patches (pre_update before, post_update after), and restart the admin service. On a host whose MariaDB is remote it updates Pilot on the database VM first and stops when that fails. On the database VM it builds no Admin frontend and restarts the database agent. See [Remote MariaDB](configuration.md#remote-mariadb).
 - `pilot admin auto-update on|off|status`: turn daily automatic Pilot updates on or off for the host, or show the setting (see [Configuration](configuration.md#automatic-updates)).
 - `pilot admin issue-site-token`: issue a scoped site-to-bench API token.
 - `pilot admin revoke-totp --device-name NAME`: revoke a device's TOTP credential, for a lost authenticator.

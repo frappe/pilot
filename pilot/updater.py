@@ -13,6 +13,7 @@ from xml.etree import ElementTree
 import pilot
 from pilot.exceptions import BenchError
 from pilot.internal.archive import TarArchive
+from pilot.internal.git import GitRepo
 
 RELEASE_REPO = "frappe/pilot"
 _TARBALL_ASSET = "pilot.tar.gz"
@@ -46,20 +47,35 @@ def update_available() -> tuple[bool, str | None]:
     return release["tag"] != pilot.__version__, release["tag"]
 
 
+def get_installed_version() -> str:
+    """The Pilot version on disk: the release tag, or `dev` and the commit of a dev checkout."""
+    from pilot.core.server import Server
+
+    root = Server().root
+    if (version_file := root / "VERSION").exists():
+        return version_file.read_text().strip()
+    return f"dev {GitRepo(root).short_head}".strip()
+
+
 def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
-    """Update the Pilot code in place and restart the monitor. Restarting the admin service is
-    the caller's job."""
+    """Update the Pilot code in place and restart the monitor, and the database agent of a database
+    server. Restarting the admin service is the caller's job."""
+    from pilot.core.server import Server
     from pilot.core.server.monitoring_config import MonitorConfigurator
     from pilot.internal.patch_runner import run_patches
 
+    is_database_server = Server().is_database_server
     run_patches("pre_update", on_progress=on_progress)
     if pilot.is_dev_build:
-        _upgrade_dev(on_progress)
+        _upgrade_dev(on_progress, has_admin=not is_database_server)
     else:
         _upgrade_release(on_progress)
     run_patches("post_update", on_progress=on_progress)
     # The monitor runs for the life of the host, so it keeps the old modules until restarted.
     MonitorConfigurator().restart()
+    if is_database_server:
+        on_progress("Restarting the database agent...")
+        restart_database_agent_with_new_code()
 
 
 def restart_admin_with_new_code(bench_path: Path) -> None:
@@ -69,6 +85,15 @@ def restart_admin_with_new_code(bench_path: Path) -> None:
     env = {**os.environ, "PYTHONPATH": str(Server().root)}
     # -P: PYTHONPATH finds Pilot, not the caller's working directory, which may be a bench's sites/.
     subprocess.run([sys.executable, "-P", "-m", "pilot.updater", str(bench_path)], check=True, env=env)
+
+
+def restart_database_agent_with_new_code() -> None:
+    """Rewrite and restart the database agent's unit from a new process, which holds the new code.
+    MariaDB keeps running."""
+    from pilot.core.server import Server
+
+    env = {**os.environ, "PYTHONPATH": str(Server().root)}
+    subprocess.run([sys.executable, "-P", "-m", "pilot.core.database.agent.setup"], check=True, env=env)
 
 
 def restart_admin(bench_path: Path) -> None:
@@ -85,8 +110,8 @@ def restart_admin(bench_path: Path) -> None:
     manager.restart_admin()
 
 
-def _upgrade_dev(on_progress: Progress) -> None:
-    """Upgrade a dev checkout."""
+def _upgrade_dev(on_progress: Progress, has_admin: bool) -> None:
+    """Upgrade a dev checkout. A host without an Admin, such as a database server, skips its frontend."""
     from admin.backend.frontend import ensure_admin_frontend
     from pilot.core.server import Server
     from pilot.internal.command import run_command
@@ -97,8 +122,9 @@ def _upgrade_dev(on_progress: Progress) -> None:
     run_command(["git", "-C", str(root), "pull"], stream_output=True)
     on_progress("Installing admin Python dependencies...")
     AdminEnvManager(root).install_python_deps()
-    on_progress("Rebuilding admin frontend...")
-    ensure_admin_frontend(on_progress)
+    if has_admin:
+        on_progress("Rebuilding admin frontend...")
+        ensure_admin_frontend(on_progress)
 
 
 def _upgrade_release(on_progress: Progress) -> None:
