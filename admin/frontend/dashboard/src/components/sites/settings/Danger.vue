@@ -109,12 +109,10 @@ const deletesData = ['reset', 'drop']
 const dangerGroups = [
   {
     title: 'Advanced',
-    theme: 'gray' as const,
     actions: DangerActions.filter((action) => !deletesData.includes(action.key)),
   },
   {
     title: 'Deletes data',
-    theme: 'red' as const,
     actions: DangerActions.filter((action) => deletesData.includes(action.key)),
   },
 ]
@@ -205,10 +203,7 @@ const confirmDrop = async () => {
         </p>
       </div>
 
-      <Button
-        :theme="group.theme"
-        :variant="group.theme === 'red' ? 'subtle' : undefined"
-        class="ml-4 shrink-0"
+      <Button theme="red" variant="subtle" class="ml-4 shrink-0"
         @click="d.action"
       >
         {{ d.buttonLabel || d.label }}
