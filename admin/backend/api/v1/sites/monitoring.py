@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import TypedDict
 
 from flask import jsonify, request
 
 from admin.backend.api.requests import ApiRequest
 from admin.backend.api.v1.sites import sites_bp
-from admin.backend.api.v1.sites.shared import internal_error, site_name, site_not_found
+from admin.backend.api.v1.sites.shared import database_unreachable, internal_error, site_name, site_not_found
 from admin.backend.middleware import require_scope
 from admin.backend.providers.site.monitoring import SiteMonitoringProvider
+from pilot.core.bench import Bench
+from pilot.exceptions import DatabaseConnectError
 from pilot.internal.site_paths import site_exists
 
 
@@ -49,3 +52,49 @@ def get_monitoring(name: str):
         return jsonify(SiteMonitoringProvider(bench_root, name, window).get_analytics())
     except Exception:
         return internal_error("Could not read site monitoring data.")
+
+
+@sites_bp.get("/<name>/failed-jobs")
+@require_scope(site_name)
+def get_failed_jobs(name: str):
+    """The site's scheduler jobs that failed in the last 24 hours, grouped by job."""
+    bench_root = ApiRequest.get_bench_root()
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        jobs = Bench(bench_root).site(name).failed_jobs.get()
+    except DatabaseConnectError:
+        return database_unreachable()
+    except Exception:
+        return internal_error("Could not read failed jobs from the site.")
+    return jsonify([asdict(job) for job in jobs])
+
+
+@sites_bp.get("/<name>/activity")
+@require_scope(site_name)
+def get_site_activity(name: str):
+    """The site's requests, errors and jobs by hour for the last 24 hours."""
+    bench_root = ApiRequest.get_bench_root()
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        activity = Bench(bench_root).site(name).activity
+    except Exception:
+        return internal_error("Could not read the site activity.")
+    return jsonify(asdict(activity))
+
+
+@sites_bp.get("/<name>/history")
+@require_scope(site_name)
+def get_site_history(name: str):
+    """When the site was created, last updated and each app installed."""
+    bench_root = ApiRequest.get_bench_root()
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        history = Bench(bench_root).site(name).history.get()
+    except DatabaseConnectError:
+        return database_unreachable()
+    except Exception:
+        return internal_error("Could not read the site history.")
+    return jsonify(asdict(history))

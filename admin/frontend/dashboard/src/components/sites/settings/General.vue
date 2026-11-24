@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { ErrorMessage, Switch } from 'frappe-ui'
 import { ref } from 'vue'
-import { ErrorMessage } from 'frappe-ui'
 
-import SettingsSwitch from '@/components/settings/SettingsSwitch.vue'
+import SettingsCard from '@/components/sites/settings/SettingsCard.vue'
 
-import { useSite } from '@/composables/sites/useSite'
 import { sitesApi } from '@/api/sites'
+import { useSite } from '@/composables/sites/useSite'
 import { errorMessage } from '@/utils/error'
 
 interface Props {
@@ -68,18 +68,25 @@ const toggle = async (s: GeneralSetting, value: boolean) => {
 </script>
 
 <template>
-  <h2 class="mb-3 text-base-semibold text-ink-gray-8">General</h2>
+  <SettingsCard title="General">
+    <div
+      v-for="s in GeneralSettings"
+      :key="s.key"
+      class="flex justify-between items-center gap-x-2.5 py-4"
+    >
+      <div class="flex flex-col gap-1 min-w-0">
+        <p class="font-medium text-ink-gray-8">{{ s.label }}</p>
+        <p class="text-ink-gray-6 text-p-sm">{{ s.description }}</p>
+      </div>
 
-  <SettingsSwitch
-    v-for="s in GeneralSettings"
-    :key="s.key"
-    class="py-4 border-b last:border-b-0 border-outline-alpha-gray-1"
-    :label="s.label"
-    :description="s.description"
-    :model-value="getValue(s)"
-    :disabled="savingKey === s.key"
-    @update:model-value="(v: boolean) => toggle(s, v)"
-  />
+      <Switch
+        class="ml-4 shrink-0"
+        :model-value="getValue(s)"
+        :disabled="savingKey === s.key"
+        @update:model-value="(v: boolean) => toggle(s, v)"
+      />
+    </div>
+  </SettingsCard>
 
   <ErrorMessage v-if="error" :message="error" class="mt-4" />
 </template>

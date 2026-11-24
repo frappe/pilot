@@ -257,13 +257,14 @@ def test_postgres_get_schema_uses_one_connection() -> None:
 def _canned_execute(responses: dict, calls: list | None = None):
     """Fake Database.execute keyed on a substring of the query."""
 
-    def execute(self, query: str, read_only: bool = True) -> "QueryResult":
+    def execute(self, query: str, read_only: bool = True, *, params=()) -> "QueryResult":
         from pilot.core.database import QueryResult
 
         if calls is not None:
             calls.append((query, read_only))
+        text = " ".join([query, *map(str, params)])
         for pattern, (columns, rows) in responses.items():
-            if pattern in query:
+            if pattern in text:
                 return QueryResult(columns=columns, rows=rows, duration_ms=0)
         raise AssertionError(f"Unexpected query: {query}")
 
@@ -754,10 +755,11 @@ def test_postgres_site_lock_wait_includes_schema_in_relation_name() -> None:
     lock = [1, "relation", "RowExclusiveLock", 16385, "active", None, "UPDATE", "site_one"]
     asked: list[str] = []
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params=()) -> QueryResult:
         if "blocked.granted" in query:
             return QueryResult(columns=[], rows=[lock], duration_ms=0)
         assert "JOIN pg_namespace" in query
+        assert params == [[16385]]
         asked.append(self._database)
         return QueryResult(columns=[], rows=[[16385, "archive", "tabItem"]], duration_ms=0)
 
@@ -1058,3 +1060,12 @@ def test_mariadb_skips_tls_only_on_loopback(host: str, socket: str | None, disab
         engine._connect()
 
     assert connect.call_args.kwargs["ssl_disabled"] is disabled
+
+
+def test_mariadb_reports_a_refused_connection_as_a_connect_error() -> None:
+    from pilot.exceptions import DatabaseConnectError
+
+    db = MariaDB(host="127.0.0.1", port=1, user="u", password="p", database="d", connect_timeout=1)
+
+    with pytest.raises(DatabaseConnectError):
+        db.execute("SELECT 1")

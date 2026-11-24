@@ -21,7 +21,8 @@ from pilot.core.server.monitoring_datum import SEND_INTERVAL, TelemetryShipper
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
-from pilot.core.site.hourly_rollup import RequestRollup, UptimeRollup
+from pilot.core.site.activity_rollup import SiteActivityRollup
+from pilot.core.site.hourly_rollup import UptimeRollup
 from pilot.internal.jsonl_log import utc_now
 
 if typing.TYPE_CHECKING:
@@ -474,7 +475,7 @@ def update_site_rollups() -> None:
 
     for bench_path, config in Server().benches.iter_configs():
         bench = Bench(config, bench_path)
-        for rollup in (UptimeRollup(bench), RequestRollup(bench)):
+        for rollup in (UptimeRollup(bench), SiteActivityRollup(bench)):
             try:
                 rollup.update()
             except Exception:

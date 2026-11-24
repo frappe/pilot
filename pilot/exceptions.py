@@ -124,6 +124,10 @@ class DatabaseError(BenchError):
     """A database server operation failed (connection, provisioning, credentials)."""
 
 
+class DatabaseConnectError(DatabaseError):
+    """The database server could not be reached or refused the login."""
+
+
 class TwoFactorError(BenchError):
     """Raised when an enrollment request cannot be honoured."""
 

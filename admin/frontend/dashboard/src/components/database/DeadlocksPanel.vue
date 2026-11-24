@@ -58,7 +58,9 @@ const rows = computed(() =>
       deadlock,
       time: localTime(deadlock.time),
       site: props.siteByDatabase[first?.database] || first?.database || '—',
-      table: [...new Set(deadlock.transactions.map((item) => item.table).filter(Boolean))].join(', ') || '—',
+      table:
+        [...new Set(deadlock.transactions.map((item) => item.table).filter(Boolean))].join(', ') ||
+        '—',
       victim: victimOf(deadlock)?.query || '—',
       winner: winnerOf(deadlock)?.query || '—',
     }
@@ -69,12 +71,14 @@ const emptyState = computed(() => {
   if (report.value && !report.value.log_path)
     return {
       title: 'No error log file',
-      description: 'MariaDB writes its errors to the journal. Restart the database so they go to a file Pilot can read.',
+      description:
+        'MariaDB writes its errors to the journal. Restart the database so they go to a file Pilot can read.',
     }
   if (report.value && !report.value.print_all_deadlocks)
     return {
       title: 'Deadlock logging is off',
-      description: 'Set innodb_print_all_deadlocks to ON so InnoDB writes each deadlock to the error log.',
+      description:
+        'Set innodb_print_all_deadlocks to ON so InnoDB writes each deadlock to the error log.',
     }
   if (since.value || until.value)
     return { title: 'No deadlocks', description: 'None in this time range' }
@@ -118,14 +122,19 @@ watch(
         placeholder="From"
         clearable
         @update:modelValue="load"
-      />
+      >
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-calendar" /></template>
+      </DateTimePicker>
+
       <DateTimePicker
         v-model="until"
         class="w-44"
         placeholder="To"
         clearable
         @update:modelValue="load"
-      />
+      >
+        <template #prefix><span class="size-4 text-ink-gray-5 lucide-calendar" /></template>
+      </DateTimePicker>
     </template>
 
     <ErrorMessage v-if="error" :message="error" />
@@ -136,6 +145,7 @@ watch(
           {{ row.victim }}
         </button>
       </template>
+
       <template #winner="{ row }">
         <button type="button" class="max-w-full text-left truncate" @click="opened = row.deadlock">
           {{ row.winner }}
@@ -160,19 +170,24 @@ watch(
     @update:model-value="opened = null"
   >
     <div class="flex flex-col gap-4">
-      <div v-for="item in opened?.transactions ?? []" :key="item.number" class="flex flex-col gap-2">
+      <div
+        v-for="item in opened?.transactions ?? []"
+        :key="item.number"
+        class="flex flex-col gap-2"
+      >
         <div class="flex items-center gap-2 text-ink-gray-8 text-base">
           <span class="font-medium">{{ transactionLabel(item) }}</span>
           <Badge v-if="item.victim" label="Rolled back" theme="red" size="sm" />
         </div>
+
         <p class="text-ink-gray-5 text-sm">
           Waited for {{ item.lock_mode || 'a lock' }} on {{ item.table || '—' }}
           <template v-if="item.index">({{ item.index }})</template>
         </p>
+
         <pre
           class="bg-surface-gray-2 p-3 border rounded-6 border-outline-gray-1 text-ink-gray-7 text-base whitespace-pre-wrap"
-          >{{ item.query || '—' }}</pre
-        >
+        >{{ item.query || '—' }}</pre>
       </div>
     </div>
   </Dialog>

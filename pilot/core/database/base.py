@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -168,9 +169,12 @@ class PerformanceSection:
 
 
 class Database(ABC):
+    placeholder = "%s"
+
     @abstractmethod
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
-        """Run the query and return its result."""
+    def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
+        """Run the query and return its result. Values go in `params`, written as `placeholder`
+        in the query, so the driver escapes them; never format a value into the query text."""
 
     def quote_identifier(self, name: str) -> str:
         """ANSI double quoting, which PostgreSQL and SQLite both accept.

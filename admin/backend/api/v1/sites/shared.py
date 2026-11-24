@@ -39,6 +39,11 @@ def text_fields(data: dict, *names: str) -> dict[str, str] | None:
     return fields
 
 
+def database_unreachable():
+    """A 503 response for a site database that does not answer."""
+    return error_response("database_unreachable", "Cannot connect to the site database.", 503)
+
+
 def internal_error(message: str):
     """A 500 response with the message."""
     return error_response("internal_error", message, 500)
