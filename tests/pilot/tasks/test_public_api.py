@@ -89,6 +89,21 @@ def test_task_class_queue_rejects_a_missing_argument(tmp_path) -> None:
         NewSiteTask.queue(make_bench(tmp_path), admin_password="secret")
 
 
+def test_task_class_queue_rejects_an_unknown_argument(tmp_path) -> None:
+    from pilot.tasks.new_site import NewSiteTask
+
+    with pytest.raises(ValueError, match="Unknown args for NewSiteTask: stray"):
+        NewSiteTask.queue(make_bench(tmp_path), name="s.localhost", admin_password="secret", stray=1)
+
+
+def test_task_class_is_found_by_its_command() -> None:
+    from pilot.tasks.new_site import NewSiteTask
+
+    assert tasks.Task.get_class("new-site") is NewSiteTask
+    with pytest.raises(ValueError, match="Unknown command"):
+        tasks.Task.get_class("hack-the-system")
+
+
 def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
     runner = tasks.TaskRunner(tmp_path)
 
