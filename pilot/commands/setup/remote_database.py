@@ -1,35 +1,47 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
 from pilot.commands import Arg, Command
+from pilot.exceptions import BenchError
 
 
 @dataclass(kw_only=True)
 class SetupRemoteDatabaseCommand(Command):
-    """Move this host's benches to a MariaDB on another host."""
+    """Move this host's benches to a MariaDB on another VM."""
 
     name: ClassVar[str] = "remote-database"
-    help: ClassVar[str] = "Manage a MariaDB on another host over SSH and remove the local one."
+    help: ClassVar[str] = (
+        "Manage the MariaDB on a database VM through its database agent and remove the local one. "
+        "Reads the agent's token from the terminal or from standard input."
+    )
     group: ClassVar[str] = "setup"
 
-    host: Annotated[str, Arg(help="Address of the database host, e.g. its private IPv6 address.")]
-    ssh_user: Annotated[str, Arg(help="User that logs in to the database host with passwordless sudo.")]
-    ssh_key: Annotated[str, Arg(help="Private key for that login.")]
-    memory_mb: Annotated[int, Arg(help="Memory of the database host in MiB, from its VM spec.")]
+    host: Annotated[str, Arg(help="Address of the database VM, e.g. its private IPv6 address.")]
     port: Annotated[int, Arg(help="Port the remote MariaDB listens on.")] = 3306
+    agent_port: Annotated[int, Arg(help="Port the database agent listens on.")] = 7781
     admin_user: Annotated[str, Arg(help="Admin account Pilot creates on the remote server.")] = "pilot"
 
     def run(self) -> None:
         """Set up the remote database server."""
         self.bench.setup_remote_database(
             host=self.host,
-            ssh_user=self.ssh_user,
-            ssh_key_path=self.ssh_key,
-            memory_mb=self.memory_mb,
+            agent_token=self.read_agent_token(),
             port=self.port,
+            agent_port=self.agent_port,
             admin_user=self.admin_user,
             on_progress=self.report,
         )
         self.report(f"This host now uses the MariaDB server on {self.host}.")
+
+    def read_agent_token(self) -> str:
+        """The token `pilot setup database-server` printed. It stays off the command line, where every
+        process on the host can read it."""
+        import getpass
+
+        token = getpass.getpass("Database agent token: ") if sys.stdin.isatty() else sys.stdin.readline()
+        if not token.strip():
+            raise BenchError("Give the database agent's token from `pilot setup database-server`.")
+        return token.strip()

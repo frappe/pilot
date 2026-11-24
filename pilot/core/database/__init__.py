@@ -76,12 +76,10 @@ def make_database(config: "BenchConfig") -> Database:
         socket=mariadb.socket_path or None,
     )
     if mariadb.remote:
+        from pilot.core.database.agent.client import DatabaseAgentClient
         from pilot.core.database.engines.remote_mariadb import RemoteMariaDB
-        from pilot.managers.ssh_host import SSHHost
 
-        return RemoteMariaDB(
-            **settings, ssh_host=SSHHost(mariadb.host, mariadb.ssh_user, mariadb.ssh_key_path)
-        )
+        return RemoteMariaDB(**settings, agent=DatabaseAgentClient.for_config(mariadb))
     return MariaDB(**settings)
 
 

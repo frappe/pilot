@@ -3,7 +3,6 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from dataclasses import replace
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import MariaDBConfig
@@ -24,18 +23,16 @@ class RemoteDatabaseSetup:
         self,
         bench: Bench,
         host: str,
-        ssh_user: str,
-        ssh_key_path: str,
-        memory_mb: int,
+        agent_token: str,
         port: int = 3306,
+        agent_port: int = 7781,
         admin_user: str = "pilot",
     ) -> None:
         self.bench = bench
         self.host = host.strip()
-        self.ssh_user = ssh_user.strip()
-        self.ssh_key_path = str(Path(ssh_key_path).expanduser())
-        self.memory_mb = memory_mb
+        self.agent_token = agent_token.strip()
         self.port = port
+        self.agent_port = agent_port
         self.admin_user = admin_user.strip()
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
@@ -67,9 +64,8 @@ class RemoteDatabaseSetup:
             admin_user=self.admin_user,
             root_password=secrets.token_urlsafe(24),
             remote=True,
-            ssh_user=self.ssh_user,
-            ssh_key_path=self.ssh_key_path,
-            memory_mb=self.memory_mb,
+            agent_port=self.agent_port,
+            agent_token=self.agent_token,
         )
 
     def get_benches(self) -> list[Bench]:
@@ -80,7 +76,7 @@ class RemoteDatabaseSetup:
         return [self.bench, *others]
 
     def check(self, remote: MariaDBConfig, benches: list[Bench]) -> None:
-        """Refuse before any change: a wrong engine, an incomplete server, a missing key or sites to lose."""
+        """Refuse before any change: a wrong engine, an incomplete server or sites to lose."""
         if self.bench.config.db_type != "mariadb":
             raise BenchError("A remote database server is supported only for MariaDB benches.")
         if self.bench.config.mariadb.existing:
@@ -90,8 +86,6 @@ class RemoteDatabaseSetup:
                 f"This host already uses the MariaDB server on {self.bench.config.mariadb.host}."
             )
         remote.validate()
-        if not Path(self.ssh_key_path).is_file():
-            raise BenchError(f"SSH key {self.ssh_key_path} does not exist.")
         if sites := sorted(
             f"{bench.config.name}/{site.config.name}" for bench in benches for site in bench.sites()
         ):

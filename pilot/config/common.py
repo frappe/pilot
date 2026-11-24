@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.central import CentralConfig, HostnameAlias
+from pilot.config.database_agent import DatabaseAgentConfig
 from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
@@ -33,6 +34,7 @@ class CommonConfig:
         keys={"country"},
         tables={
             "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
+            "database_agent": TomlSchema(keys=field_names(DatabaseAgentConfig)),
             "postgres": TomlSchema(keys=field_names(PostgresConfig)),
             "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
             "nginx": TomlSchema(keys=set(NginxConfig().ports)),
@@ -55,6 +57,7 @@ class CommonConfig:
     )
 
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
+    database_agent: DatabaseAgentConfig = field(default_factory=DatabaseAgentConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -93,6 +96,9 @@ class CommonConfig:
         admin = data.get("admin", {})
         return cls(
             mariadb=MariaDBConfig(**_known_fields(MariaDBConfig, data.get("mariadb", {}))),
+            database_agent=DatabaseAgentConfig(
+                **_known_fields(DatabaseAgentConfig, data.get("database_agent", {}))
+            ),
             postgres=PostgresConfig(**_known_fields(PostgresConfig, data.get("postgres", {}))),
             letsencrypt=LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
             nginx=NginxConfig.from_dict(data.get("nginx", {})),
@@ -171,15 +177,7 @@ class CommonConfig:
     def _to_toml_dict(self) -> ConfigDict:
         """The common config as TOML tables."""
         data: ConfigDict = {
-            "mariadb": {
-                "host": self.mariadb.host,
-                "port": self.mariadb.port,
-                "root_password": self.mariadb.root_password,
-                "admin_user": self.mariadb.admin_user,
-                "socket_path": self.mariadb.socket_path,
-                "existing": self.mariadb.existing,
-                "memory_share": self.mariadb.memory_share,
-            },
+            "mariadb": self._mariadb_table(),
             "postgres": {
                 "host": self.postgres.host,
                 "port": self.postgres.port,
@@ -192,16 +190,10 @@ class CommonConfig:
                 "webroot_path": str(self.letsencrypt.webroot_path),
             },
         }
-        if self.mariadb.remote:
-            data["mariadb"].update(
-                remote=True,
-                ssh_user=self.mariadb.ssh_user,
-                ssh_key_path=self.mariadb.ssh_key_path,
-                memory_mb=self.mariadb.memory_mb,
-            )
         # Tables written only when they differ from their defaults.
         optional = {
             "nginx": (self.nginx.ports, NginxConfig().ports),
+            "database_agent": (asdict(self.database_agent), asdict(DatabaseAgentConfig())),
             "proxy": (asdict(self.proxy), asdict(ProxyConfig())),
             "resource_limits": (asdict(self.resource_limits), asdict(ResourceLimitConfig())),
             "updates": (asdict(self.updates), asdict(UpdatesConfig())),
@@ -224,6 +216,25 @@ class CommonConfig:
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
+
+    def _mariadb_table(self) -> ConfigDict:
+        """The [mariadb] table, with the keys of a remote or dedicated server only when it is one."""
+        table: ConfigDict = {
+            "host": self.mariadb.host,
+            "port": self.mariadb.port,
+            "root_password": self.mariadb.root_password,
+            "admin_user": self.mariadb.admin_user,
+            "socket_path": self.mariadb.socket_path,
+            "existing": self.mariadb.existing,
+            "memory_share": self.mariadb.memory_share,
+        }
+        if self.mariadb.remote:
+            table.update(
+                remote=True, agent_port=self.mariadb.agent_port, agent_token=self.mariadb.agent_token
+            )
+        if self.mariadb.dedicated:
+            table["dedicated"] = True
+        return table
 
     def _central_table(self) -> ConfigDict:
         """The [central] table."""

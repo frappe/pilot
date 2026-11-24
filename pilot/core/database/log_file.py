@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.exceptions import CommandError
+from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:
-    from pilot.managers.ssh_host import SSHHost
+    from pilot.core.database.agent.client import DatabaseAgentClient
 
 
 class LogFile:
@@ -32,20 +32,25 @@ class LogFile:
 
 
 class RemoteLogFile(LogFile):
-    """A database server file on the database host, read over SSH."""
+    """A database server file on the database VM, read through the database agent."""
 
-    def __init__(self, path: Path, ssh_host: SSHHost) -> None:
+    def __init__(self, path: Path, agent: DatabaseAgentClient) -> None:
         super().__init__(path)
-        self.ssh_host = ssh_host
+        self.agent = agent
+
+    @property
+    def exists(self) -> bool:
+        """Whether the file exists on the database VM."""
+        return self.agent.get_file(str(self.path))["exists"]
 
     def read_tail(self, size: int) -> str:
         """The last `size` bytes as text."""
-        return self.ssh_host.run(["tail", "-c", str(size), str(self.path)])
+        return self.agent.get_file(str(self.path), tail_bytes=size)["text"]
 
     @property
     def size_bytes(self) -> int:
         """The file size, or 0 when it cannot be read."""
         try:
-            return int(self.ssh_host.run(["stat", "-c", "%s", str(self.path)]).strip())
-        except (CommandError, ValueError):
+            return self.agent.get_file(str(self.path))["size_bytes"]
+        except DatabaseError:
             return 0

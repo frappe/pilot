@@ -15,31 +15,30 @@ class MariaDBConfig:
     admin_user: str = "root"
     socket_path: str = ""
     existing: bool = False
-    # A server on another host that Pilot manages over SSH. An existing server is only connected to.
+    # A server on its own VM that Pilot manages through the database agent there. An existing server is only
+    # connected to.
     remote: bool = False
-    ssh_user: str = ""
-    ssh_key_path: str = ""
-    # The remote server's memory in MiB, from the VM spec Central gives it. It has the VM to itself.
-    memory_mb: int = 0
+    agent_port: int = 7781
+    agent_token: str = ""
+    # This host is that VM: the server has the VM to itself and serves clients on the network.
+    dedicated: bool = False
     memory_share: float = 0.5
     memory_high_mb: int | None = None
     memory_max_mb: int | None = None
 
     def validate(self) -> None:
-        """Raise when the memory share is out of range or the remote server is incomplete."""
+        """Raise when the memory share is out of range or the server's kind is incomplete."""
         low, high = MEMORY_SHARE_RANGE
         if not low <= self.memory_share <= high:
             raise ConfigError(f"mariadb.memory_share must be between {low} and {high}.")
+        if sum((self.existing, self.remote, self.dedicated)) > 1:
+            raise ConfigError("Set only one of mariadb.existing, mariadb.remote and mariadb.dedicated.")
         if self.remote:
             self._validate_remote()
 
     def _validate_remote(self) -> None:
-        """Raise unless a remote server names its host, its SSH login and its memory."""
-        if self.existing:
-            raise ConfigError("mariadb.remote and mariadb.existing cannot both be set.")
+        """Raise unless a remote server names its host and the database agent's token."""
         if self.host in ("", "localhost", "127.0.0.1", "::1"):
             raise ConfigError("mariadb.host must name the remote server.")
-        if not self.ssh_user or not self.ssh_key_path:
-            raise ConfigError("mariadb.ssh_user and mariadb.ssh_key_path are required for a remote server.")
-        if isinstance(self.memory_mb, bool) or not isinstance(self.memory_mb, int) or self.memory_mb <= 0:
-            raise ConfigError("mariadb.memory_mb must be the remote server's memory in MiB.")
+        if not self.agent_token:
+            raise ConfigError("mariadb.agent_token is required for a remote server.")

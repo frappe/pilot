@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pilot.integrations.central.client import CentralClient, CentralClientError
@@ -13,7 +12,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 DATABASE_ATTRIBUTE = "pilot-database"
-ACCESS_KEYS = ("host", "port", "ssh_user", "ssh_private_key", "memory_mib")
+ACCESS_KEYS = ("host", "port", "agent_port", "agent_token")
 
 
 class CentralDatabaseAssignment:
@@ -32,23 +31,16 @@ class CentralDatabaseAssignment:
         self.metadata = metadata or InstanceMetadata()
         self.client = client or CentralClient()
 
-    @property
-    def key_path(self) -> Path:
-        """Where the SSH key for the database host is kept."""
-        return Path.home() / ".ssh" / "pilot-database"
-
     def apply(self, on_progress: Callable[[str], None] = logging.info) -> bool:
         """Move this host to the assigned database host. False when Central assigned none."""
         if self.bench.config.mariadb.remote or not self.is_assigned():
             return False
         access = self.get_access()
-        self.write_key(access["ssh_private_key"])
         self.bench.setup_remote_database(
             host=access["host"],
-            ssh_user=access["ssh_user"],
-            ssh_key_path=str(self.key_path),
-            memory_mb=int(access["memory_mib"]),
+            agent_token=access["agent_token"],
             port=int(access["port"]),
+            agent_port=int(access["agent_port"]),
             on_progress=on_progress,
         )
         return True
@@ -62,7 +54,7 @@ class CentralDatabaseAssignment:
         return assignment.get("remote") is True
 
     def get_access(self) -> dict[str, Any]:
-        """The database host's address, SSH login and memory, once Central reports the host running."""
+        """The database host's address and its database agent's port and token, once Central reports it running."""
         while (access := self.client.get_database_access())["status"] == "Pending":
             logging.info("Waiting for Central to finish the database host.")
             time.sleep(self.poll_seconds)
@@ -73,10 +65,3 @@ class CentralDatabaseAssignment:
         if missing := [key for key in ACCESS_KEYS if not access.get(key)]:
             raise CentralClientError(f"Central's database access is missing: {', '.join(missing)}")
         return access
-
-    def write_key(self, private_key: str) -> None:
-        """Keep the private key where only this user can read it. ssh refuses a key others can read."""
-        from pilot.internal.atomic_file import atomic_write_private_text
-
-        self.key_path.parent.mkdir(mode=0o700, exist_ok=True)
-        atomic_write_private_text(self.key_path, private_key.rstrip("\n") + "\n")

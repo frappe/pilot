@@ -80,6 +80,10 @@ class MariaDBManager(UserOwnedDBManager):
             from pilot.managers.database.remote_mariadb import RemoteMariaDBManager
 
             return RemoteMariaDBManager(config)
+        if config.dedicated:
+            from pilot.managers.database.dedicated_mariadb import DedicatedMariaDBManager
+
+            return DedicatedMariaDBManager(config)
         return cls(config)
 
     @property
@@ -248,7 +252,7 @@ class MariaDBManager(UserOwnedDBManager):
             f"slow-query-log-file = {self.slow_log_path}\n"
             "long-query-time = 1\n"
             "log-output = FILE\n"
-            "bind-address = 127.0.0.1\n"
+            f"{self.listen_options}"
             "\n"
             f"{self._render_tuning_options(sizing, limits)}"
             "\n"
@@ -264,6 +268,11 @@ class MariaDBManager(UserOwnedDBManager):
         )
         atomic_write_private_text(self.my_cnf_path, content)
         return sizing
+
+    @property
+    def listen_options(self) -> str:
+        """The [mysqld] options for where clients connect from: this host only."""
+        return "bind-address = 127.0.0.1\n"
 
     @staticmethod
     def _render_tuning_options(sizing: MariaDBMemorySizing, limits: MariaDBVariableLimits) -> str:
@@ -342,6 +351,15 @@ class MariaDBManager(UserOwnedDBManager):
 
     def _read_managed_options(self) -> dict[str, str]:
         """The options in the managed config."""
+        try:
+            content = self.read_managed_config()
+        except OSError as exc:
+            raise DatabaseError("Pilot's managed MariaDB configuration is invalid.") from exc
+        return self.parse_managed_options(content)
+
+    @staticmethod
+    def parse_managed_options(content: str) -> dict[str, str]:
+        """The options in managed config text; raise unless it holds only well-formed [mysqld] options."""
         parser = _ManagedCnfParser(
             interpolation=None,
             strict=True,
@@ -349,8 +367,8 @@ class MariaDBManager(UserOwnedDBManager):
             comment_prefixes=("#", ";"),
         )
         try:
-            parser.read_string(self.read_managed_config())
-        except (OSError, configparser.Error) as exc:
+            parser.read_string(content)
+        except configparser.Error as exc:
             raise DatabaseError("Pilot's managed MariaDB configuration is invalid.") from exc
         if parser.sections() != ["mysqld"]:
             raise DatabaseError("Pilot's managed MariaDB configuration must contain only [mysqld].")
@@ -1263,10 +1281,18 @@ class MariaDBManager(UserOwnedDBManager):
         """Create/update the admin account and apply basic hardening."""
         if self.has_valid_credentials():
             return
+        self._run_sql_as_superuser(
+            self.get_admin_account_sql(
+                self.config.admin_user, self.config.root_password, self.get_admin_host()
+            )
+        )
+
+    def get_admin_account_sql(self, user: str, password: str, host: str) -> str:
+        """SQL that creates or resets an admin account at `host` and drops what an install leaves open."""
         # admin_user can come from setup wizard input; quote it like a value.
-        user = self._sql_quote(self.config.admin_user)
-        password = self._sql_quote(self.config.root_password)
-        host = self._sql_quote(self.get_admin_host())
+        user = self._sql_quote(user)
+        password = self._sql_quote(password)
+        host = self._sql_quote(host)
         statements = [
             # Covers fresh installs and siblings that secured a different password.
             f"CREATE USER IF NOT EXISTS {user}@{host} IDENTIFIED BY {password};",
@@ -1277,7 +1303,7 @@ class MariaDBManager(UserOwnedDBManager):
             "DROP DATABASE IF EXISTS test;",
             "FLUSH PRIVILEGES;",
         ]
-        self._run_sql_as_superuser("\n".join(statements))
+        return "\n".join(statements)
 
     def _run_sql_as_superuser(self, sql: str) -> None:
         """Run SQL as the database superuser."""
@@ -1359,5 +1385,5 @@ def main() -> None:
     from pilot.config.common import CommonConfig
     from pilot.core.server import Server
 
-    if sizing := MariaDBManager(CommonConfig.read(Server().benches_dir).mariadb).size_for_host():
+    if sizing := MariaDBManager.for_config(CommonConfig.read(Server().benches_dir).mariadb).size_for_host():
         print(f"Sized MariaDB for {sizing.total_memory_mb} MiB of host memory.")

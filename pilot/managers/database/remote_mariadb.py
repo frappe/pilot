@@ -1,39 +1,35 @@
 from __future__ import annotations
 
-import re
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
-from pilot.core.mariadb_memory import (
-    MariaDBMemorySizing,
-    calculate_mariadb_memory,
-    calculate_mariadb_variable_limits,
-)
+from pilot.core.database.agent.client import DatabaseAgentClient
+from pilot.core.mariadb_memory import MariaDBMemorySizing
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
-from pilot.managers.ssh_host import SSHHost
 
 
 class RemoteMariaDBManager(MariaDBManager):
-    """A packaged MariaDB on its own VM that Pilot manages over SSH.
+    """A MariaDB on its own VM, which Pilot manages through the database agent there.
 
-    The package keeps its `mariadb` service, data directory and socket. Pilot owns two option files in
-    the package's conf.d, which load after the package's own. The server is sized for the memory in
-    `mariadb.memory_mb` and shares its VM with nothing, so it has no memory split and no memory limits.
+    SQL goes over TCP. The agent owns the server's option files, service, logs and disk, and the database VM
+    sizes the server for its own memory, so this host writes nothing of the server's.
     """
 
-    _UNIT_NAME = "mariadb.service"
-    # The package's unit allows this long for crash recovery, so a restart may block as long.
+    # A restart may block while the server recovers from a crash.
     service_timeout = 15 * 60
-    remote_config_dir = Path("/etc/mysql/mariadb.conf.d")
-    remote_log_dir = Path("/var/log/mysql")
     # Pilot's option file uses options that older servers refuse to start with.
     minimum_version = (11, 8)
 
     @cached_property
-    def ssh_host(self) -> SSHHost:
-        """The host the server runs on."""
-        return SSHHost(self.config.host, self.config.ssh_user, self.config.ssh_key_path)
+    def agent(self) -> DatabaseAgentClient:
+        """The database agent on the server's VM."""
+        return DatabaseAgentClient.for_config(self.config)
+
+    def get_health(self) -> dict[str, Any]:
+        """The server's state, as the agent reports it."""
+        return self.agent.get_health()
 
     @property
     def state_dir(self) -> Path:
@@ -42,119 +38,68 @@ class RemoteMariaDBManager(MariaDBManager):
 
         return Server().root / "databases" / "mariadb-remote"
 
-    @property
-    def my_cnf_path(self) -> Path:
-        """Pilot's option file on the remote host."""
-        return self.remote_config_dir / "90-pilot.cnf"
-
-    @property
-    def managed_cnf_path(self) -> Path:
-        """The variable editor's option file on the remote host. It loads last, so it wins."""
-        return self.remote_config_dir / "99-pilot-managed.cnf"
-
-    @property
-    def error_log_path(self) -> Path:
-        """The error log on the remote host. Deadlocks are read from here."""
-        return self.remote_log_dir / "error.log"
-
-    @property
-    def slow_log_path(self) -> Path:
-        """The slow query log on the remote host."""
-        return self.remote_log_dir / "mariadb-slow.log"
-
     def is_installed(self) -> bool:
-        """Whether the remote host has the MariaDB server."""
-        return self.ssh_host.exists("/usr/sbin/mariadbd")
+        """Whether the database VM has the MariaDB server."""
+        return self.get_health()["is_installed"]
 
     def is_provisioned(self) -> bool:
-        """Whether Pilot has written its options on the remote host."""
-        return self.ssh_host.exists(str(self.my_cnf_path))
+        """Whether the database VM has set up its server."""
+        return self.get_health()["is_provisioned"]
+
+    def is_running(self) -> bool:
+        """Whether the remote server runs."""
+        return self.get_health()["is_running"]
 
     def provision(self) -> None:
-        """Take over the remote server: write Pilot's options, size it for its VM and create the admin account."""
+        """Take over the remote server: create the admin account for this host's address."""
         if not self.config.root_password:
             raise DatabaseError("Set mariadb.root_password before Pilot takes over the remote server.")
-        if not self.ssh_host.is_reachable():
-            raise DatabaseError(
-                f"Pilot cannot log in to {self.config.host} as {self.config.ssh_user} with passwordless sudo."
-            )
-        if not self.is_installed():
-            raise DatabaseError(f"MariaDB is not installed on {self.config.host}.")
-        if (version := self.get_server_version()) < self.minimum_version:
+        health = self.get_health()
+        if not health["is_provisioned"]:
+            raise DatabaseError(f"Run `pilot setup database-server` on {self.config.host} first.")
+        if tuple(health["version"]) < self.minimum_version:
             raise DatabaseError(
                 f"Pilot needs MariaDB {'.'.join(map(str, self.minimum_version))} or newer on "
-                f"{self.config.host}, which runs {'.'.join(map(str, version))}."
+                f"{self.config.host}, which runs {'.'.join(map(str, health['version']))}."
             )
 
         with self.database_action_lock():
-            self._write_config()
-            self._reset_failed_state()
-            self.restart()
             self.secure_installation()
             self._wait_until_reachable()
 
-    def get_server_version(self) -> tuple[int, int]:
-        """The major and minor version of the remote server binary."""
-        output = self.ssh_host.run(["/usr/sbin/mariadbd", "--version"])
-        if not (match := re.search(r"Ver (\d+)\.(\d+)", output)):
-            raise DatabaseError(f"Could not read the MariaDB version on {self.config.host}.")
-        return int(match.group(1)), int(match.group(2))
+    def secure_installation(self) -> None:
+        """Create or reset the admin account through the agent, which grants it to this host's address only."""
+        if self.has_valid_credentials():
+            return
+        self.agent.grant_admin(self.config.admin_user, self.config.root_password)
 
     def _write_config(self) -> MariaDBMemorySizing:
-        """Write Pilot's options into the remote conf.d, sized for the VM's memory."""
-        total_memory_mb = self._total_memory_mb()
-        sizing = calculate_mariadb_memory(total_memory_mb, self.memory_share)
-        limits = calculate_mariadb_variable_limits(total_memory_mb, self.memory_share)
-        self._ensure_managed_cnf()
-        content = (
-            "# Managed by Pilot.\n"
-            f"# pilot-sized-for-memory-mb = {total_memory_mb}\n"
-            "[mysqld]\n"
-            f"port = {self.config.port}\n"
-            # Pilot connects from another host. The firewall and the account hosts limit who can.
-            "bind-address = ::\n"
-            # Accounts name Pilot's address, so a reverse lookup could only slow down or break a login.
-            "skip-name-resolve = ON\n"
-            f"log-error = {self.error_log_path}\n"
-            "slow-query-log = ON\n"
-            f"slow-query-log-file = {self.slow_log_path}\n"
-            "long-query-time = 1\n"
-            "log-output = FILE\n"
-            "\n"
-            f"{self._render_tuning_options(sizing, limits)}"
-        )
-        self.ssh_host.write_text(str(self.my_cnf_path), content)
-        return sizing
+        """The database VM writes the server's options and sizes it."""
+        raise DatabaseError(f"{self.config.host} sizes its own MariaDB server.")
 
     def ensure_managed_config(self) -> None:
-        """Create the variable editor's option file. conf.d loads it without an include line."""
-        self._ensure_managed_cnf()
+        """The database VM created the variable editor's option file when it set up its server."""
 
     def has_managed_config(self) -> bool:
-        """Whether the variable editor's option file exists on the remote host."""
-        return self.ssh_host.exists(str(self.managed_cnf_path))
+        """The database VM always has the variable editor's option file."""
+        return True
 
     def read_managed_config(self) -> str:
-        """The text of the variable editor's option file on the remote host."""
-        return self.ssh_host.read_text(str(self.managed_cnf_path))
+        """The text of the variable editor's option file on the database VM."""
+        return self.agent.read_managed_config()
 
     def write_managed_config(self, content: str) -> None:
-        """Replace the variable editor's option file on the remote host."""
-        self.ssh_host.write_text(str(self.managed_cnf_path), content)
+        """Replace the variable editor's option file on the database VM."""
+        self.agent.write_managed_config(content)
 
     def _total_memory_mb(self) -> int:
-        """The VM's memory in MiB, as Central gives it."""
-        return self.config.memory_mb
+        """The database VM's memory in MiB."""
+        return self.get_health()["memory_mb"]
 
     @property
     def memory_share(self) -> float:
         """All of the VM's memory: nothing else runs on it."""
         return 1.0
-
-    def is_running(self) -> bool:
-        """Whether the remote service runs."""
-        script = 'systemctl is-active --quiet "$1" && echo yes || echo no'
-        return self.ssh_host.run(["sh", "-c", script, "sh", self._UNIT_NAME]).strip() == "yes"
 
     def is_reachable(self) -> bool:
         """Whether the admin can log in to the remote server and run a query. The CLI's Python has no
@@ -162,24 +107,19 @@ class RemoteMariaDBManager(MariaDBManager):
         return self.has_valid_credentials()
 
     def _control(self, action: str) -> None:
-        """Run a service action on the remote host."""
-        self.ssh_host.run(["systemctl", action, self._UNIT_NAME], timeout=self.service_timeout)
+        """Run a service action on the database VM."""
+        self.agent.control(action, timeout=self.service_timeout)
 
     def _reset_failed_state(self) -> None:
-        """Clear a failed state of the remote service before it starts again."""
-        self.ssh_host.run(["sh", "-c", 'systemctl reset-failed "$1" || true', "sh", self._UNIT_NAME])
+        """The agent clears a failed state before every service action."""
 
     def _require_linux_managed_server(self) -> None:
-        """Raise unless Pilot manages the remote server. Its host, not this one, must run Linux."""
+        """Raise unless Pilot manages the remote server. Its VM, not this one, must run Linux."""
         self._require_managed_server()
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        """Run SQL as the remote host's root, which the package lets log in over the socket."""
-        self.ssh_host.run(["mariadb"], stdin_text=sql)
-
-    def get_admin_host(self) -> str:
-        """Pilot's address as the remote host sees it, so the admin account accepts only this host."""
-        return self.ssh_host.get_client_address()
+        """Only the database VM has a superuser login, so this host runs SQL as the admin account."""
+        raise DatabaseError(f"Pilot has no superuser login to the MariaDB server on {self.config.host}.")
 
     def get_account_host(self) -> str:
         """The host the admin connection comes from, so Pilot's accounts are no wider than the admin."""

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-import stat
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,9 +14,8 @@ READY = {
     "status": "Ready",
     "host": "fdaa:1:2::3",
     "port": 3306,
-    "ssh_user": "ubuntu",
-    "memory_mib": 8192,
-    "ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+    "agent_port": 7781,
+    "agent_token": "token",
 }
 
 
@@ -38,28 +36,18 @@ def _assignment(tmp_path: Path, database: str | None, *answers: dict, remote: bo
     return assignment, bench, client
 
 
-@pytest.fixture(autouse=True)
-def home(tmp_path: Path):
-    with patch("pilot.integrations.central.database.Path.home", return_value=tmp_path):
-        yield tmp_path
-
-
-def test_an_assigned_database_host_is_taken_over_with_the_key_central_gives(tmp_path: Path) -> None:
+def test_an_assigned_database_host_is_taken_over_with_the_agent_token_central_gives(tmp_path: Path) -> None:
     assignment, bench, client = _assignment(tmp_path, '{"remote": true}', {"status": "Pending"}, READY)
 
     assert assignment.apply() is True
 
-    key = tmp_path / ".ssh" / "pilot-database"
-    assert key.read_text() == READY["ssh_private_key"] + "\n"
-    assert stat.S_IMODE(key.stat().st_mode) == 0o600
     assert client.get_database_access.call_count == 2
     bench.setup_remote_database.assert_called_once()
     assert bench.setup_remote_database.call_args.kwargs | {"on_progress": None} == {
         "host": "fdaa:1:2::3",
-        "ssh_user": "ubuntu",
-        "ssh_key_path": str(key),
-        "memory_mb": 8192,
+        "agent_token": "token",
         "port": 3306,
+        "agent_port": 7781,
         "on_progress": None,
     }
 
@@ -95,8 +83,8 @@ def test_a_host_already_on_a_remote_server_is_left_alone(tmp_path: Path) -> None
     ("answer", "message"),
     [
         ({"status": "Failed", "error": "The database host could not be created."}, "could not be created"),
-        ({**READY, "ssh_private_key": ""}, "missing: ssh_private_key"),
-        ({key: value for key, value in READY.items() if key != "memory_mib"}, "missing: memory_mib"),
+        ({**READY, "agent_token": ""}, "missing: agent_token"),
+        ({key: value for key, value in READY.items() if key != "agent_port"}, "missing: agent_port"),
     ],
 )
 def test_a_failed_or_incomplete_answer_stops_the_boot(tmp_path: Path, answer: dict, message: str) -> None:
@@ -105,4 +93,3 @@ def test_a_failed_or_incomplete_answer_stops_the_boot(tmp_path: Path, answer: di
     with pytest.raises(CentralClientError, match=message):
         assignment.apply()
     bench.setup_remote_database.assert_not_called()
-    assert not (tmp_path / ".ssh" / "pilot-database").exists()
