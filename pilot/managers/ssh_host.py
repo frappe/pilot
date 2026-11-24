@@ -85,15 +85,6 @@ class SSHHost:
         """Replace a file on this host in one step."""
         self.run(["sh", "-c", self._write_script, "sh", path, mode], stdin_text=text)
 
-    @property
-    def total_memory_mb(self) -> int:
-        """The host memory in MiB, from /proc/meminfo."""
-        for line in self.read_text("/proc/meminfo").splitlines():
-            name, _, value = line.partition(":")
-            if name == "MemTotal":
-                return int(value.split()[0]) // 1024
-        raise CommandError(f"{self.address} reported no MemTotal in /proc/meminfo.")
-
     def get_free_disk_bytes(self, path: str) -> int:
         """Free bytes on the file system that holds `path`."""
         output = self.run(["df", "--output=avail", "-B1", path])

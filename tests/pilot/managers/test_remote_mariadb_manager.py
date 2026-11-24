@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from pilot.config import MariaDBConfig
+from pilot.core.mariadb_memory import calculate_mariadb_memory
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
 from pilot.managers.database.remote_mariadb import RemoteMariaDBManager
@@ -16,9 +17,8 @@ MANAGED_CNF = "/etc/mysql/mariadb.conf.d/99-pilot-managed.cnf"
 class FakeSSHHost:
     """An SSH host whose files live in a dict and whose commands are recorded."""
 
-    def __init__(self, files: dict[str, str] | None = None, memory_mb: int = 8192) -> None:
+    def __init__(self, files: dict[str, str] | None = None) -> None:
         self.files = {"/usr/sbin/mariadbd": "", **(files or {})}
-        self.total_memory_mb = memory_mb
         self.commands: list[list[str]] = []
         self.stdin: list[str] = []
         self.outputs: dict[str, str] = {
@@ -58,6 +58,7 @@ def _config(**changes) -> MariaDBConfig:
         ssh_key_path="/home/pilot/.ssh/database",
         admin_user="pilot",
         root_password="secret",
+        memory_mb=8192,
     )
     return MariaDBConfig(**{**values, **changes})
 
@@ -89,11 +90,13 @@ def test_the_ssh_host_uses_the_configured_login() -> None:
     )
 
 
-def test_options_go_to_the_package_conf_d_sized_for_the_remote_memory() -> None:
-    manager, host = _manager(FakeSSHHost(memory_mb=16384))
+def test_options_go_to_the_package_conf_d_sized_for_the_whole_vm() -> None:
+    manager, host = _manager(memory_mb=16384)
 
     sizing = manager._write_config()
 
+    # The VM runs nothing else, so the server is sized for all of the memory Central gave it.
+    assert sizing == calculate_mariadb_memory(16384, memory_share=1.0)
     content = host.files[PILOT_CNF]
     assert "# pilot-sized-for-memory-mb = 16384" in content
     assert "bind-address = ::\n" in content
@@ -116,25 +119,15 @@ def test_managed_options_are_read_and_written_on_the_remote_host() -> None:
     assert "max-connections = 300" in host.files[MANAGED_CNF]
 
 
-def test_memory_limits_are_set_on_the_package_service_live_and_for_good() -> None:
+def test_variable_limits_come_from_the_vm_memory_without_a_service_cap() -> None:
     manager, host = _manager()
-    sizing = manager._write_config()
 
-    manager._set_runtime_memory_limits(sizing)
-    manager._install_unit(sizing)
+    with patch("pilot.managers.database.mariadb.run_command") as run_command:
+        limits = manager.variable_limits()
 
-    limits = [f"MemoryHigh={sizing.memory_high_mb}M", f"MemoryMax={sizing.memory_max_mb}M", "MemorySwapMax=0"]
-    assert ["systemctl", "set-property", "--runtime", "mariadb.service", *limits] in host.commands
-    assert ["systemctl", "set-property", "mariadb.service", *limits] in host.commands
-
-
-@pytest.mark.parametrize(("output", "expected"), [("2147483648\n", 2048), ("infinity\n", None)])
-def test_service_memory_is_read_from_systemctl(output: str, expected: int | None) -> None:
-    host = FakeSSHHost()
-    host.outputs["systemctl show mariadb.service --property=MemoryMax --value"] = output
-    manager, _ = _manager(host)
-
-    assert manager._unit_memory_mb("MemoryMax") == expected
+    run_command.assert_not_called()
+    assert limits.innodb_buffer_pool_max_mb > 4096
+    assert host.commands == []
 
 
 def test_restart_runs_on_the_remote_service() -> None:
@@ -160,6 +153,8 @@ def test_provision_writes_options_restarts_and_creates_an_admin_for_this_host_on
     assert written == [MANAGED_CNF, PILOT_CNF]
     restart = host.commands.index(["systemctl", "restart", "mariadb.service"])
     assert host.commands.index(["mariadb"]) > restart
+    # The server has its VM to itself, so its service gets no memory limits.
+    assert not any("set-property" in command for command in host.commands)
     assert "CREATE USER IF NOT EXISTS 'pilot'@'fdaa:1:2::7' IDENTIFIED BY 'secret';" in host.stdin[0]
     assert "GRANT ALL PRIVILEGES ON *.* TO 'pilot'@'fdaa:1:2::7' WITH GRANT OPTION;" in host.stdin[0]
 

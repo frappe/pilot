@@ -17,11 +17,13 @@ def _config(
     *,
     db_type: str = "mariadb",
     existing: bool = False,
+    remote: bool = False,
     allow_management: bool = True,
 ) -> BenchConfig:
     config = BenchConfig.default("test")
     config.db_type = db_type
     config.mariadb.existing = existing
+    config.mariadb.remote = remote
     config.admin.allow_bench_management = allow_management
     return config
 
@@ -256,6 +258,17 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
     assert shares[0] == 0.2 and shares[-1] == 0.8 and 0.5 in shares
     pools = [step["innodb_buffer_pool_mb"] for step in capability["steps"]]
     assert pools == sorted(pools)
+
+
+def test_a_dedicated_database_server_has_no_memory_split() -> None:
+    actions = DatabaseQuickActions(_config(remote=True), _manager())
+
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
+        capability = actions.capabilities()["actions"]["memory_share"]
+        with pytest.raises(DatabaseError, match="its own VM"):
+            actions.require_memory_share(0.5)
+
+    assert (capability["available"], capability["steps"]) == (False, [])
 
 
 @pytest.mark.parametrize("share", [0.1, 0.9, "0.5"])

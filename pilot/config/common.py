@@ -194,7 +194,10 @@ class CommonConfig:
         }
         if self.mariadb.remote:
             data["mariadb"].update(
-                remote=True, ssh_user=self.mariadb.ssh_user, ssh_key_path=self.mariadb.ssh_key_path
+                remote=True,
+                ssh_user=self.mariadb.ssh_user,
+                ssh_key_path=self.mariadb.ssh_key_path,
+                memory_mb=self.mariadb.memory_mb,
             )
         # Tables written only when they differ from their defaults.
         optional = {

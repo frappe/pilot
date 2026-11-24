@@ -15,10 +15,11 @@ from pilot.managers.ssh_host import SSHHost
 
 
 class RemoteMariaDBManager(MariaDBManager):
-    """A packaged MariaDB on another host that Pilot manages over SSH.
+    """A packaged MariaDB on its own VM that Pilot manages over SSH.
 
     The package keeps its `mariadb` service, data directory and socket. Pilot owns two option files in
-    the package's conf.d, which load after the package's own, and the service's memory limits.
+    the package's conf.d, which load after the package's own. The server is sized for the memory in
+    `mariadb.memory_mb` and shares its VM with nothing, so it has no memory split and no memory limits.
     """
 
     _UNIT_NAME = "mariadb.service"
@@ -70,7 +71,7 @@ class RemoteMariaDBManager(MariaDBManager):
         return self.ssh_host.exists(str(self.my_cnf_path))
 
     def provision(self) -> None:
-        """Take over the remote server: write Pilot's options, size it for its host and create the admin account."""
+        """Take over the remote server: write Pilot's options, size it for its VM and create the admin account."""
         if not self.config.root_password:
             raise DatabaseError("Set mariadb.root_password before Pilot takes over the remote server.")
         if not self.ssh_host.is_reachable():
@@ -86,8 +87,7 @@ class RemoteMariaDBManager(MariaDBManager):
             )
 
         with self.database_action_lock():
-            sizing = self._write_config()
-            self._install_unit(sizing)
+            self._write_config()
             self._reset_failed_state()
             self.restart()
             self.secure_installation()
@@ -101,10 +101,10 @@ class RemoteMariaDBManager(MariaDBManager):
         return int(match.group(1)), int(match.group(2))
 
     def _write_config(self) -> MariaDBMemorySizing:
-        """Write Pilot's options into the remote conf.d, sized for the remote host's memory."""
+        """Write Pilot's options into the remote conf.d, sized for the VM's memory."""
         total_memory_mb = self._total_memory_mb()
-        sizing = calculate_mariadb_memory(total_memory_mb, self.config.memory_share)
-        limits = calculate_mariadb_variable_limits(total_memory_mb, self.config.memory_share)
+        sizing = calculate_mariadb_memory(total_memory_mb, self.memory_share)
+        limits = calculate_mariadb_variable_limits(total_memory_mb, self.memory_share)
         self._ensure_managed_cnf()
         content = (
             "# Managed by Pilot.\n"
@@ -143,39 +143,13 @@ class RemoteMariaDBManager(MariaDBManager):
         self.ssh_host.write_text(str(self.managed_cnf_path), content)
 
     def _total_memory_mb(self) -> int:
-        """The remote host's memory in MiB."""
-        return self.ssh_host.total_memory_mb
+        """The VM's memory in MiB, as Central gives it."""
+        return self.config.memory_mb
 
-    def _unit_memory_mb(self, name: str) -> int | None:
-        """A memory property of the remote service in MiB, or None when unset."""
-        value = self.ssh_host.run(["systemctl", "show", self._UNIT_NAME, f"--property={name}", "--value"])
-        value = value.strip()
-        # systemd prints "[not set]" for an unknown value and "infinity" for no limit.
-        return int(value) // self.mebibyte if value.isdigit() else None
-
-    def _set_runtime_memory_limits(self, sizing: MariaDBMemorySizing) -> None:
-        """Set the service's memory limits until its next restart."""
-        self._set_memory_limits(sizing, "--runtime")
-
-    def _install_unit(
-        self, sizing: MariaDBMemorySizing, *, preserve_swap_limit: bool = False, reload_manager: bool = True
-    ) -> None:
-        """Keep the service's memory limits across restarts. The package owns the unit itself."""
-        self._set_memory_limits(sizing)
-
-    def _set_memory_limits(self, sizing: MariaDBMemorySizing, *flags: str) -> None:
-        """Set the service's memory limits with systemctl on the remote host."""
-        self.ssh_host.run(
-            [
-                "systemctl",
-                "set-property",
-                *flags,
-                self._UNIT_NAME,
-                f"MemoryHigh={sizing.memory_high_mb}M",
-                f"MemoryMax={sizing.memory_max_mb}M",
-                "MemorySwapMax=0",
-            ]
-        )
+    @property
+    def memory_share(self) -> float:
+        """All of the VM's memory: nothing else runs on it."""
+        return 1.0
 
     def is_running(self) -> bool:
         """Whether the remote service runs."""

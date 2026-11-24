@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import MariaDBConfig
-from pilot.config.mariadb import MEMORY_SHARE_RANGE
 from pilot.core.bench.directory import BenchDirectory
 from pilot.exceptions import BenchError
 
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class RemoteDatabaseSetup:
-    """Move every bench on a host from Pilot's local MariaDB to a packaged MariaDB on another host.
+    """Move every bench on a host from Pilot's local MariaDB to a packaged MariaDB on its own VM.
 
     The local server and its data are deleted, so the host must not have sites yet.
     """
@@ -27,6 +26,7 @@ class RemoteDatabaseSetup:
         host: str,
         ssh_user: str,
         ssh_key_path: str,
+        memory_mb: int,
         port: int = 3306,
         admin_user: str = "pilot",
     ) -> None:
@@ -34,6 +34,7 @@ class RemoteDatabaseSetup:
         self.host = host.strip()
         self.ssh_user = ssh_user.strip()
         self.ssh_key_path = str(Path(ssh_key_path).expanduser())
+        self.memory_mb = memory_mb
         self.port = port
         self.admin_user = admin_user.strip()
 
@@ -68,8 +69,7 @@ class RemoteDatabaseSetup:
             remote=True,
             ssh_user=self.ssh_user,
             ssh_key_path=self.ssh_key_path,
-            # The database host runs nothing else, so the server may take the largest share.
-            memory_share=MEMORY_SHARE_RANGE[1],
+            memory_mb=self.memory_mb,
         )
 
     def get_benches(self) -> list[Bench]:

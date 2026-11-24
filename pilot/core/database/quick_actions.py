@@ -24,6 +24,7 @@ class DatabaseQuickActions:
     unreachable = "MariaDB is not reachable with Pilot's admin credentials."
 
     external_mariadb = "Database actions are available only for Pilot-managed MariaDB instances."
+    dedicated_server = "The database server has its own VM, so MariaDB uses all of the VM's memory."
     memory_share_step = 0.05
 
     def __init__(
@@ -120,7 +121,7 @@ class DatabaseQuickActions:
         low, high = MEMORY_SHARE_RANGE
         if type(memory_share) not in (int, float) or not low <= memory_share <= high:
             raise ValueError(f"memory_share must be between {low} and {high}.")
-        return self._require_available(self._configuration_capability())
+        return self._require_available(self._memory_share_capability())
 
     def require_restart(self) -> dict:
         """Raise when a restart is not available."""
@@ -283,6 +284,8 @@ class DatabaseQuickActions:
 
     def _memory_share_capability(self, configuration: dict | None = None) -> dict:
         """Whether the memory share can be changed, with its range."""
+        if self.config.mariadb.remote:
+            return self._unavailable_memory_share(self.dedicated_server)
         configuration = configuration or self._configuration_capability()
         if not configuration["available"]:
             return self._unavailable_memory_share(configuration["reason"])

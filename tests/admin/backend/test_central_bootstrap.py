@@ -351,7 +351,9 @@ def test_boot_run_takes_over_the_assigned_database_before_the_credential(tmp_pat
 
     def take_over(assignment) -> bool:
         order.append(BenchConfig.read(bench_root).central.bootstrapped)
-        remote = MariaDBConfig(host="fdaa::3", remote=True, ssh_user="ubuntu", ssh_key_path="/key")
+        remote = MariaDBConfig(
+            host="fdaa::3", remote=True, ssh_user="ubuntu", ssh_key_path="/key", memory_mb=4096
+        )
         with CommonConfig.open(bench_root.parent) as common:
             common.mariadb = remote
         assignment.bench.config.mariadb = remote

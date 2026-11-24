@@ -47,13 +47,13 @@ def steps():
 
 
 def test_the_host_moves_to_the_remote_server_and_drops_the_local_one(bench: Bench, key: Path, steps) -> None:
-    bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
+    bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key), 7936)
 
     remote = CommonConfig.read(bench.path.parent).mariadb
     assert (remote.host, remote.port, remote.admin_user) == ("fdaa:1:2::3", 3306, "pilot")
     assert (remote.remote, remote.ssh_user, remote.ssh_key_path) == (True, "ubuntu", str(key))
     assert len(remote.root_password) >= 24
-    assert remote.memory_share == 0.8
+    assert remote.memory_mb == 7936
     assert [call[0] for call in steps.mock_calls] == [
         "provision",
         "rebuild_process_set",
@@ -71,7 +71,7 @@ def test_every_bench_on_the_host_moves_together(bench: Bench, key: Path, steps) 
     (other.path / "sites").mkdir(parents=True)
     other.config.write(other.path)
 
-    bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
+    bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key), 7936)
 
     assert {call.args[0] for call in steps.rebuild_process_set.call_args_list} == {bench.path, other.path}
     assert "fdaa:1:2::3" in (other.sites_path / "common_site_config.json").read_text()
@@ -83,7 +83,7 @@ def test_a_host_with_sites_is_refused_before_any_change(bench: Bench, key: Path,
     (site / "site_config.json").write_text("{}")
 
     with pytest.raises(BenchError, match="site.local"):
-        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
+        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key), 7936)
 
     assert steps.mock_calls == []
     assert CommonConfig.read(bench.path.parent).mariadb.remote is False
@@ -97,7 +97,7 @@ def test_an_unusable_server_is_refused_before_any_change(
     bench: Bench, key: Path, steps, host: str, key_name: str, message: str
 ) -> None:
     with pytest.raises(Exception, match=message):
-        bench.setup_remote_database(host, "ubuntu", str(key.with_name(key_name)))
+        bench.setup_remote_database(host, "ubuntu", str(key.with_name(key_name)), 7936)
 
     assert steps.mock_calls == []
 
@@ -106,7 +106,7 @@ def test_an_existing_server_is_left_alone(bench: Bench, key: Path, steps) -> Non
     bench.config.mariadb.existing = True
 
     with pytest.raises(BenchError, match="existing"):
-        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
+        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key), 7936)
 
     assert steps.mock_calls == []
 
@@ -115,6 +115,6 @@ def test_a_host_already_on_a_remote_server_is_refused(bench: Bench, key: Path, s
     bench.config.mariadb.host, bench.config.mariadb.remote = "fdaa::9", True
 
     with pytest.raises(BenchError, match="already uses the MariaDB server on fdaa::9"):
-        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key))
+        bench.setup_remote_database("fdaa:1:2::3", "ubuntu", str(key), 7936)
 
     assert steps.mock_calls == []

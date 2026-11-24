@@ -229,8 +229,8 @@ class MariaDBManager(UserOwnedDBManager):
         """Write every server setting into our own my.cnf so mariadbd, launched
         with --defaults-file, never falls back to reading /etc/mysql/my.cnf."""
         total_memory_mb = self._total_memory_mb()
-        sizing = calculate_mariadb_memory(total_memory_mb, self.config.memory_share)
-        limits = calculate_mariadb_variable_limits(total_memory_mb, self.config.memory_share)
+        sizing = calculate_mariadb_memory(total_memory_mb, self.memory_share)
+        limits = calculate_mariadb_variable_limits(total_memory_mb, self.memory_share)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.error_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -438,7 +438,7 @@ class MariaDBManager(UserOwnedDBManager):
         sized_for = self.sized_for_memory_mb
         if sized_for is not None and abs(self._total_memory_mb() - sized_for) < 100:
             # tune_to_host leaves the old unit when a shrink must wait.
-            sized_unit = self._render_unit(calculate_mariadb_memory(sized_for, self.config.memory_share))
+            sized_unit = self._render_unit(calculate_mariadb_memory(sized_for, self.memory_share))
             if self.unit_path.exists() and self.unit_path.read_text() == sized_unit:
                 return None
         self._drop_oversized_buffer_pool_override()
@@ -638,10 +638,16 @@ class MariaDBManager(UserOwnedDBManager):
         """The host memory in MB."""
         return self._total_memory_mb()
 
+    @property
+    def memory_share(self) -> float:
+        """The share of its host's memory the server may use. The benches keep the rest."""
+        return self.config.memory_share
+
     def variable_limits(self) -> MariaDBVariableLimits:
         """The allowed range of each sized variable."""
-        limits = calculate_mariadb_variable_limits(self._total_memory_mb(), self.config.memory_share)
-        if HostPlatform().is_macos or self.config.existing:
+        limits = calculate_mariadb_variable_limits(self._total_memory_mb(), self.memory_share)
+        # Only Pilot's local unit has memory limits that cap the pool.
+        if HostPlatform().is_macos or self.is_on_another_host:
             return limits
         maximum = self._unit_memory_mb("MemoryMax")
         if maximum is None:

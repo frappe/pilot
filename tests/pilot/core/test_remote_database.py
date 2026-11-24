@@ -27,7 +27,12 @@ def _database(ssh_host: MagicMock) -> RemoteMariaDB:
 
 def test_a_remote_config_gets_an_engine_that_reads_the_host_over_ssh() -> None:
     mariadb = MariaDBConfig(
-        host="fdaa::3", port=3306, remote=True, ssh_user="ubuntu", ssh_key_path="/home/pilot/.ssh/db"
+        host="fdaa::3",
+        port=3306,
+        remote=True,
+        ssh_user="ubuntu",
+        ssh_key_path="/home/pilot/.ssh/db",
+        memory_mb=4096,
     )
     config = SimpleNamespace(db_type="mariadb", mariadb=mariadb)
 

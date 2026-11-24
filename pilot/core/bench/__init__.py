@@ -734,14 +734,15 @@ class Bench:
         host: str,
         ssh_user: str,
         ssh_key_path: str,
+        memory_mb: int,
         port: int = 3306,
         admin_user: str = "pilot",
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        """Move this host's benches to a MariaDB on another host that Pilot manages over SSH."""
+        """Move this host's benches to a MariaDB on its own VM that Pilot manages over SSH."""
         from pilot.core.bench.remote_database import RemoteDatabaseSetup
 
-        RemoteDatabaseSetup(self, host, ssh_user, ssh_key_path, port, admin_user).run(on_progress)
+        RemoteDatabaseSetup(self, host, ssh_user, ssh_key_path, memory_mb, port, admin_user).run(on_progress)
 
     def setup_central(
         self,

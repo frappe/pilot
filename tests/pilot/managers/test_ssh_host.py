@@ -51,12 +51,6 @@ def test_write_sends_the_text_on_stdin_and_replaces_the_file_in_one_step() -> No
     assert run.call_args.kwargs["stdin_text"] == "[mysqld]\n"
 
 
-def test_total_memory_is_read_from_meminfo() -> None:
-    meminfo = "MemTotal:        4009276 kB\nMemFree:          144000 kB\n"
-    with patch(f"{MODULE}.run_command", return_value=_completed(meminfo)):
-        assert _host().total_memory_mb == 3915
-
-
 def test_free_disk_is_the_last_df_value() -> None:
     with patch(f"{MODULE}.run_command", return_value=_completed("    Avail\n39728541696\n")):
         assert _host().get_free_disk_bytes("/var/lib/mysql") == 39728541696

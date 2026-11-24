@@ -16,6 +16,7 @@ READY = {
     "host": "fdaa:1:2::3",
     "port": 3306,
     "ssh_user": "ubuntu",
+    "memory_mib": 8192,
     "ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
 }
 
@@ -57,6 +58,7 @@ def test_an_assigned_database_host_is_taken_over_with_the_key_central_gives(tmp_
         "host": "fdaa:1:2::3",
         "ssh_user": "ubuntu",
         "ssh_key_path": str(key),
+        "memory_mb": 8192,
         "port": 3306,
         "on_progress": None,
     }
@@ -94,6 +96,7 @@ def test_a_host_already_on_a_remote_server_is_left_alone(tmp_path: Path) -> None
     [
         ({"status": "Failed", "error": "The database host could not be created."}, "could not be created"),
         ({**READY, "ssh_private_key": ""}, "missing: ssh_private_key"),
+        ({key: value for key, value in READY.items() if key != "memory_mib"}, "missing: memory_mib"),
     ],
 )
 def test_a_failed_or_incomplete_answer_stops_the_boot(tmp_path: Path, answer: dict, message: str) -> None:

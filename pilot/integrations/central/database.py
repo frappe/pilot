@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 DATABASE_ATTRIBUTE = "pilot-database"
-ACCESS_KEYS = ("host", "port", "ssh_user", "ssh_private_key")
+ACCESS_KEYS = ("host", "port", "ssh_user", "ssh_private_key", "memory_mib")
 
 
 class CentralDatabaseAssignment:
@@ -47,6 +47,7 @@ class CentralDatabaseAssignment:
             host=access["host"],
             ssh_user=access["ssh_user"],
             ssh_key_path=str(self.key_path),
+            memory_mb=int(access["memory_mib"]),
             port=int(access["port"]),
             on_progress=on_progress,
         )
@@ -61,7 +62,7 @@ class CentralDatabaseAssignment:
         return assignment.get("remote") is True
 
     def get_access(self) -> dict[str, Any]:
-        """The database host's address and SSH login, once Central reports the host running."""
+        """The database host's address, SSH login and memory, once Central reports the host running."""
         while (access := self.client.get_database_access())["status"] == "Pending":
             logging.info("Waiting for Central to finish the database host.")
             time.sleep(self.poll_seconds)
