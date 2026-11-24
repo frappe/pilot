@@ -87,6 +87,7 @@ The limits below are conservative safety limits, not expected operation times. L
 | `new-app` | 1 hour | No |
 | `new-site` | 1 hour | Yes |
 | `new-site-from-backup` | 24 hours | Yes |
+| `refresh-bench-storage` | 15 minutes | Yes |
 | `refresh-storage-usage` | 5 minutes | Yes |
 | `reinstall-site` | 24 hours | No |
 | `relocate-renamed-blobs` | 24 hours | Yes |

@@ -461,49 +461,19 @@ def test_mariadb_server_wide_size_breaks_down_by_schema_in_one_scan() -> None:
     assert len([call for call in calls if "information_schema.TABLES" in call[0]]) == 1
 
 
-def test_mariadb_schema_sizes_count_space_a_rebuild_would_reclaim() -> None:
-    """A schema holds its freed pages until it is rebuilt, so the disk cannot
-    hand that space to anything else - it belongs in the schema's size."""
+def test_mariadb_schema_sizes_sum_each_schemas_tablespace_files() -> None:
+    """Allocated file size keeps the freed pages a rebuild would reclaim, and needs
+    no read access to the data directory."""
     db = MariaDB(host="h", port=3306, user="u", password="p", database="")
     calls: list = []
-    responses = {"information_schema.TABLES": ([], [["site_one", 500], [None, 7]])}
+    responses = {"INNODB_SYS_TABLESPACES": ([], [["site_one", 500], ["my@002dsite", 7], ["empty", None]])}
 
     with patch.object(MariaDB, "execute", _canned_execute(responses, calls)):
         sizes = db.get_schema_sizes()
 
-    assert sizes == {"site_one": 500}
-    assert "data_length + index_length + data_free" in calls[0][0]
-
-
-def test_mariadb_schema_sizes_read_schema_directories_when_readable(tmp_path: Path) -> None:
-    for name in ("site_one", "my@002dsite", "#innodb_temp"):
-        (tmp_path / name).mkdir()
-    (tmp_path / "site_one" / "tabNote.ibd").write_bytes(b"x" * 8192)
-    (tmp_path / "ibdata1").write_bytes(b"x")
-    db = MariaDB(host="localhost", port=3306, user="u", password="p", database="")
-    calls: list = []
-
-    with (
-        patch.object(MariaDB, "get_data_directory", return_value=str(tmp_path)),
-        patch.object(MariaDB, "execute", _canned_execute({}, calls)),
-    ):
-        sizes = db.get_schema_sizes()
-
-    assert set(sizes) == {"site_one", "my-site"}
-    assert sizes["site_one"] >= 8192
-    assert calls == []
-
-
-def test_mariadb_schema_sizes_fall_back_to_the_query_when_unreadable(tmp_path: Path) -> None:
-    db = MariaDB(host="localhost", port=3306, user="u", password="p", database="")
-    responses = {"information_schema.TABLES": ([], [["site_one", 500]])}
-
-    with (
-        patch.object(MariaDB, "get_data_directory", return_value=str(tmp_path)),
-        patch("pilot.core.database.engines.mariadb.os.access", return_value=False),
-        patch.object(MariaDB, "execute", _canned_execute(responses)),
-    ):
-        assert db.get_schema_sizes() == {"site_one": 500}
+    assert sizes == {"site_one": 500, "my-site": 7, "empty": 0}
+    assert "SUM(allocated_size)" in calls[0][0]
+    assert "information_schema.TABLES" not in calls[0][0]
 
 
 def test_postgres_schema_sizes_skip_template_databases() -> None:

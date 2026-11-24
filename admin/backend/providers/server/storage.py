@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import os
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import suppress
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.bench.storage.models import BenchBreakdown, SiteStorage
 from pilot.core.database import make_database, site_database_name
 from pilot.core.database.base import StorageComponent
-from pilot.exceptions import CommandError
-from pilot.internal.host_resources import DiskUsage
+from pilot.exceptions import TaskConflictError, TaskNotFoundError
+from pilot.internal.tasks.store import TaskStore
+from pilot.tasks.refresh_bench_storage import RefreshBenchStorageTask
 
 
 @dataclass
@@ -39,135 +37,22 @@ class DatabaseBreakdown:
 
 
 @dataclass
-class StorageItem:
-    name: str
-    bytes: int
+class BenchTask:
+    """The refresh task measuring the bench folder now."""
 
-
-@dataclass
-class AppStorage:
-    """`bytes` covers the whole app directory, including its git history and node_modules."""
-
-    name: str
-    bytes: int
-    git_bytes: int
-    node_modules_bytes: int
-
-
-@dataclass
-class SiteStorage:
-    name: str
-    bytes: int
-    private_files_bytes: int
-    public_files_bytes: int
-    backups_bytes: int
-    other_bytes: int
-    backup_files: list[StorageItem] = field(default_factory=list)
-    other_entries: list[StorageItem] = field(default_factory=list)
-
-
-@dataclass
-class BenchBreakdown:
-    used_bytes: int
-    apps: list[AppStorage]
-    apps_bytes: int
-    env_bytes: int
-    sites: list[SiteStorage]
-    sites_bytes: int
-    logs_bytes: int
+    id: str
+    status: str
 
 
 @dataclass
 class StorageBreakdown:
+    """`bench` is the last report of the bench folder, None before the first one."""
+
     disk_total: int
     disk_used: int
     database: DatabaseBreakdown
-    bench: BenchBreakdown
-
-
-@lru_cache(maxsize=256)
-def directory_size_bytes(path: str) -> int:
-    """Cached for the 10s /metrics poll; see `get_breakdown` for when it is
-    cleared."""
-    return DiskUsage(path).bytes
-
-
-def _data_directory_bytes(path: str | None) -> int | None:
-    """None means "cannot be measured", which is not the same as empty: the
-    server may be remote, and PostgreSQL keeps its data directory at 0700."""
-    if not path:
-        return None
-    try:
-        return directory_size_bytes(path)
-    except (OSError, CommandError, IndexError, ValueError):
-        return None
-
-
-def _site_backup_dirs(site_path: Path) -> tuple[Path, Path]:
-    """Pilot's backups, and Frappe's own under private/."""
-    return site_path / "backups", site_path / "private" / "backups"
-
-
-def site_directories(site_path: Path) -> list[Path]:
-    """The site directory and its backup directories."""
-    backups = [path for path in _site_backup_dirs(site_path) if path.is_dir()]
-    return [site_path, site_path / "private" / "files", site_path / "public", *backups]
-
-
-def measure_in_parallel(directories: list[Path]) -> None:
-    """Each size is one `du` process; running them together fills the cache in about the time of the largest."""
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        list(pool.map(_measure_quietly, [str(path) for path in directories]))
-
-
-def _measure_quietly(path: str) -> None:
-    """Measure a directory, ignoring errors."""
-    # A failure is not cached, so the serial read that follows raises it where it did before.
-    with suppress(OSError, CommandError, IndexError, ValueError):
-        directory_size_bytes(path)
-
-
-def node_modules_directories(app_path: Path) -> list[Path]:
-    """Every node_modules in an app, including nested frontends like `frontend/node_modules`."""
-    found: list[Path] = []
-    for directory, children, _files in os.walk(app_path):
-        if "node_modules" in children:
-            found.append(Path(directory) / "node_modules")
-        children[:] = [child for child in children if child not in {"node_modules", ".git"}]
-    return found
-
-
-def _storage_entry(path: Path) -> StorageItem:
-    """The size of a file or directory."""
-    size = path.stat().st_size if path.is_file() else directory_size_bytes(str(path))
-    return StorageItem(name=path.name, bytes=size)
-
-
-def _site_backup_files(site_path: Path) -> list[StorageItem]:
-    """The site's backup files."""
-    return [
-        _storage_entry(child)
-        for backups_dir in _site_backup_dirs(site_path)
-        if backups_dir.is_dir()
-        for child in backups_dir.iterdir()
-    ]
-
-
-def _site_other_entries(site_path: Path) -> list[StorageItem]:
-    """The site's other files and directories."""
-    entries: list[StorageItem] = []
-    for child in site_path.iterdir():
-        if child.name in {"public", "backups"}:
-            continue
-        if child.name == "private":
-            entries.extend(
-                _storage_entry(grandchild)
-                for grandchild in child.iterdir()
-                if grandchild.name not in {"files", "backups"}
-            )
-            continue
-        entries.append(_storage_entry(child))
-    return entries
+    bench: BenchBreakdown | None
+    bench_task: BenchTask | None
 
 
 class StorageProvider:
@@ -181,37 +66,56 @@ class StorageProvider:
         self._config = BenchConfig.read(bench_root, validate=False)
         self._bench = Bench(self._config, bench_root)
 
-    def get_breakdown(self, disk_total: int, disk_used: int) -> StorageBreakdown:
-        """Measures fresh. The cache exists for the 10s /metrics poll, and it
-        never expires, so leaving it in place pins every directory to its first
-        reading for the life of the process - including on an explicit refresh."""
-        directory_size_bytes.cache_clear()
-        measure_in_parallel(self.get_bench_directories())
+    def get_breakdown(
+        self, disk_total: int, disk_used: int, refresh_if_stale: bool = False
+    ) -> StorageBreakdown:
+        """The database from a few queries, and the bench folder from its last report: a
+        request never walks the disk. `refresh_if_stale` queues a measure when the report
+        is missing or old and none runs, so a page that polls with it retries a failed one."""
+        bench = self._bench.storage.read()
+        task_id = self.get_bench_task_id()
+        if refresh_if_stale and task_id is None and (bench is None or self._bench.storage.is_stale(bench)):
+            task_id = self.refresh_bench()
         return StorageBreakdown(
             disk_total=disk_total,
             disk_used=disk_used,
-            database=self._database_breakdown(),
-            bench=self._bench_breakdown(),
+            database=self._database_breakdown(bench.database_directory_bytes if bench else None),
+            bench=bench,
+            bench_task=self.get_bench_task(task_id),
         )
 
+    def get_bench_task(self, task_id: str | None) -> BenchTask | None:
+        """The task with its status, or None when it is gone."""
+        if task_id is None:
+            return None
+        try:
+            return BenchTask(id=task_id, status=TaskStore(self._bench_root).read_status(task_id).value)
+        except TaskNotFoundError:
+            return None
+
+    def get_bench_task_id(self) -> str | None:
+        """The refresh task measuring the bench folder now, if any."""
+        return TaskStore(self._bench_root).get_active_task_id(RefreshBenchStorageTask.static_resource_keys[0])
+
+    def refresh_bench(self) -> str:
+        """Queue a measure of the bench folder, or return the one already running. A
+        conflict whose task ended before the lookup queues once more."""
+        for _ in range(2):
+            try:
+                return RefreshBenchStorageTask.queue(self._bench)
+            except TaskConflictError:
+                task_id = self.get_bench_task_id()
+                if task_id is not None:
+                    return task_id
+        raise TaskConflictError("Could not queue a bench storage measure")
+
     def get_site(self, name: str) -> SiteStorage:
-        """One site's folder breakdown, measured fresh."""
-        directory_size_bytes.cache_clear()
-        site = self._bench.site(name)
-        measure_in_parallel(site_directories(site.path))
-        return self._site_storage(site)
+        """One site's folder breakdown, measured now."""
+        return self._bench.storage.get_site(self._bench.site(name))
 
-    def get_bench_directories(self) -> list[Path]:
-        """Every directory the breakdown sizes, so they can be measured side by side first."""
-        directories = [self._bench.logs_path, self._bench.env_path]
-        for app in self._bench.apps():
-            directories.extend([app.path, app.path / ".git", *node_modules_directories(app.path)])
-        for site in self._bench.sites():
-            directories.extend(site_directories(site.path))
-        return directories
-
-    def _database_breakdown(self) -> DatabaseBreakdown:
-        """The database storage breakdown."""
+    def _database_breakdown(self, directory_bytes: int | None) -> DatabaseBreakdown:
+        """The database storage breakdown. `directory_bytes` is the data directory from the
+        last bench report; None leaves `core_bytes` unknown."""
         engine = self._config.db_type
         if engine not in self.engines_with_schema_sizes:
             return DatabaseBreakdown(engine=engine, supported=False, used_bytes=0, binlog_bytes=0)
@@ -219,7 +123,7 @@ class StorageProvider:
         database = make_database(self._config)
         databases = self._schema_sizes(database)
         components = database.get_storage_components()
-        total_bytes = _data_directory_bytes(database.get_data_directory())
+        total_bytes = directory_bytes
         accounted_bytes = sum(row.bytes for row in databases) + sum(
             component.bytes for component in components
         )
@@ -258,52 +162,3 @@ class StorageProvider:
             if db_name:
                 mapping[db_name] = site.config.name
         return mapping
-
-    def _bench_breakdown(self) -> BenchBreakdown:
-        """The bench storage breakdown."""
-        apps = [self._app_storage(app) for app in self._bench.apps()]
-        sites = [self._site_storage(site) for site in self._bench.sites()]
-        logs_bytes = directory_size_bytes(str(self._bench.logs_path))
-        env_bytes = directory_size_bytes(str(self._bench.env_path))
-        apps_bytes = sum(item.bytes for item in apps)
-        sites_bytes = sum(item.bytes for item in sites)
-        return BenchBreakdown(
-            used_bytes=apps_bytes + env_bytes + sites_bytes + logs_bytes,
-            apps=apps,
-            apps_bytes=apps_bytes,
-            env_bytes=env_bytes,
-            sites=sites,
-            sites_bytes=sites_bytes,
-            logs_bytes=logs_bytes,
-        )
-
-    def _app_storage(self, app) -> AppStorage:
-        """The storage of one app, with its git history and node_modules split out."""
-        return AppStorage(
-            name=app.config.name,
-            bytes=directory_size_bytes(str(app.path)),
-            git_bytes=directory_size_bytes(str(app.path / ".git")),
-            node_modules_bytes=sum(
-                directory_size_bytes(str(path)) for path in node_modules_directories(app.path)
-            ),
-        )
-
-    def _site_storage(self, site) -> SiteStorage:
-        """The storage of one site."""
-        total_bytes = directory_size_bytes(str(site.path))
-        private_files_bytes = directory_size_bytes(str(site.path / "private" / "files"))
-        public_files_bytes = directory_size_bytes(str(site.path / "public"))
-        backups_bytes = sum(
-            directory_size_bytes(str(path)) for path in _site_backup_dirs(site.path) if path.is_dir()
-        )
-        other_bytes = max(total_bytes - private_files_bytes - public_files_bytes - backups_bytes, 0)
-        return SiteStorage(
-            name=site.config.name,
-            bytes=total_bytes,
-            private_files_bytes=private_files_bytes,
-            public_files_bytes=public_files_bytes,
-            backups_bytes=backups_bytes,
-            other_bytes=other_bytes,
-            backup_files=_site_backup_files(site.path),
-            other_entries=_site_other_entries(site.path),
-        )
