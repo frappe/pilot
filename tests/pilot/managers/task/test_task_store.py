@@ -256,6 +256,19 @@ def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
     assert store.read_metadata(TASK_ID)["resource_keys"] == ["site:example.test"]
 
 
+def test_active_task_id_names_the_task_holding_a_resource_until_it_ends(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    assert store.get_active_task_id("bench-storage") is None
+
+    store.create_queued(metadata(), resource_key="bench-storage")
+    assert store.get_active_task_id("bench-storage") == TASK_ID
+    assert store.get_active_task_id("site:example.test") is None
+
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.RUNNING)
+    store.transition(TASK_ID, TaskStatus.RUNNING, TaskStatus.KILLED)
+    assert store.get_active_task_id("bench-storage") is None
+
+
 def test_reserved_resource_rejects_tasks_until_released(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
 

@@ -94,6 +94,13 @@ class HostPlatform:
         return platform.release()
 
     @property
+    def available_cpu_count(self) -> int:
+        """CPUs this process may run on. An affinity mask or cpuset can hold it below the host's count."""
+        if hasattr(os, "sched_getaffinity"):
+            return len(os.sched_getaffinity(0))
+        return os.cpu_count() or 1
+
+    @property
     def mariadb_config_bin(self) -> str | None:
         """The mariadb_config or mysql_config path, including keg-only Homebrew installs."""
         if found := (self.get_executable_path("mariadb_config") or self.get_executable_path("mysql_config")):

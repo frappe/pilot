@@ -461,18 +461,19 @@ def test_mariadb_server_wide_size_breaks_down_by_schema_in_one_scan() -> None:
     assert len([call for call in calls if "information_schema.TABLES" in call[0]]) == 1
 
 
-def test_mariadb_schema_sizes_count_space_a_rebuild_would_reclaim() -> None:
-    """A schema holds its freed pages until it is rebuilt, so the disk cannot
-    hand that space to anything else - it belongs in the schema's size."""
+def test_mariadb_schema_sizes_sum_each_schemas_tablespace_files() -> None:
+    """Allocated file size keeps the freed pages a rebuild would reclaim, and needs
+    no read access to the data directory."""
     db = MariaDB(host="h", port=3306, user="u", password="p", database="")
     calls: list = []
-    responses = {"information_schema.TABLES": ([], [["site_one", 500], [None, 7]])}
+    responses = {"INNODB_SYS_TABLESPACES": ([], [["site_one", 500], ["my@002dsite", 7], ["empty", None]])}
 
     with patch.object(MariaDB, "execute", _canned_execute(responses, calls)):
         sizes = db.get_schema_sizes()
 
-    assert sizes == {"site_one": 500}
-    assert "data_length + index_length + data_free" in calls[0][0]
+    assert sizes == {"site_one": 500, "my-site": 7, "empty": 0}
+    assert "SUM(allocated_size)" in calls[0][0]
+    assert "information_schema.TABLES" not in calls[0][0]
 
 
 def test_postgres_schema_sizes_skip_template_databases() -> None:

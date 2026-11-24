@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
 from pilot.config import BenchConfig
+from pilot.exceptions import BenchError
 
 
 def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
@@ -345,6 +346,35 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
     # actually finish - a half-built deployment must never look "done" to the switcher.
     assert "enabled = false" in fresh_toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "systemd"' in fresh_toml.split("[production]")[1].split("[")[0]
+
+
+def test_api_benches_create_reports_why_the_admin_did_not_start(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    with (
+        patch(
+            "admin.backend.providers.bench.BenchProvider.is_production",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+        patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=True),
+        patch(
+            "pilot.managers.processes.systemd.SystemdProcessManager.start_admin",
+            side_effect=BenchError("the trial unit failed"),
+        ),
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.register"),
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=[],
+        ),
+    ):
+        resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
+
+    error = resp.get_json()["error"]
+    assert resp.status_code == 500
+    assert error["code"] == "bench_start_failed"
+    assert error["message"].endswith("could not be started: the trial unit failed")
 
 
 def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path) -> None:

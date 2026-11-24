@@ -12,6 +12,7 @@ import {
   toast,
 } from 'frappe-ui'
 
+import CloneDialog from '@/components/common/CloneDialog.vue'
 import PageHero from '@/components/common/PageHero.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
 import SiteApps from '@/components/sites/Apps.vue'
@@ -196,7 +197,10 @@ const menuOptions = computed(() => [
     : []),
   { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
   { label: 'View jobs', icon: 'lucide-list-checks', onClick: viewJobs },
+  { label: 'Clone site', icon: 'lucide-copy', onClick: () => (showClone.value = true) },
 ])
+
+const showClone = ref(false)
 
 // Provisioning and a pending setup wizard both resolve without us: poll quietly
 // until they do, so the badge and the header button settle on their own.
@@ -326,4 +330,11 @@ onMounted(() => {
       <span class="sm:hidden">{{ site?.setup_complete ? 'Open' : 'Setup' }}</span>
     </Button>
   </Teleport>
+
+  <CloneDialog
+    v-model="showClone"
+    kind="site"
+    :source="siteName"
+    @started="(taskId) => openTaskDetailPage(router, taskId)"
+  />
 </template>

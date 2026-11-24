@@ -165,7 +165,7 @@ onMounted(() => load(statusFilter.value))
       />
     </StickyToolbar>
 
-    <ListSkeleton v-if="loading" />
+    <ListSkeleton v-if="loading && !tasks.length" />
 
     <template v-else-if="error">
       <ErrorMessage :message="error" />

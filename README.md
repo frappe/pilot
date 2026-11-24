@@ -77,6 +77,7 @@ Common commands:
 | `pilot -b <name> setup production` | Configure process manager, nginx, Admin domain, and optional TLS |
 | `pilot -b <name> restart` | Restart production processes |
 | `pilot -b <name> remove production` | Remove production deployment files and services |
+| `pilot -b <name> remove central` | Disable Central management and remove its hostname aliases |
 
 For the full command list, see [Commands](docs/commands.md).
 

@@ -184,7 +184,7 @@ const submit = async () => {
 
     <div class="flex items-center gap-3">
       <div
-        :class="isSite ? 'before:lucide-globe' : 'before:lucide-layers'"
+        :class="isSite ? 'before:lucide-pilot-site' : 'before:lucide-layers'"
         class="flex flex-1 items-center gap-2 before:size-4 before:text-ink-gray-5 before:shrink-0 border border-dashed border-outline-gray-3 px-2 rounded-4 min-w-0 h-7 text-ink-gray-8 text-base"
       >
         <span class="truncate">{{ source }}</span>

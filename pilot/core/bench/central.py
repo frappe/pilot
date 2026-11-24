@@ -79,6 +79,18 @@ class CentralSetup:
                 common.central.bootstrapped = False
             central.enabled, central.bootstrapped = common.central.enabled, common.central.bootstrapped
 
+    def disable(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Turn Central management off and drop its hostname aliases and bootstrap unit."""
+        from pilot.config.central import CentralConfig
+        from pilot.config.common import CommonConfig
+
+        on_progress("Disabling Central management")
+        with CommonConfig.open(self.bench.path.parent) as common:
+            common.central = CentralConfig()
+        self.bench.config.central = CentralConfig()
+        # Rebuilding without central enabled stops and unlinks the bootstrap unit.
+        self.bench.rebuild_process_set(on_progress)
+
     def _alias_site(self) -> "Site | None":
         """The site that the site alias pattern points at, if any."""
         if not self.site_pattern:
