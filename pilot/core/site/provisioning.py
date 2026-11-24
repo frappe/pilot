@@ -155,16 +155,31 @@ class SiteProvisioner:
         PrivateFile(config_path).write_text(json.dumps(config, indent=1))
 
     def build_missing_assets(self) -> None:
-        """Build the assets of apps that have none."""
+        """Build the assets of apps that have none, and rebuild an app whose manifest
+        entries point at files that a build removed."""
         from pilot.managers.environment import PythonEnvManager
 
         manager = PythonEnvManager(self.bench)
         assets_dir = self.bench.sites_path / "assets"
-        for app in self.bench.apps():
-            if not self.bench.is_app_installed(app.config.name):
-                continue
+        apps = [app for app in self.bench.apps() if self.bench.is_app_installed(app.config.name)]
+
+        changed = False
+        for app in apps:
             if not (assets_dir / app.config.name).exists():
                 manager.build_assets_for_app(app)
+                changed = True
+
+        # A new site would inherit a manifest whose CSS or JS no longer exists.
+        removed = set(manager.apps_with_removed_assets())
+        for app in apps:
+            if app.config.name in removed:
+                manager.build_assets_for_app(app, force=True)
+                changed = True
+
+        if changed:
+            # Every site reads assets.json through Redis, so drop that copy or they keep
+            # linking to the outputs the build replaced.
+            self.bench.clear_cache()
 
     def add_to_hosts(self, site: "Site") -> None:
         """Add the site to /etc/hosts in development."""

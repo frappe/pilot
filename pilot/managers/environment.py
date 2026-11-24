@@ -264,3 +264,7 @@ class PythonEnvManager:
     def build_assets_for_app(self, app: "App", force: bool = False, skip_frontend: bool = False) -> None:
         """Build one app's assets."""
         self._assets.build_assets_for_app(app, force=force, skip_frontend=skip_frontend)
+
+    def apps_with_removed_assets(self) -> list[str]:
+        """Apps whose asset manifest entries point at files that no longer exist."""
+        return self._assets.apps_with_removed_assets()
