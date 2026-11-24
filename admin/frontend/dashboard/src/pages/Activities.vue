@@ -218,7 +218,7 @@ onMounted(() => {
       <Button :href="exportUrl" icon="lucide-download" tooltip="Download" />
     </div>
 
-    <ListSkeleton v-if="loading" class="first:mt-4" />
+    <ListSkeleton v-if="loading && !activities.length" class="first:mt-4" />
 
     <ErrorMessage :message="'error'" v-else-if="error" class="mt-4" />
 

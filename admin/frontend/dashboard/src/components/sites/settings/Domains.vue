@@ -165,7 +165,7 @@ onUnmounted(() => {
       </Button>
     </header>
 
-    <LoadingText v-if="loading" class="justify-center py-8" />
+    <LoadingText v-if="loading && !domains.length" class="justify-center py-8" />
 
     <template v-else>
       <div class="gap-3 grid sm:grid-cols-2 lg:grid-cols-3">

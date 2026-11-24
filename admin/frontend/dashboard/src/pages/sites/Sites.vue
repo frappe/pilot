@@ -12,7 +12,6 @@ import {
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import CloneDialog from '@/components/common/CloneDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
 import StickyToolbar from '@/components/common/StickyToolbar.vue'
@@ -178,14 +177,6 @@ const backupNow = async (site: SiteResource) => {
 
 const siteMenuOptions = (site: SiteResource) => {
   return [
-    {
-      label: 'Clone site',
-      icon: 'lucide-copy',
-      onClick: () => {
-        cloneSource.value = site.name
-        showClone.value = true
-      },
-    },
     { label: 'Visit site', icon: 'lucide-external-link', onClick: () => openSite(site) },
     { label: 'Login as admin', icon: 'lucide-log-in', onClick: () => openAsAdmin(site) },
     { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
@@ -203,8 +194,6 @@ const siteMenuOptions = (site: SiteResource) => {
 }
 
 const showCreate = ref(false)
-const showClone = ref(false)
-const cloneSource = ref('')
 
 watch(
   () => route.query.new,
@@ -273,7 +262,7 @@ onMounted(() => {
     <template v-else-if="showSkeleton || filteredSites.length">
       <div
         v-if="showSkeleton || view === 'grid'"
-        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5"
+        class="gap-4 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
       >
         <template v-if="showSkeleton">
           <SiteSkeleton v-for="index in 4" :key="index" :index="index - 1" />
@@ -386,7 +375,7 @@ onMounted(() => {
     <EmptyState
       v-else
       class="mt-4"
-      icon="lucide-globe"
+      icon="lucide-pilot-site"
       :title="isFiltered ? 'No matching sites' : 'No sites yet'"
       :description="
         isFiltered
@@ -412,13 +401,6 @@ onMounted(() => {
   <NewSiteDialog
     v-model="showCreate"
     :sites="sites"
-    @started="(taskId) => openTaskDetailPage(router, taskId)"
-  />
-
-  <CloneDialog
-    v-model="showClone"
-    kind="site"
-    :source="cloneSource"
     @started="(taskId) => openTaskDetailPage(router, taskId)"
   />
 </template>

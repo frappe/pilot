@@ -227,7 +227,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="appsLoading" class="flex flex-col gap-2">
+  <div v-if="appsLoading && !installedApps.length" class="flex flex-col gap-2">
     <Skeleton v-for="i in 4" :key="i" class="rounded-4 h-14" />
   </div>
 

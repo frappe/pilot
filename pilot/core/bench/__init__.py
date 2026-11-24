@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
     from pilot.core.bench.site_aliases import SiteAliases
+    from pilot.core.bench.storage import BenchStorage
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
     from pilot.core.notification.notifier import Notifier
@@ -169,6 +170,13 @@ class Bench:
         from pilot.core.bench.hostname_aliases import HostnameAliases
 
         return HostnameAliases(self)
+
+    @cached_property
+    def storage(self) -> "BenchStorage":
+        """The bench folder's storage breakdown."""
+        from pilot.core.bench.storage import BenchStorage
+
+        return BenchStorage(self)
 
     @cached_property
     def site_storage(self) -> "SiteStorageCollector":
@@ -733,6 +741,12 @@ class Bench:
         from pilot.core.bench.central import CentralSetup
 
         CentralSetup(self, admin_pattern, site_pattern, redirect, rebootstrap).run(on_progress)
+
+    def remove_central(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Disable Central management and remove its hostname aliases."""
+        from pilot.core.bench.central import CentralSetup
+
+        CentralSetup(self).disable(on_progress)
 
     def setup_letsencrypt(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         """Issue Let's Encrypt certificates for the bench domains."""

@@ -172,3 +172,17 @@ input:autofill {
 .dialog-content .bg-surface-elevation-1 {
   @apply bg-surface-base;
 }
+
+.dialog-content[data-state] {
+  animation: none;
+  transform: none;
+}
+
+.legend-dot::before {
+  content: "";
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: var(--dot-color);
+}

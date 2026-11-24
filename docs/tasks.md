@@ -87,6 +87,7 @@ The limits below are conservative safety limits, not expected operation times. L
 | `new-app` | 1 hour | No |
 | `new-site` | 1 hour | Yes |
 | `new-site-from-backup` | 24 hours | Yes |
+| `refresh-bench-storage` | 15 minutes | Yes |
 | `refresh-storage-usage` | 5 minutes | Yes |
 | `reinstall-site` | 24 hours | No |
 | `relocate-renamed-blobs` | 24 hours | Yes |
@@ -143,11 +144,13 @@ Call `self.step_failed()` only when a task handles an error internally and still
 
 ## Callbacks
 
-`@on_success`, `@on_failure`, and `@on_cancel` take no arguments. The decorated method returns callback args, and the method name becomes the operation with underscores converted to hyphens. The operation must exist in `CallbackOperations.operations` (`pilot/internal/tasks/callbacks.py`); an unknown operation fails at queue time with `ValueError`.
+`@on_success`, `@on_failure`, and `@on_cancel` take no arguments. The decorated method returns callback args, and the method name becomes the operation with underscores converted to hyphens. The operation must exist in `CallbackOperations.operations` (`pilot/internal/tasks/callbacks.py`); the decorator raises `ValueError` for any other name when the task class is defined.
 
 Return `None` to skip a callback for that task instance.
 
-Explicit callbacks passed to `queue()` override callbacks declared on the task.
+Explicit callbacks passed to `queue()` override callbacks declared on the task. They are checked against the same operations at queue time.
+
+A callback can run more than once. If its process stops before the wrapper removes `callbacks.json`, for example on a host restart, an out-of-memory kill, or a worker crash during a replayed callback, recovery runs the callback again from the start. Write each operation so that repeating it is safe.
 
 ## Idempotency
 

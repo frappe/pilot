@@ -81,7 +81,7 @@ const siteFact = computed<Fact[]>(() => {
 
   const { label, route } = scope.value
 
-  return [{ label: 'Site', icon: 'lucide-globe', value: label, route }]
+  return [{ label: 'Site', icon: 'lucide-pilot-site', value: label, route }]
 })
 
 const timeFacts = computed<Fact[]>(() => {

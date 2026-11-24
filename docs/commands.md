@@ -108,8 +108,11 @@ Site behavior belongs on `Site` or a module under `pilot/core/site`.
 - `pilot setup central`: hand the host to Central and alias the VM hostnames it serves.
 - `pilot setup telemetry`: write the Datum credential to `common_config.toml`.
 - `pilot remove production`: remove production deployment files and services.
+- `pilot remove central`: turn Central management off and remove its VM hostname aliases.
 
 `pilot setup central` writes the shared `[central]` settings: it enables Central management and, given `--admin-pattern` or `--site-pattern`, aliases those VM hostname globs to this bench's admin domain and its site. Central manages a host holding one bench, so the command refuses a second one rather than guess which bench a VM hostname belongs to, and `--site-pattern` aliases the bench's only site, skipping the alias while the bench has no site and refusing to guess when it has more than one. The credential itself is never passed in - it arrives through instance metadata, and `--rebootstrap` asks for it to be applied again. Because the bootstrap unit is written only while Central is enabled, the command rebuilds the process set of a bench already in production, restarting its workload.
+
+`pilot remove central` clears the shared `[central]` table, including its hostname aliases, so the Admin stops waiting for a Central credential. Use it on a host that is not a Central VM. On a bench in production it rebuilds the process set, which removes the bootstrap unit and regenerates nginx.
 
 Production setup uses the bench config and system managers. The command should not duplicate nginx, process manager, or certificate logic.
 
