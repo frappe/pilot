@@ -31,41 +31,36 @@ class SiteMonitoringProvider(WindowedLogProvider):
         self._access_log = SiteAccessLogProvider(bench_root, site_name, window)
         self._db_name = self._read_db_name(bench_root, site_name)
         self._start_ms = self.to_epoch_ms(self.cutoff)
+        self._end_ms = self.now_ms()
 
     def get_analytics(self) -> dict:
         """The request, job, report and query timelines."""
         points = self.get_points(self._entries_in_window())
-        now_ms = self.now_ms()
-
-        def timeline(key: str, by: str) -> dict:
-            """The top categories of one point list."""
-            return build_timeline(
-                points[key], self.top_limit, self._bucket_seconds, by, self._start_ms, now_ms
-            )
-
-        def total(key: str, series_name: str) -> dict:
-            """The count of one point list over time."""
-            return build_total_timeline(
-                points[key], self._bucket_seconds, series_name, self._start_ms, now_ms
-            )
-
         return {
             "window": self.window,
             "window_seconds": self.window_seconds,
-            "now": now_ms,
-            "requests_over_time": total("paths", "Requests"),
-            "top_paths": timeline("paths", "count"),
-            "slowest_requests": timeline("all_paths", "duration"),
-            "avg_request_duration": timeline("paths", "average"),
-            "background_jobs_over_time": total("jobs", "Jobs"),
-            "top_jobs": timeline("jobs", "count"),
-            "slowest_jobs": timeline("jobs", "duration"),
-            "avg_job_duration": timeline("jobs", "average"),
+            "now": self._end_ms,
+            "requests_over_time": self.get_total(points["paths"], "Requests"),
+            "top_paths": self.get_timeline(points["paths"], "count"),
+            "slowest_requests": self.get_timeline(points["all_paths"], "duration"),
+            "avg_request_duration": self.get_timeline(points["paths"], "average"),
+            "background_jobs_over_time": self.get_total(points["jobs"], "Jobs"),
+            "top_jobs": self.get_timeline(points["jobs"], "count"),
+            "slowest_jobs": self.get_timeline(points["jobs"], "duration"),
+            "avg_job_duration": self.get_timeline(points["jobs"], "average"),
             "top_ips": self._top_ips(points["ips"]),
-            "slowest_reports": timeline("reports", "duration"),
+            "slowest_reports": self.get_timeline(points["reports"], "duration"),
             "frequent_slow_queries": self._slow_query_timeline("count"),
             "slowest_queries": self._slow_query_timeline("duration"),
         }
+
+    def get_timeline(self, points: list[TimelinePoint], by: str) -> dict:
+        """The top categories of the points over the window."""
+        return build_timeline(points, self.top_limit, self._bucket_seconds, by, self._start_ms, self._end_ms)
+
+    def get_total(self, points: list[TimelinePoint], series_name: str) -> dict:
+        """The count of the points over the window."""
+        return build_total_timeline(points, self._bucket_seconds, series_name, self._start_ms, self._end_ms)
 
     @classmethod
     def get_points(cls, entries: Iterable[tuple[int, dict]]) -> dict[str, list[TimelinePoint]]:
@@ -106,7 +101,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
                 and (when := self.get_time(record.get("time"))) is not None
                 and when >= self.cutoff
             ]
-        return build_timeline(points, self.top_limit, self._bucket_seconds, by, self._start_ms, self.now_ms())
+        return self.get_timeline(points, by)
 
     @staticmethod
     def _read_db_name(bench_root: Path, site_name: str) -> str | None:
@@ -123,9 +118,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
         """The top client IPs."""
         if self._access_log.is_available():
             return self._access_log.get_top_ips()
-        return build_timeline(
-            points, self.top_limit, self._bucket_seconds, "count", self._start_ms, self.now_ms()
-        )
+        return self.get_timeline(points, "count")
 
     @staticmethod
     def _request_path(entry: dict) -> str | None:

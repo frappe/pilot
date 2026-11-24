@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -181,3 +182,20 @@ def test_a_full_update_catches_up_one_step_at_a_time(tmp_path: Path) -> None:
 
     assert fold.call_count >= 7
     assert rollup.get_activity(SITE, NOW).requests[-1] == 100
+
+
+def test_a_full_update_removes_files_of_idle_sites(tmp_path: Path) -> None:
+    rollup = _rollup(tmp_path)
+    _write(rollup, _request("/a"))
+    rollup.update(NOW)
+    dropped = rollup.directory / "dropped.example.com.json"
+    dropped.write_text("{}")
+    old = NOW.timestamp() - 2 * 86400
+    os.utime(dropped, (old, old))
+
+    rollup.update(NOW, catch_up=False)
+    assert dropped.exists()
+
+    rollup.update(NOW)
+    assert not dropped.exists()
+    assert (rollup.directory / f"{SITE}.json").exists()

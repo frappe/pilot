@@ -75,9 +75,7 @@ class PostgreSQL(Database):
                 connect_timeout=self._connect_timeout,
             )
         except psycopg2.Error as exc:
-            raise DatabaseError(
-                f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}"
-            ) from exc
+            raise DatabaseError(f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}") from exc
 
     def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
         """Run the query, read-only by default, and return its result."""
@@ -196,9 +194,7 @@ class PostgreSQL(Database):
     def get_lock_waits(self) -> LockWaitStatus:
         """The ungranted locks and the lock timeout."""
         current = int(self.execute("SELECT COUNT(*) FROM pg_locks WHERE NOT granted").rows[0][0])
-        timeout_ms = int(
-            self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0]
-        )
+        timeout_ms = int(self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0])
         # PostgreSQL keeps no cumulative lock-wait counter; lock_timeout of 0 means disabled.
         return LockWaitStatus(
             current_waits=current,
@@ -295,7 +291,9 @@ class PostgreSQL(Database):
 
     def _scoped_to(self, database: str) -> "PostgreSQL":
         """A client for another database on the same server."""
-        return PostgreSQL(self._host, self._port, self._user, self._password, database, self._connect_timeout)
+        return PostgreSQL(
+            self._host, self._port, self._user, self._password, database, self._connect_timeout
+        )
 
     def get_table_sizes(self) -> list[TableSize]:
         """The size of each table."""

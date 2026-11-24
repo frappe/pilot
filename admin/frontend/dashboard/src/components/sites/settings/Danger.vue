@@ -105,6 +105,10 @@ const DangerActions = [
 ]
 
 const deletesData = ['reset', 'drop']
+const keepsData = ['rename']
+
+const buttonStyle = (key: string) =>
+  keepsData.includes(key) ? {} : { theme: 'red' as const, variant: 'subtle' as const }
 
 const dangerGroups = [
   {
@@ -203,9 +207,7 @@ const confirmDrop = async () => {
         </p>
       </div>
 
-      <Button theme="red" variant="subtle" class="ml-4 shrink-0"
-        @click="d.action"
-      >
+      <Button v-bind="buttonStyle(d.key)" class="ml-4 shrink-0" @click="d.action">
         {{ d.buttonLabel || d.label }}
       </Button>
     </div>

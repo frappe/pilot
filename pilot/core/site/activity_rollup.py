@@ -69,6 +69,8 @@ class SiteActivityRollup(HourlyRollup):
             with exclusive_file_lock(self.directory / "update", blocking=False):
                 while self.fold(now) >= self.step_bytes and catch_up:
                     pass
+                if catch_up:
+                    self.remove_idle_sites(now)
         except BlockingIOError:
             return False
         return True
@@ -88,6 +90,13 @@ class SiteActivityRollup(HourlyRollup):
             self.state_path, json.dumps({"inode": state["inode"], "offset": state["offset"]})
         )
         return state["offset"] - start
+
+    def remove_idle_sites(self, now: datetime) -> None:
+        """Delete the files of sites with no activity in the window, such as dropped sites."""
+        cutoff = now.timestamp() - self.retention_hours * 3600
+        for path in self.directory.glob("*.json"):
+            if path != self.state_path and path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
 
     def read_state(self) -> dict:
         """The saved read position, or the start."""

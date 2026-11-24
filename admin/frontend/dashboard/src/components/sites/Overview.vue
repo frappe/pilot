@@ -10,8 +10,8 @@ import CircularProgress from '@/components/common/CircularProgress.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
 import OverviewEmpty from '@/components/sites/OverviewEmpty.vue'
 import OverviewSkeleton from '@/components/sites/OverviewSkeleton.vue'
+import { useSite } from '@/composables/sites/useSite'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
-import { useSites } from '@/composables/sites/useSites'
 import type { AuditEntry } from '@/types/audit'
 import type { MigrationSummary } from '@/types/migrations'
 import type { SiteActivity } from '@/types/siteActivity'
@@ -30,11 +30,10 @@ const props = defineProps<{ siteName: string }>()
 
 const emit = defineEmits<{ open: [tab: string] }>()
 
-const { sites, load: loadSites } = useSites()
+const { site } = useSite(props.siteName)
 const { load: loadStorage, storageUsage, collectedAt } = useSiteStorage()
 
 const ready = reactive({
-  sites: false,
   storage: false,
   uptime: false,
   activity: false,
@@ -176,12 +175,7 @@ const failedJobs = computed(() => allFailedJobs.value.slice(0, 3))
 
 const failedPaths = computed(() => activity.value?.failed_paths ?? [])
 
-const errorLogUrl = computed(() => {
-  const site = sites.value.find((item) => item.name === props.siteName)
-  const host = site?.primary_domain || props.siteName
-
-  return `${site?.ssl ? 'https' : 'http'}://${host}/app/error-log`
-})
+const errorLogUrl = computed(() => `${site.value?.url ?? ''}/app/error-log`)
 
 const sizeDay = (day: SiteStorageDay) => dayFormat.format(new Date(`${day.date}T00:00:00`))
 
@@ -333,7 +327,6 @@ const load = () => {
   const track = (key: keyof typeof ready, request: Promise<unknown>) =>
     request.catch(() => null).finally(() => (ready[key] = true))
 
-  track('sites', sites.value.length ? Promise.resolve() : loadSites())
   track('storage', loadStorage())
   track(
     'uptime',
