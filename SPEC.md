@@ -71,7 +71,7 @@ Sites are represented by site directories and bench config records where needed.
 
 ## Task Model
 
-Long operations should be `Task` subclasses. Queue them with `SomeTask.queue(bench, ...)` or `SomeTask.queue_submission(bench, ...)`.
+Long operations should be `Task` subclasses. Queue them with `SomeTask.queue(bench, ...)`, the one submission path: it validates the arguments, attaches declared callbacks, holds the task's resource keys and records who queued it. To queue a recorded task again, look up its class with `Task.get_class(command)`.
 
 Use `@step` for visible progress and `@on_success`, `@on_failure`, or `@on_cancel` methods for task callbacks. Callback decorators take no arguments; the method name becomes the callback operation.
 

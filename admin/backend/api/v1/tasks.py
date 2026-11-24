@@ -20,6 +20,7 @@ from admin.backend.api.responses import (
 )
 from admin.backend.draining import is_draining
 from pilot.exceptions import (
+    TaskConflictError,
     TaskNotCancellableError,
     TaskNotFoundError,
     TaskNotRunningError,
@@ -32,7 +33,7 @@ from pilot.managers.task import (
     sse_message,
     task_has_secrets,
 )
-from pilot.tasks import TaskRunner
+from pilot.tasks import Task, TaskRunner
 
 tasks_bp = Blueprint("tasks", __name__)
 task_worker_bp = Blueprint("task_worker", __name__)
@@ -120,11 +121,10 @@ def retry_task(task_id: str):
             409,
         )
     try:
-        bench_root = ApiRequest.get_bench_root()
-        return accepted_task_response(
-            bench_root,
-            TaskRunner(bench_root).run(task.command, task.args),
-        )
+        bench = ApiRequest.get_bench()
+        return accepted_task_response(bench.path, Task.get_class(task.command).queue(bench, **task.args))
+    except TaskConflictError as error:
+        return error_response("task_conflict", str(error), 409)
     except ValueError as error:
         return error_response("invalid_task", str(error), 422)
     except Exception:
