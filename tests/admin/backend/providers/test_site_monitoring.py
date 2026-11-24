@@ -10,6 +10,7 @@ from unittest.mock import patch
 from admin.backend.providers.site.monitoring import SiteMonitoringProvider
 from pilot.config import BenchConfig
 from pilot.core.database.slow_queries import SlowQueryLog
+from pilot.internal.jsonl_log import JsonLines
 
 
 def _request(site: str, when: datetime, path: str, duration: int = 1_000_000, status_code: int = 200) -> dict:
@@ -211,3 +212,20 @@ def test_slow_query_timeline_empty_for_unknown_site(tmp_path: Path) -> None:
     result = SiteMonitoringProvider(root, "no-such-site.local", "1h").get_analytics()
 
     assert result["frequent_slow_queries"]["categories"] == []
+
+
+def test_compact_lines_of_other_sites_are_not_parsed(tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    records = [_request("site-b.local", now - timedelta(seconds=i), "/b") for i in range(50)]
+    records += [_request("site-a.local", now, "/a"), _request("site-a.local", now - timedelta(hours=2), "/old")]
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "monitor.json.log").write_text(
+        "\n".join(json.dumps(r, separators=(",", ":"), sort_keys=True) for r in reversed(records)) + "\n"
+    )
+
+    with patch("admin.backend.providers.site.monitoring.JsonLines.parse", wraps=JsonLines.parse) as parse:
+        result = SiteMonitoringProvider(tmp_path, "site-a.local", "1h").get_analytics()
+
+    assert result["top_paths"]["categories"] == ["/a"]
+    assert parse.call_count == 1

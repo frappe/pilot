@@ -18,7 +18,7 @@ class HourlyRollup:
     """Per-site counts by UTC hour, kept from an append-only JSON-lines log.
 
     Each update reads only the bytes added since the last one, so readers get a
-    few KB instead of scanning the whole log. A missing state reads the log once."""
+    few KB instead of scanning the whole log. A missing state reads only the retention window."""
 
     retention_hours = 24
     time_key = "time"
@@ -36,7 +36,9 @@ class HourlyRollup:
         state = self.read_state()
         sites = state["sites"]
         stat = self.source.stat()
+        now = now or datetime.now(UTC)
         offset = state["offset"] if state["inode"] == stat.st_ino and state["offset"] <= stat.st_size else 0
+        offset = max(offset, self.get_window_offset(now))
         with self.source.open("rb") as log:
             log.seek(offset)
             for line in log:
@@ -49,9 +51,17 @@ class HourlyRollup:
                 hour, site = self.get_hour(record.get(self.time_key)), record.get("site")
                 if hour and isinstance(site, str):
                     self.add(sites.setdefault(site, {}), hour, record)
-        self.prune(sites, now or datetime.now(UTC))
+        self.prune(sites, now)
         atomic_write_private_text(
             self.state_path, json.dumps({"inode": stat.st_ino, "offset": offset, "sites": sites})
+        )
+
+    def get_window_offset(self, now: datetime) -> int:
+        """Where the retention window starts in the log, so a first update, or one after a long
+        stop, skips the older lines of a log that can be many GB."""
+        oldest = self.get_hour_keys(now)[0]
+        return JsonLines(self.source).find_offset(
+            lambda record: (self.get_hour(record.get(self.time_key)) or "") < oldest
         )
 
     def add(self, hours: dict, hour: str, record: dict) -> None:

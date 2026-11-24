@@ -69,7 +69,7 @@ def _stub_database(
     makes every other query fail, modelling a table or column this Frappe lacks."""
     executed: list[str] = []
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params=()) -> QueryResult:
         executed.append(query)
         if only_for and only_for not in query:
             raise DatabaseError("no such column")

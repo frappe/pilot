@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -86,3 +87,20 @@ def test_hours_older_than_the_retention_are_dropped(tmp_path: Path) -> None:
     assert len(counts) == 24
     assert counts[-1] == 1
     assert sum(counts) == 1
+
+
+def test_a_first_update_skips_lines_older_than_the_window(tmp_path: Path) -> None:
+    rollup = RequestRollup(_bench(tmp_path))
+    old = [
+        {"timestamp": f"2026-11-{day:02d} 10:00:00+00:00", "site": SITE, "transaction_type": "request"}
+        for day in range(1, 11)
+        for _ in range(400)
+    ]
+    recent = {"timestamp": "2026-11-12 15:10:00+00:00", "site": SITE, "transaction_type": "request"}
+    _append(rollup.source, *old, recent)
+
+    with patch.object(RequestRollup, "add", autospec=True, side_effect=RequestRollup.add) as add:
+        rollup.update(NOW)
+
+    assert add.call_count < 100
+    assert rollup.get_counts(SITE, NOW)[-1] == 1

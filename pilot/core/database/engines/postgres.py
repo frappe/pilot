@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import time
+from collections.abc import Sequence
 
 from pilot.core.database.base import (
     Database,
@@ -74,9 +75,11 @@ class PostgreSQL(Database):
                 connect_timeout=self._connect_timeout,
             )
         except psycopg2.Error as exc:
-            raise DatabaseError(f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}") from exc
+            raise DatabaseError(
+                f"Could not connect to PostgreSQL at {self._host}:{self._port}: {exc}"
+            ) from exc
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
         """Run the query, read-only by default, and return its result."""
         conn = self._connect()
         start = time.monotonic()
@@ -84,7 +87,7 @@ class PostgreSQL(Database):
             if read_only:
                 conn.set_session(readonly=True)
             with conn.cursor() as cursor:
-                cursor.execute(query)
+                cursor.execute(query, tuple(params) or None)
                 if cursor.description:
                     columns = [d[0] for d in cursor.description]
                     raw = cursor.fetchmany(MAX_ROWS + 1)
@@ -182,7 +185,7 @@ class PostgreSQL(Database):
     def kill_process(self, process_id: int) -> None:
         """pg_terminate_backend reports a missing backend by returning false."""
         pid = validated_process_id(process_id)
-        result = self.execute(f"SELECT pg_terminate_backend({pid})")
+        result = self.execute("SELECT pg_terminate_backend(%s)", params=[pid])
         if not result.rows or not result.rows[0][0]:
             raise DatabaseError(f"No such process: {pid}")
 
@@ -193,7 +196,9 @@ class PostgreSQL(Database):
     def get_lock_waits(self) -> LockWaitStatus:
         """The ungranted locks and the lock timeout."""
         current = int(self.execute("SELECT COUNT(*) FROM pg_locks WHERE NOT granted").rows[0][0])
-        timeout_ms = int(self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0])
+        timeout_ms = int(
+            self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0]
+        )
         # PostgreSQL keeps no cumulative lock-wait counter; lock_timeout of 0 means disabled.
         return LockWaitStatus(
             current_waits=current,
@@ -235,11 +240,11 @@ class PostgreSQL(Database):
         wanted = {int(row[3]) for row in rows if row[3]}
         if not wanted:
             return {}
-        oids = ", ".join(str(oid) for oid in wanted)
         catalog = self._scoped_to(database).execute(
             "SELECT c.oid, n.nspname, c.relname FROM pg_class c "
             "JOIN pg_namespace n ON n.oid = c.relnamespace "
-            f"WHERE c.oid IN ({oids})"
+            "WHERE c.oid = ANY(%s)",
+            params=[sorted(wanted)],
         )
         return {int(row[0]): f"{database}.{row[1]}.{row[2]}" for row in catalog.rows}
 
@@ -290,9 +295,7 @@ class PostgreSQL(Database):
 
     def _scoped_to(self, database: str) -> "PostgreSQL":
         """A client for another database on the same server."""
-        return PostgreSQL(
-            self._host, self._port, self._user, self._password, database, self._connect_timeout
-        )
+        return PostgreSQL(self._host, self._port, self._user, self._password, database, self._connect_timeout)
 
     def get_table_sizes(self) -> list[TableSize]:
         """The size of each table."""

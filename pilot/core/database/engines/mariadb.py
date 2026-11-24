@@ -4,6 +4,7 @@ import importlib.util
 import os
 import re
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import SupportsFloat
@@ -99,7 +100,7 @@ class MariaDB(Database):
         """The name quoted as an identifier."""
         return "`{}`".format(name.replace("`", ""))
 
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
+    def execute(self, query: str, read_only: bool = True, *, params: Sequence = ()) -> QueryResult:
         """Run the query, read-only by default, and return its result."""
         import pymysql
         import pymysql.cursors
@@ -111,7 +112,7 @@ class MariaDB(Database):
             with conn.cursor(pymysql.cursors.Cursor) as cursor:
                 if read_only:
                     cursor.execute("START TRANSACTION READ ONLY")
-                cursor.execute(query)
+                cursor.execute(query, tuple(params) or None)
                 if cursor.description:
                     columns = [d[0] for d in cursor.description]
                     raw = list(cursor.fetchmany(MAX_ROWS + 1))
@@ -519,7 +520,7 @@ class MariaDB(Database):
 
     def get_status_value(self, variable: str) -> int:
         """One global status value; raise for an unknown one."""
-        result = self.execute(f"SHOW GLOBAL STATUS LIKE '{variable}'")
+        result = self.execute("SHOW GLOBAL STATUS LIKE %s", params=[variable])
         if not result.rows:
             raise DatabaseError(f"Unknown status variable: {variable}")
         return int(result.rows[0][1])

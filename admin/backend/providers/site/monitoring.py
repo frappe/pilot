@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 from admin.backend.internal.timeline import TimelinePoint, build_timeline, build_total_timeline
 from admin.backend.providers.site.access_log import SiteAccessLogProvider
 from admin.backend.providers.windowed_log import WindowedLogProvider
 from pilot.core.site.uptime_monitoring import PING_PATH
+from pilot.internal.jsonl_log import JsonLines
 from pilot.internal.site_paths import site_config_path
 
 
@@ -33,39 +34,65 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     def get_analytics(self) -> dict:
         """The request, job, report and query timelines."""
-        entries = list(self._entries_in_window())
-        request_points = self._points(entries, "request", self.get_non_ping_path)
-        job_points = self._points(entries, "job", self._job_method)
-        error_points = self._points(entries, "request", self.get_error_path)
+        points = self.get_points(self._entries_in_window())
         now_ms = self.now_ms()
+
+        def timeline(key: str, by: str) -> dict:
+            """The top categories of one point list."""
+            return build_timeline(
+                points[key], self.top_limit, self._bucket_seconds, by, self._start_ms, now_ms
+            )
+
+        def total(key: str, series_name: str) -> dict:
+            """The count of one point list over time."""
+            return build_total_timeline(
+                points[key], self._bucket_seconds, series_name, self._start_ms, now_ms
+            )
+
         return {
             "window": self.window,
             "window_seconds": self.window_seconds,
             "now": now_ms,
-            "requests_over_time": build_total_timeline(
-                request_points, self._bucket_seconds, "Requests", self._start_ms, now_ms
-            ),
-            "errors_over_time": build_total_timeline(
-                error_points, self._bucket_seconds, "Errors", self._start_ms, now_ms
-            ),
-            "top_paths": self._timeline(entries, "request", self.get_non_ping_path, "count"),
-            "failed_paths": build_timeline(
-                error_points, self.top_limit, self._bucket_seconds, "count", self._start_ms, now_ms
-            ),
-            "slowest_requests": self._timeline(entries, "request", self._request_path, "duration"),
-            "avg_request_duration": self._timeline(entries, "request", self.get_non_ping_path, "average"),
-            "response_time": self._timeline(entries, "request", self.get_response_category, "average"),
-            "background_jobs_over_time": build_total_timeline(
-                job_points, self._bucket_seconds, "Jobs", self._start_ms, now_ms
-            ),
-            "top_jobs": self._timeline(entries, "job", self._job_method, "count"),
-            "slowest_jobs": self._timeline(entries, "job", self._job_method, "duration"),
-            "avg_job_duration": self._timeline(entries, "job", self._job_method, "average"),
-            "top_ips": self._top_ips(entries),
-            "slowest_reports": self._timeline(entries, "request", self._report_name, "duration"),
+            "requests_over_time": total("paths", "Requests"),
+            "errors_over_time": total("errors", "Errors"),
+            "top_paths": timeline("paths", "count"),
+            "failed_paths": timeline("errors", "count"),
+            "slowest_requests": timeline("all_paths", "duration"),
+            "avg_request_duration": timeline("paths", "average"),
+            "response_time": timeline("response", "average"),
+            "background_jobs_over_time": total("jobs", "Jobs"),
+            "top_jobs": timeline("jobs", "count"),
+            "slowest_jobs": timeline("jobs", "duration"),
+            "avg_job_duration": timeline("jobs", "average"),
+            "top_ips": self._top_ips(points["ips"]),
+            "slowest_reports": timeline("reports", "duration"),
             "frequent_slow_queries": self._slow_query_timeline("count"),
             "slowest_queries": self._slow_query_timeline("duration"),
         }
+
+    @classmethod
+    def get_points(cls, entries: Iterable[tuple[int, dict]]) -> dict[str, list[TimelinePoint]]:
+        """Every point list the timelines need, in one pass over the entries."""
+        categories = {
+            "request": {
+                "paths": cls.get_non_ping_path,
+                "all_paths": cls._request_path,
+                "errors": cls.get_error_path,
+                "response": cls.get_response_category,
+                "ips": cls._request_ip,
+                "reports": cls._report_name,
+            },
+            "job": {"jobs": cls._job_method},
+        }
+        points: dict[str, list[TimelinePoint]] = {key: [] for group in categories.values() for key in group}
+        for time_ms, entry in entries:
+            duration = entry.get("duration")
+            if not isinstance(duration, (int, float)):
+                continue
+            for key, category in categories.get(entry.get("transaction_type"), {}).items():
+                if name := category(entry):
+                    points[key].append(TimelinePoint(time_ms, name, duration))
+        return points
 
     def _slow_query_timeline(self, by: str) -> dict:
         """The slow query timeline of the site."""
@@ -97,34 +124,13 @@ class SiteMonitoringProvider(WindowedLogProvider):
         except (OSError, ValueError):
             return None
 
-    def _top_ips(self, entries: list[dict]) -> dict:
+    def _top_ips(self, points: list[TimelinePoint]) -> dict:
         """The top client IPs."""
         if self._access_log.is_available():
             return self._access_log.get_top_ips()
-        return self._timeline(entries, "request", self._request_ip, "count")
-
-    def _timeline(
-        self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None], by: str
-    ) -> dict:
-        """The top categories of one transaction type over time."""
-        points = self._points(entries, transaction_type, category)
-        return build_timeline(points, self.top_limit, self._bucket_seconds, by, self._start_ms, self.now_ms())
-
-    def _points(
-        self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None]
-    ) -> list[TimelinePoint]:
-        """The timeline points of one transaction type."""
-        points = []
-        for entry in entries:
-            if entry.get("transaction_type") != transaction_type:
-                continue
-            duration = entry.get("duration")
-            name = category(entry)
-            when = self.get_time(entry.get("timestamp"))
-            if when is None or not isinstance(duration, (int, float)) or not name:
-                continue
-            points.append(TimelinePoint(self.to_epoch_ms(when), name, duration))
-        return points
+        return build_timeline(
+            points, self.top_limit, self._bucket_seconds, "count", self._start_ms, self.now_ms()
+        )
 
     @staticmethod
     def _request_path(entry: dict) -> str | None:
@@ -180,8 +186,32 @@ class SiteMonitoringProvider(WindowedLogProvider):
         report = entry.get("report")
         return report if isinstance(report, str) and report else None
 
-    def _entries_in_window(self):
-        """Yield the site's monitor entries in the window."""
-        for record in self.records_in_window(self._log_path, time_key="timestamp"):
-            if record.get("site") == self._site_name:
-                yield record
+    def _entries_in_window(self) -> Iterator[tuple[int, dict]]:
+        """The site's monitor entries in the window as (epoch ms, entry), newest first. Frappe writes
+        compact JSON, so the time and site are read from the raw line and only this site's lines are
+        parsed; a line in another layout is parsed whole."""
+        site_marker = b'"site":' + json.dumps(self._site_name).encode()
+        for line in JsonLines(self._log_path).read_lines_newest_first():
+            raw_time = self.read_raw_value(line, b'"timestamp":"')
+            record = None if raw_time else JsonLines.parse(line)
+            when = self.get_time(record.get("timestamp") if record else raw_time)
+            if when is None:
+                continue
+            if when < self.cutoff:
+                break
+            if record is None:
+                if b'"site":"' in line and site_marker not in line:
+                    continue
+                record = JsonLines.parse(line)
+            if record is not None and record.get("site") == self._site_name:
+                yield self.to_epoch_ms(when), record
+
+    @staticmethod
+    def read_raw_value(line: bytes, key: bytes) -> str | None:
+        """The string value after a compact JSON key, or None when the line lacks it."""
+        start = line.find(key)
+        if start < 0:
+            return None
+        start += len(key)
+        end = line.find(b'"', start)
+        return line[start:end].decode() if end > start else None

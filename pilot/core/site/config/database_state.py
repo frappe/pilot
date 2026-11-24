@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from pilot.core.database import Database, bench_query, make_site_database
@@ -67,8 +67,10 @@ class SiteDatabaseState:
             return False
         rows = self.query(
             lambda database: (
-                f"SELECT 1 FROM {database.quote_identifier('tabModule Def')} WHERE app_name = '{app_name}' LIMIT 1"
-            )
+                f"SELECT 1 FROM {database.quote_identifier('tabModule Def')} "
+                f"WHERE app_name = {database.placeholder} LIMIT 1"
+            ),
+            [app_name],
         )
         return bool(rows)
 
@@ -110,8 +112,9 @@ class SiteDatabaseState:
         rows = self.query(
             lambda database: (
                 f"SELECT value FROM {database.quote_identifier('tabSingles')} "
-                f"WHERE doctype = 'System Settings' AND field = '{field}'"
-            )
+                f"WHERE doctype = 'System Settings' AND field = {database.placeholder}"
+            ),
+            [field],
         )
         if rows is None:
             return None
@@ -122,8 +125,9 @@ class SiteDatabaseState:
         rows = self.query(
             lambda database: (
                 f"SELECT defvalue FROM {database.quote_identifier('tabDefaultValue')} "
-                f"WHERE parent = '__global' AND defkey = '{key}'"
-            )
+                f"WHERE parent = '__global' AND defkey = {database.placeholder}"
+            ),
+            [key],
         )
         if not rows:
             return None
@@ -133,28 +137,30 @@ class SiteDatabaseState:
             return None
         return [app for app in apps if isinstance(app, str)] if isinstance(apps, list) else None
 
-    def query(self, build_query: Callable[[Database], str]) -> list[list] | None:
+    def query(self, build_query: Callable[[Database], str], params: Sequence = ()) -> list[list] | None:
         """Run one read-only query; None when the database cannot be reached.
-        `build_query` receives the engine so identifiers get quoted its way."""
+        `build_query` receives the engine so identifiers and placeholders follow its syntax."""
         try:
             database = make_site_database(
                 self.bench_root, self.site_name, connect_timeout=self.connect_timeout
             )
             query = build_query(database)
             if database.has_driver:
-                return database.execute(query).rows
+                return database.execute(query, params=params).rows
         except Exception:
             return None
-        return self.get_rows_from_bench_env(database, query)
+        return self.get_rows_from_bench_env(database, query, params)
 
-    def get_rows_from_bench_env(self, database: Database, query: str) -> list[list] | None:
+    def get_rows_from_bench_env(
+        self, database: Database, query: str, params: Sequence = ()
+    ) -> list[list] | None:
         """Run the query with the bench's Python: the CLI is stdlib-only, Frappe ships the driver."""
         from pilot.core.bench import Bench
 
         python = Bench(self.bench_root).python
         if not python.exists():
             raise DatabaseError(f"Cannot query {self.site_name}: the bench has no Python env at {python}.")
-        request = {"settings": database.connection_settings, "query": query}
+        request = {"settings": database.connection_settings, "query": query, "params": list(params)}
         try:
             result = subprocess.run(
                 [str(python), "-I", str(bench_query.__file__)],
