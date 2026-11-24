@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -9,6 +10,7 @@ import pytest
 from pilot import updater
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
+from pilot.exceptions import CommandError
 
 
 @pytest.fixture(autouse=True)
@@ -154,6 +156,18 @@ def test_a_database_server_upgrade_builds_no_admin_and_restarts_the_agent_with_n
         "restart monitor",
         ["-P", "-m", "pilot.core.database.agent.setup"],
     ]
+
+
+def test_a_failed_dev_pull_names_the_reason_git_gave(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    missing = str(tmp_path / "missing.git")
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", missing], check=True)
+
+    with (
+        patch.object(Server, "root", new_callable=PropertyMock, return_value=tmp_path),
+        pytest.raises(CommandError, match="does not appear to be a git repository"),
+    ):
+        updater._upgrade_dev(lambda message: None, has_admin=False)
 
 
 def test_perform_upgrade_skips_post_update_patches_when_upgrade_fails() -> None:

@@ -119,7 +119,8 @@ def _upgrade_dev(on_progress: Progress, has_admin: bool) -> None:
 
     root = Server().root
     on_progress("Pulling latest Pilot (dev install)...")
-    run_command(["git", "-C", str(root), "pull"], stream_output=True)
+    # Captured, so a failure names git's reason: a database VM reports only the error to the app VM.
+    run_command(["git", "-C", str(root), "pull"])
     on_progress("Installing admin Python dependencies...")
     AdminEnvManager(root).install_python_deps()
     if has_admin:

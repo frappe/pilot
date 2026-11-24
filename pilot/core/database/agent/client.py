@@ -120,9 +120,8 @@ class DatabaseAgentClient:
         except DatabaseAgentRefusedError as error:
             if error.status_code == 404:
                 raise DatabaseError(
-                    f"Pilot on the database VM {self.host} is too old to update itself. Update it by hand once: "
-                    "run `pilot admin upgrade` there (`git pull` in a source checkout), then "
-                    "`systemctl --user restart pilot-database-agent.service`, and try again."
+                    f"Pilot on the database VM {self.host} is too old to update itself. Update Pilot there by hand "
+                    "once, run `systemctl --user restart pilot-database-agent.service` there, and try again."
                 ) from error
             raise
 
