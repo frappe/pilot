@@ -198,8 +198,9 @@ class MariaDBManager(UserOwnedDBManager):
         self.secure_installation()
         return None
 
-    def remove_local_server(self) -> None:
-        """Stop Pilot's own server on this host and delete its units and data, after the host moved away from it."""
+    def remove_local_server(self, keep_data: bool = False) -> None:
+        """Stop Pilot's own server on this host and delete its units, after the host moved away from it.
+        Its option files and data stay in `state_dir` with `keep_data`, so the host can go back to it."""
         if HostPlatform().is_macos:
             raise DatabaseError("Pilot does not run its own MariaDB on macOS.")
         env = self._systemctl_env()
@@ -215,7 +216,8 @@ class MariaDBManager(UserOwnedDBManager):
         sizing_unit.unlink(missing_ok=True)
         shutil.rmtree(self.memory.limits_path.parent, ignore_errors=True)
         run_command(self._systemctl("daemon-reload"), env=env)
-        shutil.rmtree(self.state_dir, ignore_errors=True)
+        if not keep_data:
+            shutil.rmtree(self.state_dir, ignore_errors=True)
 
     def _initialize_data_dir(self) -> None:
         """Create the data directory with mariadb-install-db."""
@@ -1192,19 +1194,23 @@ class MariaDBManager(UserOwnedDBManager):
 
     def _client_command(self) -> list[str]:
         """Client argv for the admin account, over the socket when there is one."""
-        cmd = [
+        return [
             "mariadb",
             f"--connect-timeout={self.client_timeout}",
             "-u",
             self.config.admin_user,
             "--batch",
+            *self.server_arguments,
         ]
-        socket_path = self.client_socket
-        if socket_path:
-            cmd.append(f"--socket={socket_path}")
-        elif self.is_on_another_host or not HostPlatform().is_macos:
-            cmd += ["-h", self.config.host, "-P", str(self.config.port)]
-        return cmd
+
+    @property
+    def server_arguments(self) -> list[str]:
+        """Where a client reaches the server: its socket, or its host and port. `mariadb-dump` takes them too."""
+        if socket_path := self.client_socket:
+            return [f"--socket={socket_path}"]
+        if self.is_on_another_host or not HostPlatform().is_macos:
+            return ["-h", self.config.host, "-P", str(self.config.port)]
+        return []
 
     def run_admin_sql(self, sql: str) -> str:
         """Run statements as the admin account, with the password in MYSQL_PWD, and return the client's output."""

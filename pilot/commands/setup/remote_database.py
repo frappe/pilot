@@ -15,7 +15,7 @@ class SetupRemoteDatabaseCommand(Command):
     name: ClassVar[str] = "remote-database"
     help: ClassVar[str] = (
         "Manage the MariaDB on a database VM through its database agent and remove the local one. "
-        "Reads the agent's token from the terminal or from standard input."
+        "--migrate copies the databases of existing sites there first. Reads the agent's token from the terminal or from standard input."
     )
     group: ClassVar[str] = "setup"
 
@@ -23,6 +23,13 @@ class SetupRemoteDatabaseCommand(Command):
     port: Annotated[int, Arg(help="Port the remote MariaDB listens on.")] = 3306
     agent_port: Annotated[int, Arg(help="Port the database agent listens on.")] = 7781
     admin_user: Annotated[str, Arg(help="Admin account Pilot creates on the remote server.")] = "pilot"
+    migrate: Annotated[
+        bool,
+        Arg(help="Copy the databases of existing sites to the remote server. The benches stop for the copy."),
+    ] = False
+    delete_local_data: Annotated[
+        bool, Arg(help="With --migrate, delete the local server's data after the copy. Kept by default.")
+    ] = False
 
     def run(self) -> None:
         """Set up the remote database server."""
@@ -33,6 +40,8 @@ class SetupRemoteDatabaseCommand(Command):
             agent_port=self.agent_port,
             admin_user=self.admin_user,
             on_progress=self.report,
+            migrate=self.migrate,
+            delete_local_data=self.delete_local_data,
         )
         self.report(f"This host now uses the MariaDB server on {self.host}.")
 
