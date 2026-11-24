@@ -1,4 +1,5 @@
 import { apiErrorMessage, apiUrl, request, unwrap } from '@/api/client'
+import type { SiteActivity } from '@/types/siteActivity'
 import type { DisabledApp, EnabledApp, SiteApps } from '@/types/siteApps'
 import type {
   Backup,
@@ -53,6 +54,9 @@ export const sitesApi = {
 
   history: (name: string): Promise<SiteHistory> =>
     request.get(`sites/${encodeURIComponent(name)}/history`).json(),
+
+  activity: (name: string): Promise<SiteActivity> =>
+    request.get(`sites/${encodeURIComponent(name)}/activity`).json(),
 
   failedJobs: (name: string): Promise<FailedJob[]> =>
     request.get(`sites/${encodeURIComponent(name)}/failed-jobs`).json(),

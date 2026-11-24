@@ -26,12 +26,9 @@ class SiteAnalytics(TypedDict):
     window_seconds: int
     now: int
     requests_over_time: Timeline
-    errors_over_time: Timeline
     top_paths: Timeline
-    failed_paths: Timeline
     slowest_requests: Timeline
     avg_request_duration: Timeline
-    response_time: Timeline
     background_jobs_over_time: Timeline
     top_jobs: Timeline
     slowest_jobs: Timeline
@@ -68,6 +65,20 @@ def get_failed_jobs(name: str):
     except Exception:
         return internal_error("Could not read failed jobs from the site.")
     return jsonify([asdict(job) for job in jobs])
+
+
+@sites_bp.get("/<name>/activity")
+@require_scope(site_name)
+def get_site_activity(name: str):
+    """The site's requests, errors and jobs by hour for the last 24 hours."""
+    bench_root = ApiRequest.get_bench_root()
+    if not site_exists(bench_root, name):
+        return site_not_found()
+    try:
+        activity = Bench(bench_root).site(name).activity
+    except Exception:
+        return internal_error("Could not read the site activity.")
+    return jsonify(asdict(activity))
 
 
 @sites_bp.get("/<name>/history")

@@ -13,13 +13,13 @@ from pilot.core.database.slow_queries import SlowQueryLog
 from pilot.internal.jsonl_log import JsonLines
 
 
-def _request(site: str, when: datetime, path: str, duration: int = 1_000_000, status_code: int = 200) -> dict:
+def _request(site: str, when: datetime, path: str, duration: int = 1_000_000) -> dict:
     return {
         "timestamp": when.isoformat(),
         "site": site,
         "transaction_type": "request",
         "duration": duration,
-        "request": {"path": path, "ip": "1.2.3.4", "status_code": status_code},
+        "request": {"path": path, "ip": "1.2.3.4"},
     }
 
 
@@ -73,36 +73,6 @@ def test_requests_over_time_counts_all_non_ping_requests(tmp_path: Path) -> None
     assert sum(p["Requests"] for p in result["requests_over_time"]["points"]) == 4
 
 
-def test_errors_over_time_counts_only_server_errors(tmp_path: Path) -> None:
-    now = datetime.now(UTC)
-    records = [_request("site-a.local", now, "/app/todo", status_code=code) for code in (200, 404, 500, 502)]
-    records.append(_request("site-b.local", now, "/app/todo", status_code=500))
-    root = _write_log(tmp_path, records)
-
-    result = SiteMonitoringProvider(root, "site-a.local", "1h").get_analytics()
-
-    assert result["errors_over_time"]["categories"] == ["Errors"]
-    assert sum(p["Errors"] for p in result["errors_over_time"]["points"]) == 2
-
-
-def test_failed_paths_counts_server_errors_by_path(tmp_path: Path) -> None:
-    now = datetime.now(UTC)
-    records = [
-        _request("site-a.local", now, "/app/todo", status_code=500),
-        _request("site-a.local", now, "/app/todo", status_code=502),
-        _request("site-a.local", now, "/app/note", status_code=503),
-        _request("site-a.local", now, "/app/ok", status_code=200),
-        _request("site-a.local", now, "/app/missing", status_code=404),
-    ]
-    root = _write_log(tmp_path, records)
-
-    result = SiteMonitoringProvider(root, "site-a.local", "1h").get_analytics()
-
-    assert set(result["failed_paths"]["categories"]) == {"/app/todo", "/app/note"}
-    totals = {name: sum(point.get(name, 0) for point in result["failed_paths"]["points"]) for name in ("/app/todo", "/app/note")}
-    assert totals == {"/app/todo": 2, "/app/note": 1}
-
-
 def test_requests_over_time_zero_fills_empty_buckets(tmp_path: Path) -> None:
     now = datetime.now(UTC)
     root = _write_log(tmp_path, [_request("site-a.local", now, "/app/todo")])
@@ -125,22 +95,6 @@ def test_avg_request_duration_does_not_zero_fill(tmp_path: Path) -> None:
     populated = [p for p in points if "/app/todo" in p]
     assert len(points) > 1
     assert populated == [{"time": populated[0]["time"], "/app/todo": 2.0}]
-
-
-def test_response_time_averages_every_real_request(tmp_path: Path) -> None:
-    now = datetime.now(UTC)
-    records = [
-        _request("site-a.local", now, "/app/todo", duration=1_000_000),
-        _request("site-a.local", now, "/app/note", duration=3_000_000),
-        _request("site-a.local", now, "/api/method/ping", duration=9_000_000),
-    ]
-    root = _write_log(tmp_path, records)
-
-    result = SiteMonitoringProvider(root, "site-a.local", "1h").get_analytics()
-
-    values = [point["Response"] for point in result["response_time"]["points"] if "Response" in point]
-    assert result["response_time"]["categories"] == ["Response"]
-    assert values == [2.0]
 
 
 def test_avg_request_duration_breaks_down_by_path(tmp_path: Path) -> None:

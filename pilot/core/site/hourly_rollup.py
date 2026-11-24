@@ -4,11 +4,12 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pilot.core.site.uptime_monitoring import PING_PATH
 from pilot.internal.atomic_file import atomic_write_private_text
 from pilot.internal.jsonl_log import JsonLines
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from pilot.core.bench import Bench
 
 HOUR_FORMAT = "%Y-%m-%dT%H"
@@ -33,28 +34,36 @@ class HourlyRollup:
         """Add new log records to the hourly counts and prune old hours."""
         if not self.source.exists():
             return
+        now = now or datetime.now(UTC)
         state = self.read_state()
         sites = state["sites"]
+        for hour, site, record in self.read_new_records(state, now):
+            self.add(sites.setdefault(site, {}), hour, record)
+        self.prune(sites, now)
+        atomic_write_private_text(self.state_path, json.dumps(state))
+
+    def read_new_records(
+        self, state: dict, now: datetime, max_bytes: int | None = None
+    ) -> Iterator[tuple[str, str, dict]]:
+        """(hour, site, record) for each whole line added since `state`, which moves past them.
+        A new or truncated log starts again at the window; `max_bytes` caps one call's reading."""
         stat = self.source.stat()
-        now = now or datetime.now(UTC)
-        offset = state["offset"] if state["inode"] == stat.st_ino and state["offset"] <= stat.st_size else 0
-        offset = max(offset, self.get_window_offset(now))
+        is_same_log = state["inode"] == stat.st_ino and state["offset"] <= stat.st_size
+        offset = max(state["offset"] if is_same_log else 0, self.get_window_offset(now))
+        end = offset + max_bytes if max_bytes else stat.st_size
+        state["inode"], state["offset"] = stat.st_ino, offset
         with self.source.open("rb") as log:
             log.seek(offset)
             for line in log:
-                if not line.endswith(b"\n"):
-                    break  # still being written; the next update reads it whole
-                offset += len(line)
+                if not line.endswith(b"\n") or state["offset"] >= end:
+                    break  # a line still being written is read whole by the next update
+                state["offset"] += len(line)
                 record = JsonLines.parse(line)
                 if record is None:
                     continue
                 hour, site = self.get_hour(record.get(self.time_key)), record.get("site")
                 if hour and isinstance(site, str):
-                    self.add(sites.setdefault(site, {}), hour, record)
-        self.prune(sites, now)
-        atomic_write_private_text(
-            self.state_path, json.dumps({"inode": stat.st_ino, "offset": offset, "sites": sites})
-        )
+                    yield hour, site, record
 
     def get_window_offset(self, now: datetime) -> int:
         """Where the retention window starts in the log, so a first update, or one after a long
@@ -131,24 +140,3 @@ class UptimeRollup(HourlyRollup):
         counts = [value for value in self.get_site_hours(site, now) if value]
         total = sum(value[1] for value in counts)
         return round(sum(value[0] for value in counts) / total * 100, 2) if total else None
-
-
-class RequestRollup(HourlyRollup):
-    """Requests per hour for a day, without the uptime monitor's own pings."""
-
-    retention_hours = 24
-    time_key = "timestamp"
-    source_name = "monitor.json.log"
-    state_name = "requests-hourly.json"
-
-    def add(self, hours: dict, hour: str, record: dict) -> None:
-        """Count a request, skipping uptime pings."""
-        if record.get("transaction_type") != "request":
-            return
-        if (record.get("request") or {}).get("path") == PING_PATH:
-            return
-        hours[hour] = hours.get(hour, 0) + 1
-
-    def get_counts(self, site: str, now: datetime | None = None) -> list[int]:
-        """The hourly request counts."""
-        return [value or 0 for value in self.get_site_hours(site, now)]

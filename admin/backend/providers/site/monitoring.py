@@ -54,12 +54,9 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "window_seconds": self.window_seconds,
             "now": now_ms,
             "requests_over_time": total("paths", "Requests"),
-            "errors_over_time": total("errors", "Errors"),
             "top_paths": timeline("paths", "count"),
-            "failed_paths": timeline("errors", "count"),
             "slowest_requests": timeline("all_paths", "duration"),
             "avg_request_duration": timeline("paths", "average"),
-            "response_time": timeline("response", "average"),
             "background_jobs_over_time": total("jobs", "Jobs"),
             "top_jobs": timeline("jobs", "count"),
             "slowest_jobs": timeline("jobs", "duration"),
@@ -77,8 +74,6 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "request": {
                 "paths": cls.get_non_ping_path,
                 "all_paths": cls._request_path,
-                "errors": cls.get_error_path,
-                "response": cls.get_response_category,
                 "ips": cls._request_ip,
                 "reports": cls._report_name,
             },
@@ -157,17 +152,6 @@ class SiteMonitoringProvider(WindowedLogProvider):
         """Uptime checks hit /api/method/ping constantly and would drown out real traffic."""
         path = cls._request_path(entry)
         return None if path == PING_PATH else path
-
-    @classmethod
-    def get_response_category(cls, entry: dict) -> str | None:
-        """One bucket for every real request, so the timeline averages them all."""
-        return "Response" if cls.get_non_ping_path(entry) else None
-
-    @classmethod
-    def get_error_path(cls, entry: dict) -> str | None:
-        """The path of a request that failed on the server (5xx)."""
-        status = (entry.get("request") or {}).get("status_code")
-        return cls._request_path(entry) if isinstance(status, int) and status >= 500 else None
 
     @staticmethod
     def _request_ip(entry: dict) -> str | None:

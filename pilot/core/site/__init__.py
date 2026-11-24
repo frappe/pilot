@@ -16,6 +16,7 @@ from pilot.managers.cron import CronManager
 if TYPE_CHECKING:
     from pilot.core.app import App
     from pilot.core.bench import Bench
+    from pilot.core.site.activity_rollup import SiteActivity
     from pilot.core.site.backups import SiteBackups
     from pilot.core.site.backups.migration import SiteMigrationBackup
     from pilot.core.site.backups.restore import BackupRun
@@ -114,6 +115,16 @@ class Site:
         from pilot.core.site.failed_jobs import SiteFailedJobs
 
         return SiteFailedJobs(self)
+
+    @property
+    def activity(self) -> "SiteActivity":
+        """The last 24 hours of requests and jobs. The monitor keeps the rollup current; a read
+        first folds in one capped step of new lines, so a bench without the monitor fills too."""
+        from pilot.core.site.activity_rollup import SiteActivityRollup
+
+        rollup = SiteActivityRollup(self.bench)
+        rollup.update(catch_up=False)
+        return rollup.get_activity(self.config.name)
 
     @property
     def history(self) -> "SiteHistoryReader":

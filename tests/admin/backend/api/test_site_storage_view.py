@@ -260,3 +260,40 @@ def test_site_history_is_404_for_an_unknown_site(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     assert client.get("/api/v1/sites/nope.localhost/history").status_code == 404
+
+
+def test_site_activity_reads_the_hourly_rollup(tmp_path: Path) -> None:
+    import json
+    from datetime import UTC, datetime
+
+    from pilot.core.bench import Bench
+    from pilot.core.site.activity_rollup import SiteActivityRollup
+
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    _write_site(bench_root, "s.localhost")
+    logs = bench_root / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    record = {
+        "timestamp": datetime.now(UTC).isoformat(sep=" "),
+        "site": "s.localhost",
+        "transaction_type": "request",
+        "duration": 2000,
+        "request": {"path": "/app/todo", "status_code": 500},
+    }
+    (logs / "monitor.json.log").write_text(json.dumps(record, separators=(",", ":")) + "\n")
+    SiteActivityRollup(Bench(bench_root)).update()
+
+    response = client.get("/api/v1/sites/s.localhost/activity")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["requests"][-1] == 1
+    assert body["errors"][-1] == 1
+    assert body["failed_paths"] == [{"name": "/app/todo", "value": 1}]
+
+
+def test_site_activity_is_404_for_an_unknown_site(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    assert client.get("/api/v1/sites/nope.localhost/activity").status_code == 404

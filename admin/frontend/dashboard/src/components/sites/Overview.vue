@@ -2,25 +2,24 @@
 import { Button, Dialog, Skeleton, Tooltip } from 'frappe-ui'
 import { computed, onMounted, reactive, ref, useId } from 'vue'
 import { RouterLink } from 'vue-router'
-
+import { auditApi } from '@/api/audit'
+import { sitesApi } from '@/api/sites'
+import { updatesApi } from '@/api/updates'
 import AppIcon from '@/components/apps/AppIcon.vue'
 import CircularProgress from '@/components/common/CircularProgress.vue'
 import Sparkline from '@/components/common/Sparkline.vue'
 import OverviewEmpty from '@/components/sites/OverviewEmpty.vue'
 import OverviewSkeleton from '@/components/sites/OverviewSkeleton.vue'
-
-import { auditApi } from '@/api/audit'
-import { sitesApi } from '@/api/sites'
-import { updatesApi } from '@/api/updates'
 import { useSiteStorage } from '@/composables/sites/useSiteStorage'
 import { useSites } from '@/composables/sites/useSites'
 import type { AuditEntry } from '@/types/audit'
 import type { MigrationSummary } from '@/types/migrations'
+import type { SiteActivity } from '@/types/siteActivity'
 import type { Backup, BackupSchedule } from '@/types/siteBackups'
 import type { SiteDomain } from '@/types/siteDomains'
 import type { SiteHistory } from '@/types/siteHistory'
 import type { FailedJob } from '@/types/siteJobs'
-import type { SiteAnalytics, SiteUptime, Timeline, UptimeBucket } from '@/types/siteMonitoring'
+import type { SiteUptime, UptimeBucket } from '@/types/siteMonitoring'
 import type { SiteStorageDay } from '@/types/siteStorage'
 import { activityLabel, activityTypeIcon } from '@/utils/activity'
 import { cronToLabel } from '@/utils/backup'
@@ -38,7 +37,7 @@ const ready = reactive({
   sites: false,
   storage: false,
   uptime: false,
-  analytics: false,
+  activity: false,
   backups: false,
   schedule: false,
   domains: false,
@@ -49,7 +48,7 @@ const ready = reactive({
   lastRun: false,
 })
 const uptime = ref<SiteUptime | null>(null)
-const analytics = ref<SiteAnalytics | null>(null)
+const activity = ref<SiteActivity | null>(null)
 const backups = ref<Backup[]>([])
 const schedule = ref<BackupSchedule | null>(null)
 const domains = ref<SiteDomain[]>([])
@@ -67,9 +66,7 @@ const dayFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'num
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
 
-const requests = computed(
-  () => sites.value.find((site) => site.name === props.siteName)?.requests ?? [],
-)
+const requests = computed(() => activity.value?.requests ?? [])
 const requestTotal = computed(() => sum(requests.value))
 const peak = computed(() => requests.value.indexOf(Math.max(...requests.value)))
 
@@ -127,13 +124,9 @@ const localBytes = computed(() =>
   sum(backups.value.filter((backup) => !backup.is_offsite).map(backupBytes)),
 )
 
-const errors = computed(
-  () => analytics.value?.errors_over_time.points.map((point) => point.Errors ?? 0) ?? [],
-)
+const errors = computed(() => activity.value?.errors ?? [])
 const errorTotal = computed(() => sum(errors.value))
-const jobRunTotal = computed(() =>
-  sum(analytics.value?.background_jobs_over_time.points.map((point) => point.Jobs ?? 0) ?? []),
-)
+const jobRunTotal = computed(() => sum(activity.value?.jobs ?? []))
 const failedRunTotal = computed(() => sum(allFailedJobs.value.map((row) => row.count)))
 const jobSuccess = computed(() =>
   jobRunTotal.value
@@ -181,7 +174,7 @@ const sizeGradient = useId()
 
 const failedJobs = computed(() => allFailedJobs.value.slice(0, 3))
 
-const failedPaths = computed(() => totals(analytics.value?.failed_paths, sum))
+const failedPaths = computed(() => activity.value?.failed_paths ?? [])
 
 const errorLogUrl = computed(() => {
   const site = sites.value.find((item) => item.name === props.siteName)
@@ -270,24 +263,10 @@ const scrubSize = (event: MouseEvent) => {
   sizeHover.value = Math.round(ratio * (history.value.length - 1))
 }
 
-const totals = (timeline: Timeline | undefined, pick: (values: number[]) => number) => {
-  if (!timeline) return []
-
-  return timeline.categories
-    .map((name) => ({ name, value: pick(timeline.points.map((point) => point[name] ?? 0)) }))
-    .sort((a, b) => b.value - a.value)
-}
-
-const slowest = computed(() =>
-  totals(analytics.value?.slowest_requests, (values) => Math.max(...values)).slice(0, 3),
-)
-const topPaths = computed(() => totals(analytics.value?.top_paths, sum).slice(0, 7))
-const slowJobs = computed(() =>
-  totals(analytics.value?.slowest_jobs, (values) => Math.max(...values)).slice(0, 3),
-)
-const responseTimes = computed(
-  () => analytics.value?.response_time.points.map((point) => (point.Response ?? 0) * 1000) ?? [],
-)
+const slowest = computed(() => activity.value?.slow_requests.slice(0, 3) ?? [])
+const topPaths = computed(() => activity.value?.top_paths.slice(0, 7) ?? [])
+const slowJobs = computed(() => activity.value?.slow_jobs.slice(0, 3) ?? [])
+const responseTimes = computed(() => activity.value?.response_ms ?? [])
 const responseAverage = computed(() => {
   const values = responseTimes.value.filter(Boolean)
 
@@ -361,8 +340,8 @@ const load = () => {
     sitesApi.uptime.get(name, '1w').then((data) => (uptime.value = data)),
   )
   track(
-    'analytics',
-    sitesApi.monitoring.get(name, '24h').then((data) => (analytics.value = data)),
+    'activity',
+    sitesApi.activity(name).then((data) => (activity.value = data)),
   )
   track(
     'backups',
@@ -414,7 +393,7 @@ onMounted(load)
           <span>24h</span>
         </span>
 
-        <template v-if="ready.sites">
+        <template v-if="ready.activity">
           <span class="tabular-nums text-ink-gray-9 text-base-medium">
             {{ requestTotal.toLocaleString() }}
           </span>
@@ -618,7 +597,7 @@ onMounted(load)
             />
           </span>
 
-          <template v-if="ready.analytics">
+          <template v-if="ready.activity">
             <template v-if="errorTotal">
               <span class="flex items-baseline gap-2 text-ink-gray-5 text-sm">
                 <span class="tabular-nums text-ink-red-6 text-sm-medium">
@@ -651,7 +630,7 @@ onMounted(load)
             <span class="text-ink-gray-5 text-sm">24h</span>
           </span>
 
-          <template v-if="ready.analytics">
+          <template v-if="ready.activity">
             <template v-if="responsePeak">
               <span class="flex items-baseline gap-2 text-ink-gray-5 text-sm">
                 <span class="tabular-nums text-ink-gray-9 text-base-medium">
@@ -711,7 +690,7 @@ onMounted(load)
             />
           </span>
 
-          <template v-if="ready.analytics && ready.failedJobs">
+          <template v-if="ready.activity && ready.failedJobs">
             <div
               v-if="jobRunTotal || allFailedJobs.length"
               class="items-center grid grid-cols-2 mt-3"
@@ -780,7 +759,7 @@ onMounted(load)
             <span class="text-ink-gray-5 text-sm">24h</span>
           </span>
 
-          <template v-if="ready.analytics">
+          <template v-if="ready.activity">
             <span
               v-for="row in slowJobs"
               :key="row.name"
@@ -807,7 +786,7 @@ onMounted(load)
             <span class="text-ink-gray-5 text-sm">24h</span>
           </span>
 
-          <template v-if="ready.analytics">
+          <template v-if="ready.activity">
             <span
               v-for="row in topPaths"
               :key="row.name"
@@ -838,7 +817,7 @@ onMounted(load)
             <span class="text-ink-gray-5 text-sm">24h</span>
           </span>
 
-          <template v-if="ready.analytics">
+          <template v-if="ready.activity">
             <span
               v-for="row in slowest"
               :key="row.name"
