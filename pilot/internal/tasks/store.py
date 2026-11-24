@@ -255,6 +255,13 @@ class TaskStore:
         with exclusive_file_lock(self._lock_target):
             yield
 
+    def get_active_task_id(self, resource_key: str) -> str | None:
+        """The active task holding this resource, if any."""
+        with self.locked():
+            return next(
+                (task_id for task_id, held in self._active_resources_locked() if resource_key in held), None
+            )
+
     @contextmanager
     def reserve(self, resource_key: str) -> Iterator[None]:
         """Hold a resource outside a task. Submissions that need it fail until the block exits."""

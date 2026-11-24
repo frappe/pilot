@@ -68,6 +68,8 @@ const openDialog = () => {
 
 onMounted(loadBinlogs)
 
+defineExpose({ openDialog })
+
 const purge = async () => {
   if (!keepFile.value) return
 

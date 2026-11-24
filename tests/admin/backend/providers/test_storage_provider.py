@@ -1,4 +1,4 @@
-"""Tests for StorageProvider's disk usage breakdown."""
+"""Tests for StorageProvider: the database breakdown, and the bench report it serves."""
 
 from __future__ import annotations
 
@@ -16,73 +16,11 @@ def _write_bench(bench_root: Path, db_type: str = "mariadb") -> None:
     )
 
 
-def _make_app(bench_root: Path, name: str, content: bytes = b"x" * 1024) -> None:
-    app_dir = bench_root / "apps" / name
-    app_dir.mkdir(parents=True)
-    (app_dir / ".git").mkdir()
-    (app_dir / "payload.bin").write_bytes(content)
-
-
 def _make_site(bench_root: Path, name: str, db_name: str, content: bytes = b"x" * 2048) -> None:
     site_dir = bench_root / "sites" / name
     site_dir.mkdir(parents=True)
     (site_dir / "site_config.json").write_text(f'{{"db_name": "{db_name}"}}')
     (site_dir / "payload.bin").write_bytes(content)
-
-
-def test_bench_breakdown_sums_apps_sites_and_logs(tmp_path: Path) -> None:
-    from admin.backend.providers.server.storage import StorageProvider
-
-    _write_bench(tmp_path)
-    _make_app(tmp_path, "frappe", b"a" * 4096)
-    _make_site(tmp_path, "site1.local", "site1_db", b"b" * 8192)
-    (tmp_path / "logs").mkdir()
-    (tmp_path / "logs" / "web.log").write_bytes(b"c" * 512)
-
-    breakdown = StorageProvider(tmp_path)._bench_breakdown()
-
-    assert [entry.name for entry in breakdown.apps] == ["frappe"]
-    assert [entry.name for entry in breakdown.sites] == ["site1.local"]
-    assert breakdown.apps_bytes > 0
-    assert breakdown.sites_bytes > 0
-    assert breakdown.logs_bytes > 0
-    assert breakdown.used_bytes == (breakdown.apps_bytes + breakdown.sites_bytes + breakdown.logs_bytes)
-
-
-def test_site_storage_splits_private_public_and_backups(tmp_path: Path) -> None:
-    from admin.backend.providers.server.storage import StorageProvider
-
-    _write_bench(tmp_path)
-    site_dir = tmp_path / "sites" / "site1.local"
-    (site_dir / "private" / "files").mkdir(parents=True)
-    (site_dir / "private" / "files" / "a.pdf").write_bytes(b"x" * 1000)
-    (site_dir / "private" / "backups").mkdir(parents=True)
-    (site_dir / "private" / "backups" / "b.sql.gz").write_bytes(b"x" * 2000)
-    (site_dir / "public" / "files").mkdir(parents=True)
-    (site_dir / "public" / "files" / "c.jpg").write_bytes(b"x" * 500)
-    (site_dir / "logs").mkdir()
-    (site_dir / "logs" / "d.log").write_bytes(b"x" * 250)
-    (site_dir / "site_config.json").write_text('{"db_name": "site1_db"}')
-
-    site = StorageProvider(tmp_path)._bench.site("site1.local")
-    storage = StorageProvider(tmp_path)._site_storage(site)
-
-    assert storage.name == "site1.local"
-    assert storage.private_files_bytes >= 1000
-    assert storage.backups_bytes >= 2000
-    assert storage.public_files_bytes >= 500
-    assert storage.other_bytes >= 250
-    assert storage.bytes == (
-        storage.private_files_bytes
-        + storage.public_files_bytes
-        + storage.backups_bytes
-        + storage.other_bytes
-    )
-    assert {entry.name: entry.bytes for entry in storage.backup_files} == {"b.sql.gz": 2000}
-    other_names = {entry.name for entry in storage.other_entries}
-    assert other_names == {"logs", "site_config.json"}
-    assert "files" not in other_names
-    assert "backups" not in other_names
 
 
 def _mock_database(
@@ -108,11 +46,8 @@ def test_mariadb_breakdown_shapes_schemas_and_reconciles_core(tmp_path: Path) ->
     ]
     db = _mock_database({"site1_db": 500, "mysql": 100}, components, str(tmp_path))
 
-    with (
-        patch("admin.backend.providers.server.storage.make_database", return_value=db),
-        patch("admin.backend.providers.server.storage.directory_size_bytes", return_value=1000),
-    ):
-        breakdown = StorageProvider(tmp_path)._database_breakdown()
+    with patch("admin.backend.providers.server.storage.make_database", return_value=db):
+        breakdown = StorageProvider(tmp_path)._database_breakdown(1000)
 
     assert breakdown == DatabaseBreakdown(
         engine="mariadb",
@@ -141,11 +76,8 @@ def test_postgres_breakdown_reports_wal_and_server_log(tmp_path: Path) -> None:
     ]
     db = _mock_database({"site1_db": 500, "postgres": 60}, components, "/pg/data")
 
-    with (
-        patch("admin.backend.providers.server.storage.make_database", return_value=db),
-        patch("admin.backend.providers.server.storage.directory_size_bytes", return_value=2000),
-    ):
-        breakdown = StorageProvider(tmp_path)._database_breakdown()
+    with patch("admin.backend.providers.server.storage.make_database", return_value=db):
+        breakdown = StorageProvider(tmp_path)._database_breakdown(2000)
 
     assert breakdown.engine == "postgres"
     assert breakdown.supported is True
@@ -156,37 +88,14 @@ def test_postgres_breakdown_reports_wal_and_server_log(tmp_path: Path) -> None:
     assert [row.site for row in breakdown.databases] == ["site1.local", None]
 
 
-def test_core_bytes_is_unknown_when_the_data_directory_cannot_be_read(tmp_path: Path) -> None:
-    """An unreadable data directory is not an empty one - core_bytes goes None
-    and used_bytes falls back to what was actually measured."""
-    from admin.backend.providers.server.storage import StorageProvider
-    from pilot.exceptions import CommandError
-
-    _write_bench(tmp_path, db_type="postgres")
-    components = [StorageComponent("wal", "write-ahead log", 300)]
-    db = _mock_database({"postgres": 60}, components, "/pg/data")
-
-    with (
-        patch("admin.backend.providers.server.storage.make_database", return_value=db),
-        patch(
-            "admin.backend.providers.server.storage.directory_size_bytes",
-            side_effect=CommandError("Permission denied"),
-        ),
-    ):
-        breakdown = StorageProvider(tmp_path)._database_breakdown()
-
-    assert breakdown.core_bytes is None
-    assert breakdown.used_bytes == 360
-
-
-def test_core_bytes_is_unknown_for_a_remote_database_server(tmp_path: Path) -> None:
+def test_core_bytes_is_unknown_without_a_measured_data_directory(tmp_path: Path) -> None:
     from admin.backend.providers.server.storage import StorageProvider
 
     _write_bench(tmp_path)
     db = _mock_database({"site1_db": 500}, [StorageComponent("binlog", "binary log", 50)], None)
 
     with patch("admin.backend.providers.server.storage.make_database", return_value=db):
-        breakdown = StorageProvider(tmp_path)._database_breakdown()
+        breakdown = StorageProvider(tmp_path)._database_breakdown(None)
 
     assert breakdown.core_bytes is None
     assert breakdown.used_bytes == 550
@@ -197,37 +106,89 @@ def test_sqlite_engine_is_not_supported(tmp_path: Path) -> None:
 
     _write_bench(tmp_path, db_type="sqlite")
 
-    breakdown = StorageProvider(tmp_path)._database_breakdown()
+    breakdown = StorageProvider(tmp_path)._database_breakdown(None)
 
     assert breakdown == DatabaseBreakdown(
         engine="sqlite", supported=False, used_bytes=0, binlog_bytes=0
     )
 
 
-def test_get_breakdown_remeasures_instead_of_serving_the_cache(tmp_path: Path) -> None:
-    """directory_size_bytes is cached and never expires, so a refresh would
-    otherwise report the first reading forever."""
-    from admin.backend.providers.server.storage import StorageProvider
+def _provider_without_database(tmp_path: Path):
+    from admin.backend.providers.server.storage import DatabaseBreakdown, StorageProvider
 
     _write_bench(tmp_path)
-    _make_app(tmp_path, "frappe", b"a" * 4096)
-    db = _mock_database({"site1_db": 500}, [], str(tmp_path))
-
-    with patch("admin.backend.providers.server.storage.make_database", return_value=db):
-        provider = StorageProvider(tmp_path)
-        first = provider.get_breakdown(1000, 500).bench.apps_bytes
-        (tmp_path / "apps" / "frappe" / "grew.bin").write_bytes(b"a" * 200_000)
-        second = provider.get_breakdown(1000, 500).bench.apps_bytes
-
-    assert second > first
+    provider = StorageProvider(tmp_path)
+    provider._database_breakdown = Mock(
+        return_value=DatabaseBreakdown(engine="mariadb", supported=False, used_bytes=0, binlog_bytes=0)
+    )
+    return provider
 
 
-def test_directory_size_bytes_measures_a_real_tree(tmp_path: Path) -> None:
-    """Guards the du flags: GNU-only `-b` fails outright on BSD/macOS, which
-    used to be swallowed into a silent 0."""
-    from admin.backend.providers.server.storage import directory_size_bytes
+def test_get_breakdown_serves_the_report_without_queuing_by_default(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import RefreshBenchStorageTask
 
-    (tmp_path / "payload.bin").write_bytes(b"x" * 40960)
+    provider = _provider_without_database(tmp_path)
 
-    assert directory_size_bytes(str(tmp_path)) >= 40960
-    assert directory_size_bytes(str(tmp_path / "missing")) == 0
+    with patch.object(RefreshBenchStorageTask, "queue") as queue:
+        breakdown = provider.get_breakdown(1000, 500)
+
+    assert breakdown.bench is None
+    assert breakdown.bench_task is None
+    queue.assert_not_called()
+
+
+def test_get_breakdown_queues_a_refresh_for_a_missing_report_when_asked(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import BenchTask, RefreshBenchStorageTask
+
+    provider = _provider_without_database(tmp_path)
+
+    with (
+        patch.object(RefreshBenchStorageTask, "queue", return_value="task-1") as queue,
+        patch.object(type(provider), "get_bench_task", side_effect=lambda task_id: BenchTask(task_id, "queued")),
+    ):
+        breakdown = provider.get_breakdown(1000, 500, refresh_if_stale=True)
+
+    assert breakdown.bench_task == BenchTask("task-1", "queued")
+    queue.assert_called_once()
+
+
+def test_get_breakdown_does_not_queue_for_a_fresh_report(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import RefreshBenchStorageTask
+
+    provider = _provider_without_database(tmp_path)
+    with patch.object(type(provider._bench.storage), "get_database_directory_bytes", return_value=4096):
+        provider._bench.storage.collect()
+
+    with patch.object(RefreshBenchStorageTask, "queue") as queue:
+        breakdown = provider.get_breakdown(1000, 500, refresh_if_stale=True)
+
+    assert breakdown.bench is not None
+    assert breakdown.bench_task is None
+    provider._database_breakdown.assert_called_once_with(4096)
+    queue.assert_not_called()
+
+
+def test_refresh_bench_returns_the_measure_already_running(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import RefreshBenchStorageTask
+    from pilot.exceptions import TaskConflictError
+
+    provider = _provider_without_database(tmp_path)
+
+    with (
+        patch.object(RefreshBenchStorageTask, "queue", side_effect=TaskConflictError("busy")),
+        patch.object(type(provider), "get_bench_task_id", return_value="task-running"),
+    ):
+        assert provider.refresh_bench() == "task-running"
+
+
+def test_refresh_bench_queues_again_when_the_running_measure_just_ended(tmp_path: Path) -> None:
+    from admin.backend.providers.server.storage import RefreshBenchStorageTask
+    from pilot.exceptions import TaskConflictError
+
+    provider = _provider_without_database(tmp_path)
+
+    with (
+        patch.object(RefreshBenchStorageTask, "queue", side_effect=[TaskConflictError("busy"), "task-new"]),
+        patch.object(type(provider), "get_bench_task_id", return_value=None),
+    ):
+        assert provider.refresh_bench() == "task-new"

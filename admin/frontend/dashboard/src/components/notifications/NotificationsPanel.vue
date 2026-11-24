@@ -42,7 +42,7 @@ const tabs = [
 
 const categories = [
   { label: 'All categories', value: '', icon: 'lucide-layers' },
-  { label: 'Sites', value: 'Sites', icon: 'lucide-globe' },
+  { label: 'Sites', value: 'Sites', icon: 'lucide-pilot-site' },
   { label: 'Tasks', value: 'Tasks', icon: 'lucide-list-checks' },
   { label: 'Server', value: 'Server', icon: 'lucide-server' },
   { label: 'Updates', value: 'Updates', icon: 'lucide-git-pull-request-arrow' },

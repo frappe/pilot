@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
     from pilot.core.bench.site_aliases import SiteAliases
+    from pilot.core.bench.storage import BenchStorage
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
     from pilot.core.notification.notifier import Notifier
@@ -169,6 +170,13 @@ class Bench:
         from pilot.core.bench.hostname_aliases import HostnameAliases
 
         return HostnameAliases(self)
+
+    @cached_property
+    def storage(self) -> "BenchStorage":
+        """The bench folder's storage breakdown."""
+        from pilot.core.bench.storage import BenchStorage
+
+        return BenchStorage(self)
 
     @cached_property
     def site_storage(self) -> "SiteStorageCollector":

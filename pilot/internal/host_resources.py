@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 import socket
 from pathlib import Path
 
 
 class DiskUsage:
-    """Disk space a directory tree takes."""
+    """Disk space a directory tree takes, never following symlinks. Folders this user cannot read count as empty."""
+
+    timeout = 10
 
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
@@ -13,12 +16,21 @@ class DiskUsage:
     @property
     def bytes(self) -> int:
         """Allocated bytes; 0 for a missing path, which is legitimately empty."""
-        from pilot.internal.command import run_command
-
-        if not self.path.exists():
+        if not os.path.lexists(self.path):
             return 0
         # `du -sk` is POSIX; the GNU-only `-b` fails on BSD and macOS.
-        return int(run_command(["du", "-sk", str(self.path)], timeout=10).stdout.split()[0]) * 1024
+        return int(self.get_output(["du", "-sk", str(self.path)]).split()[0]) * 1024
+
+    def get_output(self, argv: list[str]) -> str:
+        """The command's output. du exits 1 after an unreadable folder but still prints the total."""
+        from pilot.internal.command import Command
+
+        command = Command(argv, timeout=self.timeout)
+        process = command.start()
+        stdout, stderr = command.wait(process)
+        if process.returncode != 0 and not stdout.strip():
+            raise command.get_failure(process.returncode, stdout, stderr)
+        return stdout.decode()
 
 
 class LocalPort:

@@ -441,6 +441,14 @@ const updatedLabel = computed(() => {
             <span v-if="row.site" class="max-sm:hidden min-w-0 font-mono text-ink-gray-4 text-xs truncate">
               {{ row.detail }}
             </span>
+
+            <RouterLink
+              v-if="row.site"
+              :to="{ name: 'SiteDetail', params: { name: row.site } }"
+              :aria-label="`Open ${row.site}`"
+              title="Open site"
+              class="relative self-center size-3.5 text-ink-gray-4 hover:text-ink-gray-8 transition-colors duration-150 lucide-arrow-up-right shrink-0"
+            />
           </span>
         </template>
 
