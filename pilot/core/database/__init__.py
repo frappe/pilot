@@ -76,7 +76,7 @@ def make_database(config: "BenchConfig") -> Database:
         socket=mariadb.socket_path or None,
     )
     if mariadb.remote:
-        from pilot.core.database.agent.client import DatabaseAgentClient
+        from pilot.core.agent.roles.database.client import DatabaseAgentClient
         from pilot.core.database.engines.remote_mariadb import RemoteMariaDB
 
         return RemoteMariaDB(**settings, agent=DatabaseAgentClient.for_config(mariadb))

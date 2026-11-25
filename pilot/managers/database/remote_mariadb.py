@@ -4,14 +4,14 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
-from pilot.core.database.agent.client import DatabaseAgentClient
+from pilot.core.agent.roles.database.client import DatabaseAgentClient
 from pilot.core.mariadb_memory import MariaDBMemorySizing
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
 
 
 class RemoteMariaDBManager(MariaDBManager):
-    """A MariaDB on its own VM, which Pilot manages through the database agent there.
+    """A MariaDB on its own VM, which Pilot manages through the Pilot agent there.
 
     SQL goes over TCP. The agent owns the server's option files, service, logs and disk, and the database VM
     sizes the server for its own memory, so this host writes nothing of the server's.
@@ -24,7 +24,7 @@ class RemoteMariaDBManager(MariaDBManager):
 
     @cached_property
     def agent(self) -> DatabaseAgentClient:
-        """The database agent on the server's VM."""
+        """The database role of the Pilot agent on the server's VM."""
         return DatabaseAgentClient.for_config(self.config)
 
     def get_health(self) -> dict[str, Any]:

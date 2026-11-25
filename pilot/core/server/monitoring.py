@@ -14,8 +14,8 @@ import psutil
 
 from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
 from pilot.config.monitor import database_server_log_path
+from pilot.core.agent.roles.database.client import DatabaseAgentClient
 from pilot.core.bench.telemetry import DatumCredential
-from pilot.core.database.agent.client import DatabaseAgentClient
 from pilot.core.notification.alert_log import FIRING, RESOLVED, AlertLog
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
@@ -200,12 +200,12 @@ class Monitor:
         return self.bench.config.db_type == "mariadb" and self.bench.config.mariadb.remote
 
     def collect_database_server_metrics(self) -> dict | None:
-        """The system metrics record of a remote server's VM, from its database agent. Skips quietly when
+        """The system metrics record of a remote server's VM, from its Pilot agent. Skips quietly when
         the agent cannot be reached or is too old to know the request, so the daemon never stalls on it."""
         if not self.is_database_remote:
             return None
         try:
-            record = DatabaseAgentClient.for_config(self.bench.config.mariadb).get_host_metrics()
+            record = DatabaseAgentClient.for_config(self.bench.config.mariadb).agent.get_host_metrics()
         except Exception:
             return None
         self._append(self.database_server_log_path, record)

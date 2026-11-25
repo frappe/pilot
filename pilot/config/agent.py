@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 
 @dataclass
-class DatabaseAgentConfig:
-    """The database agent on a dedicated database VM, which the app VM's Pilot manages MariaDB through."""
+class AgentConfig:
+    """The Pilot agent on a VM that another VM's Pilot manages, such as a dedicated database VM."""
 
     address: str = "::"
     port: int = 7781

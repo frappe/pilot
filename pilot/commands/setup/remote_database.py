@@ -14,14 +14,14 @@ class SetupRemoteDatabaseCommand(Command):
 
     name: ClassVar[str] = "remote-database"
     help: ClassVar[str] = (
-        "Manage the MariaDB on a database VM through its database agent and remove the local one. "
+        "Manage the MariaDB on a database VM through its Pilot agent and remove the local one. "
         "--migrate copies the databases of existing sites there first. Reads the agent's token from the terminal or from standard input."
     )
     group: ClassVar[str] = "setup"
 
     host: Annotated[str, Arg(help="Address of the database VM, e.g. its private IPv6 address.")]
     port: Annotated[int, Arg(help="Port the remote MariaDB listens on.")] = 3306
-    agent_port: Annotated[int, Arg(help="Port the database agent listens on.")] = 7781
+    agent_port: Annotated[int, Arg(help="Port the Pilot agent listens on.")] = 7781
     admin_user: Annotated[str, Arg(help="Admin account Pilot creates on the remote server.")] = "pilot"
     migrate: Annotated[
         bool,
@@ -50,7 +50,7 @@ class SetupRemoteDatabaseCommand(Command):
         process on the host can read it."""
         import getpass
 
-        token = getpass.getpass("Database agent token: ") if sys.stdin.isatty() else sys.stdin.readline()
+        token = getpass.getpass("Pilot agent token: ") if sys.stdin.isatty() else sys.stdin.readline()
         if not token.strip():
-            raise BenchError("Give the database agent's token from `pilot setup database-server`.")
+            raise BenchError("Give the Pilot agent's token from `pilot setup database-server`.")
         return token.strip()

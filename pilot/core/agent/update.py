@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pilot.core.server import Server
-from pilot.exceptions import CommandError, DatabaseError
+from pilot.exceptions import AgentError, CommandError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.internal.command import run_command
 from pilot.managers.environment import AdminEnvManager
@@ -15,24 +15,24 @@ from pilot.managers.systemd_user import systemctl, systemctl_env
 from pilot.updater import get_installed_version, perform_upgrade
 
 
-class DatabaseServerUpdate:
-    """A Pilot update of this database VM, which the app VM starts through the agent.
+class PilotUpdate:
+    """A Pilot update of this VM, which the VM that manages it starts through the agent.
 
     It runs in a transient user unit, so it outlives the agent it restarts, and it takes no input: the VM updates
     from its own source, as `perform_upgrade` decides.
     """
 
-    unit_name = "pilot-database-update.service"
+    unit_name = "pilot-agent-update.service"
 
     @property
     def state_path(self) -> Path:
         """The running or last update."""
-        return Server().root / "system" / "database-agent" / "pilot-update.json"
+        return Server().root / "system" / "agent" / "pilot-update.json"
 
     @property
     def log_path(self) -> Path:
         """The update's output."""
-        return Server().root / "system" / "logs" / "database-update.log"
+        return Server().root / "system" / "logs" / "agent-update.log"
 
     def get_state(self) -> dict[str, Any]:
         """The running or last update. A run whose unit is gone, for example after a reboot, is reported failed."""
@@ -73,7 +73,7 @@ class DatabaseServerUpdate:
                 replace_private_text_locked(
                     self.state_path, json.dumps(self.get_ended(state, "failed", str(error)))
                 )
-                raise DatabaseError(f"The database VM could not start the Pilot update: {error}") from error
+                raise AgentError(f"This VM could not start the Pilot update: {error}") from error
         return state
 
     def get_launch_command(self) -> list[str]:
@@ -93,7 +93,7 @@ class DatabaseServerUpdate:
             str(AdminEnvManager(root).python),
             "-P",
             "-m",
-            "pilot.core.database.agent.update",
+            "pilot.core.agent.update",
         ]
 
     def run(self) -> None:
@@ -102,7 +102,7 @@ class DatabaseServerUpdate:
             perform_upgrade(on_progress=print)
         except Exception as error:
             # The app VM reads only this file, so every failure must reach it with its reason.
-            self.end("failed", f"{error} See {self.log_path} on the database VM.")
+            self.end("failed", f"{error} See {self.log_path} on that VM.")
             raise
         self.end("succeeded")
 
@@ -126,4 +126,4 @@ class DatabaseServerUpdate:
 
 # An older Pilot's agent starts this module, so keep this command line stable.
 if __name__ == "__main__":
-    DatabaseServerUpdate().run()
+    PilotUpdate().run()

@@ -34,7 +34,7 @@ def test_a_remote_config_gets_an_engine_that_reads_the_server_through_the_agent(
     database = make_database(config)  # type: ignore[arg-type]
 
     assert isinstance(database, RemoteMariaDB)
-    assert (database.agent.base_url, database.agent.token) == ("http://[fdaa::3]:7781", "token")
+    assert (database.agent.agent.base_url, database.agent.agent.token) == ("http://[fdaa::3]:7781", "token")
 
 
 def test_slow_queries_are_read_from_the_tail_of_the_remote_log() -> None:

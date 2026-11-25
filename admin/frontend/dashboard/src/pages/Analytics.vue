@@ -867,7 +867,7 @@ onUnmounted(() => clearTimeout(statsTimer))
           v-else-if="!databaseServerPoints.length"
           icon="lucide-database"
           :title="`No database server metrics for the last ${isHistorical ? windowLabel : '30 minutes'}`"
-          description="The monitor reads them from the database agent on the database server. Check that the agent is running and reachable."
+          description="The monitor reads them from the Pilot agent on the database server. Check that the agent is running and reachable."
         />
         <div v-else class="gap-4 grid md:grid-cols-2">
           <ChartCard v-for="chart in databaseServerCharts" :key="chart.title" :title="chart.title">

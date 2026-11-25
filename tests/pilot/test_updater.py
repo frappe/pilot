@@ -18,6 +18,7 @@ def _keep_the_host_monitor_running(monkeypatch: pytest.MonkeyPatch) -> list[str]
     restarts: list[str] = []
     monkeypatch.setattr(MonitorConfigurator, "restart", lambda self: restarts.append("restart monitor"))
     monkeypatch.setattr(Server, "is_database_server", False)
+    monkeypatch.setattr(Server, "has_agent", False)
     return restarts
 
 
@@ -132,6 +133,7 @@ def test_a_database_server_upgrade_builds_no_admin_and_restarts_the_agent_with_n
     calls = _keep_the_host_monitor_running
     with (
         patch.object(Server, "is_database_server", new_callable=PropertyMock, return_value=True),
+        patch.object(Server, "has_agent", new_callable=PropertyMock, return_value=True),
         patch.object(updater.pilot, "is_dev_build", True),
         patch("pilot.internal.command.run_command", side_effect=lambda argv, **_: calls.append(argv[-1])),
         patch(
@@ -154,7 +156,7 @@ def test_a_database_server_upgrade_builds_no_admin_and_restarts_the_agent_with_n
         "deps",
         "post_update",
         "restart monitor",
-        ["-P", "-m", "pilot.core.database.agent.setup"],
+        ["-P", "-m", "pilot.core.agent.setup"],
     ]
 
 

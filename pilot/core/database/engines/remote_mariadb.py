@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.core.database.agent.client import DatabaseAgentClient
+from pilot.core.agent.roles.database.client import DatabaseAgentClient
 from pilot.core.database.engines.mariadb import MariaDB
 from pilot.core.database.log_file import LogFile, RemoteLogFile
 from pilot.exceptions import DatabaseError
 
 
 class RemoteMariaDB(MariaDB):
-    """A MariaDB on its own VM. SQL goes over TCP; its logs and disk are read through the database agent."""
+    """A MariaDB on its own VM. SQL goes over TCP; its logs and disk are read through the Pilot agent."""
 
     def __init__(self, *args, agent: DatabaseAgentClient, **kwargs) -> None:
         super().__init__(*args, **kwargs)

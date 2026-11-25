@@ -818,17 +818,14 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize("is_remote", [False, True])
-def test_upgrade_command_updates_the_database_vm_of_a_remote_mariadb_first(is_remote: bool) -> None:
+def test_upgrade_command_updates_the_connected_vms_first(is_remote: bool) -> None:
     from pilot.commands.admin.upgrade import UpgradeCommand
     from pilot.core.server import Server
 
     calls = Mock()
     with (
         patch.object(
-            Server,
-            "database_agent",
-            new_callable=PropertyMock,
-            return_value=calls.agent if is_remote else None,
+            Server, "agents", new_callable=PropertyMock, return_value=[calls.agent] if is_remote else []
         ),
         patch("pilot.updater.perform_upgrade", calls.perform_upgrade),
     ):

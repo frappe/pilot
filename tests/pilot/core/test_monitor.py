@@ -12,8 +12,8 @@ import pytest
 
 from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig
 from pilot.config.webhook import WebhookEndpoint
+from pilot.core.agent.client import AgentClient
 from pilot.core.bench import Bench
-from pilot.core.database.agent.client import DatabaseAgentClient
 from pilot.core.notification.notifier import Notifier
 from pilot.core.notification.webhooks import WEBHOOK_TIMEOUT_SECONDS, WebhookDelivery, send_webhook
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
@@ -341,12 +341,12 @@ def test_a_remote_server_logs_its_vm_and_records_the_vm_memory(tmp_path: Path) -
     monitor = _database_monitor(tmp_path, remote=True)
 
     with (
-        patch.object(DatabaseAgentClient, "request", return_value=DATABASE_VM_RECORD) as request,
+        patch.object(AgentClient, "request", return_value=DATABASE_VM_RECORD) as request,
         _mariadb_status(),
     ):
         _collect_database_tick(monitor)
 
-    request.assert_called_once_with("GET", "/metrics", timeout=DatabaseAgentClient.metrics_timeout)
+    request.assert_called_once_with("GET", "/metrics", timeout=AgentClient.metrics_timeout)
     assert _last_record(monitor.database_server_log_path) == DATABASE_VM_RECORD
     assert _last_record(monitor.db_log_path)["total_ram_bytes"] == 16 * 1024**3
 
@@ -354,7 +354,7 @@ def test_a_remote_server_logs_its_vm_and_records_the_vm_memory(tmp_path: Path) -
 def test_a_local_server_asks_no_agent_and_records_this_host_memory(tmp_path: Path) -> None:
     monitor = _database_monitor(tmp_path, remote=False)
 
-    with patch.object(DatabaseAgentClient, "request") as request, _mariadb_status():
+    with patch.object(AgentClient, "request") as request, _mariadb_status():
         _collect_database_tick(monitor)
 
     request.assert_not_called()

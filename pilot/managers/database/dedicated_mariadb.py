@@ -15,7 +15,7 @@ from pilot.managers.platform import HostPlatform
 
 
 class DedicatedMariaDBManager(MariaDBManager):
-    """Pilot's MariaDB on a database VM of its own, which the app VM's Pilot manages through the database agent.
+    """Pilot's MariaDB on a database VM of its own, which the app VM's Pilot manages through the Pilot agent.
 
     It runs as Pilot's user unit, like the server Pilot runs beside benches, but it has the VM to itself and
     serves clients on the network.
@@ -68,13 +68,6 @@ class DedicatedMariaDBManager(MariaDBManager):
     def free_disk_bytes(self) -> int:
         """Free bytes on the file system that holds the data directory."""
         return shutil.disk_usage(self.data_dir).free
-
-    def get_host_metrics(self) -> dict:
-        """One system metrics record of this VM, with the disk that holds the data directory."""
-        # psutil is in the agent's venv only, and the CLI imports this module.
-        from pilot.core.server.monitoring_proc import HostSampler
-
-        return HostSampler(self.data_dir).get_sampled_record()
 
     def grant_client_admin(self, user: str, password: str, host: str) -> None:
         """Create or reset the admin account the app VM's Pilot logs in with, from its address only."""

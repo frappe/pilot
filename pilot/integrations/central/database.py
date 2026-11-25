@@ -54,7 +54,7 @@ class CentralDatabaseAssignment:
         return assignment.get("remote") is True
 
     def get_access(self) -> dict[str, Any]:
-        """The database host's address and its database agent's port and token, once Central reports it running."""
+        """The database host's address and its Pilot agent's port and token, once Central reports it running."""
         while (access := self.client.get_database_access())["status"] == "Pending":
             logging.info("Waiting for Central to finish the database host.")
             time.sleep(self.poll_seconds)

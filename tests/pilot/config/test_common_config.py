@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from pilot.config.agent import AgentConfig
 from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.common import CommonConfig
-from pilot.config.database_agent import DatabaseAgentConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.postgres import PostgresConfig
@@ -113,7 +113,7 @@ def test_telemetry_is_shared_by_every_bench(tmp_path: Path) -> None:
         pytest.param(
             CommonConfig(
                 mariadb=MariaDBConfig(port=3306, dedicated=True),
-                database_agent=DatabaseAgentConfig(token_hash="hash", client_address="fdaa:1:2::4"),
+                agent=AgentConfig(token_hash="hash", client_address="fdaa:1:2::4"),
             ),
             id="dedicated-with-agent",
         ),
@@ -129,7 +129,7 @@ def test_local_mariadb_writes_no_remote_or_agent_keys(tmp_path: Path) -> None:
     text = CommonConfig.path(tmp_path).read_text()
     assert "agent_token" not in text
     assert "dedicated" not in text
-    assert "database_agent" not in text
+    assert "[agent]" not in text
 
 
 @pytest.mark.parametrize(

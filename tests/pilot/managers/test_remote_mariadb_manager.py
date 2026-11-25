@@ -6,24 +6,21 @@ from unittest.mock import patch
 import pytest
 
 from pilot.config import MariaDBConfig
-from pilot.core.database.agent.client import API_VERSION
 from pilot.exceptions import DatabaseError
 from pilot.managers.database.mariadb import MariaDBManager
 from pilot.managers.database.remote_mariadb import RemoteMariaDBManager
 
 
 class FakeAgent:
-    """A database agent whose server state lives in attributes and whose calls are recorded."""
+    """A database role client whose server state lives in attributes and whose calls are recorded."""
 
     def __init__(self) -> None:
         self.health: dict[str, Any] = {
-            "api_version": API_VERSION,
             "is_installed": True,
             "is_provisioned": True,
             "is_running": True,
             "version": [11, 8],
             "memory_mb": 8192,
-            "client_address": "fdaa:1:2::7",
         }
         self.managed_config = "# Managed by Pilot's database variable editor.\n[mysqld]\n"
         self.calls: list[tuple] = []
@@ -43,7 +40,7 @@ class FakeAgent:
 
     def grant_admin(self, user: str, password: str) -> str:
         self.calls.append(("grant_admin", user, password))
-        return self.health["client_address"]
+        return "fdaa:1:2::7"
 
 
 def _config(**changes) -> MariaDBConfig:
@@ -72,7 +69,7 @@ def test_the_server_and_its_agent_are_reached_at_the_configured_host() -> None:
     assert manager.site_host == "fdaa:1:2::3"
     assert manager.client_socket == ""
     assert manager._client_command()[-4:] == ["-h", "fdaa:1:2::3", "-P", "3306"]
-    assert (manager.agent.base_url, manager.agent.token) == ("http://[fdaa:1:2::3]:7790", "token")
+    assert (manager.agent.agent.base_url, manager.agent.agent.token) == ("http://[fdaa:1:2::3]:7790", "token")
 
 
 @pytest.mark.parametrize(

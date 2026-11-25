@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:
-    from pilot.core.database.agent.client import DatabaseAgentClient
+    from pilot.core.agent.roles.database.client import DatabaseAgentClient
 
 
 class LogFile:
@@ -32,7 +32,7 @@ class LogFile:
 
 
 class RemoteLogFile(LogFile):
-    """A database server file on the database VM, read through the database agent."""
+    """A database server file on the database VM, read through the Pilot agent."""
 
     def __init__(self, path: Path, agent: DatabaseAgentClient) -> None:
         super().__init__(path)

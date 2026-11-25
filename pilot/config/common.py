@@ -6,9 +6,9 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 
+from pilot.config.agent import AgentConfig
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.central import CentralConfig, HostnameAlias
-from pilot.config.database_agent import DatabaseAgentConfig
 from pilot.config.frappe_cloud import FrappeCloudConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
@@ -34,7 +34,7 @@ class CommonConfig:
         keys={"country"},
         tables={
             "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
-            "database_agent": TomlSchema(keys=field_names(DatabaseAgentConfig)),
+            "agent": TomlSchema(keys=field_names(AgentConfig)),
             "postgres": TomlSchema(keys=field_names(PostgresConfig)),
             "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
             "nginx": TomlSchema(keys=set(NginxConfig().ports)),
@@ -57,7 +57,7 @@ class CommonConfig:
     )
 
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
-    database_agent: DatabaseAgentConfig = field(default_factory=DatabaseAgentConfig)
+    agent: AgentConfig = field(default_factory=AgentConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -96,9 +96,7 @@ class CommonConfig:
         admin = data.get("admin", {})
         return cls(
             mariadb=MariaDBConfig(**_known_fields(MariaDBConfig, data.get("mariadb", {}))),
-            database_agent=DatabaseAgentConfig(
-                **_known_fields(DatabaseAgentConfig, data.get("database_agent", {}))
-            ),
+            agent=AgentConfig(**_known_fields(AgentConfig, data.get("agent", {}))),
             postgres=PostgresConfig(**_known_fields(PostgresConfig, data.get("postgres", {}))),
             letsencrypt=LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
             nginx=NginxConfig.from_dict(data.get("nginx", {})),
@@ -193,7 +191,7 @@ class CommonConfig:
         # Tables written only when they differ from their defaults.
         optional = {
             "nginx": (self.nginx.ports, NginxConfig().ports),
-            "database_agent": (asdict(self.database_agent), asdict(DatabaseAgentConfig())),
+            "agent": (asdict(self.agent), asdict(AgentConfig())),
             "proxy": (asdict(self.proxy), asdict(ProxyConfig())),
             "resource_limits": (asdict(self.resource_limits), asdict(ResourceLimitConfig())),
             "updates": (asdict(self.updates), asdict(UpdatesConfig())),

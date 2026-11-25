@@ -740,7 +740,7 @@ class Bench:
         migrate: bool = False,
         delete_local_data: bool = False,
     ) -> None:
-        """Move this host's benches to a MariaDB on its own VM that Pilot manages through the database agent.
+        """Move this host's benches to a MariaDB on its own VM that Pilot manages through the Pilot agent.
         `migrate` copies the sites' databases there first."""
         from pilot.core.bench.remote_database import RemoteDatabaseSetup
 

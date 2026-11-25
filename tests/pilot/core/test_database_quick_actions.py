@@ -266,7 +266,7 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
     [
         pytest.param({"return_value": 4096}, 1.0, 4096, id="memory-known"),
         pytest.param(
-            {"side_effect": DatabaseError("Pilot cannot reach the database agent.")},
+            {"side_effect": DatabaseError("Pilot cannot reach the Pilot agent.")},
             None,
             None,
             id="agent-unreachable",

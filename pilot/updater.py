@@ -58,8 +58,8 @@ def get_installed_version() -> str:
 
 
 def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
-    """Update the Pilot code in place and restart the monitor, and the database agent of a database
-    server. Restarting the admin service is the caller's job."""
+    """Update the Pilot code in place and restart the monitor, and the Pilot agent of a VM that runs one.
+    Restarting the admin service is the caller's job."""
     from pilot.core.server import Server
     from pilot.core.server.monitoring_config import MonitorConfigurator
     from pilot.internal.patch_runner import run_patches
@@ -73,9 +73,9 @@ def perform_upgrade(on_progress: Progress = lambda message: None) -> None:
     run_patches("post_update", on_progress=on_progress)
     # The monitor runs for the life of the host, so it keeps the old modules until restarted.
     MonitorConfigurator().restart()
-    if is_database_server:
-        on_progress("Restarting the database agent...")
-        restart_database_agent_with_new_code()
+    if Server().has_agent:
+        on_progress("Restarting the Pilot agent...")
+        restart_agent_with_new_code()
 
 
 def restart_admin_with_new_code(bench_path: Path) -> None:
@@ -87,13 +87,13 @@ def restart_admin_with_new_code(bench_path: Path) -> None:
     subprocess.run([sys.executable, "-P", "-m", "pilot.updater", str(bench_path)], check=True, env=env)
 
 
-def restart_database_agent_with_new_code() -> None:
-    """Rewrite and restart the database agent's unit from a new process, which holds the new code.
-    MariaDB keeps running."""
+def restart_agent_with_new_code() -> None:
+    """Rewrite and restart the Pilot agent's unit from a new process, which holds the new code. The services it
+    manages, such as MariaDB, keep running."""
     from pilot.core.server import Server
 
     env = {**os.environ, "PYTHONPATH": str(Server().root)}
-    subprocess.run([sys.executable, "-P", "-m", "pilot.core.database.agent.setup"], check=True, env=env)
+    subprocess.run([sys.executable, "-P", "-m", "pilot.core.agent.setup"], check=True, env=env)
 
 
 def restart_admin(bench_path: Path) -> None:
