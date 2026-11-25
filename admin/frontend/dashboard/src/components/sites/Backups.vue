@@ -54,6 +54,7 @@ const {
 
 const storageAction = {
   label: 'Connect storage',
+  variant: 'ghost' as const,
   onClick: () => {
     router.push({ name: 'Settings', params: { section: 's3-bucket' } })
   },
@@ -234,7 +235,6 @@ onMounted(() => {
     class="mb-4 border border-outline-gray-2"
     theme="blue"
     title="Backups stay on this server"
-    description="Connect object storage to keep a copy offsite."
     :dismissible="false"
     :primary-action="storageAction"
   />
