@@ -10,6 +10,7 @@ admin/backend/api/v1/
   setup/     first-run and database setup
   settings/  bench config read/write/apply
   sites/     site apps, backups, domains, login, config, storage
+  site_templates.py  saved app selections for new sites
   apps.py    bench app inventory and actions
   tasks.py   task list, logs, events, control
   logs.py    log access
@@ -85,6 +86,8 @@ Every `/sites/<name>/...` route accepts the site's directory name or any hostnam
 `GET /sites/<name>` includes `url` and `tls`. The route policy supplies the public scheme for both values.
 
 `GET /sites` and `GET /sites/<name>` include `primary_domain`: the host of the site's `host_name` when it is one of the site's domains, otherwise the directory name.
+
+`GET /site-templates` returns `{"templates": [{"name", "apps"}]}`, the app selections saved in the bench's `config/site-templates.json`. `PUT /site-templates/<name>` takes `{"apps": [...]}` and adds the template, or replaces the one with the same name ignoring case; an invalid name or app list returns 422 `invalid_site_template`. `DELETE /site-templates/<name>` removes it. `POST /sites` takes no template: the dashboard sends the apps the user ended up with. These routes need a bench session.
 
 `DELETE /sites/<name>` queues `drop-site`. Frappe takes a full backup before the drop; pass `?no_backup=1` to skip it on large sites you do not need to keep.
 

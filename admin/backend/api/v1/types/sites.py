@@ -30,6 +30,15 @@ class WildcardDomains(TypedDict):
     domains: list[str]
 
 
+class SiteTemplate(TypedDict):
+    name: str
+    apps: list[str]
+
+
+class SiteTemplates(TypedDict):
+    templates: list[SiteTemplate]
+
+
 class MigrationStarted(TypedDict):
     operation_id: str
     task_id: str
