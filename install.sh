@@ -973,7 +973,7 @@ install_for_user() {
 }
 
 # ── run ───────────────────────────────────────────────────────────────────────
-require_supported_release
+require_supported_release /etc/os-release
 install_system_packages
 
 if is_root; then
