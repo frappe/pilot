@@ -1,0 +1,2 @@
+        if (-f "{{ building_root }}$uri") { return 418; }
+        error_page 418 404 = @previous_bundles;
