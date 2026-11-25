@@ -1,10 +1,20 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
-import { Button, Checkbox, Dialog, ErrorMessage, Select, Spinner, TextInput } from 'frappe-ui'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  ErrorMessage,
+  Select,
+  Spinner,
+  TextInput,
+  toast,
+} from 'frappe-ui'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 
 import { useNewSite } from '@/composables/sites/useNewSite'
+import { useSiteTemplates } from '@/composables/sites/useSiteTemplates'
 import type { SiteResource } from '@/types/sites'
 
 interface Props {
@@ -40,6 +50,32 @@ const {
   create,
 } = useNewSite()
 
+const siteTemplates = reactive(useSiteTemplates(availableApps, selectedApps))
+const namingTemplate = ref(false)
+const templateName = ref('')
+const templateNameInput = ref<InstanceType<typeof TextInput> | null>(null)
+
+const startNamingTemplate = () => {
+  templateName.value = ''
+  namingTemplate.value = true
+  nextTick(() => templateNameInput.value?.focus())
+}
+
+const activeTemplate = computed({
+  get: () => siteTemplates.active?.name ?? null,
+  set: (name) => name && siteTemplates.apply(name),
+})
+
+const saveTemplate = async () => {
+  const name = templateName.value.trim()
+  if (!name) return
+  if (name.includes('/')) {
+    toast.error("A template name can't contain '/'.")
+    return
+  }
+  if (await siteTemplates.save(name)) namingTemplate.value = false
+}
+
 // Fade only the edges that can still scroll, so a clipped row reads as "more
 // below" and the last app is never dimmed at rest.
 const appList = ref<HTMLElement | null>(null)
@@ -53,12 +89,15 @@ const updateFadeEdges = () => {
   fadeEdges.value = top && bottom ? 'both' : top ? 'top' : bottom ? 'bottom' : ''
 }
 
-// Also `loading`: apps resolve while the spinner is still up, so the rows only
-// exist once it flips.
-watch([filteredApps, loading], () => nextTick(updateFadeEdges))
+// Also the loading flags: apps resolve while the spinner is still up, so the
+// rows only exist once they flip.
+watch([filteredApps, loading, () => siteTemplates.loaded], () => nextTick(updateFadeEdges))
 
 watch(open, (visible) => {
-  if (visible) reset()
+  if (!visible) return
+  namingTemplate.value = false
+  reset()
+  siteTemplates.load()
 })
 
 const submit = async () => {
@@ -72,7 +111,7 @@ const submit = async () => {
 
 <template>
   <Dialog v-model="open" title="New Site" size="2xl">
-    <div v-if="loading" class="flex justify-center items-center h-80">
+    <div v-if="loading || !siteTemplates.loaded" class="flex justify-center items-center h-80">
       <Spinner size="lg" class="text-ink-gray-4" />
     </div>
 
@@ -118,6 +157,60 @@ const submit = async () => {
           <span class="font-medium text-ink-gray-7">
             {{ newSiteName || `mysite${selectedSuffix}` }}
           </span>
+        </p>
+      </div>
+
+      <!-- Template -->
+      <div v-if="availableApps.length" class="space-y-1.5">
+        <div v-if="namingTemplate" class="flex items-end gap-2">
+          <TextInput
+            ref="templateNameInput"
+            v-model="templateName"
+            class="flex-1 min-w-0"
+            label="Template name"
+            placeholder="ERPNext setup"
+            maxlength="50"
+            @keyup.enter="saveTemplate"
+          />
+          <Button
+            :label="siteTemplates.find(templateName) ? 'Update' : 'Save'"
+            :loading="siteTemplates.saving"
+            :disabled="!templateName.trim()"
+            @click="saveTemplate"
+          />
+          <Button variant="ghost" label="Cancel" @click="namingTemplate = false" />
+        </div>
+        <div v-else class="flex items-end gap-2">
+          <Select
+            v-model="activeTemplate"
+            side="bottom"
+            class="flex-1 min-w-0"
+            label="Template"
+            :placeholder="siteTemplates.templates.length ? 'Choose a template' : 'No templates yet'"
+            :disabled="!siteTemplates.templates.length"
+            :options="siteTemplates.options"
+          />
+          <Button
+            v-if="activeTemplate"
+            variant="ghost"
+            icon="lucide-trash-2"
+            label="Delete template"
+            tooltip="Delete template"
+            @click="siteTemplates.remove(activeTemplate)"
+          />
+          <Button
+            v-else
+            label="Save as template"
+            :disabled="!selectedApps.length"
+            @click="startNamingTemplate"
+          />
+        </div>
+
+        <p v-if="siteTemplates.missingApps.length" class="text-ink-gray-5 text-p-sm">
+          Not available on this bench: {{ siteTemplates.missingApps.join(', ') }}
+        </p>
+        <p v-else-if="!siteTemplates.templates.length" class="text-ink-gray-5 text-p-sm">
+          Select apps, then save them as a template to reuse the selection.
         </p>
       </div>
 
