@@ -176,6 +176,7 @@ DISTRO=ubuntu
 is_root() { return 1; }
 system_packages_present() { return 0; }
 ensure_curl() { echo ensure_curl; }
+node() { echo v24.0.0; }
 install_system_packages
 """,
         tmp_path,
@@ -207,6 +208,24 @@ install_system_packages
     assert (
         "pkg_install bootstrap-package database-package production-package" in provisioned.stdout.splitlines()
     )
+
+
+def test_non_root_install_rejects_old_node_without_provisioning(tmp_path: Path) -> None:
+    """An old `node` first on PATH must fail here, not later during bench setup."""
+    result = run_installer_functions(
+        """
+DISTRO=ubuntu
+is_root() { return 1; }
+system_packages_present() { return 0; }
+ensure_curl() { echo ensure_curl; }
+node() { echo v22.14.0; }
+install_system_packages
+""",
+        tmp_path,
+    )
+    assert result.returncode == 1
+    assert "ensure_curl" not in result.stdout
+    assert "found v22.14.0 at" in result.stdout
 
 
 def zoneinfo_dir(tmp_path: Path, *, with_alias: bool) -> Path:
