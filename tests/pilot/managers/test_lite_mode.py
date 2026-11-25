@@ -208,6 +208,27 @@ def test_lite_dev_serves_assets_without_the_reloader(tmp_path: Path, watchdog: b
     assert web.env["FRAPPE_SERVE_ASSETS"] == "1"
 
 
+@pytest.mark.parametrize(
+    ("runner_text", "dev", "expected"),
+    [
+        ('"--site"', True, ["--site=pe.localhost"]),
+        ('"--site"', False, []),
+        ("", True, []),
+    ],
+)
+def test_lite_dev_sends_requests_to_the_default_site(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner_text: str, dev: bool, expected: list[str]
+) -> None:
+    """Like `frappe serve`, dev pins the web server to default_site; production routes by Host."""
+    monkeypatch.delenv("FRAPPE_SITE", raising=False)
+    bench = make_bench(tmp_path)
+    (tmp_path / "apps" / "frappe" / "frappe" / "runner.py").write_text(runner_text)
+    bench.sites_path.mkdir(parents=True)
+    (bench.sites_path / "common_site_config.json").write_text(json.dumps({"default_site": "pe.localhost"}))
+
+    assert [arg for arg in _web(bench, dev=dev).argv if arg.startswith("--site")] == expected
+
+
 def test_lite_dev_keeps_the_single_process(tmp_path: Path) -> None:
     # Without lite, dev swaps gunicorn for `frappe serve`; lite has no such split,
     # and dropping to the dev server would leave jobs and realtime unserved.

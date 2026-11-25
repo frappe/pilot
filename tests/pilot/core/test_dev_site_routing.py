@@ -17,7 +17,8 @@ from tests.pilot.commands.test_commands import make_bench
         (2, "", "one.localhost", False, True),
         (1, "one.localhost", "", False, False),
         (2, "", "", False, False),
-        (2, "one.localhost", "", True, False),
+        (2, "one.localhost", "", "", False),
+        (2, "one.localhost", "", '"--site"', True),
     ],
 )
 def test_dev_start_warns_when_a_selector_pins_a_multi_site_bench(
@@ -26,15 +27,15 @@ def test_dev_start_warns_when_a_selector_pins_a_multi_site_bench(
     site_count: int,
     default_site: str,
     env_site: str,
-    lite_mode: bool,
+    lite_mode: bool | str,
     warn: bool,
 ) -> None:
     bench = make_bench(tmp_path)
-    if lite_mode:
+    if lite_mode is not False:
         bench.config.lite_mode.enabled = True
         runner = bench.apps_path / "frappe" / "frappe" / "runner.py"
         runner.parent.mkdir(parents=True)
-        runner.touch()
+        runner.write_text(lite_mode)
     (bench.env_path / "bin").mkdir(parents=True)
     bench.python.touch()
     for name in ("one.localhost", "two.localhost")[:site_count]:

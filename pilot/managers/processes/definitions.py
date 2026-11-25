@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.core.app.node_packages import NodePackages
+from pilot.core.bench.config_files import BenchConfigFiles
 from pilot.exceptions import BenchError
 from pilot.managers.environment import AdminEnvManager
 
@@ -239,6 +240,8 @@ class ProcessDefinitionBuilder:
         env = {**self.python_env(), "MALLOC_ARENA_MAX": "2", "FRAPPE_PRELOAD_MODULES": "0"}
         if dev:
             argv.append("--verbose")
+        if dev and self.bench.has_runner_site_option and (site := BenchConfigFiles(self.bench).pinned_dev_site):
+            argv.append(f"--site={site}")
         if dev and self.bench.has_python_reloader:
             argv.append("--dev")
         elif dev:

@@ -479,6 +479,12 @@ class Bench:
         return runner.is_file() and "LISTEN_FDS" in runner.read_text()
 
     @property
+    def has_runner_site_option(self) -> bool:
+        """Whether lite mode's process takes --site to send every request to one site."""
+        runner = self.apps_path / "frappe" / "frappe" / "runner.py"
+        return runner.is_file() and '"--site"' in runner.read_text()
+
+    @property
     def has_python_reloader(self) -> bool:
         """Whether dev processes reload on Python changes: `reload_python` is on and watchdog is installed."""
         from pilot.internal.host_resources import InstalledPackages
