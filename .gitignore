@@ -69,6 +69,7 @@ admin/frontend/cloud-sdk/node_modules
 admin/backend/static/dashboard/
 admin/backend/static/editor/
 admin/backend/static/in-app-embed/
+admin/backend/static/.build.lock
 admin/frontend/node_modules
 admin/frontend/components.d.ts
 admin/frontend/dashboard/components.d.ts
