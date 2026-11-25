@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildSiteAppChoices, isFrappeApp } from './siteApps.ts'
+import { buildSiteAppChoices, getCommitUrl, isFrappeApp } from './siteApps.ts'
 
 const frappe = (name, extra = {}) => ({
   name,
@@ -14,6 +14,20 @@ test('isFrappeApp only matches repos under the frappe org', () => {
   assert.equal(isFrappeApp({ repo: 'https://github.com/frappe/erpnext' }), true)
   assert.equal(isFrappeApp({ repo: 'https://github.com/acme/erpnext' }), false)
   assert.equal(isFrappeApp({}), false)
+})
+
+test('links a commit on GitHub from https and ssh repos', () => {
+  const url = 'https://github.com/frappe/crm/commit/abc1234'
+
+  assert.equal(getCommitUrl('https://github.com/frappe/crm', 'abc1234'), url)
+  assert.equal(getCommitUrl('https://github.com/frappe/crm.git/', 'abc1234'), url)
+  assert.equal(getCommitUrl('git@github.com:frappe/crm.git', 'abc1234'), url)
+})
+
+test('gives no commit link without a GitHub repo and a commit', () => {
+  assert.equal(getCommitUrl('https://gitlab.com/frappe/crm', 'abc1234'), '')
+  assert.equal(getCommitUrl('https://github.com/frappe/crm', ''), '')
+  assert.equal(getCommitUrl(), '')
 })
 
 test('offers every registry app, third-party ones included', () => {
