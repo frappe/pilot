@@ -205,7 +205,7 @@ class PythonAssetBuilder:
         scope = PAGE_ISLAND_PATH if islands_only else Path()
         snapshot = app_snapshot / scope
         building = root / "building" / "assets" / name / scope
-        outgoing = self.outgoing_bundles(name, public, islands_only=islands_only)
+        outgoing = self.get_outgoing_bundles(name, public, islands_only=islands_only)
         # A failed build can leave a live file truncated at the same hashed URL.
         # Keep the protected bytes until a successful retry publishes its output.
         outgoing.update(scope / path.relative_to(building) for path in building.rglob("*") if path.is_file())
@@ -250,7 +250,7 @@ class PythonAssetBuilder:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
 
-    def outgoing_bundles(
+    def get_outgoing_bundles(
         self, name: str, public: Path, *, islands_only: bool
     ) -> set[Path]:
         prefix = f"/assets/{name}/"
@@ -459,7 +459,7 @@ class PythonAssetBuilder:
     def merge_json(path: Path, new_entries: dict, replacing: str = "", keeping: str = "") -> None:
         """Merge under the lock: several apps' builds write this file at once. Entries under
         `replacing` are dropped first, except those under `keeping`."""
-        from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
+        from pilot.internal.atomic_file import replace_private_text_locked
 
         with exclusive_file_lock(path):
             existing = read_json_object(path)

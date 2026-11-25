@@ -1,0 +1,11 @@
+{% for location in locations %}
+    location ^~ {{ location[0] }} {
+        alias {{ location[1] }}/;
+{{ snapshot_rule }}{% if refuse_symlinks %}
+        disable_symlinks on from={{ location[2] }};
+{% endif %}
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+{% endfor %}

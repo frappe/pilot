@@ -74,7 +74,7 @@ server {
        cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
        outside the bench. #}
     location @previous_bundles {
-        root {{ bench_root }}/.previous-bundles;
+        root {{ previous_bundles_root }};
         {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
@@ -324,7 +324,7 @@ server {
        cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
        outside the bench. #}
     location @previous_bundles {
-        root {{ bench_root }}/.previous-bundles;
+        root {{ previous_bundles_root }};
         {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
