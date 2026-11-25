@@ -569,3 +569,92 @@ def test_failed_build_keeps_priority_over_partial_live_file_until_retry(tmp_path
         live.write_bytes(b"rebuilt")
     assert not priority.exists()
     assert live.read_bytes() == b"rebuilt"
+
+
+def test_second_build_can_publish_snapshots_without_directory_exchange(tmp_path: Path) -> None:
+    import errno
+
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps/gameplan")
+    live = app.path / "gameplan/public/dist/js/desk.bundle.AAAAAAAA.js"
+    live.parent.mkdir(parents=True)
+    live.write_text("original")
+    with builder.keeping_previous_bundles("gameplan", app.path):
+        live.write_text("next")
+
+    with (
+        patch(
+            "pilot.managers.python_assets.exchange_paths", side_effect=OSError(errno.ENOTSUP, "unsupported")
+        ),
+        builder.keeping_previous_bundles("gameplan", app.path),
+    ):
+        fallback = tmp_path / ".previous-bundles/assets/gameplan/dist/js" / live.name
+        assert fallback.read_text() == "next"
+
+
+@pytest.mark.parametrize("manifest", [None, "{"])
+def test_invalid_primary_manifest_rebuilds_unselected_apps(tmp_path: Path, manifest: str | None) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    if manifest is not None:
+        (assets / "assets.json").write_text(manifest)
+    selected = make_app(tmp_path / "apps/gameplan")
+    other = make_app(tmp_path / "apps/erpnext", "erpnext")
+    (other.path / "erpnext/public/dist").mkdir(parents=True)
+    builder.bench.apps.return_value = [selected, other]
+
+    def compile_all(argv, **kwargs):
+        assert argv[-2:] == ["build", "--force"]
+        entries = {name: f"/assets/{name}/dist/js/desk.js" for name in ("gameplan", "erpnext")}
+        (assets / "assets.json").write_text(json.dumps(entries))
+
+    with (
+        patch("pilot.managers.python_assets.get_app_packages", return_value=[]),
+        patch.object(builder, "run_compiler", side_effect=compile_all),
+    ):
+        builder.build_assets_for_app(selected)
+
+    assert set(json.loads((assets / "assets.json").read_text())) == {"gameplan", "erpnext"}
+
+
+def test_multi_app_batch_keeps_pre_update_frappe_islands(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.config.production.enabled = True
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.apps_path = tmp_path / "apps"
+    frappe = make_app(builder.bench.apps_path / "frappe", "frappe")
+    erpnext = make_app(builder.bench.apps_path / "erpnext", "erpnext")
+    builder.bench.apps.return_value = [frappe, erpnext]
+    directory = Path("dist/page-island")
+    live = frappe.path / "frappe/public" / directory
+    live.mkdir(parents=True)
+    old = live / "board.OLD.js"
+    old.write_text("old")
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(json.dumps({"board": f"/assets/frappe/{directory}/{old.name}"}))
+    fallback = tmp_path / ".previous-bundles/assets/frappe" / directory
+    for app in (frappe, erpnext):
+        app.has_source_changes = True
+
+    def compile_app(app):
+        shutil.rmtree(live)
+        live.mkdir()
+        (live / f"{app.module_name}.js").write_text(app.module_name)
+        assert (fallback / old.name).read_text() == "old"
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch("pilot.managers.python_assets.NodePackages"),
+        patch.object(builder, "build_app_from_source", side_effect=compile_app),
+        builder.asset_build_batch([frappe, erpnext]) as needs_build,
+    ):
+        assert needs_build
+        for app in (frappe, erpnext):
+            builder.build_app_assets(app)
+
+    assert (fallback / old.name).read_text() == "old"
