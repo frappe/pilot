@@ -27,6 +27,7 @@ CONTROL_DIRECTORIES = (
 )
 CONTROL_FILES = (
     "site-aliases.json",
+    "site-templates.json",
     "realtime-folders.txt",
     "gunicorn.conf.py",
     "admin-gunicorn.conf.py",
@@ -96,9 +97,9 @@ class PilotSandboxPaths:
                 path.mkdir(parents=True, exist_ok=True)
         for name in CONTROL_DIRECTORIES:
             (bench.config_path / name).mkdir(parents=True, exist_ok=True)
-        aliases = bench.config_path / "site-aliases.json"
-        if not aliases.exists():
-            aliases.write_text("{}\n")
+        for name, empty in (("site-aliases.json", "{}\n"), ("site-templates.json", "[]\n")):
+            if not (bench.config_path / name).exists():
+                (bench.config_path / name).write_text(empty)
         if not (bench.config_path / "realtime-folders.txt").exists():
             bench.processes.save_realtime_folders()
 

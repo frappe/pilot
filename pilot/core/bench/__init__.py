@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pilot.core.bench.migration.store import MigrationStore
     from pilot.core.bench.processes import BenchProcesses
     from pilot.core.bench.site_aliases import SiteAliases
+    from pilot.core.bench.site_templates import SiteTemplates
     from pilot.core.bench.storage import BenchStorage
     from pilot.core.database import Database
     from pilot.core.notification import NotificationStore
@@ -142,6 +143,13 @@ class Bench:
         from pilot.core.bench.site_aliases import SiteAliases
 
         return SiteAliases(self)
+
+    @cached_property
+    def site_templates(self) -> "SiteTemplates":
+        """The app selections saved for new sites."""
+        from pilot.core.bench.site_templates import SiteTemplates
+
+        return SiteTemplates(self)
 
     @cached_property
     def backups(self) -> "BenchBackups":

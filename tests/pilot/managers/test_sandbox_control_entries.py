@@ -64,6 +64,7 @@ def test_the_protected_folders_exist_before_the_sandbox_starts(tmp_path: Path) -
     for name in CONTROL_DIRECTORIES:
         assert (bench.config_path / name).is_dir()
     assert (bench.config_path / "site-aliases.json").read_text().strip() == "{}"
+    assert (bench.config_path / "site-templates.json").read_text().strip() == "[]"
     assert (bench.config_path / "realtime-folders.txt").is_file()
 
 
