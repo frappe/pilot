@@ -11,6 +11,12 @@ export const isFrappeApp = (app: { repo?: string }) => {
   return Boolean(app.repo?.includes('github.com/frappe/'))
 }
 
+export const getCommitUrl = (repo = '', commit = '') => {
+  const path = /github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(repo)?.[1]
+
+  return path && commit ? `https://github.com/${path}/commit/${commit}` : ''
+}
+
 export const buildSiteAppChoices = (
   registry: SiteAppChoice[] = [],
   benchApps: SiteAppChoice[] = [],
