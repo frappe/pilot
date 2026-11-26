@@ -61,6 +61,12 @@ const startNamingTemplate = () => {
   nextTick(() => templateNameInput.value?.focus())
 }
 
+// With no templates yet there is no Template field, so the offer to save one
+// sits beside the app count once apps are selected.
+const canOfferFirstTemplate = computed(
+  () => !siteTemplates.templates.length && !namingTemplate.value && selectedApps.value.length > 0,
+)
+
 const activeTemplate = computed({
   get: () => siteTemplates.active?.name ?? null,
   set: (name) => name && siteTemplates.apply(name),
@@ -165,7 +171,10 @@ const submit = async () => {
       </div>
 
       <!-- Template -->
-      <div v-if="availableApps.length" class="space-y-1.5">
+      <div
+        v-if="availableApps.length && (namingTemplate || siteTemplates.templates.length)"
+        class="space-y-1.5"
+      >
         <div v-if="namingTemplate" class="flex items-end gap-2">
           <TextInput
             ref="templateNameInput"
@@ -190,8 +199,7 @@ const submit = async () => {
             side="bottom"
             class="flex-1 min-w-0"
             label="Template"
-            :placeholder="siteTemplates.templates.length ? 'Choose a template' : 'No templates yet'"
-            :disabled="!siteTemplates.templates.length"
+            placeholder="Choose a template"
             :options="siteTemplates.options"
           />
           <Button
@@ -213,16 +221,22 @@ const submit = async () => {
         <p v-if="siteTemplates.missingApps.length" class="text-ink-gray-5 text-p-sm">
           Not available on this bench: {{ siteTemplates.missingApps.join(', ') }}
         </p>
-        <p v-else-if="!siteTemplates.templates.length" class="text-ink-gray-5 text-p-sm">
-          Select apps, then save them as a template to reuse the selection.
-        </p>
       </div>
 
       <!-- Choose apps -->
       <div v-if="availableApps.length">
         <div class="flex justify-between items-center mb-2">
           <span class="text-ink-gray-7 text-p-base-medium">Choose apps</span>
-          <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
+          <div class="flex items-center gap-2">
+            <Button
+              v-if="canOfferFirstTemplate"
+              variant="ghost"
+              size="sm"
+              label="Save as template"
+              @click="startNamingTemplate"
+            />
+            <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
+          </div>
         </div>
 
         <TextInput v-model="appSearch" class="mb-2" placeholder="Search apps" autocomplete="off">
