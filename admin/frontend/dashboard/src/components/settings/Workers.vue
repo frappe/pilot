@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, Spinner, TextInput, toast } from 'frappe-ui'
-import { onMounted, ref } from 'vue'
+import { Button, ErrorMessage, FormControl, Spinner, toast } from 'frappe-ui'
+import { computed, onMounted, ref } from 'vue'
 
 import { settingsApi } from '@/api/settings'
 import type { WorkerGroupSettings } from '@/types/settings'
@@ -17,6 +17,7 @@ const saving = ref(false)
 const error = ref('')
 const groups = ref<WorkerGroupForm[]>([])
 const liteMode = ref(false)
+const showErrors = ref(false)
 
 const toGroupForm = (group: WorkerGroupSettings): WorkerGroupForm => {
   return {
@@ -63,25 +64,36 @@ const timeoutValue = (value: number | string) => {
   return String(value ?? '').trim() === '' ? null : Number(value)
 }
 
-const validate = () => {
-  for (const [index, group] of groups.value.entries()) {
-    if (!queueList(group.queues).length)
-      return `Worker group ${index + 1} needs at least one queue.`
-    const count = Number(group.count)
-    if (!Number.isInteger(count) || count < 1)
-      return `Worker group ${index + 1} count must be at least 1.`
-    const timeout = timeoutValue(group.timeout)
-    if (timeout !== null && (!Number.isInteger(timeout) || timeout < 1))
-      return `Worker group ${index + 1} timeout must be at least 1 second.`
-  }
-  return ''
+const isPositiveInteger = (value: number | string) => {
+  return Number.isInteger(Number(value)) && Number(value) >= 1
+}
+
+const validate = (group: WorkerGroupForm) => ({
+  count: isPositiveInteger(group.count) ? '' : 'Must be at least 1.',
+  queues: queueList(group.queues).length ? '' : 'Needs at least one queue.',
+  timeout:
+    timeoutValue(group.timeout) === null || isPositiveInteger(group.timeout)
+      ? ''
+      : 'Must be at least 1.',
+})
+
+// Errors wait for the first save, so a group just added is not marked invalid at once.
+const groupErrors = computed(() => {
+  return groups.value.map((group) =>
+    showErrors.value ? validate(group) : { count: '', queues: '', timeout: '' },
+  )
+})
+
+const hasError = () => {
+  return groups.value.some((group) => Object.values(validate(group)).some(Boolean))
 }
 
 const save = async () => {
-  error.value = validate()
-  if (error.value) return
+  showErrors.value = true
+  if (hasError()) return
 
   saving.value = true
+  error.value = ''
   try {
     const payload = groups.value.map((group) => ({
       queues: queueList(group.queues),
@@ -116,57 +128,80 @@ onMounted(async () => {
     <Spinner size="lg" class="text-ink-gray-4" />
   </div>
 
-  <div v-else class="space-y-3">
+  <form v-else class="space-y-4" @submit.prevent="save">
     <p v-if="liteMode" class="text-p-sm text-ink-gray-6">
       Lite mode runs one pool: the count is job threads in the bench process, shared by every queue,
       and the longest timeout applies to every queue.
     </p>
 
-    <form
-      class="dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent rounded-7 overflow-hidden"
-      @submit.prevent="save"
+    <div
+      v-for="(group, index) in groups"
+      :key="index"
+      class="items-start gap-3 grid"
+      :class="
+        liteMode
+          ? 'grid-cols-[4rem_1fr_5.5rem] sm:grid-cols-[6rem_1fr_9rem]'
+          : 'grid-cols-[4rem_1fr_5.5rem_auto] sm:grid-cols-[6rem_1fr_9rem_auto]'
+      "
     >
-      <div
-        class="items-center gap-x-3 gap-y-2 grid grid-cols-[4rem_1fr_5.5rem_2rem] sm:grid-cols-[6rem_1fr_9rem_2rem] p-4"
-      >
-        <span class="text-ink-gray-5 text-sm">Workers</span>
-        <span class="text-ink-gray-5 text-sm">Queues</span>
-        <span class="text-ink-gray-5 text-sm">Timeout (s)</span>
-        <span />
+      <FormControl
+        v-model="group.count"
+        type="number"
+        min="1"
+        label="Workers"
+        required
+        :error="groupErrors[index].count"
+      />
 
-        <template v-for="(group, index) in groups" :key="index">
-          <TextInput v-model="group.count" type="number" min="1" />
-          <TextInput v-model="group.queues" placeholder="default, short, long" />
-          <TextInput v-model="group.timeout" type="number" min="1" placeholder="Default" />
+      <FormControl
+        v-model="group.queues"
+        label="Queues"
+        required
+        placeholder="default, short, long"
+        :error="groupErrors[index].queues"
+      />
 
-          <Button
-            v-if="!liteMode"
-            icon="lucide-x"
-            variant="ghost"
-            label="Remove worker group"
-            tooltip="Remove worker group"
-            :disabled="groups.length === 1"
-            @click="removeGroup(index)"
-          />
-          <span v-else />
-        </template>
-      </div>
+      <FormControl
+        v-model="group.timeout"
+        type="number"
+        min="1"
+        label="Timeout (s)"
+        placeholder="Default"
+        :error="groupErrors[index].timeout"
+      />
 
-      <footer
-        class="flex justify-between items-center gap-2 px-3 py-2.5 border-outline-gray-2 border-t"
-      >
-        <Button
-          v-if="!liteMode"
-          variant="ghost"
-          icon-left="lucide-plus"
-          label="Add group"
-          @click="addGroup"
-        />
-
-        <Button class="ml-auto" variant="solid" type="submit" label="Save" :loading="saving" />
-      </footer>
-    </form>
+      <!-- Offset by the label above each field, so the button lines up with the inputs. -->
+      <Button
+        v-if="!liteMode"
+        class="mt-[21px]"
+        icon="lucide-x"
+        variant="ghost"
+        label="Remove worker group"
+        tooltip="Remove worker group"
+        :disabled="groups.length === 1"
+        @click="removeGroup(index)"
+      />
+    </div>
 
     <ErrorMessage v-if="error" :message="error" />
-  </div>
+
+    <div class="flex justify-between items-center gap-2">
+      <Button
+        v-if="!liteMode"
+        variant="ghost"
+        icon-left="lucide-plus"
+        label="Add group"
+        @click="addGroup"
+      />
+
+      <Button
+        class="ml-auto"
+        variant="solid"
+        theme="gray"
+        type="submit"
+        label="Save"
+        :loading="saving"
+      />
+    </div>
+  </form>
 </template>
