@@ -687,10 +687,14 @@ def test_build_command_builds_only_named_apps(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     bench.create_directories()
+    (bench.sites_path / "assets").mkdir(exist_ok=True)
+    (bench.sites_path / "assets/assets.json").write_text(
+        '{"desk.bundle.js": "/assets/frappe/dist/js/desk.bundle.AAAAAAAA.js"}'
+    )
     hrms = fake_app("hrms")
 
     with (
-        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
+        patch("pilot.managers.python_assets.PythonAssetBuilder.build_app_assets") as mock_build,
         patch.object(bench, "apps", return_value=[fake_app("frappe"), hrms]),
     ):
         BuildCommand(bench, apps=["hrms"]).run()
@@ -702,11 +706,15 @@ def test_build_command_named_apps_with_force_skips_prebuilt(tmp_path: Path) -> N
 
     bench = make_bench(tmp_path)
     bench.create_directories()
+    (bench.sites_path / "assets").mkdir(exist_ok=True)
+    (bench.sites_path / "assets/assets.json").write_text(
+        '{"desk.bundle.js": "/assets/frappe/dist/js/desk.bundle.AAAAAAAA.js"}'
+    )
     hrms = fake_app("hrms")
 
     with (
-        patch("pilot.managers.environment.PythonEnvManager.build_assets") as mock_build_all,
-        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
+        patch("pilot.managers.python_assets.PythonAssetBuilder.build_all_locked") as mock_build_all,
+        patch("pilot.managers.python_assets.PythonAssetBuilder.build_app_assets") as mock_build,
         patch.object(bench, "apps", return_value=[fake_app("frappe"), hrms]),
     ):
         BuildCommand(bench, apps=["hrms"], force=True).run()
@@ -721,7 +729,7 @@ def test_build_command_rejects_unknown_app(tmp_path: Path) -> None:
     bench.create_directories()
 
     with (
-        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
+        patch("pilot.managers.python_assets.PythonAssetBuilder.build_app_assets") as mock_build,
         patch.object(bench, "apps", return_value=[fake_app("frappe")]),
         pytest.raises(BenchError, match="nope"),
     ):
