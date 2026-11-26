@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, TextInput, toast } from 'frappe-ui'
-import { ref } from 'vue'
+import { Button, ErrorMessage, FormControl, toast } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 import { settingsApi } from '@/api/settings'
 import type { GunicornSettings } from '@/types/settings'
@@ -20,19 +20,18 @@ const isPositiveInteger = (value: number | string) => {
   return !isBlank(value) && Number.isInteger(Number(value)) && Number(value) >= 1
 }
 
-const validate = () => {
-  if (!isBlank(workers.value) && !isPositiveInteger(workers.value))
-    return 'Workers must be at least 1, or blank for one per CPU.'
-  if (!isPositiveInteger(threads.value)) return 'Threads must be at least 1.'
-  if (!isPositiveInteger(timeout.value)) return 'Timeout must be at least 1 second.'
-  return ''
-}
+const workersError = computed(() => {
+  return isBlank(workers.value) || isPositiveInteger(workers.value) ? '' : 'Must be at least 1.'
+})
+const threadsError = computed(() => (isPositiveInteger(threads.value) ? '' : 'Must be at least 1.'))
+const timeoutError = computed(() => (isPositiveInteger(timeout.value) ? '' : 'Must be at least 1.'))
+const hasError = computed(() => Boolean(workersError.value || threadsError.value || timeoutError.value))
 
 const save = async () => {
-  error.value = validate()
-  if (error.value) return
+  if (hasError.value) return
 
   saving.value = true
+  error.value = ''
   try {
     const result = await settingsApi.update({
       gunicorn: {
@@ -51,31 +50,47 @@ const save = async () => {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <form
-      class="dark:bg-surface-gray-1 border border-outline-gray-1 dark:border-transparent rounded-7 overflow-hidden"
-      @submit.prevent="save"
-    >
-      <div class="items-center gap-x-3 gap-y-2 grid grid-cols-3 p-4">
-        <span class="text-ink-gray-5 text-sm">Workers</span>
-        <span class="text-ink-gray-5 text-sm">Threads</span>
-        <span class="text-ink-gray-5 text-sm">Timeout (s)</span>
+  <form class="space-y-4" @submit.prevent="save">
+    <div class="items-start gap-4 grid sm:grid-cols-3">
+      <FormControl
+        v-model="workers"
+        type="number"
+        min="1"
+        label="Workers"
+        :placeholder="`Auto (${settings.default_workers})`"
+        :error="workersError"
+      />
 
-        <TextInput
-          v-model="workers"
-          type="number"
-          min="1"
-          :placeholder="`Auto (${settings.default_workers})`"
-        />
-        <TextInput v-model="threads" type="number" min="1" />
-        <TextInput v-model="timeout" type="number" min="1" />
-      </div>
+      <FormControl
+        v-model="threads"
+        type="number"
+        min="1"
+        label="Threads per worker"
+        required
+        :error="threadsError"
+      />
 
-      <footer class="flex justify-end px-3 py-2.5 border-outline-gray-2 border-t">
-        <Button variant="solid" type="submit" label="Save" :loading="saving" />
-      </footer>
-    </form>
+      <FormControl
+        v-model="timeout"
+        type="number"
+        min="1"
+        label="Timeout (seconds)"
+        required
+        :error="timeoutError"
+      />
+    </div>
 
     <ErrorMessage v-if="error" :message="error" />
-  </div>
+
+    <div class="flex justify-end">
+      <Button
+        variant="solid"
+        theme="gray"
+        type="submit"
+        label="Save"
+        :loading="saving"
+        :disabled="hasError"
+      />
+    </div>
+  </form>
 </template>
