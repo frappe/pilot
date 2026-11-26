@@ -621,6 +621,30 @@ def test_invalid_primary_manifest_rebuilds_unselected_apps(tmp_path: Path, manif
     assert set(json.loads((assets / "assets.json").read_text())) == {"gameplan", "erpnext"}
 
 
+@pytest.mark.parametrize(("rtl", "recover"), [(None, False), ("{}", False), ("{", True), ("[]", True)])
+def test_optional_rtl_manifest_recovery(tmp_path: Path, rtl: str | None, recover: bool) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text('{"desk.bundle.js": "/assets/frappe/dist/js/desk.js"}')
+    if rtl is not None:
+        (assets / "assets-rtl.json").write_text(rtl)
+    selected = make_app(tmp_path / "apps/gameplan")
+    other = make_app(tmp_path / "apps/frappe", "frappe")
+    (other.path / "frappe/public/dist").mkdir(parents=True)
+    builder.bench.apps.return_value = [selected, other]
+
+    with (
+        patch.object(builder, "build_all_locked") as full_build,
+        patch.object(builder, "build_app_assets") as single_build,
+    ):
+        builder.build_assets_for_app(selected)
+
+    assert full_build.called is recover
+    assert single_build.called is not recover
+
+
 def test_multi_app_batch_keeps_pre_update_frappe_islands(tmp_path: Path) -> None:
     builder = make_builder()
     builder.bench.config.production.enabled = True

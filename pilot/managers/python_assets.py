@@ -181,8 +181,15 @@ class PythonAssetBuilder:
             path = assets / name
             if name == "assets-rtl.json" and not path.exists():
                 continue  # The RTL map is optional.
-            entries = read_json_object(path)
-            if not entries or any(not isinstance(url, str) for url in entries.values()):
+            try:
+                entries = json.loads(path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, ValueError):
+                entries = None
+            if (
+                not isinstance(entries, dict)
+                or (name == "assets.json" and not entries)
+                or any(not isinstance(url, str) for url in entries.values())
+            ):
                 return any(
                     app not in apps and (app.path / app.module_name / "public" / "dist").is_dir()
                     for app in self.bench.apps()
