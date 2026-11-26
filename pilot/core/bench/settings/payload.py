@@ -19,6 +19,12 @@ class SettingsPayload:
         return [group.to_dict() for group in self.config.workers.groups]
 
     @property
+    def gunicorn(self) -> dict:
+        """The web worker settings; no worker count means one per CPU."""
+        gunicorn = self.config.gunicorn
+        return {"workers": gunicorn.workers, "threads": gunicorn.threads, "timeout": gunicorn.timeout}
+
+    @property
     def firewall(self) -> dict:
         """The firewall switch, default action and rules."""
         firewall = self.config.firewall
@@ -138,6 +144,7 @@ class SettingsPayload:
             },
             "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port},
             "workers": {"groups": self.worker_groups},
+            "gunicorn": self.gunicorn,
             "production": {"process_manager": config.production.process_manager or "none"},
             "lite_mode": {"enabled": config.lite_mode.enabled},
         }

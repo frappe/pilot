@@ -27,6 +27,7 @@ class ConfigPatcher:
         "lite_mode": dict,
         "letsencrypt": dict,
         "workers": list,
+        "gunicorn": dict,
         "firewall": dict,
         "proxy": dict,
         "waf": dict,
@@ -51,6 +52,7 @@ class ConfigPatcher:
         self._apply_lite_mode()
         self._apply_letsencrypt()
         self._apply_workers()
+        self._apply_gunicorn()
         self._apply_firewall()
         self._apply_proxy()
         self._apply_waf()
@@ -128,6 +130,16 @@ class ConfigPatcher:
             )
         if groups:
             self.config.workers.groups = groups
+
+    def _apply_gunicorn(self) -> None:
+        """Apply the web worker fields; a blank worker count means one per CPU."""
+        gunicorn = self.data.get("gunicorn") or {}
+        if "workers" in gunicorn:
+            workers = gunicorn["workers"]
+            self.config.gunicorn.workers = None if workers in (None, "") else _coerce_int(workers)
+        for name in ("threads", "timeout"):
+            if name in gunicorn:
+                setattr(self.config.gunicorn, name, _coerce_int(gunicorn[name]))
 
     def _apply_resource_limits(self) -> str | None:
         """Apply the resource limits."""

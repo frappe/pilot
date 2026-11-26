@@ -17,6 +17,13 @@ class WorkerGroupSettings(TypedDict):
     timeout: int | None
 
 
+class GunicornSettings(TypedDict):
+    workers: int | None
+    threads: int
+    timeout: int
+    default_workers: int
+
+
 class FirewallRuleSettings(TypedDict):
     ip: str
     action: str
@@ -212,6 +219,7 @@ class Settings(TypedDict):
     postgres: PostgresSettings
     redis: RedisSettings
     workers: list[WorkerGroupSettings]
+    gunicorn: GunicornSettings
     firewall: FirewallSettings
     proxy: ProxySettings
     waf: WafSettingsDetail

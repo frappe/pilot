@@ -219,3 +219,65 @@ def test_settings_reject_a_bad_worker_timeout(tmp_path: Path, timeout) -> None:
 
     assert response.status_code == 422
     assert "timeout must be a positive number of seconds" in response.get_json()["error"]["message"]
+
+
+def _patch_gunicorn(client, gunicorn: dict):
+    with (
+        patch("pilot.core.bench.settings.BenchSettings.regenerate_configs", autospec=True) as regenerate,
+        patch(
+            "pilot.core.bench.settings.BenchSettings.restart_running_workload",
+            autospec=True,
+            return_value=True,
+        ),
+    ):
+        return client.patch("/api/v1/settings", json={"gunicorn": gunicorn}), regenerate
+
+
+def test_settings_save_the_web_workers_and_restart(tmp_path: Path) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+
+    response, regenerate = _patch_gunicorn(client, {"workers": "4", "threads": 6, "timeout": 300})
+
+    assert response.get_json() == {"restarted": True}
+    regenerate.assert_called_once()
+    gunicorn = BenchConfig.from_file(bench_root / "bench.toml").gunicorn
+    assert (gunicorn.workers, gunicorn.threads, gunicorn.timeout) == (4, 6, 300)
+    assert client.get("/api/v1/settings").get_json()["gunicorn"]["workers"] == 4
+
+
+def test_a_blank_web_worker_count_means_one_per_cpu(tmp_path: Path) -> None:
+    def pin_workers(config: BenchConfig) -> None:
+        config.gunicorn.workers = 4
+
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root, pin_workers)
+
+    response, _ = _patch_gunicorn(client, {"workers": ""})
+
+    assert response.status_code == 200
+    assert BenchConfig.from_file(bench_root / "bench.toml").gunicorn.workers is None
+    settings = client.get("/api/v1/settings").get_json()["gunicorn"]
+    assert settings["workers"] is None
+    assert settings["default_workers"] >= 1
+
+
+def test_unchanged_web_workers_do_not_restart(tmp_path: Path) -> None:
+    client = _client(tmp_path / "bench")
+
+    response, regenerate = _patch_gunicorn(client, {"threads": 8, "timeout": 120})
+
+    assert response.get_json() == {"restarted": False}
+    regenerate.assert_not_called()
+
+
+@pytest.mark.parametrize("gunicorn", [{"workers": 0}, {"threads": "many"}, {"timeout": -1}])
+def test_settings_reject_invalid_web_workers(tmp_path: Path, gunicorn: dict) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+    before = (bench_root / "bench.toml").read_text()
+
+    response, _ = _patch_gunicorn(client, gunicorn)
+
+    assert response.status_code == 422
+    assert (bench_root / "bench.toml").read_text() == before
