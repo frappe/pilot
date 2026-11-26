@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
 import {
   Button,
   Checkbox,
@@ -10,6 +9,7 @@ import {
   TextInput,
   toast,
 } from 'frappe-ui'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 
@@ -100,11 +100,15 @@ watch(open, (visible) => {
   siteTemplates.load()
 })
 
+const close = () => {
+  open.value = false
+}
+
 const submit = async () => {
   const taskId = await create()
   if (!taskId) return
 
-  open.value = false
+  close()
   emit('started', taskId)
 }
 </script>
@@ -241,12 +245,7 @@ const submit = async () => {
             v-for="app in filteredApps"
             :key="app.name"
             type="button"
-            class="flex items-center gap-3 px-2 py-2 border rounded-4 min-w-0 text-left transition-colors hover:bg-surface-alpha-gray-1"
-            :class="
-              selectedApps.includes(app.name)
-                ? 'border-outline-gray-2'
-                : 'border-transparent '
-            "
+            class="flex items-center gap-3 px-2 py-2 rounded-4 min-w-0 text-left transition-colors hover:bg-surface-alpha-gray-1"
             @click="toggleApp(app.name)"
           >
             <AppIcon :name="app.name" size="lg" />
@@ -270,7 +269,7 @@ const submit = async () => {
       <ErrorMessage v-if="error" class="mt-1" :message="error" />
 
       <div class="flex justify-end gap-2">
-        <Button @click="open = false">Cancel</Button>
+        <Button @click="close">Cancel</Button>
         <Button variant="solid" :loading="creating" @click="submit" :disabled="!newSiteName"
           >Create Site</Button
         >
