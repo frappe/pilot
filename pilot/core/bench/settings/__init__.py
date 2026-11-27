@@ -41,6 +41,9 @@ class BenchSettings:
             ("redis", "cache_port"),
             ("redis", "queue_port"),
             ("workers", "groups"),
+            ("gunicorn", "workers"),
+            ("gunicorn", "threads"),
+            ("gunicorn", "timeout"),
             ("production", "process_manager"),
             ("lite_mode", "enabled"),
         }

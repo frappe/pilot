@@ -88,6 +88,7 @@ def build_settings_response(config: BenchConfig, bench_root: Path | None = None)
             "version": RedisManager.installed_version() or config.redis.version or "",
         },
         "workers": payload.worker_groups,
+        "gunicorn": {**payload.gunicorn, "default_workers": HostPlatform().available_cpu_count},
         "firewall": payload.firewall,
         "proxy": payload.proxy,
         "waf": {

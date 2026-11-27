@@ -6,7 +6,10 @@ import { apiErrorMessage, hasApiError } from '@/api/client'
 import { settingsApi } from '@/api/settings'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 import CommonSiteConfig from '@/components/settings/CommonSiteConfig.vue'
+import WebWorkers from '@/components/settings/WebWorkers.vue'
+import Workers from '@/components/settings/Workers.vue'
 import { useSession } from '@/composables/auth/useSession'
+import type { GunicornSettings } from '@/types/settings'
 import { errorMessage } from '@/utils/error'
 
 const { session } = useSession()
@@ -20,6 +23,7 @@ const liteModeSupported = ref(false)
 const hasBucket = ref(false)
 const bucketBackups = ref(true)
 const production = ref(false)
+const gunicorn = ref<GunicornSettings>()
 const restartOpen = ref(false)
 const restarting = ref(false)
 const restartError = ref('')
@@ -99,6 +103,7 @@ onMounted(async () => {
     hasBucket.value = Boolean(data?.s3?.bucket)
     bucketBackups.value = data?.s3?.upload_migration_backups ?? true
     production.value = Boolean(data?.production?.enabled)
+    gunicorn.value = data?.gunicorn
   } catch {
     error.value = 'Could not load settings.'
   } finally {
@@ -159,6 +164,26 @@ onMounted(async () => {
           @update:model-value="toggleBucketBackups"
         />
       </SettingsRow>
+
+      <section v-if="gunicorn && !liteMode" class="px-3 py-3.5">
+        <h4 class="text-base-medium text-ink-gray-8">Web workers</h4>
+
+        <p class="mt-1 mb-3 text-ink-gray-6 text-p-sm">
+          Gunicorn processes that serve requests. Leave workers blank for one per CPU.
+        </p>
+
+        <WebWorkers :settings="gunicorn" />
+      </section>
+
+      <section class="px-3 py-3.5">
+        <h4 class="text-base-medium text-ink-gray-8">Background workers</h4>
+
+        <p class="mt-1 mb-3 text-ink-gray-6 text-p-sm">
+          Configure background worker groups and queues.
+        </p>
+
+        <Workers :key="String(liteMode)" />
+      </section>
 
       <section class="px-3 py-3.5">
         <CommonSiteConfig />
