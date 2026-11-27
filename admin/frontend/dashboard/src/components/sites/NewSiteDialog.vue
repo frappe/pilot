@@ -1,10 +1,20 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
-import { Button, Checkbox, Dialog, ErrorMessage, Select, Spinner, TextInput } from 'frappe-ui'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  ErrorMessage,
+  Select,
+  Spinner,
+  TextInput,
+  toast,
+} from 'frappe-ui'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import AppIcon from '@/components/apps/AppIcon.vue'
 
 import { useNewSite } from '@/composables/sites/useNewSite'
+import { useSiteTemplates } from '@/composables/sites/useSiteTemplates'
 import type { SiteResource } from '@/types/sites'
 
 interface Props {
@@ -40,6 +50,38 @@ const {
   create,
 } = useNewSite()
 
+const siteTemplates = reactive(useSiteTemplates(availableApps, selectedApps))
+const namingTemplate = ref(false)
+const templateName = ref('')
+const templateNameInput = ref<InstanceType<typeof TextInput> | null>(null)
+
+const startNamingTemplate = () => {
+  templateName.value = ''
+  namingTemplate.value = true
+  nextTick(() => templateNameInput.value?.focus())
+}
+
+// With no templates yet there is no Template field, so the offer to save one
+// sits beside the app count once apps are selected.
+const canOfferFirstTemplate = computed(
+  () => !siteTemplates.templates.length && !namingTemplate.value && selectedApps.value.length > 0,
+)
+
+const activeTemplate = computed({
+  get: () => siteTemplates.active?.name ?? null,
+  set: (name) => name && siteTemplates.apply(name),
+})
+
+const saveTemplate = async () => {
+  const name = templateName.value.trim()
+  if (!name) return
+  if (name.includes('/')) {
+    toast.error("A template name can't contain '/'.")
+    return
+  }
+  if (await siteTemplates.save(name)) namingTemplate.value = false
+}
+
 // Fade only the edges that can still scroll, so a clipped row reads as "more
 // below" and the last app is never dimmed at rest.
 const appList = ref<HTMLElement | null>(null)
@@ -53,26 +95,33 @@ const updateFadeEdges = () => {
   fadeEdges.value = top && bottom ? 'both' : top ? 'top' : bottom ? 'bottom' : ''
 }
 
-// Also `loading`: apps resolve while the spinner is still up, so the rows only
-// exist once it flips.
-watch([filteredApps, loading], () => nextTick(updateFadeEdges))
+// Also the loading flags: apps resolve while the spinner is still up, so the
+// rows only exist once they flip.
+watch([filteredApps, loading, () => siteTemplates.loaded], () => nextTick(updateFadeEdges))
 
 watch(open, (visible) => {
-  if (visible) reset()
+  if (!visible) return
+  namingTemplate.value = false
+  reset()
+  siteTemplates.load()
 })
+
+const close = () => {
+  open.value = false
+}
 
 const submit = async () => {
   const taskId = await create()
   if (!taskId) return
 
-  open.value = false
+  close()
   emit('started', taskId)
 }
 </script>
 
 <template>
   <Dialog v-model="open" title="New Site" size="2xl">
-    <div v-if="loading" class="flex justify-center items-center h-80">
+    <div v-if="loading || !siteTemplates.loaded" class="flex justify-center items-center h-80">
       <Spinner size="lg" class="text-ink-gray-4" />
     </div>
 
@@ -121,11 +170,73 @@ const submit = async () => {
         </p>
       </div>
 
+      <!-- Template -->
+      <div
+        v-if="availableApps.length && (namingTemplate || siteTemplates.templates.length)"
+        class="space-y-1.5"
+      >
+        <div v-if="namingTemplate" class="flex items-end gap-2">
+          <TextInput
+            ref="templateNameInput"
+            v-model="templateName"
+            class="flex-1 min-w-0"
+            label="Template name"
+            placeholder="ERPNext setup"
+            maxlength="50"
+            @keyup.enter="saveTemplate"
+          />
+          <Button
+            :label="siteTemplates.find(templateName) ? 'Update' : 'Save'"
+            :loading="siteTemplates.saving"
+            :disabled="!templateName.trim()"
+            @click="saveTemplate"
+          />
+          <Button variant="ghost" label="Cancel" @click="namingTemplate = false" />
+        </div>
+        <div v-else class="flex items-end gap-2">
+          <Select
+            v-model="activeTemplate"
+            side="bottom"
+            class="flex-1 min-w-0"
+            label="Template"
+            placeholder="Choose a template"
+            :options="siteTemplates.options"
+          />
+          <Button
+            v-if="activeTemplate"
+            variant="ghost"
+            icon="lucide-trash-2"
+            label="Delete template"
+            tooltip="Delete template"
+            @click="siteTemplates.remove(activeTemplate)"
+          />
+          <Button
+            v-else
+            label="Save as template"
+            :disabled="!selectedApps.length"
+            @click="startNamingTemplate"
+          />
+        </div>
+
+        <p v-if="siteTemplates.missingApps.length" class="text-ink-gray-5 text-p-sm">
+          Not available on this bench: {{ siteTemplates.missingApps.join(', ') }}
+        </p>
+      </div>
+
       <!-- Choose apps -->
       <div v-if="availableApps.length">
         <div class="flex justify-between items-center mb-2">
           <span class="text-ink-gray-7 text-p-base-medium">Choose apps</span>
-          <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
+          <div class="flex items-center gap-2">
+            <Button
+              v-if="canOfferFirstTemplate"
+              variant="ghost"
+              size="sm"
+              label="Save as template"
+              @click="startNamingTemplate"
+            />
+            <span class="text-ink-gray-5 text-xs"> {{ selectedApps.length }} selected </span>
+          </div>
         </div>
 
         <TextInput v-model="appSearch" class="mb-2" placeholder="Search apps" autocomplete="off">
@@ -148,12 +259,7 @@ const submit = async () => {
             v-for="app in filteredApps"
             :key="app.name"
             type="button"
-            class="flex items-center gap-3 px-2 py-2 border rounded-4 min-w-0 text-left transition-colors hover:bg-surface-alpha-gray-1"
-            :class="
-              selectedApps.includes(app.name)
-                ? 'border-outline-gray-2'
-                : 'border-transparent '
-            "
+            class="flex items-center gap-3 px-2 py-2 rounded-4 min-w-0 text-left transition-colors hover:bg-surface-alpha-gray-1"
             @click="toggleApp(app.name)"
           >
             <AppIcon :name="app.name" size="lg" />
@@ -177,7 +283,7 @@ const submit = async () => {
       <ErrorMessage v-if="error" class="mt-1" :message="error" />
 
       <div class="flex justify-end gap-2">
-        <Button @click="open = false">Cancel</Button>
+        <Button @click="close">Cancel</Button>
         <Button variant="solid" :loading="creating" @click="submit" :disabled="!newSiteName"
           >Create Site</Button
         >

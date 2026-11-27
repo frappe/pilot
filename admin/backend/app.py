@@ -78,6 +78,7 @@ def register_blueprints(app: Flask) -> None:
     from admin.backend.api.v1.notifications import notifications_bp
     from admin.backend.api.v1.settings import audit_bp, network_bp, settings_bp
     from admin.backend.api.v1.setup import setup_bp
+    from admin.backend.api.v1.site_templates import site_templates_bp
     from admin.backend.api.v1.sites import sites_bp
     from admin.backend.api.v1.ssh_keys import ssh_keys_bp
     from admin.backend.api.v1.stats import stats_bp
@@ -91,6 +92,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(benches_bp, url_prefix=f"{API_V1_PREFIX}/benches")
     app.register_blueprint(bench_readiness_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
+    app.register_blueprint(site_templates_bp, url_prefix=f"{API_V1_PREFIX}/site-templates")
     app.register_blueprint(console_bp, url_prefix=f"{API_V1_PREFIX}/console")
     app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
     app.register_blueprint(database_bp, url_prefix=f"{API_V1_PREFIX}/database")

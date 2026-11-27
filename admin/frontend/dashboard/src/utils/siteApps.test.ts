@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildSiteAppChoices, getCommitUrl, isFrappeApp } from './siteApps.ts'
+import {
+  buildSiteAppChoices,
+  findMatchingTemplate,
+  getCommitUrl,
+  isFrappeApp,
+  resolveTemplateApps,
+} from './siteApps.ts'
 
 const frappe = (name, extra = {}) => ({
   name,
@@ -74,4 +80,39 @@ test('orders by stars, then title, with starless apps last', () => {
 
 test('handles missing inputs without throwing', () => {
   assert.deepEqual(buildSiteAppChoices(), [])
+})
+
+const choices = [{ name: 'erpnext' }, { name: 'hrms' }, { name: 'crm' }]
+
+test('a template resolves to the apps on offer and reports the rest', () => {
+  const template = { name: 'ERP', apps: ['frappe', 'hrms', 'gone', 'erpnext'] }
+  assert.deepEqual(resolveTemplateApps(template, choices), {
+    apps: ['hrms', 'erpnext'],
+    missing: ['gone'],
+  })
+})
+
+test('matches the template whose apps are the selection, in any order', () => {
+  const templates = [
+    { name: 'ERP', apps: ['erpnext', 'hrms'] },
+    { name: 'Sales', apps: ['crm'] },
+  ]
+  assert.equal(findMatchingTemplate(templates, choices, ['hrms', 'erpnext'])?.name, 'ERP')
+  assert.equal(findMatchingTemplate(templates, choices, ['crm'])?.name, 'Sales')
+})
+
+test('an adjusted selection matches no template', () => {
+  const templates = [{ name: 'ERP', apps: ['erpnext', 'hrms'] }]
+  assert.equal(findMatchingTemplate(templates, choices, ['erpnext']), undefined)
+  assert.equal(findMatchingTemplate(templates, choices, ['erpnext', 'hrms', 'crm']), undefined)
+})
+
+test('a template matches on the apps still on offer', () => {
+  const templates = [{ name: 'ERP', apps: ['erpnext', 'gone'] }]
+  assert.equal(findMatchingTemplate(templates, choices, ['erpnext'])?.name, 'ERP')
+})
+
+test('a template with nothing on offer never matches an empty selection', () => {
+  const templates = [{ name: 'Gone', apps: ['gone'] }]
+  assert.equal(findMatchingTemplate(templates, choices, []), undefined)
 })

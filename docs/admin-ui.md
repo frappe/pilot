@@ -59,6 +59,10 @@ The Frappe branch picker lists the branches reported by the repository. Type a d
 
 For an external database, a blank port uses the bench's configured MariaDB or PostgreSQL port (3310 or 5450 by default), shown as the field's placeholder.
 
+## Site Templates
+
+The New Site dialog has a **Template** picker above the app list. Choosing a template selects its apps, which can still be adjusted before the site is created. The picker shows a template only while the selection is exactly that template's apps, so it is derived from the selection and never stored beside it. **Save as template** names the current selection; a name that already exists updates that template. The trash button deletes the template shown. Apps a template names that are neither on the bench nor in the registry are skipped and listed under the picker.
+
 ## Site Navigation
 
 **Visit site** opens the site's Desk URL using the browser's current site session. It does not sign you in or switch users, and shows no loading or success toast. **Login as admin** explicitly creates an admin login session and can replace an existing normal-user session for that site. These actions are available in the sites dropdown, with matching labels on the site detail page.

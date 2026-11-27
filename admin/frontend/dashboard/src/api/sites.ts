@@ -21,6 +21,8 @@ import type {
   SiteDetail,
   SiteLoginLink,
   SiteResource,
+  SiteTemplate,
+  SiteTemplates,
   WildcardDomains,
 } from '@/types/sites'
 import type { TaskPayload } from '@/types/tasks'
@@ -72,6 +74,13 @@ export const sitesApi = {
 
   create: (payload: Record<string, unknown>): Promise<TaskPayload> =>
     request.post('sites', { json: payload }).json(),
+
+  templates: {
+    list: (): Promise<SiteTemplates> => request.get('site-templates').json(),
+    save: (name: string, apps: string[]): Promise<SiteTemplate> =>
+      unwrap(request.put(`site-templates/${encodeURIComponent(name)}`, { json: { apps } }).json()),
+    remove: (name: string) => request.delete(`site-templates/${encodeURIComponent(name)}`),
+  },
 
   clone: (source: string, name: string, targetBench: string): Promise<TaskPayload> =>
     request

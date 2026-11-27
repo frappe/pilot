@@ -37,3 +37,31 @@ export const buildSiteAppChoices = (
       (b.stars ?? -1) - (a.stars ?? -1) || (a.title || a.name).localeCompare(b.title || b.name),
   )
 }
+
+export type SiteTemplateChoice = {
+  name: string
+  apps: string[]
+}
+
+/** A template's apps, split by whether the new-site dialog offers them. */
+export const resolveTemplateApps = (template: SiteTemplateChoice, choices: SiteAppChoice[]) => {
+  const offered = new Set(choices.map((app) => app.name))
+  const apps = template.apps.filter((app) => app !== 'frappe')
+  return {
+    apps: apps.filter((app) => offered.has(app)),
+    missing: apps.filter((app) => !offered.has(app)),
+  }
+}
+
+/** The template whose offered apps are exactly the selection, in any order. */
+export const findMatchingTemplate = <T extends SiteTemplateChoice>(
+  templates: T[],
+  choices: SiteAppChoice[],
+  selected: string[],
+) => {
+  const wanted = new Set(selected)
+  return templates.find((template) => {
+    const { apps } = resolveTemplateApps(template, choices)
+    return apps.length > 0 && apps.length === wanted.size && apps.every((app) => wanted.has(app))
+  })
+}
