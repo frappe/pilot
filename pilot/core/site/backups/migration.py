@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import zlib
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
@@ -14,6 +15,7 @@ from typing import IO, TYPE_CHECKING
 from pilot.exceptions import BenchError
 from pilot.internal.command import run_command
 from pilot.internal.private_files import PrivateDirectory
+from pilot.managers.platform import HostPlatform
 
 if TYPE_CHECKING:
     from pilot.core.site import Site
@@ -23,9 +25,9 @@ if TYPE_CHECKING:
 class GzipReader:
     """Gzip-compresses a byte stream as boto3 reads it, so a dump reaches S3 without touching the disk."""
 
-    def __init__(self, source) -> None:
+    def __init__(self, source, level: int) -> None:
         self.source = source
-        self.compressor = zlib.compressobj(wbits=31)
+        self.compressor = zlib.compressobj(level, wbits=31)
         self.buffer = b""
         self.is_done = False
 
@@ -129,30 +131,53 @@ class SiteMigrationBackup:
         an empty list because table-level recovery does not apply.
         """
         self._validate_owner(operation_id)
-        self._reset_directory()
         config = self.site.config_file.read()
         database_engine = config.get("db_type", "mariadb")
         if database_engine in {"sqlite", "postgres"}:
+            self._reset_directory()
             self._create_full_database_backup()
             return []
         if database_engine != "mariadb":
             raise BenchError(f"Migration backups do not support database engine {database_engine!r}")
 
-        if self.is_stored_in_s3:
+        store_in_s3 = self.site.bench.config.s3.stores_migration_backups
+        settings = self.site.bench.config.migration_backup
+        workers = 1 if store_in_s3 else self.get_local_dump_worker_count(settings.workers)
+        self._reset_directory()
+        if store_in_s3:
             bucket = self.site.bench.config.s3.bucket
             prefix = f"sites/{self.site.config.name}/migration_backups/{operation_id}/"
             self.offsite_path.write_text(json.dumps({"bucket": bucket, "prefix": prefix}), encoding="utf-8")
-        return self._create_table_backup(config)
+        return self._create_table_backup(config, workers)
 
-    def _create_table_backup(self, config: dict) -> list[str]:
+    def _create_table_backup(self, config: dict, workers: int) -> list[str]:
         """Save the table list and the config, and dump each table; return the tables."""
         db_name = config["db_name"]
         tables = self._list_tables(config, db_name)
         self.previous_tables_path.write_text(json.dumps(tables, indent=2), encoding="utf-8")
         self.config_backup_path.write_text(json.dumps(config, indent=1), encoding="utf-8")
-        for table in tables:
-            self._dump_table(config, db_name, table)
+        self._dump_tables(config, db_name, tables, workers)
         return tables
+
+    @staticmethod
+    def get_local_dump_worker_count(limit: int) -> int:
+        """Use at most half the CPUs and respect the bench's dump worker limit."""
+        return max(1, min(limit, 4, HostPlatform().available_cpu_count // 2))
+
+    def _dump_tables(self, config: dict, db_name: str, tables: list[str], workers: int) -> None:
+        """Dump tables with the given concurrency and wait for all running dumps before leaving."""
+        if workers == 1:
+            for table in tables:
+                self._dump_table(config, db_name, table)
+            return
+
+        pool = ThreadPoolExecutor(max_workers=workers)
+        try:
+            dumps = [pool.submit(self._dump_table, config, db_name, table) for table in tables]
+            for dump in as_completed(dumps):
+                dump.result()
+        finally:
+            pool.shutdown(cancel_futures=True)
 
     def _create_full_database_backup(self) -> None:
         """Take a full database backup with bench backup."""
@@ -300,12 +325,19 @@ class SiteMigrationBackup:
         if location := self.offsite:
             self._upload_dump(argv, table, location)
             return
-        with gzip.open(self._dump_path(table), "wb") as compressed:
-            process = subprocess.Popen(argv, stdout=subprocess.PIPE)
+        with (
+            gzip.open(
+                self._dump_path(table), "wb", compresslevel=self.site.bench.config.migration_backup.gzip_level
+            ) as compressed,
+            subprocess.Popen(argv, stdout=subprocess.PIPE) as process,
+        ):
             if process.stdout is None:
                 raise BenchError("Database dump output pipe was not created")
-            shutil.copyfileobj(process.stdout, compressed)
-            process.stdout.close()
+            try:
+                shutil.copyfileobj(process.stdout, compressed)
+            except BaseException:
+                process.kill()
+                raise
             if process.wait() != 0:
                 raise BenchError(f"Failed to dump table {table} for {self.site.config.name}")
 
@@ -317,7 +349,7 @@ class SiteMigrationBackup:
         if process.stdout is None:
             raise BenchError("Database dump output pipe was not created")
         try:
-            s3.upload_stream(location["bucket"], key, GzipReader(process.stdout), low_memory=True)
+            s3.upload_stream(location["bucket"], key, GzipReader(process.stdout, self.site.bench.config.migration_backup.gzip_level), low_memory=True)
         except Exception:
             process.kill()
             raise
