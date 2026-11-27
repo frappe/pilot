@@ -621,6 +621,23 @@ def test_invalid_primary_manifest_rebuilds_unselected_apps(tmp_path: Path, manif
     assert set(json.loads((assets / "assets.json").read_text())) == {"gameplan", "erpnext"}
 
 
+def test_missing_manifest_does_not_expand_build_when_all_built_apps_are_selected(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    selected = make_app(tmp_path / "apps/gameplan")
+    (selected.path / "gameplan/public/dist").mkdir(parents=True)
+    builder.bench.apps.return_value = [make_app(selected.path)]
+
+    with (
+        patch.object(builder, "build_all_locked") as full_build,
+        patch.object(builder, "build_app_assets") as single_build,
+    ):
+        builder.build_assets_for_app(selected)
+
+    full_build.assert_not_called()
+    single_build.assert_called_once_with(selected, force=False, skip_frontend=False)
+
+
 @pytest.mark.parametrize(("rtl", "recover"), [(None, False), ("{}", False), ("{", True), ("[]", True)])
 def test_optional_rtl_manifest_recovery(tmp_path: Path, rtl: str | None, recover: bool) -> None:
     builder = make_builder()
