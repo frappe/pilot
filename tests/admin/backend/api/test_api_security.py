@@ -96,6 +96,37 @@ def test_central_proxy_refuses_paths_that_reach_other_methods(
     assert forwarded == []
 
 
+@pytest.mark.parametrize(
+    ("method_path", "status"),
+    [
+        ("central.api.oauth.start", 200),
+        ("central.api.oauth.relay_token", 200),
+        ("central.api.email_oauth.start", 200),
+        ("central.api.meta_webhook.disconnect", 200),
+        ("central.api.meta_webhook.handler", 403),
+        ("central.api.oauth.exchange_token", 403),
+    ],
+)
+def test_central_proxy_forwards_only_allowed_oauth_methods(
+    app, bench_root: Path, monkeypatch, method_path, status
+) -> None:
+    from pilot.config.common import CommonConfig
+
+    with CommonConfig.open(bench_root.parent) as common:
+        common.central.enabled = True
+    forwarded = []
+    monkeypatch.setattr(CentralClient, "forward", lambda self, *args: forwarded.append(args) or {})
+    client = app.test_client()
+    client.set_cookie("sid", Session(Bench(bench_root)).issue_session_token()[0])
+
+    response = client.post(f"/api/v1/sites/a.local/central/{method_path}", json={"provider": "meta"})
+
+    assert response.status_code == status
+    assert [args[:3] for args in forwarded] == (
+        [(method_path, "POST", {"provider": "meta"})] if status == 200 else []
+    )
+
+
 def test_cross_site_requests_cannot_use_the_session_cookie(app, bench_root: Path) -> None:
     session = Session(Bench(bench_root))
     client = app.test_client()

@@ -113,7 +113,9 @@ class CentralClient:
         """Disconnect GitHub."""
         self.forward("central.api.integrations.github.disconnect", "POST", {})
 
-    def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
+    def forward(
+        self, method_path: str, http_method: str, data: dict[str, Any] | None = None, timeout: int = 10
+    ) -> Any:
         """Call a Central pilot-API method, returning its result with the
         ``{"message": ...}`` envelope unwrapped. The caller decides what's reachable."""
         endpoint, token = self._credentials()
@@ -131,7 +133,7 @@ class CentralClient:
         url = f"{endpoint}/api/method/{method_path}"
         request = urllib.request.Request(url, data=body, method=http_method, headers=headers)
         try:
-            payload = self._send(request, endpoint)
+            payload = self._send(request, endpoint, timeout)
         except CentralClientError:
             self._record(method_path, "failed")
             raise
@@ -142,10 +144,10 @@ class CentralClient:
         return payload
 
     @staticmethod
-    def _send(request: urllib.request.Request, endpoint: str) -> Any:
+    def _send(request: urllib.request.Request, endpoint: str, timeout: int) -> Any:
         """One request. Raises CentralClientError when Central rejects it or cannot be reached."""
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode())
         except urllib.error.HTTPError as exc:
             body = exc.read()
