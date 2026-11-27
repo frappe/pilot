@@ -72,15 +72,15 @@ class PrebuiltAssets:
         commit = self.app.installed_hash
         if not base_url or not commit:
             return False
-        name = f"{self.app.config.name}-{commit}.tar.gz"
+        name = f"{self.app.module_name}-{commit}.tar.gz"
         try:
             with urllib.request.urlopen(f"{base_url}/{name}.sha256", timeout=self.download_timeout_seconds) as response:
                 expected = response.read().decode().split()[0]
         except (urllib.error.URLError, OSError, IndexError) as error:
-            print(f"  No prebuilt assets for {self.app.config.name} at {commit[:10]} ({error}).")
+            print(f"  No prebuilt assets for {self.app.module_name} at {commit[:10]} ({error}).")
             return False
 
-        print(f"  Downloading prebuilt assets for {self.app.config.name} at {commit[:10]}...")
+        print(f"  Downloading prebuilt assets for {self.app.module_name} at {commit[:10]}...")
         with tempfile.TemporaryDirectory(dir=self.app.path.parent, prefix=f".{name}-") as work:
             archive = Path(work) / name
             try:
@@ -115,24 +115,53 @@ class PrebuiltAssets:
         from pilot.internal.archive import TarArchive
 
         TarArchive(archive).extract_to(extracted)
-        manifest = json.loads((extracted / "manifest.json").read_text())
-        if manifest.get("app") != self.app.config.name or manifest.get("commit") != commit:
-            raise BenchError(f"Prebuilt assets for {self.app.config.name} were built for another commit.")
-        paths = [Path(relative) for relative in manifest.get("paths") or []]
+        manifest = self._read_manifest(extracted / "manifest.json")
+        if manifest.get("app") != self.app.module_name or manifest.get("commit") != commit:
+            raise BenchError(f"Prebuilt assets for {self.app.module_name} were built for another commit.")
+        published = manifest.get("paths", [])
+        if not isinstance(published, list) or not all(isinstance(relative, str) for relative in published):
+            raise BenchError("The prebuilt asset manifest must list its published paths.")
+        paths = [Path(relative) for relative in published]
         for path in paths:
-            if not path.parts or path.is_absolute() or ".." in path.parts:
+            if not path.parts or path.is_absolute() or ".." in path.parts or "\0" in str(path):
                 raise BenchError(f"Prebuilt assets name a path outside the app: {str(path)!r}")
             if not (extracted / path).exists():
                 raise BenchError(f"Prebuilt assets list {str(path)!r} but do not contain it.")
         self.asset_maps = self._asset_maps(manifest)
-        self.has_studio_apps = Path(self.app.config.name, "public", "app_builds") in paths
+        self._validate_asset_files(extracted, paths)
+        self.has_studio_apps = Path(self.app.module_name, "public", "app_builds") in paths
         self._carry_over_page_islands(extracted, paths)
         for path in paths:
             self._replace(extracted / path, self.app.path / path)
 
+    @staticmethod
+    def _read_manifest(path: Path) -> dict:
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError) as error:
+            raise BenchError("Cannot read the prebuilt asset manifest.") from error
+        if not isinstance(manifest, dict):
+            raise BenchError("The prebuilt asset manifest must be a JSON object.")
+        return manifest
+
+    def _validate_asset_files(self, extracted: Path, paths: list[Path]) -> None:
+        """Check each URL against the files the archive is about to publish."""
+        app = self.app.module_name
+        prefix = f"/assets/{app}/"
+        for entries in (self.asset_maps or {}).values():
+            for url in entries.values():
+                relative = Path(url.removeprefix(prefix))
+                if not relative.parts or relative.is_absolute() or ".." in relative.parts or "\0" in url:
+                    raise BenchError(f"Prebuilt asset manifest references an invalid URL: {url}")
+                target = Path(app, "public", relative)
+                if not (extracted / target).is_file() or not any(
+                    target.is_relative_to(path) for path in paths
+                ):
+                    raise BenchError(f"Prebuilt asset manifest references a missing file: {url}")
+
     def _carry_over_page_islands(self, extracted: Path, paths: list[Path]) -> None:
         """Use the archive's islands when only Frappe has pages; else keep the bench's for its rebuild."""
-        if self.app.config.name != "frappe" or PAGE_ISLAND_DIR.parent not in paths:
+        if self.app.module_name != "frappe" or PAGE_ISLAND_DIR.parent not in paths:
             return
         if (extracted / PAGE_ISLAND_DIR).is_dir() and not self.has_other_page_islands:
             self.has_page_islands = True
@@ -150,14 +179,14 @@ class PrebuiltAssets:
     @property
     def has_other_page_islands(self) -> bool:
         """Whether another app uses page islands."""
-        return any(app.has_page_islands for app in self.app.bench.apps() if app.config.name != "frappe")
+        return any(app.has_page_islands for app in self.app.bench.apps() if app.module_name != "frappe")
 
     def _asset_maps(self, manifest: dict) -> dict[str, dict[str, str]] | None:
         """The asset maps from the manifest, or None when it has none."""
         names = [name for name in ("assets.json", "assets-rtl.json") if name in manifest]
         if not names:
             return None
-        prefix = f"/assets/{self.app.config.name}/"
+        prefix = f"/assets/{self.app.module_name}/"
         maps = {}
         for name in names:
             entries = manifest[name]
@@ -165,7 +194,7 @@ class PrebuiltAssets:
                 isinstance(key, str) and isinstance(url, str) and url.startswith(prefix)
                 for key, url in entries.items()
             ):
-                raise BenchError(f"Prebuilt assets for {self.app.config.name} have an invalid {name}.")
+                raise BenchError(f"Prebuilt assets for {self.app.module_name} have an invalid {name}.")
             maps[name] = entries
         return maps
 

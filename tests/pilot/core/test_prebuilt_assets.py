@@ -24,7 +24,7 @@ def _app(tmp_path: Path) -> SimpleNamespace:
     subprocess.run(["git", "init", "-q", str(path)], check=True)
     subprocess.run(["git", "-C", str(path), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "c"], check=True)
     commit = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    return SimpleNamespace(path=path, installed_hash=commit, config=SimpleNamespace(name="myapp"))
+    return SimpleNamespace(path=path, installed_hash=commit, module_name="myapp", config=SimpleNamespace(name="myapp"))
 
 
 def _publish(directory: Path, app, manifest: dict | None = None, checksum: str | None = None) -> None:
@@ -36,6 +36,7 @@ def _publish(directory: Path, app, manifest: dict | None = None, checksum: str |
         files = {
             "manifest.json": json.dumps(manifest),
             "myapp/public/dist/js/new.bundle.BBBBBBBB.js": "new",
+            "myapp/public/dist/island/dashboard.ABCD1234.js": "island",
             "myapp/www/x.html": "<html>",
             "myapp/public/app_builds/portal/index.js": "portal",
         }
@@ -179,7 +180,8 @@ def _frappe_with_islands(tmp_path: Path, release: Path, other_app_has_islands: b
     """A frappe archive with Frappe's own page island, on a bench whose islands include crm's."""
     app = _app(tmp_path)
     app.config.name = "frappe"
-    other_app = SimpleNamespace(config=SimpleNamespace(name="crm"), has_page_islands=other_app_has_islands)
+    app.module_name = "frappe"
+    other_app = SimpleNamespace(module_name="crm", has_page_islands=other_app_has_islands)
     app.bench = SimpleNamespace(apps=lambda: [app, other_app])
     islands = app.path / "frappe" / "public" / "dist" / "page-island"
     islands.mkdir(parents=True)
@@ -248,3 +250,37 @@ def test_replacing_frappe_s_entries_keeps_page_island_entries(tmp_path: Path) ->
     )
 
     assert json.loads(assets_json.read_text()) == {"desk.bundle.js": "/assets/frappe/dist/js/new.js", **island}
+
+
+@pytest.mark.parametrize(
+    ("url", "message"),
+    [
+        ("/assets/myapp/dist/js/missing.js", "missing file"),
+        ("/assets/myapp/app_builds/portal/index.js", "missing file"),
+        ("/assets/myapp/../www/x.html", "invalid URL"),
+    ],
+)
+def test_invalid_asset_urls_leave_the_current_build_in_place(
+    tmp_path: Path, release: Path, url: str, message: str
+) -> None:
+    app = _app(tmp_path)
+    _publish(release, app, _manifest(app, **{"assets.json": {"desk.bundle.js": url}}))
+
+    with pytest.raises(BenchError, match=message):
+        PrebuiltAssets(app).install()
+
+    dist = app.path / "myapp" / "public" / "dist" / "js"
+    assert [path.name for path in dist.iterdir()] == ["old.bundle.AAAAAAAA.js"]
+    assert not (app.path / "myapp" / "www" / "x.html").exists()
+
+
+def test_prebuilt_assets_use_the_python_module_name(tmp_path: Path, release: Path) -> None:
+    app = _app(tmp_path)
+    app.config.name = "my-app-checkout"
+    _publish(
+        release,
+        app,
+        _manifest(app, **{"assets.json": {"bundle": "/assets/myapp/dist/js/new.bundle.BBBBBBBB.js"}}),
+    )
+
+    assert PrebuiltAssets(app).install()

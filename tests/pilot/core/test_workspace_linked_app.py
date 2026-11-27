@@ -51,15 +51,27 @@ def test_an_update_saves_no_revision_for_a_linked_app_so_a_revert_skips_it(tmp_p
     update_target.assert_called_once()
 
 
-def test_removing_a_linked_app_unlinks_it_and_keeps_the_checkout(tmp_path: Path) -> None:
+@pytest.mark.parametrize("checkout_name", ["gameplan", "game-plan"])
+def test_removing_a_linked_app_unlinks_it_and_keeps_the_checkout(tmp_path: Path, checkout_name: str) -> None:
     repo = make_repo(tmp_path / "src" / "gameplan")
     bench = make_linked_bench(tmp_path / "bench", repo)
-    (bench.sites_path / "apps.txt").write_text("frappe\ngameplan\n")
+    checkout = bench.apps_path / checkout_name
+    if checkout_name != "gameplan":
+        (bench.apps_path / "gameplan").rename(checkout)
+    app = App(AppConfig(name=checkout_name, repo="", branch="", path=str(repo)), bench)
+    (bench.sites_path / "apps.txt").write_text(f"frappe\n{checkout_name}\n")
 
+    snapshots = bench.path / ".previous-bundles" / "assets"
+    for name in {"gameplan", checkout_name, "frappe"}:
+        (snapshots / name / "dist").mkdir(parents=True)
+        (snapshots / name / "dist" / "bundle.js").write_text("old")
     with patch.object(App, "_pip_uninstall"):
-        bench.app("gameplan").remove()
+        app.remove()
 
-    assert not (bench.apps_path / "gameplan").is_symlink()
+    assert not (snapshots / "gameplan").exists()
+    assert not (snapshots / checkout_name).exists()
+    assert (snapshots / "frappe" / "dist" / "bundle.js").read_text() == "old"
+    assert not checkout.is_symlink()
     assert (repo / "gameplan" / "hooks.py").exists()
     assert bench.registered_apps() == ["frappe"]
 

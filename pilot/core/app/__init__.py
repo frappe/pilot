@@ -616,17 +616,23 @@ class App:
     def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
         """Uninstall from sites, deregister, pip-uninstall, and delete the clone.
         A symlinked checkout is only unlinked."""
+        from pilot.managers.python_assets import asset_build_lock, discard_previous_bundles
+
         self.ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
-        self._deregister()
-        on_progress(f"Removing '{self.config.name}' from Python environment...")
-        self._pip_uninstall()
-        if self.path.is_symlink():
-            on_progress(f"Unlinking {self.path}...")
-            self.path.unlink()
-        else:
-            on_progress(f"Deleting {self.path}...")
-            shutil.rmtree(self.path)
+        with asset_build_lock(self.bench):
+            module = self.module_name
+            self._deregister()
+            on_progress(f"Removing '{self.config.name}' from Python environment...")
+            self._pip_uninstall()
+            if self.path.is_symlink():
+                on_progress(f"Unlinking {self.path}...")
+                self.path.unlink()
+            else:
+                on_progress(f"Deleting {self.path}...")
+                shutil.rmtree(self.path)
+            for name in {module, self.config.name}:
+                discard_previous_bundles(self.bench, name)
         on_progress(f"\n'{self.config.name}' removed from bench.")
 
     def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:

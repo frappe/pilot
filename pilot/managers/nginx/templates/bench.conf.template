@@ -73,8 +73,16 @@ server {
     {# on a sandboxed bench a workload can write below sites/, so a link there must not reach a file it
        cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
        outside the bench. #}
-{{ asset_locations }}    location /assets {
+    location @previous_bundles {
+        root {{ previous_bundles_root }};
         {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+{{ asset_locations }}    location /assets {
+{{ asset_snapshot_rule }}        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
@@ -315,8 +323,16 @@ server {
     {# on a sandboxed bench a workload can write below sites/, so a link there must not reach a file it
        cannot read. Only the locations that read sites/ refuse links: ACME and the embed serve folders
        outside the bench. #}
-{{ asset_locations }}    location /assets {
+    location @previous_bundles {
+        root {{ previous_bundles_root }};
         {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+{{ asset_locations }}    location /assets {
+{{ asset_snapshot_rule }}        {% if refuse_symlinks %}disable_symlinks on from={{ bench_root }};{% endif %}
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";

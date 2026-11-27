@@ -24,6 +24,7 @@ from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import HostPlatform, Privileges, SystemService
+from pilot.managers.python_assets import previous_bundles_root
 from pilot.managers.sudoers import has_passwordless_sudo_for, install_sudoers_grant, stage_and_copy
 from pilot.managers.waf import WafManager
 
@@ -114,6 +115,8 @@ class NginxConfigRenderer:
     server_template = Template.from_path(_TEMPLATES / "server.conf.template")
     recovery_template = Template.from_path(_TEMPLATES / "recovery.conf.template")
     embed_template = Template.from_path(_TEMPLATES / "embed.conf.template")
+    asset_locations_template = Template.from_path(_TEMPLATES / "asset_locations.conf.template")
+    asset_snapshot_rule_template = Template.from_path(_TEMPLATES / "asset_snapshot_rule.conf.template")
     cors_paths = ("/api/v1/health", "/api/v1/bootstrap", "/api/v1/setup/actions/finish")
 
     def __init__(self, bench: "Bench") -> None:
@@ -229,16 +232,16 @@ class NginxConfigRenderer:
         everything the bench user can. So a bench without it keeps links, such as a storage folder."""
         return self.bench.is_workload_sandboxed
 
+    @property
+    def asset_snapshot_rule(self) -> str:
+        """Serve a protected URL before nginx opens its live file."""
+        return self.asset_snapshot_rule_template.render(building_root=previous_bundles_root(self.bench) / "building")
+
     def render_asset_locations(self) -> str:
-        rule = "        disable_symlinks on from={unchecked};\n" if self.is_refusing_symlinks else ""
-        return "".join(
-            f"    location ^~ {url} {{\n"
-            f"        alias {folder}/;\n"
-            f"{rule.format(unchecked=unchecked)}"
-            f"        expires 1y;\n"
-            f'        add_header Cache-Control "public, immutable";\n'
-            f"    }}\n\n"
-            for url, folder, unchecked in self.get_asset_locations()
+        return self.asset_locations_template.render(
+            locations=self.get_asset_locations(),
+            snapshot_rule=self.asset_snapshot_rule,
+            refuse_symlinks=self.is_refusing_symlinks,
         )
 
     def get_proxy_servers(self) -> list[str]:
@@ -372,6 +375,8 @@ class NginxConfigRenderer:
             "bench_root": str(self.bench.path),
             "refuse_symlinks": self.is_refusing_symlinks,
             "asset_locations": self.render_asset_locations(),
+            "asset_snapshot_rule": self.asset_snapshot_rule,
+            "previous_bundles_root": previous_bundles_root(self.bench),
             "logs_path": str(self.bench.logs_path),
             "acme_root": config.letsencrypt.webroot_path,
             "error_dir": error_dir,
@@ -514,12 +519,29 @@ class NginxManager:
         sys.stdout.flush()
         self.apply_config()
 
+    def prepare_asset_fallback(self) -> None:
+        """Load the fallback before touching assets, including on benches with a config written but not reloaded."""
+        if not self.bench.config.production.enabled or not self.is_installed():
+            return
+        current = self.include_path.read_text() if self.include_path.is_file() else ""
+        if "location /assets {" not in current:
+            return
+        receipt = self.include_path.with_name(".previous-bundles-priority-loaded")
+        if (
+            receipt.is_file()
+            and "location @previous_bundles" in current
+            and self._renderer.render_asset_locations() in current
+        ):
+            return
+        self.apply_config()
+        receipt.touch()
+
     def reload_for_asset_change(self) -> None:
         """Write the config again when an app's assets are not in it, such as after an install or an update,
         or when the sandbox was turned on or off since nginx last got it. Asset locations are only in site
         blocks, so a config without them has nothing to update."""
         current = self.include_path.read_text() if self.include_path.is_file() else ""
-        if "location /assets" not in current:
+        if "location /assets {" not in current:
             return
         is_stale = self._renderer.render_asset_locations() not in current
         if is_stale or ("disable_symlinks" in current) != self._renderer.is_refusing_symlinks:
