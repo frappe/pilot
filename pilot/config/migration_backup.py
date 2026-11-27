@@ -5,12 +5,16 @@ from pilot.exceptions import ConfigError
 
 @dataclass
 class MigrationBackupConfig:
-    gzip_level: int = 9
+    gzip_level: int = 6
     workers: int = 4
 
     @classmethod
     def from_dict(cls, data: dict) -> "MigrationBackupConfig":
-        return cls(gzip_level=data.get("gzip_level", 9), workers=data.get("workers", 4))
+        defaults = cls()
+        return cls(
+            gzip_level=data.get("gzip_level", defaults.gzip_level),
+            workers=data.get("workers", defaults.workers),
+        )
 
     def validate(self) -> None:
         if type(self.gzip_level) is not int or not 1 <= self.gzip_level <= 9:

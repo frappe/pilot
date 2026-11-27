@@ -171,6 +171,7 @@ These tables are per-bench unless noted otherwise:
 
 - `[gunicorn]`: Gunicorn settings. Without `workers`, the bench runs one gunicorn worker per CPU available to Pilot, counted again each time Pilot writes the gunicorn config, so a resized VM is picked up on the next `pilot restart`. Set `workers` to pin a count. `threads` defaults to 8. The `size_gunicorn_workers_by_cpu` patch removes the old default of `workers = 2` from existing benches. Lite mode does not run gunicorn.
 - `[build]`: manual override for the asset build memory cap.
+- `[migration_backup]`: `gzip_level` and `workers` for the MariaDB backup that Pilot takes before an update. See [Migration](migration.md).
 - `[processes]`: `disabled`, the app processes that stay off. `pilot processes disable` and `enable` write it. See [App Processes](app-processes.md).
 - `[firewall]`: firewall behavior.
 - `[waf]`: WAF rules and behavior.

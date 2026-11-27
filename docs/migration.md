@@ -218,7 +218,7 @@ database.sql.gz
 site_config.json
 ```
 
-Local MariaDB migration dumps default to gzip level 9 for maximum compression. Set `gzip_level = 6` under `[migration_backup]` in `bench.toml` to trade some storage for speed. Levels 1 through 9 are supported.
+MariaDB migration dumps use gzip level 6, on the disk and in S3. Set `gzip_level` under `[migration_backup]` in `bench.toml` to change it: a higher level makes smaller dumps and a slower backup. Levels 1 through 9 are supported.
 
 Pilot runs local MariaDB table dumps on half the available CPUs, with at least one and at most four concurrent dumps. For a database account that allows only one connection, set `workers = 1` in the same table. The setting accepts a positive integer and caps the number of concurrent dumps. S3 dumps always run one at a time. Whenever dumps run serially, the first failure stops the backup before Pilot starts another table.
 

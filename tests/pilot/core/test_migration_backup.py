@@ -213,10 +213,21 @@ def test_gzip_reader_produces_a_gzip_stream_in_any_read_size() -> None:
     from pilot.core.site.backups.migration import GzipReader
 
     payload = os.urandom(3 << 20)
-    reader = GzipReader(io.BytesIO(payload))
+    reader = GzipReader(io.BytesIO(payload), 6)
     compressed = b"".join(iter(lambda: reader.read(65_537), b""))
 
     assert gzip.decompress(compressed) == payload
+
+
+def test_gzip_reader_compresses_at_the_given_level() -> None:
+    import io
+
+    from pilot.core.site.backups.migration import GzipReader
+
+    payload = b"".join(b"INSERT INTO tabUser VALUES (%d);\n" % number for number in range(50_000))
+    sizes = {level: len(GzipReader(io.BytesIO(payload), level).read()) for level in (1, 9)}
+
+    assert sizes[9] < sizes[1]
 
 
 @pytest.mark.parametrize(
@@ -235,10 +246,14 @@ def test_only_mariadb_dumps_go_to_the_bucket_and_only_when_enabled(
 def test_table_dumps_stream_to_the_bucket_and_stay_off_the_disk(tmp_path: Path) -> None:
     import gzip
 
+    from pilot.core.site.backups.migration import GzipReader
+
     site, bucket = s3_site(tmp_path)
+    site.bench.config.migration_backup.gzip_level = 3
     backup = SiteMigrationBackup(site)
 
     with (
+        patch("pilot.core.site.backups.migration.GzipReader", wraps=GzipReader) as reader,
         patch.object(SiteMigrationBackup, "_s3", return_value=bucket),
         patch.object(SiteMigrationBackup, "_list_tables", return_value=["tabUser"]),
         patch.object(SiteMigrationBackup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "INSERT 1;")),
@@ -248,6 +263,7 @@ def test_table_dumps_stream_to_the_bucket_and_stay_off_the_disk(tmp_path: Path) 
 
     key = "sites/site1.localhost/migration_backups/operation-1/tabUser.sql.gz"
     assert gzip.decompress(bucket.objects[key]) == b"INSERT 1;"
+    assert reader.call_args.args[1] == 3
     assert backup.offsite == {"bucket": "bench-bucket", "prefix": key.removesuffix("tabUser.sql.gz")}
     assert not backup._dump_path("tabUser").exists()
     assert backup.previous_tables == ["tabUser"]
@@ -476,5 +492,5 @@ def test_local_dump_compression_level(tmp_path: Path, level: int | None) -> None
     ):
         backup.create("operation-1")
 
-    assert gzip_open.call_args.kwargs == {"compresslevel": level or 9}
+    assert gzip_open.call_args.kwargs == {"compresslevel": level or 6}
     assert gzip.decompress(backup._dump_path("tabUser").read_bytes()) == b"INSERT 1;"
