@@ -387,6 +387,7 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
             new_callable=PropertyMock,
             return_value=True,
         ),
+        patch("pilot.managers.platform.HostPlatform.is_root", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.sudoers.has_passwordless_sudo_for", return_value=False),
         patch("admin.backend.api.v1.benches.create.Bench.create_at") as create,
@@ -840,6 +841,7 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
     with (
+        patch("pilot.managers.platform.HostPlatform.is_root", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.platform.HostPlatform.has_passwordless_sudo", new_callable=PropertyMock, return_value=False),
         patch("pilot.managers.nginx.has_passwordless_sudo_for", return_value=False),
         patch("admin.backend.api.v1.benches.Bench.drop") as drop,

@@ -423,6 +423,7 @@ class ProcessDefinitionBuilder:
             ],
             log_file=self.bench.logs_path / "admin.log",
             env={**self.python_env(), "PYTHONPATH": str(root)},
+            working_dir=root,
         )
 
     def admin_frontend_dev_definition(self) -> ProcessDefinition:
