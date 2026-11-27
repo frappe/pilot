@@ -122,13 +122,18 @@ class BenchRuntime:
         """Build the assets for some or all apps."""
         from pilot.managers.environment import PythonEnvManager
         from pilot.managers.processes.local import ProcessManager
+        from pilot.managers.python_assets import PythonAssetBuilder
 
         manager = PythonEnvManager(self.bench)
         if force and not apps:
             manager.build_assets()
         else:
-            for app in self.apps_to_build(apps):
-                manager.build_assets_for_app(app, force=force)
+            builder = PythonAssetBuilder(manager)
+            selected = self.apps_to_build(apps)
+            with builder.asset_build_batch(selected) as needs_build:
+                if needs_build:
+                    for app in selected:
+                        builder.build_app_assets(app, force=force)
         ProcessManager.for_bench(self.bench).reload_workers(web_only=True)
 
     def apps_to_build(self, names: list[str] | None) -> list["App"]:
@@ -196,12 +201,12 @@ class BenchRuntime:
             from pilot.managers.processes.systemd import SystemdProcessManager
 
             return SystemdProcessManager(self.bench)
+
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
         return SupervisorProcessManager(self.bench)
 
     def _start_setup_admin(self, manager: "ManagedProcessManager", on_progress) -> None:
-
         """Start only the Admin so the user can finish setup."""
         manager.start_admin()
         on_progress(f"Admin running at {self.bench.config.admin_url}")

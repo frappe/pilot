@@ -98,18 +98,22 @@ class BenchUpdater:
     ) -> None:
         """Rebuild the assets of the apps."""
         from pilot.managers.environment import PythonEnvManager
+        from pilot.managers.python_assets import PythonAssetBuilder
 
-        python_env = PythonEnvManager(self.bench)
-        for app in self.bench.apps():
-            if apps_filter is not None and app.config.name not in apps_filter:
-                continue
-            on_progress(f"Updating assets for {app.config.name}...")
-            try:
-                python_env.build_assets_for_app(app)
-            except Exception:
-                on_app(app.config.name, "failed")
-                raise
-            on_app(app.config.name, "success")
+        builder = PythonAssetBuilder(PythonEnvManager(self.bench))
+        apps = [app for app in self.bench.apps() if apps_filter is None or app.config.name in apps_filter]
+        if not apps:
+            return
+        with builder.asset_build_batch(apps) as needs_build:
+            for app in apps:
+                if needs_build:
+                    on_progress(f"Updating assets for {app.config.name}...")
+                    try:
+                        builder.build_app_assets(app)
+                    except Exception:
+                        on_app(app.config.name, "failed")
+                        raise
+                on_app(app.config.name, "success")
 
 
 def marketplace_pin(app: "App") -> "RevisionPin | None":

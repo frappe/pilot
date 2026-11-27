@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,6 +19,7 @@ def make_app(app_path: Path, name: str = "gameplan") -> MagicMock:
     app = MagicMock()
     app.path = app_path
     app.config.name = name
+    app.module_name = name.replace("-", "_")
     return app
 
 
@@ -121,6 +123,7 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
     for directory in directories:
         write_package(directory)
     builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
     builder.bench.apps.return_value = [make_app(app_path)]
     installed = []
 
@@ -139,8 +142,9 @@ def test_full_build_installs_nested_dependencies_before_compiling(tmp_path: Path
     compiler.assert_called_once()
 
 
-def test_full_build_does_not_fingerprint_or_cache_assets():
+def test_full_build_does_not_fingerprint_or_cache_assets(tmp_path: Path):
     builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
     builder.bench.apps.return_value = []
     with (
         patch(
@@ -243,6 +247,7 @@ def test_studio_apps_are_built_after_a_download_only_when_the_archive_lacks_them
 def test_skip_frontend_downloads_prebuilt_assets_without_installing_or_building(tmp_path: Path) -> None:
     """A frontend-skipping run with a published archive touches neither JS installs nor compilers."""
     builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
     app = make_app(tmp_path / "frappe", "frappe")
     app.is_linked = False
     app.has_source_changes = False
@@ -323,3 +328,350 @@ def test_a_declared_build_dir_gets_its_dependencies_when_only_the_root_has_them(
         ["yarn", "install", "--frozen-lockfile"],
         ["python", "frappe", "build", "--force", "--app", "helpdesk"],
     ]
+
+
+def test_rebuild_preserves_open_tabs_and_retires_older_bundles(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps/gameplan")
+    app.has_source_changes = True
+    dist = app.path / "gameplan/public/dist/js"
+    dist.mkdir(parents=True)
+    old, unchanged, retired = ("old.bundle.OLD00000.js", "libs.bundle.SAME0000.js", "retired.js")
+    for name in (old, unchanged, retired):
+        (dist / name).write_text("original")
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(
+        json.dumps({name: f"/assets/gameplan/dist/js/{name}" for name in (old, unchanged)})
+    )
+
+    def compile_assets(app):
+        shutil.rmtree(dist)
+        dist.mkdir(parents=True)
+        (dist / unchanged).write_bytes(b"")
+        priority = tmp_path / ".previous-bundles/building/assets/gameplan/dist/js"
+        assert (priority / old).read_text() == "original"
+        assert (priority / unchanged).read_text() == "original"
+        (dist / unchanged).write_text("rebuilt")
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=compile_assets),
+    ):
+        builder.build_assets_for_app(app)
+
+    assert (tmp_path / ".previous-bundles/assets/gameplan/dist/js" / old).read_text() == "original"
+    assert (dist / unchanged).read_text() == "rebuilt"
+    assert not (dist / retired).exists()
+    assert not (tmp_path / ".previous-bundles/building/assets/gameplan").exists()
+
+
+@pytest.mark.parametrize("route", ["source", "prebuilt", "whole-bench"])
+def test_island_builds_keep_the_previous_entry_chunks_and_media(tmp_path: Path, route: str) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    builder.bench.apps_path = tmp_path / "apps"
+    app = make_app(builder.bench.apps_path / "gameplan")
+    frappe = make_app(builder.bench.apps_path / "frappe", "frappe")
+    builder.bench.apps.return_value = [app, frappe]
+    builder.page_island_script.parent.mkdir(parents=True)
+    builder.page_island_script.touch()
+    relative = Path("dist/page-island")
+    public = frappe.path / "frappe" / "public"
+    islands = public / relative
+    fallback = tmp_path / ".previous-bundles" / "assets" / "frappe" / relative
+    manifest = builder.bench.sites_path / "assets" / "assets.json"
+    manifest.parent.mkdir(parents=True)
+    unrelated = fallback.parent / "js" / "desk.old.js"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("old desk")
+
+    def names(generation: str) -> set[str]:
+        return {f"board.{generation}.js", f"chunks/shared.{generation}.js", f"media/icon.{generation}.svg"}
+
+    def write_generation(generation: str) -> None:
+        for filename in names(generation):
+            path = islands / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(generation)
+        manifest.write_text(
+            json.dumps({"gameplan.board": f"/assets/frappe/{relative}/board.{generation}.js"})
+        )
+
+    generation = "one"
+    write_generation(generation)
+
+    def compile_islands(*args, **kwargs):
+        shutil.rmtree(islands)
+        for filename in names(generation):
+            assert (fallback / filename).read_text() == generation
+        write_generation({"one": "two", "two": "three"}[generation])
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "run_compiler", side_effect=compile_islands),
+        patch.object(builder, "build_app_from_source", side_effect=compile_islands),
+        patch.object(builder, "build_page_islands", side_effect=compile_islands),
+        patch.object(builder, "setup_prebuilt_assets"),
+        patch("pilot.core.app.prebuilt_assets.PrebuiltAssets") as prebuilt,
+    ):
+        prebuilt.return_value.install.return_value = True
+        prebuilt.return_value.has_page_islands = False
+        app.has_page_islands = True
+        app.has_studio_apps = False
+        app.is_linked = False
+        app.has_source_changes = route != "prebuilt"
+        for generation in ("one", "two"):
+            if route == "whole-bench":
+                builder.build_assets()
+            else:
+                builder.build_assets_for_app(app)
+            for filename in names(generation):
+                assert (fallback / filename).read_text() == generation
+            if route != "whole-bench":
+                assert unrelated.read_text() == "old desk"
+
+    assert not any(
+        (fallback / filename).exists() or (islands / filename).exists() for filename in names("one")
+    )
+
+
+@pytest.mark.parametrize("corrupt", ["{", "[]", '{"invalid":null,"also-invalid":7}'])
+def test_corrupt_local_manifests_do_not_block_builds_or_rewrites(tmp_path: Path, corrupt: str) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps" / "gameplan")
+    public = app.path / "gameplan" / "public"
+    app.has_source_changes = True
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(corrupt)
+    rtl_url = "/assets/gameplan/dist/css-rtl/desk.AAAAAAAA.css"
+    (assets / "assets-rtl.json").write_text(json.dumps({"rtl_desk.bundle.css": rtl_url}))
+    rtl_file = public / "dist/css-rtl/desk.AAAAAAAA.css"
+    rtl_file.parent.mkdir(parents=True)
+    rtl_file.write_text("rtl")
+
+    def compile_assets(app):
+        assert json.loads((assets / "assets.json").read_text()) == {}
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=compile_assets),
+    ):
+        builder.build_assets_for_app(app)
+
+    assert (tmp_path / ".previous-bundles" / rtl_url.lstrip("/")).read_text() == "rtl"
+
+
+def test_a_production_build_requires_a_working_nginx_fallback(tmp_path: Path) -> None:
+    from pilot.exceptions import CommandError
+
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps" / "gameplan")
+    app.has_source_changes = True
+
+    with (
+        patch("pilot.managers.nginx.NginxManager.prepare_asset_fallback") as load_fallback,
+        patch.object(builder, "build_app_from_source") as compile_assets,
+    ):
+        load_fallback.side_effect = CommandError("nginx reload failed")
+        with pytest.raises(CommandError, match="nginx reload failed"):
+            builder.build_assets_for_app(app)
+        compile_assets.assert_not_called()
+
+
+def test_retry_keeps_the_manifest_generations_island_dependencies(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps" / "game-plan", "game-plan")
+    app.has_source_changes = True
+    relative = Path("dist/island")
+    public = app.path / app.module_name / "public"
+    islands = public / relative
+    fallback = tmp_path / ".previous-bundles" / "assets" / app.module_name / relative
+    manifest = builder.bench.sites_path / "assets" / "assets.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"board.island.js": f"/assets/{app.module_name}/{relative}/board.js"}))
+    files = ("board.js", "chunks/shared.js", "media/icon.svg")
+    for filename in files:
+        path = islands / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(filename)
+
+    def interrupt_build(app):
+        shutil.rmtree(islands)
+        raise BenchError("build failed")
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=interrupt_build),
+        pytest.raises(BenchError, match="build failed"),
+    ):
+        builder.build_assets_for_app(app)
+
+    # A partially published manifest can reference both recovered and live islands.
+    islands.mkdir(parents=True, exist_ok=True)
+    (islands / "live.js").write_text("live")
+    (islands / "live-chunk.js").write_text("chunk")
+    entries = json.loads(manifest.read_text())
+    entries["live.island.js"] = f"/assets/{app.module_name}/{relative}/live.js"
+    manifest.write_text(json.dumps(entries))
+
+    def complete_build(app):
+        assert (fallback / "live-chunk.js").read_text() == "chunk"
+        for filename in files:
+            assert (fallback / filename).read_text() == filename
+        shutil.rmtree(islands, ignore_errors=True)
+        islands.mkdir(parents=True)
+        (islands / "new.js").write_text("new")
+        manifest.write_text(json.dumps({"board.island.js": f"/assets/{app.module_name}/{relative}/new.js"}))
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch.object(builder, "build_app_from_source", side_effect=complete_build),
+    ):
+        builder.build_assets_for_app(app)
+    assert not (fallback.parents[2] / app.config.name).exists()
+
+
+def test_failed_build_keeps_priority_over_partial_live_file_until_retry(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps/gameplan")
+    url = "/assets/gameplan/dist/js/desk.bundle.SAME0000.js"
+    live = app.path / "gameplan/public/dist/js/desk.bundle.SAME0000.js"
+    live.parent.mkdir(parents=True)
+    live.write_bytes(b"complete")
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(json.dumps({"desk.bundle.js": url}))
+    priority = tmp_path / ".previous-bundles/building" / url.lstrip("/")
+    snapshot = tmp_path / ".previous-bundles" / url.lstrip("/")
+    with (
+        pytest.raises(BenchError, match="interrupted"),
+        builder.keeping_previous_bundles("gameplan", app.path),
+    ):
+        live.write_bytes(b"")
+        raise BenchError("interrupted")
+
+    assert priority.read_bytes() == b"complete"
+    with builder.keeping_previous_bundles("gameplan", app.path):
+        assert priority.read_bytes() == snapshot.read_bytes() == b"complete"
+        live.write_bytes(b"rebuilt")
+    assert not priority.exists()
+    assert live.read_bytes() == b"rebuilt"
+
+
+def test_second_build_can_publish_snapshots_without_directory_exchange(tmp_path: Path) -> None:
+    import errno
+
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.config.production.enabled = True
+    app = make_app(tmp_path / "apps/gameplan")
+    live = app.path / "gameplan/public/dist/js/desk.bundle.AAAAAAAA.js"
+    live.parent.mkdir(parents=True)
+    live.write_text("original")
+    with builder.keeping_previous_bundles("gameplan", app.path):
+        live.write_text("next")
+
+    with (
+        patch(
+            "pilot.managers.python_assets.exchange_paths", side_effect=OSError(errno.ENOTSUP, "unsupported")
+        ),
+        builder.keeping_previous_bundles("gameplan", app.path),
+    ):
+        fallback = tmp_path / ".previous-bundles/assets/gameplan/dist/js" / live.name
+        assert fallback.read_text() == "next"
+
+
+VALID_MANIFEST = '{"desk.bundle.js": "/assets/frappe/dist/js/desk.js"}'
+
+
+@pytest.mark.parametrize(
+    ("primary", "rtl", "is_other_app_built", "rebuilds_every_app"),
+    [
+        (None, None, True, True),
+        ("{", None, True, True),
+        (None, None, False, False),
+        (VALID_MANIFEST, None, True, False),
+        (VALID_MANIFEST, "{}", True, False),
+        (VALID_MANIFEST, "{", True, True),
+        (VALID_MANIFEST, "[]", True, True),
+    ],
+)
+def test_an_unusable_manifest_rebuilds_every_app_only_when_an_unselected_app_is_built(
+    tmp_path: Path, primary: str | None, rtl: str | None, is_other_app_built: bool, rebuilds_every_app: bool
+) -> None:
+    """The RTL map is optional, and the selected app's own build never widens the rebuild."""
+    builder = make_builder()
+    builder.bench.sites_path = tmp_path / "sites"
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    for name, content in (("assets.json", primary), ("assets-rtl.json", rtl)):
+        if content is not None:
+            (assets / name).write_text(content)
+    selected = make_app(tmp_path / "apps/gameplan")
+    (selected.path / "gameplan/public/dist").mkdir(parents=True)
+    other = make_app(tmp_path / "apps/frappe", "frappe")
+    if is_other_app_built:
+        (other.path / "frappe/public/dist").mkdir(parents=True)
+    # The bench makes new app objects on every call, so the selected app is matched by name.
+    builder.bench.apps.return_value = [make_app(selected.path), other]
+
+    with (
+        patch.object(builder, "build_all_locked") as full_build,
+        patch.object(builder, "build_app_assets") as single_build,
+    ):
+        builder.build_assets_for_app(selected)
+
+    assert full_build.called is rebuilds_every_app
+    assert single_build.called is not rebuilds_every_app
+
+
+def test_multi_app_batch_keeps_pre_update_frappe_islands(tmp_path: Path) -> None:
+    builder = make_builder()
+    builder.bench.config.production.enabled = True
+    builder.bench.sites_path = tmp_path / "sites"
+    builder.bench.apps_path = tmp_path / "apps"
+    frappe = make_app(builder.bench.apps_path / "frappe", "frappe")
+    erpnext = make_app(builder.bench.apps_path / "erpnext", "erpnext")
+    builder.bench.apps.return_value = [frappe, erpnext]
+    directory = Path("dist/page-island")
+    live = frappe.path / "frappe/public" / directory
+    live.mkdir(parents=True)
+    old = live / "board.OLD.js"
+    old.write_text("old")
+    assets = builder.bench.sites_path / "assets"
+    assets.mkdir(parents=True)
+    (assets / "assets.json").write_text(json.dumps({"board": f"/assets/frappe/{directory}/{old.name}"}))
+    fallback = tmp_path / ".previous-bundles/assets/frappe" / directory
+    for app in (frappe, erpnext):
+        app.has_source_changes = True
+
+    def compile_app(app):
+        shutil.rmtree(live)
+        live.mkdir()
+        (live / f"{app.module_name}.js").write_text(app.module_name)
+        assert (fallback / old.name).read_text() == "old"
+
+    with (
+        patch.object(builder, "prepare_asset_fallback"),
+        patch("pilot.managers.python_assets.NodePackages"),
+        patch.object(builder, "build_app_from_source", side_effect=compile_app),
+        builder.asset_build_batch([frappe, erpnext]) as needs_build,
+    ):
+        assert needs_build
+        for app in (frappe, erpnext):
+            builder.build_app_assets(app)
+
+    assert (fallback / old.name).read_text() == "old"
