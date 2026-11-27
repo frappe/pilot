@@ -182,12 +182,11 @@ class BenchRuntime:
 
     def _warn_fixed_dev_site(self, on_progress: Callable[[str], None]) -> None:
         """Warn when a fixed default site is set in development."""
-        from pilot.config.common_site_config import read_common_site_config
+        from pilot.core.bench.config_files import BenchConfigFiles
 
-        if self.bench.is_lite_mode:
+        if self.bench.is_lite_mode and not self.bench.has_runner_site_option:
             return
-        config = read_common_site_config(self.bench.sites_path)
-        fixed_site = os.environ.get("FRAPPE_SITE") or config.get("default_site")
+        fixed_site = BenchConfigFiles(self.bench).pinned_dev_site
         if fixed_site and len(self.bench.sites()) > 1:
             on_progress(
                 f"Warning: the development web server is pinned to '{fixed_site}'. "

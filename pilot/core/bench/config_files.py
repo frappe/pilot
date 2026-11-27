@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from pilot.config.common_site_config import read_common_site_config, update_common_site_config
@@ -65,6 +66,12 @@ class BenchConfigFiles:
             "--db-root-password",
             mariadb.root_password,
         ]
+
+    @property
+    def pinned_dev_site(self) -> str | None:
+        """The site the dev web server sends every request to: FRAPPE_SITE, else default_site."""
+        default_site = read_common_site_config(self.bench.sites_path).get("default_site")
+        return os.environ.get("FRAPPE_SITE") or default_site or None
 
     @property
     def postgres_root_password(self) -> str:
