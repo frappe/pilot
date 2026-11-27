@@ -17,6 +17,7 @@ import { useSite } from '@/composables/sites/useSite'
 import type { SiteHistory } from '@/types/siteHistory'
 import { errorMessage } from '@/utils/error'
 import { toSentenceCase } from '@/utils/format'
+import { getCommitUrl } from '@/utils/siteApps'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
 interface Props {
@@ -31,6 +32,7 @@ interface AppCardEntry {
   documentation: string
   website: string
   badge: string
+  commitUrl: string
   missing: boolean
   unfinished: boolean
 }
@@ -98,6 +100,7 @@ const appObjects = computed<AppCardEntry[]>(() =>
           ? 'Install incomplete'
           : (detail?.follow_branch && detail.branch) || detail?.version || '',
       badge: detail?.follow_branch ? 'Latest commits' : '',
+      commitUrl: getCommitUrl(detail?.repo, detail?.commit),
       logo_url: registryValue(logoMap.value, name) || null,
       documentation: registryValue(documentationMap.value, name),
       website: registryValue(websiteMap.value, name),
@@ -254,7 +257,18 @@ onMounted(() => {
     </template>
 
     <template #commit="{ row }">
-      <span class="font-mono text-ink-gray-6 text-xs">
+      <a
+        v-if="row.commitUrl"
+        :href="row.commitUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-1 font-mono text-ink-gray-6 hover:text-ink-gray-9 text-xs"
+      >
+        {{ appDetailMap[row.name]?.commit.slice(0, 7) }}
+        <span class="size-3 text-ink-gray-4 lucide-arrow-up-right" aria-hidden="true" />
+      </a>
+
+      <span v-else class="font-mono text-ink-gray-6 text-xs">
         {{ appDetailMap[row.name]?.commit?.slice(0, 7) || '-' }}
       </span>
     </template>
