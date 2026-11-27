@@ -384,6 +384,51 @@ def test_skip_assets_controls_the_post_provisioning_build(
     assert build_missing_assets.call_count == builds
 
 
+def _app(name: str) -> MagicMock:
+    app = MagicMock()
+    app.config.name = name
+    return app
+
+
+def test_build_missing_assets_rebuilds_an_app_whose_manifest_files_are_gone(tmp_path: Path) -> None:
+    provisioner = _provisioner(tmp_path)
+    app = _app("frappe")
+    (provisioner.bench.sites_path / "assets" / "frappe").mkdir(parents=True)
+
+    with (
+        patch.object(provisioner.bench, "apps", return_value=[app]),
+        patch.object(provisioner.bench, "is_app_installed", return_value=True),
+        patch(
+            "pilot.managers.environment.PythonEnvManager.apps_with_removed_assets",
+            return_value=["frappe"],
+        ),
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build,
+        patch.object(provisioner.bench, "clear_cache") as clear_cache,
+    ):
+        provisioner.build_missing_assets()
+
+    build.assert_called_once_with(app, force=True)
+    clear_cache.assert_called_once_with()
+
+
+def test_build_missing_assets_leaves_a_consistent_manifest_alone(tmp_path: Path) -> None:
+    provisioner = _provisioner(tmp_path)
+    app = _app("frappe")
+    (provisioner.bench.sites_path / "assets" / "frappe").mkdir(parents=True)
+
+    with (
+        patch.object(provisioner.bench, "apps", return_value=[app]),
+        patch.object(provisioner.bench, "is_app_installed", return_value=True),
+        patch("pilot.managers.environment.PythonEnvManager.apps_with_removed_assets", return_value=[]),
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build,
+        patch.object(provisioner.bench, "clear_cache") as clear_cache,
+    ):
+        provisioner.build_missing_assets()
+
+    build.assert_not_called()
+    clear_cache.assert_not_called()
+
+
 @pytest.mark.parametrize("declares", [True, False])
 def test_a_new_site_applies_the_processes_the_framework_declares(tmp_path: Path, declares: bool) -> None:
     from pilot.core.bench.processes import BenchProcesses

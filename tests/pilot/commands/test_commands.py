@@ -462,7 +462,10 @@ def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path)
     # builder is cloned on disk but never registered - it isn't installed.
     (bench.sites_path / "apps.txt").write_text("frappe\n")
 
-    with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build:
+    with (
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as build,
+        patch.object(bench, "clear_cache"),
+    ):
         SiteProvisioner(bench, "site1.localhost", ["frappe"], None).build_missing_assets()
 
     built = {call.args[0].config.name for call in build.call_args_list}

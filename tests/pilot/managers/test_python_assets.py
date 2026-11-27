@@ -157,6 +157,42 @@ def test_full_build_does_not_fingerprint_or_cache_assets(tmp_path: Path):
     compiler.assert_called_once()
 
 
+def test_manifest_entries_whose_files_are_gone_name_their_apps(tmp_path: Path) -> None:
+    """A rebuild that died before writing the manifest leaves old hashes that 404."""
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    assets = manager.bench.sites_path / "assets"
+    (assets / "frappe" / "dist" / "css").mkdir(parents=True)
+    (assets / "erpnext" / "dist" / "css").mkdir(parents=True)
+    (assets / "erpnext" / "dist" / "css" / "web.bundle.ABCDEFGH.css").write_text("")
+    manager.bench.apps.return_value = [make_app(tmp_path, name) for name in ("frappe", "erpnext", "hrms")]
+    (assets / "assets.json").write_text(
+        json.dumps(
+            {
+                "website.bundle.css": "/assets/frappe/dist/css/website.bundle.OLDHASH1.css",
+                "web.bundle.css": "/assets/erpnext/dist/css/web.bundle.ABCDEFGH.css",
+                "hrms.bundle.js": "/assets/hrms/dist/js/hrms.bundle.GONEJS01.js",
+                "removed.bundle.js": "/assets/removed/dist/js/removed.bundle.GONEJS01.js",
+            }
+        )
+    )
+    (assets / "assets-rtl.json").write_text(
+        json.dumps({"rtl_website.bundle.css": "/assets/frappe/dist/css-rtl/website.bundle.OLDHASH2.css"})
+    )
+
+    assert PythonAssetBuilder(manager).apps_with_removed_assets() == ["frappe", "hrms"]
+
+
+def test_unreadable_manifests_do_not_block_a_build(tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.bench.sites_path = tmp_path / "sites"
+    (manager.bench.sites_path / "assets").mkdir(parents=True)
+    (manager.bench.sites_path / "assets" / "assets.json").write_text("{not json")
+    manager.bench.apps.return_value = []
+
+    assert PythonAssetBuilder(manager).apps_with_removed_assets() == []
+
+
 def test_page_islands_are_built_with_frappe_s_own_script(tmp_path: Path) -> None:
     manager = MagicMock()
     manager.bench.apps_path = tmp_path / "apps"

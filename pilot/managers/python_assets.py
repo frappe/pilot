@@ -491,6 +491,48 @@ class PythonAssetBuilder:
         if rtl_assets:
             self.merge_json(assets_dir / "assets-rtl.json", rtl_assets)
 
+    def apps_with_removed_assets(self) -> list[str]:
+        """The apps whose manifest entries point at files that no longer exist.
+
+        A build rewrites hashed outputs and then updates the manifest. One that dies
+        in between leaves the old names in place while esbuild's cleanup has already
+        deleted their files, so pages link to assets that 404.
+        """
+        assets_dir = self.bench.sites_path / "assets"
+        known_apps = {app.config.name for app in self.bench.apps()}
+        missing: set[str] = set()
+
+        for manifest in ("assets.json", "assets-rtl.json"):
+            entries = self._read_manifest(assets_dir / manifest)
+            for url in entries.values():
+                app = self._app_with_missing_file(url, known_apps)
+                if app:
+                    missing.add(app)
+
+        return sorted(missing)
+
+    @staticmethod
+    def _read_manifest(path: Path) -> dict:
+        """The manifest entries, or none when it is absent or unreadable."""
+        try:
+            entries = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return entries if isinstance(entries, dict) else {}
+
+    def _app_with_missing_file(self, url: object, known_apps: set[str]) -> str:
+        """The app a manifest URL belongs to when its file is gone, else an empty string."""
+        if not isinstance(url, str):
+            return ""
+        parts = url.split("/")
+        if len(parts) < 4 or parts[0] or parts[1] != "assets":
+            return ""
+        if parts[2] not in known_apps:
+            return ""
+        if (self.bench.sites_path / url.lstrip("/")).exists():
+            return ""
+        return parts[2]
+
     @staticmethod
     def _bundle_manifest(
         app_name: str,
