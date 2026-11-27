@@ -22,6 +22,7 @@ from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.lite_mode import LiteModeConfig
 from pilot.config.llm import LLMConfig
 from pilot.config.mariadb import MariaDBConfig
+from pilot.config.migration_backup import MigrationBackupConfig
 from pilot.config.nginx import NginxConfig
 from pilot.config.postgres import PostgresConfig
 from pilot.config.processes import ProcessesConfig
@@ -149,6 +150,11 @@ class BenchConfig:
             lambda config: config._build_section() if config.build.memory_limit_mb else None,
         ),
         _Section(
+            "migration_backup",
+            lambda data: MigrationBackupConfig.from_dict(data.get("migration_backup", {})),
+            lambda config: vars(config.migration_backup) if config.migration_backup != MigrationBackupConfig() else None,
+        ),
+        _Section(
             "processes",
             lambda data: ProcessesConfig.from_dict(data.get("processes", {})),
             lambda config: {"disabled": config.processes.disabled} if config.processes.disabled else None,
@@ -224,6 +230,7 @@ class BenchConfig:
     nginx: NginxConfig = field(default_factory=NginxConfig)
     gunicorn: GunicornConfig = field(default_factory=GunicornConfig)
     build: BuildConfig = field(default_factory=BuildConfig)
+    migration_backup: MigrationBackupConfig = field(default_factory=MigrationBackupConfig)
     processes: ProcessesConfig = field(default_factory=ProcessesConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
@@ -376,6 +383,7 @@ class BenchConfig:
         self.mariadb.validate()
         self.gunicorn.validate()
         self.build.validate()
+        self.migration_backup.validate()
         self.processes.validate()
         self.lite_mode.validate()
         self.production.validate(self.name)
@@ -1029,6 +1037,7 @@ def _bench_schema() -> TomlSchema:
             "lite_mode": TomlSchema(keys=field_names(LiteModeConfig)),
             "gunicorn": TomlSchema(keys=field_names(GunicornConfig) | {"malloc_arena_max"}),
             "build": TomlSchema(keys=field_names(BuildConfig)),
+            "migration_backup": TomlSchema(keys=field_names(MigrationBackupConfig)),
             "processes": TomlSchema(keys=field_names(ProcessesConfig)),
             "admin": TomlSchema(keys=field_names(AdminConfig)),
             "s3": TomlSchema(keys=field_names(S3Config)),

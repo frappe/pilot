@@ -1,14 +1,18 @@
 import json
 from pathlib import Path
 from subprocess import CompletedProcess, Popen
-from unittest.mock import MagicMock, patch
+from threading import Barrier
+from time import sleep
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
+from pilot.config.migration_backup import MigrationBackupConfig
 from pilot.core.site.backups.migration import SiteMigrationBackup
 from pilot.core.site.config.file import SiteConfigFile
 from pilot.exceptions import BenchError
 from pilot.integrations.s3.base import S3IntegrationError
+from pilot.managers.platform import HostPlatform
 
 
 @pytest.mark.parametrize("database_engine", ["sqlite", "postgres"])
@@ -70,6 +74,7 @@ def migration_site(tmp_path: Path, database_engine: str) -> MagicMock:
     site.config_file = SiteConfigFile(site.path.parent, site.path.name)
     site.config.name = "site1.localhost"
     site.bench.sites_path = tmp_path / "sites"
+    site.bench.config.migration_backup = MigrationBackupConfig()
     site.bench.migrations.unresolved_for_site.return_value = [MagicMock(id="operation-1")]
     site._frappe_call.side_effect = lambda *args: ["bench", *args]
     return site
@@ -208,10 +213,21 @@ def test_gzip_reader_produces_a_gzip_stream_in_any_read_size() -> None:
     from pilot.core.site.backups.migration import GzipReader
 
     payload = os.urandom(3 << 20)
-    reader = GzipReader(io.BytesIO(payload))
+    reader = GzipReader(io.BytesIO(payload), 6)
     compressed = b"".join(iter(lambda: reader.read(65_537), b""))
 
     assert gzip.decompress(compressed) == payload
+
+
+def test_gzip_reader_compresses_at_the_given_level() -> None:
+    import io
+
+    from pilot.core.site.backups.migration import GzipReader
+
+    payload = b"".join(b"INSERT INTO tabUser VALUES (%d);\n" % number for number in range(50_000))
+    sizes = {level: len(GzipReader(io.BytesIO(payload), level).read()) for level in (1, 9)}
+
+    assert sizes[9] < sizes[1]
 
 
 @pytest.mark.parametrize(
@@ -230,10 +246,14 @@ def test_only_mariadb_dumps_go_to_the_bucket_and_only_when_enabled(
 def test_table_dumps_stream_to_the_bucket_and_stay_off_the_disk(tmp_path: Path) -> None:
     import gzip
 
+    from pilot.core.site.backups.migration import GzipReader
+
     site, bucket = s3_site(tmp_path)
+    site.bench.config.migration_backup.gzip_level = 3
     backup = SiteMigrationBackup(site)
 
     with (
+        patch("pilot.core.site.backups.migration.GzipReader", wraps=GzipReader) as reader,
         patch.object(SiteMigrationBackup, "_s3", return_value=bucket),
         patch.object(SiteMigrationBackup, "_list_tables", return_value=["tabUser"]),
         patch.object(SiteMigrationBackup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "INSERT 1;")),
@@ -243,25 +263,31 @@ def test_table_dumps_stream_to_the_bucket_and_stay_off_the_disk(tmp_path: Path) 
 
     key = "sites/site1.localhost/migration_backups/operation-1/tabUser.sql.gz"
     assert gzip.decompress(bucket.objects[key]) == b"INSERT 1;"
+    assert reader.call_args.args[1] == 3
     assert backup.offsite == {"bucket": "bench-bucket", "prefix": key.removesuffix("tabUser.sql.gz")}
     assert not backup._dump_path("tabUser").exists()
     assert backup.previous_tables == ["tabUser"]
 
 
-def test_a_dump_that_fails_leaves_no_object_behind(tmp_path: Path) -> None:
+def test_an_s3_dump_failure_deletes_its_object_and_stops_the_backup(tmp_path: Path) -> None:
     site, bucket = s3_site(tmp_path)
     backup = SiteMigrationBackup(site)
 
     with (
         patch.object(SiteMigrationBackup, "_s3", return_value=bucket),
-        patch.object(SiteMigrationBackup, "_list_tables", return_value=["tabUser"]),
-        patch.object(SiteMigrationBackup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "partial", 2)),
+        patch.object(SiteMigrationBackup, "_list_tables", return_value=["tabUser", "tabRole"]),
+        patch.object(
+            SiteMigrationBackup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "partial", 2)
+        ) as dump_cli,
         patch.object(SiteMigrationBackup, "_conn_args", return_value=[]),
+        patch("pilot.core.site.backups.migration.ThreadPoolExecutor") as executor,
         pytest.raises(BenchError, match="Failed to dump table tabUser"),
     ):
         backup.create("operation-1")
 
     assert bucket.objects == {}
+    dump_cli.assert_called_once_with()
+    executor.assert_not_called()
 
 
 def _offsite_backup(tmp_path: Path, tables: list[str], stored: list[str]):
@@ -373,3 +399,98 @@ def test_discard_deletes_the_objects_and_the_directory(tmp_path: Path) -> None:
 
     assert list(bucket.objects) == ["sites/other.localhost/backups/keep.sql.gz"]
     assert not backup.directory.exists()
+
+
+@pytest.mark.parametrize(
+    ("cpus", "limit", "expected"),
+    [(1, None, 1), (2, None, 1), (4, None, 2), (8, None, 4), (64, None, 4), (64, 2, 2), (64, 8, 4)],
+)
+def test_local_dump_worker_count_respects_cpus_and_bench_limit(
+    cpus: int, limit: int | None, expected: int
+) -> None:
+    with patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=cpus):
+        assert SiteMigrationBackup.get_local_dump_worker_count(limit or MigrationBackupConfig().workers) == expected
+
+
+@pytest.mark.parametrize(("cpus", "limit"), [(2, None), (8, 1)])
+def test_single_worker_local_dumps_run_serially(tmp_path: Path, cpus: int, limit: int | None) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    config = site.config_file.read()
+    if limit is not None:
+        site.bench.config.migration_backup.workers = limit
+    tables = ["tabUser", "tabRole"]
+
+    with (
+        patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=cpus),
+        patch.object(backup, "_list_tables", return_value=tables),
+        patch.object(backup, "_dump_table") as dump,
+        patch("pilot.core.site.backups.migration.ThreadPoolExecutor") as executor,
+    ):
+        assert backup.create("operation-1") == tables
+
+    assert [call.args for call in dump.call_args_list] == [(config, "site_db", table) for table in tables]
+    executor.assert_not_called()
+
+
+def test_table_dumps_run_side_by_side(tmp_path: Path) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    both_running = Barrier(2, timeout=5)
+
+    with (
+        patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=4),
+        patch.object(backup, "_list_tables", return_value=["tabUser", "tabRole"]),
+        patch.object(backup, "_dump_table", side_effect=lambda *args: both_running.wait()),
+    ):
+        assert backup.create("operation-1") == ["tabUser", "tabRole"]
+
+
+def test_a_failed_dump_waits_for_the_running_ones_and_cancels_the_rest(tmp_path: Path) -> None:
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    backup = SiteMigrationBackup(site)
+    started, finished = set(), set()
+
+    def dump(config: dict, db_name: str, table: str) -> None:
+        started.add(table)
+        if table == "tab1":
+            raise BenchError("Failed to dump table tab1")
+        # The first table outlasts the failure, so a backup that reads results in order starts many more.
+        sleep(1 if table == "tab0" else 0.05)
+        finished.add(table)
+
+    with (
+        patch.object(HostPlatform, "available_cpu_count", new_callable=PropertyMock, return_value=4),
+        patch.object(backup, "_list_tables", return_value=[f"tab{number}" for number in range(100)]),
+        patch.object(backup, "_dump_table", side_effect=dump),
+        pytest.raises(BenchError, match="Failed to dump table tab1"),
+    ):
+        backup.create("operation-1")
+
+    assert finished == started - {"tab1"}
+    assert len(started) < 10
+
+
+@pytest.mark.parametrize("level", [None, 1, 6, 9])
+def test_local_dump_compression_level(tmp_path: Path, level: int | None) -> None:
+    import gzip
+
+    site = migration_site(tmp_path, "mariadb")
+    site.bench.config.s3.stores_migration_backups = False
+    if level is not None:
+        site.bench.config.migration_backup.gzip_level = level
+    backup = SiteMigrationBackup(site)
+
+    with (
+        patch.object(backup, "_list_tables", return_value=["tabUser"]),
+        patch.object(backup, "_dump_cli", return_value=fake_dump_cli(tmp_path, "INSERT 1;")),
+        patch.object(backup, "_conn_args", return_value=[]),
+        patch("pilot.core.site.backups.migration.gzip.open", wraps=gzip.open) as gzip_open,
+    ):
+        backup.create("operation-1")
+
+    assert gzip_open.call_args.kwargs == {"compresslevel": level or 6}
+    assert gzip.decompress(backup._dump_path("tabUser").read_bytes()) == b"INSERT 1;"

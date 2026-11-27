@@ -218,6 +218,10 @@ database.sql.gz
 site_config.json
 ```
 
+MariaDB migration dumps use gzip level 6, on the disk and in S3. Set `gzip_level` under `[migration_backup]` in `bench.toml` to change it: a higher level makes smaller dumps and a slower backup. Levels 1 through 9 are supported.
+
+Pilot runs local MariaDB table dumps on half the available CPUs, with at least one and at most four concurrent dumps. For a database account that allows only one connection, set `workers = 1` in the same table. The setting accepts a positive integer and caps the number of concurrent dumps. S3 dumps always run one at a time. Whenever dumps run serially, the first failure stops the backup before Pilot starts another table.
+
 When the bench has an S3 bucket and `[s3] upload_migration_backups` is on (the default), MariaDB table dumps do not go to the disk. Pilot ignores the setting when the bucket is not configured. Each dump streams gzip-compressed to `sites/<site>/migration_backups/<operation-id>/<table>.sql.gz` in the bucket. Only `previous_tables.json`, `site_config.json`, and `offsite.json` (bucket and key prefix) stay in `.migrate/`. The disk check before an update then counts only the sites that back up locally. A dump that fails part way deletes its object. Restore checks that every required object exists. Then it streams each dump from the bucket through gunzip into the database client, so restore also needs no disk space. A restore that stops part way is safe to run again, because each dump drops and recreates its table. Discard and a new snapshot delete the objects. SQLite and PostgreSQL backups stay local. To keep the dumps on the disk, turn the setting off in Settings > Bench, or set `upload_migration_backups = false` under `[s3]`.
 
 Frappe creates these full backups with explicit paths inside `.migrate/`. Backup include/exclude settings are ignored so the safeguard always covers the whole database. Files remain excluded.
