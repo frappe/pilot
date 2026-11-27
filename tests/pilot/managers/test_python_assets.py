@@ -594,63 +594,39 @@ def test_second_build_can_publish_snapshots_without_directory_exchange(tmp_path:
         assert fallback.read_text() == "next"
 
 
-@pytest.mark.parametrize("manifest", [None, "{"])
-def test_invalid_primary_manifest_rebuilds_unselected_apps(tmp_path: Path, manifest: str | None) -> None:
+VALID_MANIFEST = '{"desk.bundle.js": "/assets/frappe/dist/js/desk.js"}'
+
+
+@pytest.mark.parametrize(
+    ("primary", "rtl", "is_other_app_built", "rebuilds_every_app"),
+    [
+        (None, None, True, True),
+        ("{", None, True, True),
+        (None, None, False, False),
+        (VALID_MANIFEST, None, True, False),
+        (VALID_MANIFEST, "{}", True, False),
+        (VALID_MANIFEST, "{", True, True),
+        (VALID_MANIFEST, "[]", True, True),
+    ],
+)
+def test_an_unusable_manifest_rebuilds_every_app_only_when_an_unselected_app_is_built(
+    tmp_path: Path, primary: str | None, rtl: str | None, is_other_app_built: bool, rebuilds_every_app: bool
+) -> None:
+    """The RTL map is optional, and the selected app's own build never widens the rebuild."""
     builder = make_builder()
     builder.bench.sites_path = tmp_path / "sites"
     assets = builder.bench.sites_path / "assets"
     assets.mkdir(parents=True)
-    if manifest is not None:
-        (assets / "assets.json").write_text(manifest)
-    selected = make_app(tmp_path / "apps/gameplan")
-    other = make_app(tmp_path / "apps/erpnext", "erpnext")
-    (other.path / "erpnext/public/dist").mkdir(parents=True)
-    builder.bench.apps.return_value = [selected, other]
-
-    def compile_all(argv, **kwargs):
-        assert argv[-2:] == ["build", "--force"]
-        entries = {name: f"/assets/{name}/dist/js/desk.js" for name in ("gameplan", "erpnext")}
-        (assets / "assets.json").write_text(json.dumps(entries))
-
-    with (
-        patch("pilot.managers.python_assets.get_app_packages", return_value=[]),
-        patch.object(builder, "run_compiler", side_effect=compile_all),
-    ):
-        builder.build_assets_for_app(selected)
-
-    assert set(json.loads((assets / "assets.json").read_text())) == {"gameplan", "erpnext"}
-
-
-def test_missing_manifest_does_not_expand_build_when_all_built_apps_are_selected(tmp_path: Path) -> None:
-    builder = make_builder()
-    builder.bench.sites_path = tmp_path / "sites"
+    for name, content in (("assets.json", primary), ("assets-rtl.json", rtl)):
+        if content is not None:
+            (assets / name).write_text(content)
     selected = make_app(tmp_path / "apps/gameplan")
     (selected.path / "gameplan/public/dist").mkdir(parents=True)
-    builder.bench.apps.return_value = [make_app(selected.path)]
-
-    with (
-        patch.object(builder, "build_all_locked") as full_build,
-        patch.object(builder, "build_app_assets") as single_build,
-    ):
-        builder.build_assets_for_app(selected)
-
-    full_build.assert_not_called()
-    single_build.assert_called_once_with(selected, force=False, skip_frontend=False)
-
-
-@pytest.mark.parametrize(("rtl", "recover"), [(None, False), ("{}", False), ("{", True), ("[]", True)])
-def test_optional_rtl_manifest_recovery(tmp_path: Path, rtl: str | None, recover: bool) -> None:
-    builder = make_builder()
-    builder.bench.sites_path = tmp_path / "sites"
-    assets = builder.bench.sites_path / "assets"
-    assets.mkdir(parents=True)
-    (assets / "assets.json").write_text('{"desk.bundle.js": "/assets/frappe/dist/js/desk.js"}')
-    if rtl is not None:
-        (assets / "assets-rtl.json").write_text(rtl)
-    selected = make_app(tmp_path / "apps/gameplan")
     other = make_app(tmp_path / "apps/frappe", "frappe")
-    (other.path / "frappe/public/dist").mkdir(parents=True)
-    builder.bench.apps.return_value = [selected, other]
+    if is_other_app_built:
+        (other.path / "frappe/public/dist").mkdir(parents=True)
+    # The bench makes new app objects on every call, so the selected app is matched by name.
+    builder.bench.apps.return_value = [make_app(selected.path), other]
 
     with (
         patch.object(builder, "build_all_locked") as full_build,
@@ -658,8 +634,8 @@ def test_optional_rtl_manifest_recovery(tmp_path: Path, rtl: str | None, recover
     ):
         builder.build_assets_for_app(selected)
 
-    assert full_build.called is recover
-    assert single_build.called is not recover
+    assert full_build.called is rebuilds_every_app
+    assert single_build.called is not rebuilds_every_app
 
 
 def test_multi_app_batch_keeps_pre_update_frappe_islands(tmp_path: Path) -> None:
