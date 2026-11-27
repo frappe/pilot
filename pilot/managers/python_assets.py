@@ -50,7 +50,6 @@ def discard_previous_bundles(bench: Bench, name: str) -> None:
         snapshot = base / "assets" / name
         if snapshot.exists():
             shutil.rmtree(snapshot)
-    (root / f".{name}.restored-islands.json").unlink(missing_ok=True)
 
 
 def read_json_object(path: Path) -> dict:
@@ -176,6 +175,7 @@ class PythonAssetBuilder:
             self.build_app_from_source(app)
 
     def needs_full_manifest_rebuild(self, apps: list["App"]) -> bool:
+        selected_modules = {app.module_name for app in apps}
         assets = self.bench.sites_path / "assets"
         for name in ASSET_MANIFEST_NAMES:
             path = assets / name
@@ -191,7 +191,8 @@ class PythonAssetBuilder:
                 or any(not isinstance(url, str) for url in entries.values())
             ):
                 return any(
-                    app not in apps and (app.path / app.module_name / "public" / "dist").is_dir()
+                    app.module_name not in selected_modules
+                    and (app.path / app.module_name / "public" / "dist").is_dir()
                     for app in self.bench.apps()
                 )
         return False
