@@ -45,7 +45,7 @@ const categories = computed(() =>
 
 const status = computed(() => {
   if (props.app.installed) return 'Installed'
-  if (props.app.compatible === false) return 'Needs a newer Frappe version'
+  if (props.app.compatible === false) return 'Needs newer Frappe'
 
   return 'Ready to install'
 })
@@ -137,13 +137,11 @@ const statusTheme = computed(() => {
 
     <template #default>
       <div class="flex flex-col gap-3 p-4 w-80 sm:w-96">
-        <div class="flex justify-between items-start gap-3">
-          <p class="flex items-center gap-2 text-base-semibold text-ink-gray-8">
-            {{ app.title }}
-            <Badge v-if="app.nightly" label="Nightly" theme="amber" size="sm" />
-          </p>
+        <div class="flex items-center gap-2">
+          <p class="min-w-0 text-base-semibold text-ink-gray-8 truncate">{{ app.title }}</p>
+          <Badge v-if="app.nightly" label="Nightly" variant="outline" size="sm" class="shrink-0" />
 
-          <Badge :label="status" :theme="statusTheme" size="sm" class="shrink-0" />
+          <Badge :label="status" :theme="statusTheme" size="sm" class="ml-auto shrink-0" />
         </div>
 
         <p class="-mt-1.5 text-p-sm text-ink-gray-6">
@@ -160,7 +158,7 @@ const statusTheme = computed(() => {
 
             <div class="flex flex-col gap-1 min-w-0">
               <dt class="text-xs text-ink-gray-5">Category</dt>
-              <dd class="text-base text-ink-gray-8 truncate">{{ categories }}</dd>
+              <dd class="text-sm text-ink-gray-8 truncate">{{ categories }}</dd>
             </div>
           </div>
 
@@ -173,7 +171,7 @@ const statusTheme = computed(() => {
 
             <div class="flex flex-col gap-1 min-w-0">
               <dt class="text-xs text-ink-gray-5">Stars</dt>
-              <dd class="text-base text-ink-gray-8 truncate">
+              <dd class="text-sm text-ink-gray-8 truncate">
                 {{ compactNumber.format(app.stars) }}
               </dd>
             </div>
@@ -188,7 +186,7 @@ const statusTheme = computed(() => {
 
             <div class="flex flex-col gap-1 min-w-0">
               <dt class="text-xs text-ink-gray-5">Version</dt>
-              <dd class="text-base text-ink-gray-8 truncate">{{ app.label }}</dd>
+              <dd class="text-sm text-ink-gray-8 truncate">{{ app.label }}</dd>
             </div>
           </div>
 
@@ -201,7 +199,7 @@ const statusTheme = computed(() => {
 
             <div class="flex flex-col gap-1 min-w-0">
               <dt class="text-xs text-ink-gray-5">Frappe</dt>
-              <dd class="text-base text-ink-gray-8 truncate">{{ app.frappe_version }}</dd>
+              <dd class="text-sm text-ink-gray-8 truncate">{{ app.frappe_version }}</dd>
             </div>
           </div>
 
