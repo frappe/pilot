@@ -41,6 +41,7 @@ class SystemHistory(TypedDict):
     now: int
     system: SystemMetricsHistory
     application: ApplicationMetricsHistory
+    database_server: SystemMetricsHistory | None
 
 
 class SlowQueryOverview(TypedDict):

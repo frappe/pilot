@@ -13,7 +13,9 @@ from pilot.core.mariadb_memory import (
     live_sizing_values,
 )
 from pilot.exceptions import CommandError, DatabaseError
+from pilot.managers.database.dedicated_mariadb import DedicatedMariaDBManager
 from pilot.managers.database.mariadb import MariaDBManager
+from pilot.managers.database.remote_mariadb import RemoteMariaDBManager
 from pilot.managers.platform import HostPlatform
 
 MODULE = "pilot.managers.database.mariadb"
@@ -1569,3 +1571,65 @@ def test_sites_reach_pilots_server_on_the_loopback_address(existing: bool, is_ma
     manager = MariaDBManager(MariaDBConfig(host="db.example.com", existing=existing))
     with patch.object(HostPlatform, "is_macos", new_callable=PropertyMock, return_value=is_macos):
         assert manager.site_host == host
+
+
+# The boot sizing unit builds its manager this way too, so a dedicated server keeps its whole-VM sizing.
+@pytest.mark.parametrize(
+    ("config", "manager_class", "is_on_another_host"),
+    [
+        pytest.param(MariaDBConfig(), MariaDBManager, False, id="local"),
+        pytest.param(
+            MariaDBConfig(host="db.example.com", existing=True), MariaDBManager, True, id="existing"
+        ),
+        pytest.param(MariaDBConfig(dedicated=True), DedicatedMariaDBManager, False, id="dedicated"),
+        pytest.param(
+            MariaDBConfig(host="fdaa:1:2::3", remote=True, agent_token="token"),
+            RemoteMariaDBManager,
+            True,
+            id="remote",
+        ),
+    ],
+)
+def test_each_config_gets_the_manager_for_where_its_server_runs(
+    config: MariaDBConfig, manager_class: type, is_on_another_host: bool
+) -> None:
+    manager = MariaDBManager.for_config(config)
+
+    assert type(manager) is manager_class
+    assert manager.is_on_another_host is is_on_another_host
+
+
+def test_a_local_server_takes_its_admin_and_accounts_on_this_host() -> None:
+    manager = MariaDBManager.for_config(MariaDBConfig())
+    assert manager.get_admin_host() == "localhost"
+    assert manager.get_account_host() == "%"
+
+
+def test_removing_the_local_server_stops_it_and_deletes_its_units_and_data(tmp_path) -> None:
+    units = tmp_path / "units"
+    (units / "pilot-mariadb.service.d").mkdir(parents=True)
+    for name in ("pilot-mariadb.service", "pilot-mariadb-sizing.service"):
+        (units / name).write_text("[Unit]\n")
+    state = tmp_path / "databases" / "mariadb"
+    (state / "data").mkdir(parents=True)
+    manager = _manager()
+
+    with (
+        patch.object(MariaDBManager, "user_unit_dir", new_callable=PropertyMock, return_value=units),
+        patch.object(MariaDBManager, "state_dir", new_callable=PropertyMock, return_value=state),
+        patch(f"{MODULE}.HostPlatform") as platform,
+        patch(f"{MODULE}.subprocess.run") as run,
+        patch(f"{MODULE}.run_command") as run_command,
+    ):
+        platform.return_value.is_macos = False
+        manager.remove_local_server()
+
+    assert run.call_args.args[0][-4:] == [
+        "disable",
+        "--now",
+        "pilot-mariadb.service",
+        "pilot-mariadb-sizing.service",
+    ]
+    assert run_command.call_args.args[0][-1] == "daemon-reload"
+    assert list(units.iterdir()) == []
+    assert not state.exists()

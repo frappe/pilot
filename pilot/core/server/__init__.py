@@ -13,6 +13,7 @@ from pilot.core.server.ssh_keys import (
 )
 
 if TYPE_CHECKING:
+    from pilot.core.agent.client import AgentClient
     from pilot.core.bench import Bench
     from pilot.core.bench.directory import BenchDirectory
     from pilot.core.server.auto_update import AutoUpdate
@@ -51,6 +52,29 @@ class Server:
         from pilot.core.server.auto_update import AutoUpdate
 
         return AutoUpdate(self)
+
+    @property
+    def is_database_server(self) -> bool:
+        """Whether this host is a database VM: a dedicated MariaDB and its Pilot agent, with no benches."""
+        from pilot.config.common import CommonConfig
+
+        return CommonConfig.read(self.benches_dir).mariadb.dedicated
+
+    @property
+    def agents(self) -> "list[AgentClient]":
+        """The Pilot agents of the VMs this host manages: its database VM's, when its MariaDB is remote."""
+        from pilot.config.common import CommonConfig
+        from pilot.core.agent.roles.database.client import DatabaseAgentClient
+
+        mariadb = CommonConfig.read(self.benches_dir).mariadb
+        return [DatabaseAgentClient.for_config(mariadb).agent] if mariadb.remote else []
+
+    @property
+    def has_agent(self) -> bool:
+        """Whether this host runs a Pilot agent, which another VM's Pilot manages it through."""
+        from pilot.config.common import CommonConfig
+
+        return bool(CommonConfig.read(self.benches_dir).agent.token_hash)
 
     def bench(self, path_or_name: str | Path) -> "Bench":
         """The bench at a path, or with a name under the benches directory."""

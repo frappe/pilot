@@ -46,7 +46,7 @@ def database_validation(bench_root: Path, data: dict):
             port,
             existing,
         )
-        return engine, MariaDBManager(config), password, existing
+        return engine, MariaDBManager.for_config(config), password, existing
 
     from pilot.managers.database import PostgresManager
 

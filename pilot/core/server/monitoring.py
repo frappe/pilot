@@ -13,12 +13,14 @@ from pathlib import Path
 import psutil
 
 from pilot.config.alert_limit import RESOURCE_LIMIT_FIELDS
+from pilot.config.monitor import database_server_log_path
+from pilot.core.agent.roles.database.client import DatabaseAgentClient
 from pilot.core.bench.telemetry import DatumCredential
 from pilot.core.notification.alert_log import FIRING, RESOLVED, AlertLog
 from pilot.core.server import Server
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_datum import SEND_INTERVAL, TelemetryShipper
-from pilot.core.server.monitoring_proc import ProcMetricsReader
+from pilot.core.server.monitoring_proc import CPU_SAMPLE_INTERVAL, HostSampler
 from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.core.site import uptime_monitoring
 from pilot.core.site.activity_rollup import SiteActivityRollup
@@ -28,8 +30,6 @@ from pilot.internal.jsonl_log import utc_now
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-# Gap between the two samples used to turn cumulative counters into a rate.
-CPU_SAMPLE_INTERVAL = 1.0
 # Seconds from the end of one tick to the start of the next.
 METRICS_INTERVAL = 10.0
 UPTIME_INTERVAL = 15.0
@@ -37,7 +37,6 @@ ROLLUP_INTERVAL = 60.0
 TELEMETRY_INTERVAL = SEND_INTERVAL.total_seconds()
 
 ALERT_EVENT = "resource_limit_breached"
-
 
 
 class Monitor:
@@ -62,15 +61,11 @@ class Monitor:
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._configurator = MonitorConfigurator(bench)
-        self._proc_reader = ProcMetricsReader(bench.path)
-        self._system_cpu: float = 0.0
-        self._cpu_breakdown: dict[str, float] = {}
+        self.host = HostSampler(bench.path)
+        self._proc_reader = self.host.reader
         self._proc_cpu: dict[int, float] = {}
-        self._network: dict[str, float] = {}
-        self._disk_io: dict[str, float] = {}
         self._targets: dict[str, int] | None = None
-        self._cpu_before: tuple[dict[str, float], dict[int, float]] | None = None
-        self._io_before: tuple[dict[str, int], dict[str, int]] | None = None
+        self._proc_cpu_before: dict[int, float] | None = None
 
     def monitored_targets(self) -> dict[str, int]:
         """The monitored processes, resolved on first use."""
@@ -78,69 +73,19 @@ class Monitor:
             self._targets = ProcessResolver(self.bench).resolve()
         return self._targets
 
-    def sample_cpu(self) -> None:
-        """Record the CPU counters before the sample window."""
+    def sample(self) -> None:
+        """Read the host and process counters at the start of the sample window."""
         pids = [pid for pid in self.monitored_targets().values() if psutil.pid_exists(pid)]
-        self._cpu_before = (self._cpu_fields(), {pid: self._proc_cpu_seconds(pid) for pid in pids})
+        self.host.sample()
+        self._proc_cpu_before = {pid: self._proc_cpu_seconds(pid) for pid in pids}
 
-    def compute_cpu(self) -> None:
-        """Compute the CPU usage over the sample window."""
-        assert self._cpu_before is not None, "sample_cpu() must run before compute_cpu()"
-        fields_before, proc_before = self._cpu_before
-        fields_after = self._cpu_fields()
-        delta = {key: fields_after[key] - fields_before[key] for key in fields_after}
-        delta_total = sum(delta.values())
-
-        if delta_total > 0:
-            percent = lambda ticks: round(ticks / delta_total * 100, 2)  # noqa: E731
-            self._cpu_breakdown = {
-                "user": percent(delta["user"] + delta["nice"]),
-                "system": percent(delta["system"]),
-                "iowait": percent(delta["iowait"]),
-                "irq": percent(delta["irq"] + delta["softirq"]),
-                "other": percent(delta["steal"]),
-                "idle": percent(delta["idle"]),
-            }
-        else:
-            self._cpu_breakdown = {
-                "user": 0.0,
-                "system": 0.0,
-                "iowait": 0.0,
-                "irq": 0.0,
-                "other": 0.0,
-                "idle": 100.0,
-            }
-        self._system_cpu = round(100 - self._cpu_breakdown["idle"], 2)
+    def compute(self) -> None:
+        """Compute the host and process usage over the sample window."""
+        assert self._proc_cpu_before is not None, "sample() must run before compute()"
+        self.host.compute()
         self._proc_cpu = {
-            pid: self._proc_usage(before, pid, delta_total) for pid, before in proc_before.items()
-        }
-
-    def sample_io(self) -> None:
-        """Record the network and disk counters before the sample window."""
-        self._io_before = (self._net_fields(), self._disk_io_fields())
-
-    def compute_io(self) -> None:
-        """Compute the network and disk rates over the sample window."""
-        assert self._io_before is not None, "sample_io() must run before compute_io()"
-        net_before, disk_before = self._io_before
-        net_after, disk_after = self._net_fields(), self._disk_io_fields()
-        self._network = {
-            "rx_bytes_per_sec": round(
-                (net_after["rx_bytes"] - net_before["rx_bytes"]) / CPU_SAMPLE_INTERVAL, 2
-            ),
-            "tx_bytes_per_sec": round(
-                (net_after["tx_bytes"] - net_before["tx_bytes"]) / CPU_SAMPLE_INTERVAL, 2
-            ),
-        }
-        self._disk_io = {
-            "read_bytes_per_sec": round(
-                (disk_after["read_bytes"] - disk_before["read_bytes"]) / CPU_SAMPLE_INTERVAL,
-                2,
-            ),
-            "write_bytes_per_sec": round(
-                (disk_after["write_bytes"] - disk_before["write_bytes"]) / CPU_SAMPLE_INTERVAL,
-                2,
-            ),
+            pid: self._proc_usage(before, pid, self.host.cpu_seconds)
+            for pid, before in self._proc_cpu_before.items()
         }
 
     @property
@@ -157,6 +102,11 @@ class Monitor:
     def db_log_path(self) -> Path:
         """The database metrics log."""
         return self._configurator.db_log_path
+
+    @property
+    def database_server_log_path(self) -> Path:
+        """The system metrics log of a remote server's VM."""
+        return database_server_log_path()
 
     @property
     def slow_query_log_path(self) -> Path:
@@ -239,21 +189,35 @@ class Monitor:
 
     def collect_system_metrics(self) -> dict:
         """The system metrics record."""
-        record = {
-            "time": datetime.now(UTC).isoformat(),
-            "load_avg": self._load_average(),
-            "cpu_percent": self._system_cpu,
-            "cpu_breakdown": self._cpu_breakdown,
-            "memory": self._memory_usage(),
-            "storage": self._storage_usage(),
-            "network": self._network,
-            "disk_io": self._disk_io,
-        }
+        record = self.host.get_record()
         self._append(self.system_log_path, record)
         self.send_alert_if_required(record)
         return record
 
-    def collect_database_metrics(self) -> dict | None:
+    @property
+    def is_database_remote(self) -> bool:
+        """Whether MariaDB runs on a database VM of its own."""
+        return self.bench.config.db_type == "mariadb" and self.bench.config.mariadb.remote
+
+    def collect_database_server_metrics(self) -> dict | None:
+        """The system metrics record of a remote server's VM, from its Pilot agent. Skips quietly when
+        the agent cannot be reached or is too old to know the request, so the daemon never stalls on it."""
+        if not self.is_database_remote:
+            return None
+        try:
+            record = DatabaseAgentClient.for_config(self.bench.config.mariadb).agent.get_host_metrics()
+        except Exception:
+            return None
+        self._append(self.database_server_log_path, record)
+        return record
+
+    def get_database_memory_bytes(self, database_server_record: dict | None) -> int | None:
+        """The memory of the host MariaDB runs on: a remote server's VM, or None when it did not answer."""
+        if self.is_database_remote:
+            return database_server_record["memory"]["total_bytes"] if database_server_record else None
+        return self._proc_reader.memory_usage()["total_bytes"]
+
+    def collect_database_metrics(self, database_server_record: dict | None = None) -> dict | None:
         """One raw MariaDB sample per host. Never crashes the daemon on a bad DB."""
         if self.bench.config.db_type != "mariadb":
             return None
@@ -273,7 +237,7 @@ class Monitor:
             record[key] = _to_int(status.get(key))
         for key in ("innodb_buffer_pool_size", "max_connections"):
             record[key] = _to_int(variables.get(key))
-        record["total_ram_bytes"] = self._memory_usage().get("total_bytes")
+        record["total_ram_bytes"] = self.get_database_memory_bytes(database_server_record)
         self._append(self.db_log_path, record)
         return record
 
@@ -339,21 +303,9 @@ class Monitor:
         """The computed CPU percent of a process."""
         return self._proc_cpu.get(pid, 0.0)
 
-    def _cpu_fields(self) -> dict[str, float]:
-        """The system CPU counters."""
-        return self._proc_reader.cpu_fields()
-
     def _proc_cpu_seconds(self, pid: int) -> float:
         """The CPU seconds a process used."""
         return self._proc_reader.proc_cpu_seconds(pid)
-
-    def _net_fields(self) -> dict[str, int]:
-        """The network counters."""
-        return self._proc_reader.net_fields()
-
-    def _disk_io_fields(self) -> dict[str, int]:
-        """The disk IO counters."""
-        return self._proc_reader.disk_io_fields()
 
     def _process_state(self, pid: int) -> str:
         """The process state."""
@@ -370,22 +322,6 @@ class Monitor:
     def _open_fds(self, pid: int) -> int:
         """The open file count of a process."""
         return self._proc_reader.open_fds(pid)
-
-    def _load_average(self) -> tuple[float, float, float]:
-        """The load averages."""
-        return self._proc_reader.load_average()
-
-    def _memory_usage(self) -> dict:
-        """The memory usage."""
-        return self._proc_reader.memory_usage()
-
-    def _disk_usage(self, path: Path) -> dict:
-        """The disk usage of a path."""
-        return self._proc_reader.disk_usage(path)
-
-    def _storage_usage(self) -> dict:
-        """The storage usage."""
-        return self._proc_reader.storage_usage()
 
     @staticmethod
     def _append(path: Path, record: dict) -> None:
@@ -405,6 +341,7 @@ def _to_int(value: object) -> int:
 def _production_monitors() -> list[Monitor]:
     """A monitor for each production bench."""
     from pilot.core.bench import Bench
+
     return [
         Monitor(bench=Bench(bench_config, bench_path))
         for bench_path, bench_config in Server().benches.iter_configs()
@@ -419,20 +356,18 @@ def collect_metrics() -> None:
         return
 
     for monitor in monitors:
-        monitor.sample_cpu()
-        monitor.sample_io()
+        monitor.sample()
     time.sleep(CPU_SAMPLE_INTERVAL)
 
     for monitor in monitors:
-        monitor.compute_cpu()
-        monitor.compute_io()
+        monitor.compute()
         monitor.collect_application_metrics()
 
     # System/DB-wide metrics describe the shared host, not any one bench -
     # collect them exactly once per tick, not once per bench.
     host = monitors[0]
     host.collect_system_metrics()
-    host.collect_database_metrics()
+    host.collect_database_metrics(host.collect_database_server_metrics())
     host.collect_slow_queries()
 
 
@@ -485,7 +420,10 @@ def update_site_rollups() -> None:
 def main() -> None:
     """Uptime pings and telemetry get their own threads, so a slow metrics tick cannot delay them."""
     threading.Thread(
-        target=run_every, args=(UPTIME_INTERVAL, uptime_monitoring.UptimeRunner().run), name="uptime", daemon=True
+        target=run_every,
+        args=(UPTIME_INTERVAL, uptime_monitoring.UptimeRunner().run),
+        name="uptime",
+        daemon=True,
     ).start()
     threading.Thread(
         target=run_every, args=(ROLLUP_INTERVAL, update_site_rollups), name="rollups", daemon=True

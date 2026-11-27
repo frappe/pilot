@@ -238,6 +238,8 @@ const application = ref<ApplicationMetricsHistory>({
   cpu: [],
   memory: [],
 })
+// A remote MariaDB server's VM; null for a local server.
+const databaseServer = ref<SystemMetricsHistory | null>(null)
 const historyLoading = ref(false)
 const historyError = ref('')
 const historyNow = ref(Date.now())
@@ -321,6 +323,7 @@ const refreshAppData = async () => {
     const d = await monitorApi.history('30m')
     if (!hasApiError(d) && d.application) {
       application.value = d.application
+      databaseServer.value = d.database_server
     }
   } catch {}
 }
@@ -340,6 +343,7 @@ const seedLiveHistory = async () => {
     if (d.application) {
       application.value = d.application
     }
+    databaseServer.value = d.database_server
   } catch {}
 }
 
@@ -353,6 +357,7 @@ const loadHistory = async (window: string) => {
     historyNow.value = d.now ?? Date.now()
     system.value = d.system
     application.value = d.application
+    databaseServer.value = d.database_server
   } catch (caught) {
     historyError.value = errorMessage(caught, 'Failed to load analytics.')
   } finally {
@@ -446,11 +451,15 @@ const normalizeAppData = (
 
 // Chart configs
 
-const cpuChartConfig = computed<AnalyticsChart>(() => ({
+const cpuChart = (
+  points: MetricPoint[],
+  xAxis: ChartXAxisOptions,
+  hasAlerts: boolean,
+): AnalyticsChart => ({
   title: 'CPU',
-  alert: 'cpu_usage_limit',
+  alert: hasAlerts ? 'cpu_usage_limit' : undefined,
   config: {
-    data: currentPoints.value.map((p) => ({
+    data: points.map((p) => ({
       time: p.time,
       'Busy User': p['Busy User'] ?? 0,
       'Busy System': p['Busy System'] ?? 0,
@@ -458,25 +467,25 @@ const cpuChartConfig = computed<AnalyticsChart>(() => ({
       'Busy IRQ': p['Busy IRQ'] ?? 0,
       'Busy Other': p['Busy Other'] ?? 0,
     })),
-    xAxis: currentXAxis.value,
+    xAxis,
     yAxis: { min: 0, max: 100, echartOptions: { name: '%', splitLine: GRID } },
     x: 'time',
     y: CPU_SERIES,
-    referenceLines: alertLine(limits.value.cpu_usage_limit),
+    referenceLines: hasAlerts ? alertLine(limits.value.cpu_usage_limit) : [],
     seriesConfig: styleFor(CPU_SERIES, (name) => CPU_COLORS[name]),
   },
-}))
+})
 
-const loadChartConfig = computed<AnalyticsChart>(() => ({
+const loadChart = (points: MetricPoint[], xAxis: ChartXAxisOptions): AnalyticsChart => ({
   title: 'Load Average',
   config: {
-    data: currentPoints.value.map((p) => ({
+    data: points.map((p) => ({
       time: p.time,
       'Load Average 1': p.Load1 ?? 0,
       'Load Average 5': p.Load5 ?? 0,
       'Load Average 15': p.Load15 ?? 0,
     })),
-    xAxis: currentXAxis.value,
+    xAxis,
     yAxis: { min: 0, echartOptions: { name: '', splitLine: GRID } },
     x: 'time',
     y: ['Load Average 1', 'Load Average 5', 'Load Average 15'],
@@ -486,25 +495,39 @@ const loadChartConfig = computed<AnalyticsChart>(() => ({
       'Load Average 15': lineSeries(9),
     },
   },
-}))
+})
 
 const memoryTotal = computed(() =>
   isHistorical.value ? system.value.memory_total_bytes : (stats.value?.memory_total ?? null),
 )
 
-const memChartConfig = computed<AnalyticsChart>(() => {
-  const total = (memoryTotal.value ?? 0) / 1024 ** 3
+const memoryChart = (
+  points: MetricPoint[],
+  xAxis: ChartXAxisOptions,
+  hasAlerts: boolean,
+): AnalyticsChart => {
+  const data = scaleFields(points, MEMORY_SERIES, 1024 ** 3)
+  const peak = data.reduce(
+    (max, p) =>
+      Math.max(
+        max,
+        MEMORY_SERIES.reduce((sum, k) => sum + (p[k] || 0), 0),
+      ),
+    0,
+  )
+  // Only the app server's total is known; another server's axis follows its peak.
+  const total = hasAlerts ? (memoryTotal.value ?? 0) / 1024 ** 3 : 0
   const limit = limits.value.memory_usage_limit
 
   return {
     title: 'Memory',
-    alert: 'memory_usage_limit',
+    alert: hasAlerts ? 'memory_usage_limit' : undefined,
     config: {
-      data: scaleFields(currentPoints.value, MEMORY_SERIES, 1024 ** 3),
-      xAxis: currentXAxis.value,
+      data,
+      xAxis,
       yAxis: {
         min: 0,
-        max: total || undefined,
+        max: total || (peak > 0 ? peak * 1.1 : undefined),
         echartOptions: { name: 'GB', splitLine: GRID },
       },
       x: 'time',
@@ -513,7 +536,7 @@ const memChartConfig = computed<AnalyticsChart>(() => {
       seriesConfig: styleFor(MEMORY_SERIES, (name) => MEMORY_COLORS[name]),
     },
   }
-})
+}
 
 const diskInfo = computed(() =>
   isHistorical.value
@@ -523,43 +546,69 @@ const diskInfo = computed(() =>
       : null,
 )
 
-const diskChartConfig = computed<AnalyticsChart>(() => ({
+const diskChart = (
+  points: MetricPoint[],
+  xAxis: ChartXAxisOptions,
+  hasAlerts: boolean,
+): AnalyticsChart => ({
   title: 'Disk',
-  alert: 'disk_space_limit',
+  alert: hasAlerts ? 'disk_space_limit' : undefined,
   config: {
-    data: currentPoints.value,
-    xAxis: currentXAxis.value,
+    data: points,
+    xAxis,
     yAxis: { min: 0, max: 100, echartOptions: { name: '%', splitLine: GRID } },
     x: 'time',
     y: DISK_SERIES,
-    referenceLines: alertLine(limits.value.disk_space_limit),
+    referenceLines: hasAlerts ? alertLine(limits.value.disk_space_limit) : [],
     seriesConfig: { [DISK_SERIES]: lineSeries(PALETTE[0]) },
   },
-}))
+})
 
-const networkChartConfig = computed<AnalyticsChart>(() => ({
+const networkChart = (points: MetricPoint[], xAxis: ChartXAxisOptions): AnalyticsChart => ({
   title: 'Network',
   config: {
-    data: scaleFields(currentPoints.value, NETWORK_SERIES, 1024 ** 2),
-    xAxis: currentXAxis.value,
+    data: scaleFields(points, NETWORK_SERIES, 1024 ** 2),
+    xAxis,
     yAxis: { min: 0, echartOptions: { name: 'MB/s', splitLine: GRID } },
     x: 'time',
     y: NETWORK_SERIES,
     seriesConfig: styleFor(NETWORK_SERIES, (_, i) => PALETTE[i]),
   },
-}))
+})
 
-const diskIoChartConfig = computed<AnalyticsChart>(() => ({
+const diskIoChart = (points: MetricPoint[], xAxis: ChartXAxisOptions): AnalyticsChart => ({
   title: 'Disk I/O',
   config: {
-    data: scaleFields(currentPoints.value, DISK_IO_SERIES, 1024 ** 2),
-    xAxis: currentXAxis.value,
+    data: scaleFields(points, DISK_IO_SERIES, 1024 ** 2),
+    xAxis,
     yAxis: { min: 0, echartOptions: { name: 'MB/s', splitLine: GRID } },
     x: 'time',
     y: DISK_IO_SERIES,
     seriesConfig: styleFor(DISK_IO_SERIES, (_, i) => PALETTE[i]),
   },
-}))
+})
+
+// CPU, load, memory, disk, network and disk I/O of one host, in the order the page shows them.
+// Alerts are the app server's: only its charts carry the limits and their lines.
+const hostCharts = (
+  points: MetricPoint[],
+  xAxis: ChartXAxisOptions,
+  hasDisk: boolean,
+  hasAlerts = false,
+) => [
+  cpuChart(points, xAxis, hasAlerts),
+  loadChart(points, xAxis),
+  memoryChart(points, xAxis, hasAlerts),
+  ...(hasDisk ? [diskChart(points, xAxis, hasAlerts)] : []),
+  networkChart(points, xAxis),
+  diskIoChart(points, xAxis),
+]
+
+const withChartTimes = (charts: AnalyticsChart[]) =>
+  charts.map((chart) => ({
+    ...chart,
+    config: { ...chart.config, data: withDateTime(chart.config.data ?? []) },
+  }))
 
 const appWindowData = computed(() => {
   const data = application.value
@@ -604,18 +653,27 @@ const appMemConfig = computed<AnalyticsChart>(() => ({
 
 // Combine all charts for template rendering
 const charts = computed(() =>
-  [
-    cpuChartConfig.value,
-    loadChartConfig.value,
-    memChartConfig.value,
-    ...(diskInfo.value ? [diskChartConfig.value] : []),
-    networkChartConfig.value,
-    diskIoChartConfig.value,
+  withChartTimes([
+    ...hostCharts(currentPoints.value, currentXAxis.value, Boolean(diskInfo.value), true),
     ...(appWindowData.value.cpu.length ? [appCpuConfig.value, appMemConfig.value] : []),
-  ].map((chart) => ({
-    ...chart,
-    config: { ...chart.config, data: withDateTime(chart.config.data ?? []) },
-  })),
+  ]),
+)
+
+// Live mode keeps the last 30 minutes, as the app server's charts do.
+const databaseServerPoints = computed<MetricPoint[]>(() => {
+  const points = databaseServer.value?.points ?? []
+  if (isHistorical.value) return points
+  const cutoff = liveNow.value - LIVE_WINDOW_MS
+  return points.filter((p) => (p.time ?? 0) >= cutoff)
+})
+const databaseServerCharts = computed(() =>
+  withChartTimes(
+    hostCharts(
+      databaseServerPoints.value,
+      currentXAxis.value,
+      Boolean(databaseServer.value?.storage?.disk),
+    ),
+  ),
 )
 
 // Lifecycle
@@ -771,6 +829,7 @@ onUnmounted(() => clearTimeout(statsTimer))
         />
       </template>
 
+      <h2 v-if="databaseServer" class="mb-3 text-base-semibold text-ink-gray-8">App server</h2>
       <div class="gap-4 grid md:grid-cols-2">
         <template v-if="showCharts">
           <ChartCard v-for="chart in charts" :key="chart.title" :title="chart.title">
@@ -798,6 +857,24 @@ onUnmounted(() => clearTimeout(statsTimer))
           <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
         </template>
       </div>
+
+      <section v-if="databaseServer && !historyError" class="mt-6">
+        <h2 class="mb-3 text-base-semibold text-ink-gray-8">Database server</h2>
+        <div v-if="historyLoading" class="gap-4 grid md:grid-cols-2">
+          <Skeleton v-for="i in 6" :key="i" class="rounded-6 h-[340px]" />
+        </div>
+        <EmptyState
+          v-else-if="!databaseServerPoints.length"
+          icon="lucide-database"
+          :title="`No database server metrics for the last ${isHistorical ? windowLabel : '30 minutes'}`"
+          description="The monitor reads them from the Pilot agent on the database server. Check that the agent is running and reachable."
+        />
+        <div v-else class="gap-4 grid md:grid-cols-2">
+          <ChartCard v-for="chart in databaseServerCharts" :key="chart.title" :title="chart.title">
+            <AreaChart v-bind="chart.config" class="min-h-[300px]" />
+          </ChartCard>
+        </div>
+      </section>
 
       <!-- WAF analytics (only renders when the WAF has logged activity) -->
       <WafAnalytics :window="activeWindow" />

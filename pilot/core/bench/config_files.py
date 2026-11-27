@@ -134,11 +134,11 @@ class BenchConfigFiles:
     def set_database_address(self, config: dict) -> None:
         """Sites reach Pilot's MariaDB over its socket, which Frappe prefers. Apps that connect over TCP,
         such as Insights' Site DB, read only db_host and db_port, so give them the address it listens on.
-        Not `localhost`: MySQL clients take that to mean the default socket."""
+        Not `localhost`: MySQL clients take that to mean the default socket. A remote server has no socket here."""
         mariadb = self.bench.config.mariadb
         if self.bench.config.db_type != "mariadb" or mariadb.existing:
             return
-        config["db_host"] = "127.0.0.1"
+        config["db_host"] = mariadb.host if mariadb.remote else "127.0.0.1"
         config["db_port"] = mariadb.port
 
     def set_worker_queues(self, config: dict) -> None:

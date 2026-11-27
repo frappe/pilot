@@ -128,6 +128,18 @@ class DatabaseConnectError(DatabaseError):
     """The database server could not be reached or refused the login."""
 
 
+class AgentError(BenchError):
+    """Pilot could not reach the Pilot agent on another VM, or the agent could not do what it was asked."""
+
+
+class AgentRefusedError(AgentError):
+    """The agent answered a request with an HTTP error."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class TwoFactorError(BenchError):
     """Raised when an enrollment request cannot be honoured."""
 

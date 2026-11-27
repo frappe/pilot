@@ -158,7 +158,7 @@ def memory(tmp_path: Path):
     manager.managed_cnf_path.write_text("custom overrides")
     manager.database_action_lock.side_effect = nullcontext
     manager._total_memory_mb.return_value = 8000
-    manager.config.memory_share = 0.5
+    manager.memory_share = 0.5
     manager._write_config.return_value = calculate_mariadb_memory(8000)
     manager._read_managed_options.return_value = {
         "innodb-buffer-pool-size": "400M",

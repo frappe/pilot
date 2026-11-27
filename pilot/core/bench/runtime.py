@@ -36,7 +36,7 @@ class BenchRuntime:
         config = self.bench.config
         if not config.production.enabled or config.db_type == "sqlite":
             return True
-        manager = PostgresManager(config.postgres) if config.db_type == "postgres" else MariaDBManager(config.mariadb)
+        manager = PostgresManager(config.postgres) if config.db_type == "postgres" else MariaDBManager.for_config(config.mariadb)
         return manager.config.existing or manager.is_reachable()
 
     def start(self, on_progress: Callable[[str], None]) -> None:

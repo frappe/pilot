@@ -109,6 +109,8 @@ class SystemdProcessManager(SystemdUserMixin, ManagedProcessManager):
         database = self.bench.config.db_type
         if database not in {"mariadb", "postgres"} or getattr(self.bench.config, database).existing:
             return ""
+        if database == "mariadb" and self.bench.config.mariadb.remote:
+            return ""
         return f"pilot-{database}.service"
 
     def _remove_units(self) -> None:

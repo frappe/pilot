@@ -729,6 +729,25 @@ class Bench:
 
         AdminDomainChange(self, domain, tls).run(on_progress)
 
+    def setup_remote_database(
+        self,
+        host: str,
+        agent_token: str,
+        port: int = 3306,
+        agent_port: int = 7781,
+        admin_user: str = "pilot",
+        on_progress: Callable[[str], None] = lambda message: None,
+        migrate: bool = False,
+        delete_local_data: bool = False,
+    ) -> None:
+        """Move this host's benches to a MariaDB on its own VM that Pilot manages through the Pilot agent.
+        `migrate` copies the sites' databases there first."""
+        from pilot.core.bench.remote_database import RemoteDatabaseSetup
+
+        RemoteDatabaseSetup(
+            self, host, agent_token, port, agent_port, admin_user, migrate, delete_local_data
+        ).run(on_progress)
+
     def setup_central(
         self,
         admin_pattern: str = "",

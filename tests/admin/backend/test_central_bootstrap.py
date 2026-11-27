@@ -14,7 +14,7 @@ from admin.backend.central_bootstrap import (
     tune_database,
 )
 from admin.backend.internal.jwks_cache import JwksCache
-from pilot.config import BenchConfig
+from pilot.config import BenchConfig, MariaDBConfig
 from pilot.config.common import CommonConfig
 from pilot.exceptions import ConfigError, DatabaseError
 from pilot.integrations.central import CentralClientError
@@ -64,7 +64,9 @@ def test_the_attribute_arriving_writes_the_config(tmp_path: Path) -> None:
     assert saved.admin.jwks_audience == "vm-boot-1"
 
 
-def test_bootstrap_seeds_the_jwks_cache_so_the_first_token_needs_no_fetch(tmp_path: Path, monkeypatch) -> None:
+def test_bootstrap_seeds_the_jwks_cache_so_the_first_token_needs_no_fetch(
+    tmp_path: Path, monkeypatch
+) -> None:
     from jwt import PyJWKClient
     from jwt.exceptions import PyJWKClientError
 
@@ -188,8 +190,9 @@ def test_the_poll_interval_never_grows(tmp_path: Path) -> None:
     attempts = iter([False, False, False, True])
     slept: list[float] = []
 
-    with patch.object(CentralBootstrapWatcher, "check_once", lambda self: next(attempts)), patch(
-        "admin.backend.central_bootstrap.time.sleep", slept.append
+    with (
+        patch.object(CentralBootstrapWatcher, "check_once", lambda self: next(attempts)),
+        patch("admin.backend.central_bootstrap.time.sleep", slept.append),
     ):
         watcher._watch()
 
@@ -200,8 +203,9 @@ def test_the_watcher_stops_as_soon_as_the_credential_lands(tmp_path: Path) -> No
     watcher = CentralBootstrapWatcher(_awaiting_host(tmp_path), interval=0.01)
     slept: list[float] = []
 
-    with patch.object(CentralBootstrapWatcher, "check_once", lambda self: True), patch(
-        "admin.backend.central_bootstrap.time.sleep", slept.append
+    with (
+        patch.object(CentralBootstrapWatcher, "check_once", lambda self: True),
+        patch("admin.backend.central_bootstrap.time.sleep", slept.append),
     ):
         watcher._watch()
 
@@ -237,9 +241,7 @@ def test_an_unexpected_failure_keeps_the_watch_alive(tmp_path: Path) -> None:
     """The credential, and any config it trips over, can still be fixed in place."""
     watcher = CentralBootstrapWatcher(_awaiting_host(tmp_path))
 
-    with patch(
-        "pilot.integrations.central.apply_central_config", side_effect=RuntimeError("disk gone")
-    ):
+    with patch("pilot.integrations.central.apply_central_config", side_effect=RuntimeError("disk gone")):
         assert watcher.check_once() is False
 
 
@@ -256,7 +258,10 @@ def test_a_config_that_cannot_be_read_at_all_is_reported(tmp_path: Path, caplog)
 def test_boot_run_applies_the_credential(tmp_path: Path) -> None:
     bench_root = _awaiting_host(tmp_path)
 
-    with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
+    with (
+        _staged(json.dumps(_ATTRIBUTE)),
+        patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]),
+    ):
         main()
 
     assert BenchConfig.read(bench_root).central.bootstrapped is True
@@ -274,10 +279,13 @@ def test_boot_run_skips_non_central_hosts(tmp_path: Path) -> None:
 def test_boot_run_sizes_mariadb_before_applying_the_credential(tmp_path: Path, mariadb_manager) -> None:
     bench_root = _awaiting_host(tmp_path)
 
-    with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
+    with (
+        _staged(json.dumps(_ATTRIBUTE)),
+        patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]),
+    ):
         main()
 
-    mariadb_manager.return_value.tune_to_host.assert_called_once()
+    mariadb_manager.for_config.return_value.tune_to_host.assert_called_once()
     assert BenchConfig.read(bench_root).central.bootstrapped is True
 
 
@@ -287,7 +295,7 @@ def test_boot_run_leaves_mariadb_alone_once_bootstrapped(tmp_path: Path, mariadb
     with _staged(None), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench.path)]):
         main()
 
-    mariadb_manager.return_value.tune_to_host.assert_not_called()
+    mariadb_manager.for_config.return_value.tune_to_host.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -299,7 +307,7 @@ def test_boot_run_leaves_mariadb_alone_once_bootstrapped(tmp_path: Path, mariadb
 )
 def test_a_failed_sizing_blocks_the_credential(tmp_path: Path, mariadb_manager, error: Exception) -> None:
     bench_root = _awaiting_host(tmp_path)
-    mariadb_manager.return_value.tune_to_host.side_effect = error
+    mariadb_manager.for_config.return_value.tune_to_host.side_effect = error
 
     with (
         _staged(json.dumps(_ATTRIBUTE)),
@@ -318,7 +326,7 @@ def test_a_postgres_bench_needs_no_sizing(tmp_path: Path, mariadb_manager) -> No
 
     tune_database(config)
 
-    mariadb_manager.assert_not_called()
+    mariadb_manager.for_config.assert_not_called()
 
 
 def test_an_external_mariadb_does_not_block_the_credential(tmp_path: Path, mariadb_manager) -> None:
@@ -327,10 +335,13 @@ def test_an_external_mariadb_does_not_block_the_credential(tmp_path: Path, maria
     common.mariadb.existing = True
     common.write(bench_root.parent)
 
-    with _staged(json.dumps(_ATTRIBUTE)), patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]):
+    with (
+        _staged(json.dumps(_ATTRIBUTE)),
+        patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]),
+    ):
         main()
 
-    mariadb_manager.assert_not_called()
+    mariadb_manager.for_config.assert_not_called()
     assert BenchConfig.read(bench_root).central.bootstrapped is True
 
 
@@ -343,3 +354,29 @@ def test_the_watcher_stops_when_another_process_bootstrapped_the_host(tmp_path: 
     with _staged(json.dumps(_ATTRIBUTE)):
         assert apply_central_config(Bench(bench_root)) is True
         assert CentralBootstrapWatcher(bench_root).check_once() is True
+
+
+def test_boot_run_takes_over_the_assigned_database_before_the_credential(
+    tmp_path: Path, mariadb_manager
+) -> None:
+    bench_root = _awaiting_host(tmp_path)
+    order = []
+
+    def take_over(assignment) -> bool:
+        order.append(BenchConfig.read(bench_root).central.bootstrapped)
+        remote = MariaDBConfig(host="fdaa::3", remote=True, agent_token="token")
+        with CommonConfig.open(bench_root.parent) as common:
+            common.mariadb = remote
+        assignment.bench.config.mariadb = remote
+        return True
+
+    with (
+        _staged(json.dumps(_ATTRIBUTE)),
+        patch("sys.argv", ["central_bootstrap", "--bench-root", str(bench_root)]),
+        patch("pilot.integrations.central.database.CentralDatabaseAssignment.apply", take_over),
+    ):
+        main()
+
+    assert order == [False]
+    mariadb_manager.for_config.assert_not_called()
+    assert BenchConfig.read(bench_root).central.bootstrapped is True

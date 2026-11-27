@@ -256,7 +256,7 @@ def test_existing_local_database_mode_without_a_sibling_still_requires_a_passwor
 def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) -> None:
     client = setup_client(tmp_path)
     with patch("pilot.managers.database.MariaDBManager") as manager_class:
-        manager_class.return_value.is_installed.return_value = False
+        manager_class.for_config.return_value.is_installed.return_value = False
         response = client.post(
             "/api/v1/setup/database-validations",
             json={"engine": "mariadb", "password": "secret"},
@@ -264,7 +264,7 @@ def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) ->
 
     assert response.status_code == 200
     assert response.get_json() == {"engine": "mariadb", "state": "will_install"}
-    config = manager_class.call_args.args[0]
+    config = manager_class.for_config.call_args.args[0]
     assert config.root_password == "secret"
     assert config.admin_user == "root"
     assert config.port == MariaDBConfig().port

@@ -172,7 +172,9 @@ class BenchInitializer:
         )
         if db.existing or db.root_password:
             return
-        db.port = LocalPort(db.port).get_first_free()
+        # A remote server listens on its own host, so a free port here says nothing about it.
+        if not (self.bench.config.db_type == "mariadb" and self.bench.config.mariadb.remote):
+            db.port = LocalPort(db.port).get_first_free()
         db.root_password = secrets.token_hex(nbytes=8)
         self.bench.config.write(self.bench.path)
 
@@ -260,4 +262,4 @@ class BenchInitializer:
         """The MariaDB manager for this bench."""
         from pilot.managers.database import MariaDBManager
 
-        return MariaDBManager(self.bench.config.mariadb)
+        return MariaDBManager.for_config(self.bench.config.mariadb)

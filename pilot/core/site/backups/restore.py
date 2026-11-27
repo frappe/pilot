@@ -194,7 +194,7 @@ class SiteRestore:
         if self.site.bench.config.db_type != "mariadb":
             raise BenchError("Streaming a database restore needs MariaDB.")
         database = site_database_name(self.site.bench.path, self.site.config.name)
-        manager = MariaDBManager(self.site.bench.config.mariadb)
+        manager = MariaDBManager.for_config(self.site.bench.config.mariadb)
         manager.recreate_database(database)
         with open_dump() as stream, gzip.GzipFile(fileobj=stream) as dump:
             manager.import_sql(database, dump)

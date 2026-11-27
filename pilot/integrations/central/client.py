@@ -85,6 +85,11 @@ class CentralClient:
             body["reference_doctype"] = reference_doctype
         return self.forward("central.notification.api.report_pilot_event", "POST", body)
 
+    def get_database_access(self) -> dict[str, Any]:
+        """The database host Central created for this server: `status` is Pending, Ready or Failed, and a
+        Ready answer carries `host`, `port`, `ssh_user` and `ssh_private_key`."""
+        return self.forward("central.api.pilot.get_database_access", "GET")
+
     def is_server_access_locked(self) -> bool:
         """Whether Central locks access to this server past its sites, as for an open free trial."""
         return bool(self.forward("central.api.pilot.get_server_access", "GET")["is_locked"])

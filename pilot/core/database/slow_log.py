@@ -5,9 +5,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pilot.core.database.slow_queries import normalize
+
+if TYPE_CHECKING:
+    from pilot.core.database.log_file import LogFile
 
 TAIL_BYTES = 8 * 1024 * 1024
 
@@ -55,16 +58,12 @@ class SlowQueryReport:
 
 
 class SlowLogFile:
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    def __init__(self, log: LogFile) -> None:
+        self.log = log
 
     def get_entries(self, tail_bytes: int = TAIL_BYTES) -> list[SlowLogEntry]:
         """The entries at the end of the slow log."""
-        with self.path.open("rb") as log:
-            size = log.seek(0, 2)
-            log.seek(max(0, size - tail_bytes))
-            text = log.read().decode("utf-8", errors="replace")
-        return parse_slow_log(text)
+        return parse_slow_log(self.log.read_tail(tail_bytes))
 
     def get_top_queries(self, database: str = "", limit: int = 100) -> list[SlowQuery]:
         """Entries grouped by normalized query, longest total duration first."""

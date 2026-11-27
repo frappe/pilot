@@ -683,6 +683,8 @@ install_mariadb_apparmor_override frappe
     assert override.exists() is is_overridden
     if is_overridden:
         assert "owner /home/frappe/pilot/databases/mariadb/** rwk," in override.read_text()
+        # Without it the unit never reports ready and its start times out.
+        assert "owner /run/user/*/systemd/notify w," in override.read_text()
         assert f"reloaded -r {apparmor}/mariadbd" in result.stdout
 
 

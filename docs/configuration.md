@@ -270,6 +270,53 @@ Central endpoint and authentication data come from instance metadata. While Cent
 
 Before it applies the Central credential, bootstrap sizes Pilot's MariaDB for the VM's memory, because an image built on another host keeps that host's sizing. It writes `my.cnf` and the unit for the next start, then applies the values to the running server without a restart: the buffer pool and its automatic minimum, `innodb_log_file_size`, `key_buffer_size`, and `max_connections`. An option set in `managed.cnf` keeps its value. The buffer pool cannot grow above the running `innodb_buffer_pool_size_max`, so a larger pool waits for the next start. Higher unit memory limits apply before MariaDB grows. Lower limits apply only after MariaDB uses less than the new `MemoryHigh`. The unit file is written last, after the limits apply; if the usage stays higher or cannot be read for a minute, the old unit stays and a later attempt tries again.
 
+### Remote MariaDB
+
+`[mariadb]` describes one of four servers:
+
+| Server | Keys | What Pilot does |
+|---|---|---|
+| Local (default) | none | Runs its own `pilot-mariadb.service` user unit under `databases/mariadb`, sizes it, restarts it and edits its variables. |
+| Existing | `existing = true`, `host`, `port`, `admin_user`, `root_password` | Only connects. Restart, sizing and variable changes are refused. |
+| Remote | `remote = true`, `host`, `port`, `agent_port`, `agent_token`, `admin_user`, `root_password` | Manages the MariaDB on a database VM: SQL over TCP, everything else through the Pilot agent on that VM. |
+| Dedicated | `dedicated = true`, `port`, `root_password` | On the database VM: runs the local user unit for the whole VM and serves the app VM on the network. |
+
+```toml
+# The app VM
+[mariadb]
+host = "fdaa:1:2::3"
+port = 3306
+admin_user = "pilot"
+root_password = "..."
+remote = true
+agent_port = 7781
+agent_token = "..."
+```
+
+```toml
+# The database VM
+[mariadb]
+port = 3306
+root_password = "..."
+dedicated = true
+
+[agent]
+address = "::"
+port = 7781
+token_hash = "<sha256 of agent_token>"
+client_address = "fdaa:1:2::7"
+```
+
+The database VM runs Pilot's MariaDB as the `pilot-mariadb.service` user unit, like a local server, with `bind-address = ::`, `skip-name-resolve` and `secure-file-priv` set to the empty `databases/mariadb/client-files` directory, so the app VM's admin account cannot read or write other files through SQL. The VM runs nothing else, so Pilot sizes MariaDB for all of its memory, and the boot sizing unit sizes it again after Central resizes the VM. The memory split and `memory_share` apply only to a local server, so the app VM's Settings, Database page does not show the memory split, and its buffer pool card measures against the database VM's memory. The Pilot agent, `pilot-agent.service`, is a FastAPI user unit in the admin venv, configured in `[agent]`. It runs as the same user as MariaDB, never as root, and serves only the address in `client_address` with the token whose SHA-256 is `token_hash`. It answers a fixed set of requests in two groups. Every agent answers the node requests: `GET /health` with the API version, the VM's Pilot version, the caller's address and a `roles` object with the health of each role the VM has, `GET /metrics` for host metrics, and `POST` and `GET /pilot/update` for an update of the VM's own Pilot. A role adds its own requests under its name. The only role is `database`, which a VM has when `[mariadb] dedicated = true`. Its health is `is_installed`, `is_provisioned`, `is_running`, `version` and `memory_mb`, and its requests are `GET` and `PUT /database/config/managed` for the variable editor's option file, `POST /database/service/{action}` to start, stop or restart, `GET /database/files` for the tail and size of the logs and of files in the data directory, `GET /database/disk` for free disk, and `POST /database/accounts/admin` for the admin account. A VM without a role answers 404 for that role's requests, and the app VM refuses a host whose health has no `database` role. It takes only options that the variable editor and the memory quick actions write, so an option such as `init-file` or `plugin-load` is refused. It has no request that runs a command or reads another file. The admin account accepts only the address the agent sees the app VM connect from, and setup and cloned-site accounts use the same host. Restart, the variable editor, slow queries, deadlocks, log sizes and free disk work as for a local server. The agent and the app VM's Pilot must speak the same API version. Each refuses the other when they do not. The agent uses plain HTTP, so the network between the VMs must be private. `pilot setup database-server` sets up the database VM, and `pilot setup remote-database` moves an app VM to it - see [Setup Commands](commands.md#setup-commands).
+
+A Pilot update of the app VM updates the database VM first, from the Admin, from automatic updates and from `pilot admin upgrade`. The `update-cli` task shows it as the step "Update Pilot on connected VMs", only on a host that manages another VM, today a host whose MariaDB is remote. The step updates each connected VM in turn and stops at the first failure. The app VM asks the agent to start the update (`POST /pilot/update`) and reads its state (`GET /pilot/update`) every 3 seconds for at most 20 minutes. Neither request takes a parameter: the database VM takes the latest release, or runs `git pull` in a source checkout, as `pilot admin upgrade` does on any host. The agent runs the update in the transient user unit `pilot-agent-update.service`, so the agent's own restart does not stop it, and writes its output to `system/logs/agent-update.log`. A start while an update runs returns the running one. The state is in `system/agent/pilot-update.json`: `status` (`idle`, `running`, `succeeded` or `failed`), `error`, `version_before`, `version_after` (the release tag, or `dev` and the commit), `started_at` and `finished_at` (Unix time). An update on the database VM builds no Admin frontend, runs the upgrade patches, and then rewrites and restarts `pilot-agent.service` from a new process. Any host whose `[agent]` has a `token_hash` does this. MariaDB keeps running. When the database VM's update fails or times out, the app VM is not changed and the task fails with the database VM's reason. A database VM whose Pilot predates this request answers 404, and the task asks the operator to update that VM by hand once. Automatic updates never run on the database VM itself: it has no benches, and the app VM drives its updates.
+
+The app VM's monitor also records the database VM's system metrics. On each tick of a host with a production bench whose MariaDB is remote, it asks the agent for `GET /metrics`, one record in the shape of `system-stats.log` sampled over one second with the disk that holds the Pilot folder, where the data directory is, and appends it to `system/logs/database-server-stats.log`. It waits at most 3 seconds and skips that record quietly when the agent cannot be reached or is too old to know the request. `db-stats.log` then records the database VM's memory as `total_ram_bytes`, or nothing when the agent did not answer. `/monitor/history` returns these records as `database_server` beside `system`, and the Analytics page shows them under "Database server" below the "App server" charts.
+
+A host that already has sites moves with `pilot setup remote-database --migrate`, which copies each site database and login to the remote server and then sets each copied site's `db_host` and `db_port` in `site_config.json` to the remote server. The local server's data stays in `databases/mariadb` unless `--delete-local-data` is given. Its `managed.cnf` is not copied: the database VM sizes its own server. See [Setup Commands](commands.md#setup-commands).
+
+A Central VM whose database is on another host has the `pilot-database` attribute, `{"remote": true}`. Before it applies the credential, bootstrap asks Central for the database host with `central.api.pilot.get_database_access`, which answers `Pending` until that host runs and then `Ready` with `host`, `port`, `agent_port` and `agent_token`. Pilot moves the host to the remote server, so the credential never lands on a host without a working database. A `Failed` answer stops the bootstrap.
+
 The user unit `pilot-mariadb-sizing.service` prepares MariaDB before its first start in each host boot and stays active for that boot. Pilot records the boot ID and total host RAM in `memory-sizing.json`. On the first allocation, or a new boot with changed RAM, it recalculates the generated settings and clears custom buffer-pool sizes, log-file size, key-buffer size, and connection count. A MariaDB restart or a host reboot with unchanged RAM preserves custom database variables. Service memory limits are recalculated from host RAM and `mariadb.memory_share` at each boot. Other database-variable overrides, including `innodb_snapshot_isolation`, remain unchanged. The upgrade patch records the current host capacity and starts the sizing service outside the database action lock, so installation preserves existing settings and the first MariaDB restart can proceed.
 
 `MemoryHigh` and `MemoryMax` are internal service limits. They are not shown in Database Configurations, and the API rejects manual changes, including previously queued changes. Use the database memory split to change the allocation. Legacy `mariadb.memory_high_mb` and `mariadb.memory_max_mb` values are ignored and cleared at the next host boot. Swap is not editable here.
@@ -343,7 +390,7 @@ Run `pilot setup nginx` on each production bench after a change. The front proxy
 
 ### Automatic Updates
 
-Automatic Pilot updates are on by default for release installs. Set `auto_pilot_update = false` under `[updates]` in `common_config.toml` to keep them off. Use the Automatic updates switch in Settings > About, or `pilot admin auto-update on|off`. Both add or remove a cron entry. It checks the UTC time each minute and runs Pilot only at 12:00 AM UTC, regardless of the server timezone. When a newer release exists, the entry queues one `update-cli` task on the first bench by name, so the update shows in that bench's task log. The task updates Pilot and restarts the admin of every bench. The installer and upgrade patch install the schedule unless the setting is off. A source checkout (`dev` version) is never updated this way. Its switch is disabled. A failed update is tried again the next day.
+Automatic Pilot updates are on by default for release installs. Set `auto_pilot_update = false` under `[updates]` in `common_config.toml` to keep them off. Use the Automatic updates switch in Settings > About, or `pilot admin auto-update on|off`. Both add or remove a cron entry. It checks the UTC time each minute and runs Pilot only at 12:00 AM UTC, regardless of the server timezone. When a newer release exists, the entry queues one `update-cli` task on the first bench by name, so the update shows in that bench's task log. The task updates Pilot, on the database VM first when MariaDB is remote (see [Remote MariaDB](#remote-mariadb)), and restarts the admin of every bench. The installer and upgrade patch install the schedule unless the setting is off. A source checkout (`dev` version) is never updated this way. Its switch is disabled. A failed update is tried again the next day.
 
 ### Alert Delivery
 

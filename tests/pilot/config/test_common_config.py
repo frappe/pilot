@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from pilot.config.agent import AgentConfig
 from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.common import CommonConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.postgres import PostgresConfig
 from pilot.config.telemetry import TelemetryConfig
+from pilot.exceptions import ConfigError
 
 
 def test_path_resolves_next_to_benches_root(tmp_path: Path) -> None:
@@ -93,3 +97,51 @@ def test_telemetry_is_shared_by_every_bench(tmp_path: Path) -> None:
 
     assert config.telemetry.endpoint == "https://datum.internal"
     assert config.telemetry.is_enabled
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param(
+            CommonConfig(
+                mariadb=MariaDBConfig(
+                    host="fdaa:1:2::3", port=3306, remote=True, agent_port=7790, agent_token="token"
+                )
+            ),
+            id="remote",
+        ),
+        pytest.param(
+            CommonConfig(
+                mariadb=MariaDBConfig(port=3306, dedicated=True),
+                agent=AgentConfig(token_hash="hash", client_address="fdaa:1:2::4"),
+            ),
+            id="dedicated-with-agent",
+        ),
+    ],
+)
+def test_a_mariadb_on_its_own_vm_round_trips(tmp_path: Path, config: CommonConfig) -> None:
+    config.write(tmp_path)
+    assert CommonConfig.read(tmp_path) == config
+
+
+def test_local_mariadb_writes_no_remote_or_agent_keys(tmp_path: Path) -> None:
+    CommonConfig().write(tmp_path)
+    text = CommonConfig.path(tmp_path).read_text()
+    assert "agent_token" not in text
+    assert "dedicated" not in text
+    assert "[agent]" not in text
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"existing": True},
+        {"dedicated": True},
+        {"host": "localhost"},
+        {"agent_token": ""},
+    ],
+)
+def test_incomplete_remote_mariadb_is_refused(changes: dict) -> None:
+    values = {"host": "fdaa::3", "remote": True, "agent_token": "token"}
+    with pytest.raises(ConfigError):
+        MariaDBConfig(**{**values, **changes}).validate()

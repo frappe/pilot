@@ -23,6 +23,10 @@ ADMIN_VENV_IMPORTS = {
     "pilot/core/database/engines/mariadb.py": {"pymysql"},
     "pilot/core/database/engines/postgres.py": {"psycopg2"},
     "pilot/managers/database/mariadb.py": {"pymysql"},
+    "pilot/core/agent/app.py": {"fastapi"},
+    "pilot/core/agent/auth.py": {"fastapi"},
+    "pilot/core/agent/roles/database/routes.py": {"fastapi", "pydantic"},
+    "pilot/core/agent/__main__.py": {"uvicorn"},
 }
 # Scripts that pilot runs with the bench's Python and never imports.
 BENCH_PYTHON_IMPORTS = {

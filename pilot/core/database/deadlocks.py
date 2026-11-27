@@ -5,7 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pilot.core.database.log_file import LogFile
 
 # Deadlocks are wanted recent, and the log can be large, so only its end is read.
 TAIL_BYTES = 8 * 1024 * 1024
@@ -67,8 +70,8 @@ class DeadlockReport:
 class DeadlockLog:
     """The deadlock dumps in a MariaDB error log, newest first."""
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    def __init__(self, log: LogFile) -> None:
+        self.log = log
 
     def get_deadlocks(
         self,
@@ -78,16 +81,9 @@ class DeadlockLog:
         until: datetime | None = None,
     ) -> list[Deadlock]:
         """The matching deadlocks from the error log, newest first."""
-        deadlocks = DeadlockParser().parse(self.read_tail())
+        deadlocks = DeadlockParser().parse(self.log.read_tail(TAIL_BYTES))
         deadlocks = [deadlock for deadlock in deadlocks if deadlock.is_match(database, since, until)]
         return deadlocks[::-1][:limit]
-
-    def read_tail(self) -> str:
-        """The end of the error log."""
-        with self.path.open("rb") as log:
-            size = log.seek(0, 2)
-            log.seek(max(0, size - TAIL_BYTES))
-            return log.read().decode("utf-8", errors="replace")
 
 
 class DeadlockParser:

@@ -581,7 +581,8 @@ EOF
     chmod 644 /etc/logrotate.d/pilot
 }
 
-# The distro mariadbd AppArmor profile (Ubuntu 26.04) denies ~/pilot; it includes
+# The distro mariadbd AppArmor profile (Ubuntu 26.04) denies ~/pilot and the user
+# manager's notify socket, which the Type=notify unit reports ready on; it includes
 # local/mariadbd, where this keeps one block per bench user. An empty profile
 # (MariaDB's own repo) or no AppArmor skips it.
 install_mariadb_apparmor_override() {
@@ -605,6 +606,7 @@ owner $home/pilot/databases/mariadb/ r,
 owner $home/pilot/databases/mariadb/** rwk,
 owner $home/pilot/system/logs/ r,
 owner $home/pilot/system/logs/** rw,
+owner /run/user/*/systemd/notify w,
 $end
 EOF
     } > "$override.pilot"

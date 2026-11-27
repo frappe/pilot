@@ -67,7 +67,7 @@ def make_database(config: "BenchConfig") -> Database:
             database="",
         )
     mariadb = config.mariadb
-    return MariaDB(
+    settings = dict(
         host=mariadb.host,
         port=mariadb.port,
         user=mariadb.admin_user,
@@ -75,6 +75,12 @@ def make_database(config: "BenchConfig") -> Database:
         database="",
         socket=mariadb.socket_path or None,
     )
+    if mariadb.remote:
+        from pilot.core.agent.roles.database.client import DatabaseAgentClient
+        from pilot.core.database.engines.remote_mariadb import RemoteMariaDB
+
+        return RemoteMariaDB(**settings, agent=DatabaseAgentClient.for_config(mariadb))
+    return MariaDB(**settings)
 
 
 def read_site_config(bench_root: Path | str, site_name: str) -> dict:

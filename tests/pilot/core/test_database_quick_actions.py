@@ -17,11 +17,13 @@ def _config(
     *,
     db_type: str = "mariadb",
     existing: bool = False,
+    remote: bool = False,
     allow_management: bool = True,
 ) -> BenchConfig:
     config = BenchConfig.default("test")
     config.db_type = db_type
     config.mariadb.existing = existing
+    config.mariadb.remote = remote
     config.admin.allow_bench_management = allow_management
     return config
 
@@ -250,12 +252,43 @@ def test_the_memory_split_previews_the_sizing_of_each_share() -> None:
     with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
         capability = DatabaseQuickActions(_config(), _manager()).capabilities()["actions"]["memory_share"]
 
+    assert capability["applicable"] is True
     assert (capability["current"], capability["min"], capability["max"]) == (0.5, 0.2, 0.8)
     assert capability["total_memory_mb"] == 4096
     shares = [step["share"] for step in capability["steps"]]
     assert shares[0] == 0.2 and shares[-1] == 0.8 and 0.5 in shares
     pools = [step["innodb_buffer_pool_mb"] for step in capability["steps"]]
     assert pools == sorted(pools)
+
+
+@pytest.mark.parametrize(
+    ("host_memory", "current", "total_memory_mb"),
+    [
+        pytest.param({"return_value": 4096}, 1.0, 4096, id="memory-known"),
+        pytest.param(
+            {"side_effect": DatabaseError("Pilot cannot reach the Pilot agent.")},
+            None,
+            None,
+            id="agent-unreachable",
+        ),
+    ],
+)
+def test_a_dedicated_database_server_has_no_memory_split(
+    host_memory: dict, current: float | None, total_memory_mb: int | None
+) -> None:
+    manager = _manager()
+    manager.memory_share = 1.0
+    type(manager).host_memory_mb = PropertyMock(**host_memory)
+    actions = DatabaseQuickActions(_config(remote=True), manager)
+
+    with patch("pilot.managers.platform.HostPlatform.is_linux", new_callable=PropertyMock, return_value=True):
+        capability = actions.capabilities()["actions"]["memory_share"]
+        with pytest.raises(DatabaseError, match="its own VM"):
+            actions.require_memory_share(0.5)
+
+    assert (capability["available"], capability["applicable"], capability["steps"]) == (False, False, [])
+    # MariaDB has all of the database VM's memory, which the buffer pool view measures against.
+    assert (capability["current"], capability["total_memory_mb"]) == (current, total_memory_mb)
 
 
 @pytest.mark.parametrize("share", [0.1, 0.9, "0.5"])

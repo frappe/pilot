@@ -32,3 +32,15 @@ def test_other_databases_keep_their_own_address(tmp_path: Path, db_type: str, ex
 
     assert "db_host" not in config
     assert "db_port" not in config
+
+
+def test_a_remote_mariadb_gives_the_remote_address(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    bench.config.mariadb.host = "fdaa:1:2::3"
+    bench.config.mariadb.port = 3306
+    bench.config.mariadb.remote = True
+    bench.write_common_site_config()
+
+    config = json.loads((bench.sites_path / "common_site_config.json").read_text())
+    assert (config["db_host"], config["db_port"]) == ("fdaa:1:2::3", 3306)

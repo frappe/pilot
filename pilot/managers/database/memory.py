@@ -87,7 +87,7 @@ class MariaDBMemory:
                 manager._install_unit(sizing, preserve_swap_limit=True, reload_manager=False)
                 manager._set_runtime_memory_limits(sizing)
             else:
-                sizing = calculate_mariadb_memory(manager._total_memory_mb(), manager.config.memory_share)
+                sizing = calculate_mariadb_memory(manager._total_memory_mb(), manager.memory_share)
                 manager._install_unit(sizing, preserve_swap_limit=True, reload_manager=False)
                 manager._set_runtime_memory_limits(sizing)
             with CommonConfig.open(Server().benches_dir) as config:

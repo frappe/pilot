@@ -52,17 +52,26 @@ def test_raises_when_existing_credentials_are_wrong() -> None:
     manager.provision.assert_not_called()
 
 
-def test_ensure_database_credentials_generates_for_a_fresh_server() -> None:
+@pytest.mark.parametrize(
+    ("remote", "port"),
+    [
+        pytest.param(False, 3311, id="local-takes-a-free-port"),
+        pytest.param(True, 3306, id="remote-keeps-its-port"),
+    ],
+)
+def test_ensure_database_credentials_generates_for_a_fresh_server(remote: bool, port: int) -> None:
     bench = MagicMock()
     bench.config.db_type = "mariadb"
     bench.config.mariadb.existing = False
+    bench.config.mariadb.remote = remote
     bench.config.mariadb.root_password = ""
     bench.config.mariadb.port = 3306
 
-    with patch("pilot.internal.host_resources.LocalPort.get_first_free", return_value=3306):
+    with patch("pilot.internal.host_resources.LocalPort.get_first_free", return_value=3311):
         BenchInitializer(bench)._ensure_database_credentials()
 
     assert bench.config.mariadb.root_password
+    assert bench.config.mariadb.port == port
     bench.config.write.assert_called_once_with(bench.path)
 
 
@@ -278,7 +287,9 @@ def test_init_builds_the_framework_assets(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("admin_enabled", [True, False])
-def test_init_prepares_the_admin_frontend_only_for_an_enabled_admin(tmp_path: Path, admin_enabled: bool) -> None:
+def test_init_prepares_the_admin_frontend_only_for_an_enabled_admin(
+    tmp_path: Path, admin_enabled: bool
+) -> None:
     bench = make_bench(tmp_path)
     bench.config.admin.enabled = admin_enabled
     initializer = BenchInitializer(bench)

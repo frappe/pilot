@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from unittest.mock import ANY, MagicMock, PropertyMock, patch
+from unittest.mock import ANY, MagicMock, Mock, PropertyMock, patch
 
 import pytest
 
@@ -825,13 +825,22 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
         assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
 
-def test_upgrade_command_performs_upgrade() -> None:
+@pytest.mark.parametrize("is_remote", [False, True])
+def test_upgrade_command_updates_the_connected_vms_first(is_remote: bool) -> None:
     from pilot.commands.admin.upgrade import UpgradeCommand
+    from pilot.core.server import Server
 
-    with patch("pilot.updater.perform_upgrade") as mock_upgrade:
+    calls = Mock()
+    with (
+        patch.object(
+            Server, "agents", new_callable=PropertyMock, return_value=[calls.agent] if is_remote else []
+        ),
+        patch("pilot.updater.perform_upgrade", calls.perform_upgrade),
+    ):
         UpgradeCommand().run()
 
-    mock_upgrade.assert_called_once()
+    expected = ["agent.update_pilot", "perform_upgrade"] if is_remote else ["perform_upgrade"]
+    assert [name for name, *_ in calls.mock_calls] == expected
 
 
 def test_bench_update_apps_raises_on_command_error(tmp_path: Path) -> None:

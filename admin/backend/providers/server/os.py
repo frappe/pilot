@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pilot.config import BenchConfig
-from pilot.exceptions import BenchError, CommandError
+from pilot.exceptions import BenchError, CommandError, DatabaseError
 from pilot.internal.command import run_command
 from pilot.managers.platform import HostPlatform
 from pilot.managers.redis import redis_server_binary
@@ -24,7 +24,7 @@ class OSProvider:
         versions = {
             "Python": self._config.python_version,
             "Node": self.get_flag_version("node", ["--version"], r"v?([\d.]+)"),
-            "MariaDB": self.get_flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)"),
+            "MariaDB": self.mariadb_version,
             "PostgreSQL": self.get_flag_version("psql", ["--version"], r"(\d+\.\d+)"),
             "Redis": self.get_flag_version(redis_server_binary() or "", ["--version"], r"v=(\S+)")
             or self._config.redis.version
@@ -44,6 +44,23 @@ class OSProvider:
         except OSError:
             return ""
         return _binary_version(path, modified, tuple(args), pattern)
+
+    @property
+    def mariadb_version(self) -> str:
+        """The MariaDB version. A server on another host is asked, since a local binary says nothing about it."""
+        mariadb = self._config.mariadb
+        if not (mariadb.remote or mariadb.existing):
+            return self.get_flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)")
+        import pymysql
+
+        from pilot.core.database import make_database
+
+        try:
+            version = str(make_database(self._config).get_scalar("SELECT VERSION()"))
+        except (DatabaseError, pymysql.Error, OSError):
+            return ""
+        match = re.match(r"[\d.]+", version)
+        return match.group(0) if match else ""
 
     @property
     def frappe_version(self) -> str:

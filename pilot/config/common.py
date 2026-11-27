@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 
+from pilot.config.agent import AgentConfig
 from pilot.config.alert_limit import ResourceLimitConfig
 from pilot.config.central import CentralConfig, HostnameAlias
 from pilot.config.frappe_cloud import FrappeCloudConfig
@@ -33,6 +34,7 @@ class CommonConfig:
         keys={"country"},
         tables={
             "mariadb": TomlSchema(keys=field_names(MariaDBConfig)),
+            "agent": TomlSchema(keys=field_names(AgentConfig)),
             "postgres": TomlSchema(keys=field_names(PostgresConfig)),
             "letsencrypt": TomlSchema(keys=field_names(LetsEncryptConfig)),
             "nginx": TomlSchema(keys=set(NginxConfig().ports)),
@@ -55,6 +57,7 @@ class CommonConfig:
     )
 
     mariadb: MariaDBConfig = field(default_factory=MariaDBConfig)
+    agent: AgentConfig = field(default_factory=AgentConfig)
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -93,6 +96,7 @@ class CommonConfig:
         admin = data.get("admin", {})
         return cls(
             mariadb=MariaDBConfig(**_known_fields(MariaDBConfig, data.get("mariadb", {}))),
+            agent=AgentConfig(**_known_fields(AgentConfig, data.get("agent", {}))),
             postgres=PostgresConfig(**_known_fields(PostgresConfig, data.get("postgres", {}))),
             letsencrypt=LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
             nginx=NginxConfig.from_dict(data.get("nginx", {})),
@@ -171,15 +175,7 @@ class CommonConfig:
     def _to_toml_dict(self) -> ConfigDict:
         """The common config as TOML tables."""
         data: ConfigDict = {
-            "mariadb": {
-                "host": self.mariadb.host,
-                "port": self.mariadb.port,
-                "root_password": self.mariadb.root_password,
-                "admin_user": self.mariadb.admin_user,
-                "socket_path": self.mariadb.socket_path,
-                "existing": self.mariadb.existing,
-                "memory_share": self.mariadb.memory_share,
-            },
+            "mariadb": self._mariadb_table(),
             "postgres": {
                 "host": self.postgres.host,
                 "port": self.postgres.port,
@@ -195,6 +191,7 @@ class CommonConfig:
         # Tables written only when they differ from their defaults.
         optional = {
             "nginx": (self.nginx.ports, NginxConfig().ports),
+            "agent": (asdict(self.agent), asdict(AgentConfig())),
             "proxy": (asdict(self.proxy), asdict(ProxyConfig())),
             "resource_limits": (asdict(self.resource_limits), asdict(ResourceLimitConfig())),
             "updates": (asdict(self.updates), asdict(UpdatesConfig())),
@@ -217,6 +214,25 @@ class CommonConfig:
         if self.jwks_url:
             data["admin"] = {"jwks_url": self.jwks_url, "jwks_audience": self.jwks_audience}
         return data
+
+    def _mariadb_table(self) -> ConfigDict:
+        """The [mariadb] table, with the keys of a remote or dedicated server only when it is one."""
+        table: ConfigDict = {
+            "host": self.mariadb.host,
+            "port": self.mariadb.port,
+            "root_password": self.mariadb.root_password,
+            "admin_user": self.mariadb.admin_user,
+            "socket_path": self.mariadb.socket_path,
+            "existing": self.mariadb.existing,
+            "memory_share": self.mariadb.memory_share,
+        }
+        if self.mariadb.remote:
+            table.update(
+                remote=True, agent_port=self.mariadb.agent_port, agent_token=self.mariadb.agent_token
+            )
+        if self.mariadb.dedicated:
+            table["dedicated"] = True
+        return table
 
     def _central_table(self) -> ConfigDict:
         """The [central] table."""
