@@ -25,9 +25,9 @@ if TYPE_CHECKING:
 class GzipReader:
     """Gzip-compresses a byte stream as boto3 reads it, so a dump reaches S3 without touching the disk."""
 
-    def __init__(self, source) -> None:
+    def __init__(self, source, level: int) -> None:
         self.source = source
-        self.compressor = zlib.compressobj(wbits=31)
+        self.compressor = zlib.compressobj(level, wbits=31)
         self.buffer = b""
         self.is_done = False
 
@@ -349,7 +349,7 @@ class SiteMigrationBackup:
         if process.stdout is None:
             raise BenchError("Database dump output pipe was not created")
         try:
-            s3.upload_stream(location["bucket"], key, GzipReader(process.stdout), low_memory=True)
+            s3.upload_stream(location["bucket"], key, GzipReader(process.stdout, self.site.bench.config.migration_backup.gzip_level), low_memory=True)
         except Exception:
             process.kill()
             raise
